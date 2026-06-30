@@ -1,15 +1,20 @@
 import { Button, Typography } from "antd";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { listAgentMessages } from "../../api/client";
+import type { ContentPart, JsonValue, TimelineMessage } from "../../api/contracts";
 import type { RunEventType } from "../../runtime/events";
 import { useRuntimeStore } from "../../runtime/runtimeStore";
+import type { RuntimeRunState, TimelineEntry } from "../../runtime/reducers";
 import type { RunStreamController } from "../../runtime/useRunStreamController";
 import { useTranslations } from "../../i18n";
 import { MessageTimeline } from "../timeline/MessageTimeline";
 import type { ActiveSubagentSession } from "./SessionsSidebar";
+
+const SUBAGENT_TERMINAL_SETTLE_DELAY_MS = 80;
+const SUBAGENT_TERMINAL_SETTLE_MAX_ATTEMPTS = 3;
 
 interface SubagentSessionViewProps {
   subagent: ActiveSubagentSession;
@@ -27,13 +32,19 @@ export function SubagentSessionView({
   const runStreamControllerRef = useRef(runStreamController);
   const previouslyTrackedRunRef = useRef(false);
   const runId = subagent.runId.trim();
-  const runtimeTerminalEventType = useRuntimeStore((state) =>
-    runId ? state.runtimeState.runs[runId]?.terminalEventType ?? null : null,
+  const runtimeRunState = useRuntimeStore((state) =>
+    runId ? state.runtimeState.runs[runId] ?? null : null,
   );
+  const runtimeTerminalEventType = runtimeRunState?.terminalEventType ?? null;
   const displayedSubagent = useMemo(
     () => subagentWithRuntimeTerminalStatus(subagent, runtimeTerminalEventType),
     [runtimeTerminalEventType, subagent],
   );
+  const expectedTerminalToolCallIds = useMemo(
+    () => runtimeToolCallIds(runtimeRunState, subagent.sessionId, runId),
+    [runId, runtimeRunState, subagent.sessionId],
+  );
+  const expectedTerminalToolCallKey = expectedTerminalToolCallIds.join("|");
   const streamStatusKey = [
     displayedSubagent.status,
     displayedSubagent.runStatus,
@@ -42,6 +53,10 @@ export function SubagentSessionView({
   const trackedRunIdsKey = runStreamController.trackedRunIds.join("|");
   const messageQueryKey = useMemo(
     () => subagentMessagesQueryKey(subagent.sessionId, subagent.instanceId),
+    [subagent.instanceId, subagent.sessionId],
+  );
+  const loadSubagentMessages = useCallback(
+    () => listAgentMessages(subagent.sessionId, subagent.instanceId),
     [subagent.instanceId, subagent.sessionId],
   );
   const title =
@@ -76,16 +91,34 @@ export function SubagentSessionView({
   }, [runId, streamStatusKey, subagent.lastEventId, subagent.sessionId]);
 
   useEffect(() => {
+    let cancelled = false;
     const tracked = runId.length > 0 && runStreamController.trackedRunIds.includes(runId);
     if (previouslyTrackedRunRef.current && !tracked) {
-      void queryClient.invalidateQueries({ queryKey: messageQueryKey });
-      void queryClient.invalidateQueries({
-        queryKey: ["sessions", subagent.sessionId, "subagents"],
+      void refreshSubagentTerminalHistory({
+        expectedToolCallIds: expectedTerminalToolCallIds,
+        instanceId: subagent.instanceId,
+        isCancelled: () => cancelled,
+        messageQueryKey,
+        queryClient,
+        sessionId: subagent.sessionId,
+      }).finally(() => {
+        if (cancelled) {
+          return;
+        }
+        void queryClient.invalidateQueries({
+          queryKey: ["sessions", subagent.sessionId, "subagents"],
+        });
+        void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
       });
-      void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
     }
     previouslyTrackedRunRef.current = tracked;
+    return () => {
+      cancelled = true;
+    };
   }, [
+    expectedTerminalToolCallIds,
+    expectedTerminalToolCallKey,
+    subagent.instanceId,
     messageQueryKey,
     queryClient,
     runId,
@@ -119,7 +152,7 @@ export function SubagentSessionView({
           emptyDescription={t("subagentSessionEmpty")}
           fallbackRunId={runId}
           loadErrorDescription={t("subagentSessionLoadError")}
-          loadMessages={() => listAgentMessages(subagent.sessionId, subagent.instanceId)}
+          loadMessages={loadSubagentMessages}
           messageQueryKey={messageQueryKey}
           roundsEnabled={false}
           runtimeRunId={runId}
@@ -128,6 +161,138 @@ export function SubagentSessionView({
       </div>
     </div>
   );
+}
+
+async function refreshSubagentTerminalHistory({
+  expectedToolCallIds,
+  instanceId,
+  isCancelled,
+  messageQueryKey,
+  queryClient,
+  sessionId,
+}: {
+  expectedToolCallIds: string[];
+  instanceId: string;
+  isCancelled: () => boolean;
+  messageQueryKey: readonly unknown[];
+  queryClient: ReturnType<typeof useQueryClient>;
+  sessionId: string;
+}): Promise<void> {
+  if (expectedToolCallIds.length === 0) {
+    void queryClient.invalidateQueries({ queryKey: messageQueryKey });
+    return;
+  }
+
+  try {
+    let latestMessages: TimelineMessage[] = [];
+    for (let attempt = 1; attempt <= SUBAGENT_TERMINAL_SETTLE_MAX_ATTEMPTS; attempt += 1) {
+      latestMessages = await listAgentMessages(sessionId, instanceId);
+      if (isCancelled()) {
+        return;
+      }
+      if (
+        agentMessagesHaveExpectedToolCalls(latestMessages, expectedToolCallIds) ||
+        attempt === SUBAGENT_TERMINAL_SETTLE_MAX_ATTEMPTS
+      ) {
+        queryClient.setQueryData(messageQueryKey, latestMessages);
+        return;
+      }
+      await subagentTerminalSettleDelay();
+      if (isCancelled()) {
+        return;
+      }
+    }
+  } catch {
+    if (!isCancelled()) {
+      void queryClient.invalidateQueries({ queryKey: messageQueryKey });
+    }
+  }
+}
+
+function subagentTerminalSettleDelay(): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, SUBAGENT_TERMINAL_SETTLE_DELAY_MS);
+  });
+}
+
+function runtimeToolCallIds(
+  runState: RuntimeRunState | null,
+  sessionId: string,
+  runId: string,
+): string[] {
+  if (runState === null) {
+    return [];
+  }
+  const toolCallIds = new Set<string>();
+  for (const entry of runState.entries) {
+    if (!runtimeEntryMatchesSubagentRun(entry, sessionId, runId)) {
+      continue;
+    }
+    const payload = jsonObject(entry.payload);
+    const toolCallId = jsonString(payload?.tool_call_id);
+    if (toolCallId !== null) {
+      toolCallIds.add(toolCallId);
+    }
+  }
+  return Array.from(toolCallIds);
+}
+
+function runtimeEntryMatchesSubagentRun(
+  entry: TimelineEntry,
+  sessionId: string,
+  runId: string,
+): boolean {
+  return (
+    entry.kind === "tool_call" &&
+    entry.sessionId === sessionId &&
+    entry.runId === runId
+  );
+}
+
+function agentMessagesHaveExpectedToolCalls(
+  messages: TimelineMessage[],
+  expectedToolCallIds: string[],
+): boolean {
+  const availableToolCallIds = new Set<string>();
+  for (const message of messages) {
+    for (const part of timelineMessageParts(message)) {
+      const toolCallId = persistedToolCallId(part);
+      if (toolCallId !== null) {
+        availableToolCallIds.add(toolCallId);
+      }
+    }
+  }
+  return expectedToolCallIds.every((toolCallId) =>
+    availableToolCallIds.has(toolCallId),
+  );
+}
+
+function timelineMessageParts(message: TimelineMessage): ContentPart[] {
+  return [
+    ...(message.message?.parts ?? []),
+    ...(message.parts ?? []),
+  ];
+}
+
+function persistedToolCallId(part: ContentPart): string | null {
+  const kind = "kind" in part ? part.kind : null;
+  const partKind = "part_kind" in part ? part.part_kind : null;
+  if (kind !== "tool-call" && partKind !== "tool-call") {
+    return null;
+  }
+  return "tool_call_id" in part ? jsonString(part.tool_call_id) : null;
+}
+
+function jsonObject(value: JsonValue): Record<string, JsonValue> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value
+    : null;
+}
+
+function jsonString(value: JsonValue | undefined | null): string | null {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : null;
 }
 
 function subagentWithRuntimeTerminalStatus(

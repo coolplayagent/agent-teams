@@ -176,6 +176,75 @@ describe("SubagentSessionView", () => {
     expect(closedController.startRunStream).not.toHaveBeenCalled();
   });
 
+  it("waits for terminal history to contain streamed tool calls before replacing visible history", async () => {
+    const initialController = createRunStreamController({
+      activeRunIds: ["subagent_run_1"],
+      trackedRunIds: ["subagent_run_1"],
+    });
+    const closedController = createRunStreamController();
+    setRuntimeTerminalEntries([
+      runtimeToolCallEntry({
+        runId: "subagent_run_1",
+        toolCallId: "call-terminal-subagent",
+      }),
+    ], "run_completed");
+    listAgentMessagesMock
+      .mockResolvedValueOnce([
+        {
+          content: "Existing subagent answer",
+          message_id: "subagent-message-existing",
+          role: "assistant",
+          run_id: "subagent_run_1",
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          content: "Incomplete persisted subagent answer",
+          message_id: "subagent-message-incomplete",
+          role: "assistant",
+          run_id: "subagent_run_1",
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          message: {
+            parts: [
+              {
+                args: { command: "date" },
+                kind: "tool-call",
+                tool_call_id: "call-terminal-subagent",
+                tool_name: "shell",
+              },
+            ],
+          },
+          message_id: "subagent-message-tool",
+          role: "assistant",
+          run_id: "subagent_run_1",
+        },
+      ]);
+    const { rerenderWithController } = renderSubagentSessionView({
+      controller: initialController,
+    });
+
+    expect(await screen.findByText("Existing subagent answer")).toBeVisible();
+
+    rerenderWithController(closedController);
+
+    await waitFor(() => expect(listAgentMessagesMock).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("Existing subagent answer")).toBeVisible();
+    expect(
+      screen.queryByText("Incomplete persisted subagent answer"),
+    ).not.toBeInTheDocument();
+
+    await waitFor(() => expect(listAgentMessagesMock).toHaveBeenCalledTimes(3));
+    expect(await screen.findByText("Tool call: shell")).toBeVisible();
+    expect(screen.queryByText("Existing subagent answer")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Incomplete persisted subagent answer"),
+    ).not.toBeInTheDocument();
+    expect(closedController.startRunStream).not.toHaveBeenCalled();
+  });
+
   it.each(["paused", "stopped"])(
     "does not stream %s subagent sessions",
     async (terminalStatus) => {
@@ -345,13 +414,25 @@ function setRuntimeTerminalRun(
   runId: string,
   terminalEventType: RunEventType,
 ): void {
+  setRuntimeTerminalEntries([], terminalEventType, runId);
+}
+
+function setRuntimeTerminalEntries(
+  entries: TimelineEntry[],
+  terminalEventType: RunEventType,
+  runId = entries[0]?.runId ?? "subagent_run_1",
+): void {
+  const lastEventId = entries.reduce(
+    (latest, entry) => Math.max(latest, entry.eventId),
+    43,
+  );
   useRuntimeStore.setState({
     runtimeState: {
       activeRunIds: [],
       runs: {
         [runId]: {
-          entries: [],
-          lastEventId: 43,
+          entries,
+          lastEventId,
           runId,
           seenEventKeys: [],
           status: "closed",
@@ -360,6 +441,31 @@ function setRuntimeTerminalRun(
       },
     },
   });
+}
+
+function runtimeToolCallEntry({
+  runId,
+  toolCallId,
+}: {
+  runId: string;
+  toolCallId: string;
+}): TimelineEntry {
+  return {
+    eventId: 44,
+    id: `${runId}:44:0`,
+    instanceId: "subagent-instance-1",
+    kind: "tool_call",
+    occurredAt: "2026-06-23T10:04:00Z",
+    payload: {
+      args: { command: "date" },
+      tool_call_id: toolCallId,
+      tool_name: "shell",
+    },
+    roleId: "explorer",
+    runId,
+    sessionId: "session-parent",
+    text: "shell",
+  };
 }
 
 function runtimeMessageEntry({

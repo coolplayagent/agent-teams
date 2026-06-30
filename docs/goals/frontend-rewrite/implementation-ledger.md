@@ -7569,3 +7569,25 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent goal/checklist scan, V1 background-task harness mapping, V2 runtime-stream query refresh implementation, focused TS coverage, targeted verification, and partial legacy harness removal completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-06-30 Subagent Terminal History Settle Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, remaining `test_subagent_sessions_ui.py` inventory, and V2 subagent/timeline tests before editing, then selected the terminal settle harness because it directly maps to the stream/replay/recovery requirements.
+- Added V2 `SubagentSessionView` terminal history settling: when a tracked subagent stream leaves the tracked set, the view now preserves the visible history while polling persisted agent messages until the history includes tool calls already observed in runtime state, or until the bounded settle attempts are exhausted.
+- Added cancellation guards so an unmounted or replaced subagent view does not write stale terminal-settle results into the current query cache.
+- Added timeline hydration filtering for persisted tool rows keyed by run id, tool call id, and tool phase, preventing a terminal replay from showing both the persisted tool call and the matching runtime tool call after history catches up.
+- Strengthened `SubagentSessionView.test.tsx` with a terminal-history scenario that first returns incomplete persisted history, keeps the existing history visible, then replaces it only after the persisted history contains the streamed tool call.
+- Removed the migrated V1 source-copy harness `test_terminal_settle_retries_until_history_is_safe` from `tests/integration_tests/frontend/test_subagent_sessions_ui.py`.
+- Kept sidebar/settings item inventory, secondary-surface routing, appearance layout, and built dist unchanged in this slice.
+- This slice improves subagent terminal replay safety. It does not claim complete subagent stream/replay PASS, parent/child subagent status merge parity, running-stream sync parity, gate parity, browser screenshot sign-off, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm test -- SubagentSessionView.test.tsx` passed with 9 tests.
+- `npm test -- MessageTimeline.test.tsx -t "subagent runtime tool|post-checkpoint|late tool|terminal"` passed with 12 tests.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_subagent_sessions_ui.py` passed.
+- `npm run lint` passed.
+- `rg -n "^def test_" tests\integration_tests\frontend\test_subagent_sessions_ui.py` returned 3 remaining Python UI harness scenarios.
+
+### Reviewer
+- Main-agent goal/checklist scan, V1 terminal-settle harness mapping, V2 subagent terminal history settle implementation, timeline hydration de-duplication, focused TS coverage, targeted verification, and partial legacy harness removal completed for this slice. No subsystem PASS or final V2 completion is claimed.

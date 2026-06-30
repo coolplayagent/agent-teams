@@ -131,6 +131,10 @@ export function MessageTimeline({
     () => timelineOutputTextByRunId(persistedRows),
     [persistedRows],
   );
+  const hydratedToolKeysByRunId = useMemo(
+    () => timelineToolKeysByRunId(persistedRows),
+    [persistedRows],
+  );
   const runtimeEntries = useMemo(
     () =>
       Object.values(runtimeState.runs)
@@ -140,9 +144,16 @@ export function MessageTimeline({
             sessionId,
             runtimeRunId,
             hydratedOutputTextByRunId,
+            hydratedToolKeysByRunId,
           ),
         ),
-    [hydratedOutputTextByRunId, runtimeRunId, runtimeState.runs, sessionId],
+    [
+      hydratedOutputTextByRunId,
+      hydratedToolKeysByRunId,
+      runtimeRunId,
+      runtimeState.runs,
+      sessionId,
+    ],
   );
   const runtimeRows = useMemo(
     () => runtimeEntriesToRows(runtimeEntries, runtimeState.runs),
@@ -1521,28 +1532,61 @@ function timelineOutputTextByRunId(rows: TimelineRow[]): Map<string, string> {
   return textByRunId;
 }
 
+function timelineToolKeysByRunId(rows: TimelineRow[]): Map<string, Set<string>> {
+  const toolKeysByRunId = new Map<string, Set<string>>();
+  for (const row of rows) {
+    const runId = row.runId?.trim() ?? "";
+    if (runId.length === 0) {
+      continue;
+    }
+    for (const part of row.parts) {
+      if (part.kind !== "tool" || part.callId.trim().length === 0) {
+        continue;
+      }
+      const toolKeys = toolKeysByRunId.get(runId) ?? new Set<string>();
+      toolKeys.add(timelineToolHydrationKey(part.callId, part.phase));
+      toolKeysByRunId.set(runId, toolKeys);
+    }
+  }
+  return toolKeysByRunId;
+}
+
 function runtimeEntriesAfterHydration(
   runState: RuntimeRunState,
   sessionId: string | null,
   runtimeRunId: string | null,
   hydratedOutputTextByRunId: Map<string, string>,
+  hydratedToolKeysByRunId: Map<string, Set<string>>,
 ): TimelineEntry[] {
   const scopedEntries = runState.entries.filter((entry) =>
     runtimeEntryMatchesScope(entry, sessionId, runtimeRunId),
   );
   const hydratedText = hydratedOutputTextByRunId.get(runState.runId);
-  if (hydratedText === undefined) {
+  const hydratedToolKeys = hydratedToolKeysByRunId.get(runState.runId) ?? new Set<string>();
+  if (hydratedText === undefined && hydratedToolKeys.size === 0) {
     return openRuntimeEntriesWithIdleCursor(runState, scopedEntries);
   }
   if (runState.status === "closed") {
     return scopedEntries.filter((entry) =>
-      !runtimeEntryIsCoveredByHydratedOutput(entry, runState, hydratedText),
+      !runtimeEntryIsCoveredByHydratedOutput(
+        entry,
+        runState,
+        hydratedText ?? "",
+        hydratedToolKeys,
+      ),
     );
   }
   const hydratedEntries: TimelineEntry[] = [];
+  const safeHydratedText = hydratedText ?? "";
   let suppressCoveredText = true;
   for (const entry of scopedEntries) {
-    if (suppressCoveredText && openRuntimeTextCoveredByHydration(entry, hydratedText)) {
+    if (runtimeEntryIsCoveredByHydratedTool(entry, hydratedToolKeys)) {
+      continue;
+    }
+    if (
+      suppressCoveredText &&
+      openRuntimeTextCoveredByHydration(entry, safeHydratedText)
+    ) {
       hydratedEntries.push(runtimeHydrationCursorEntry(entry));
       continue;
     }
@@ -1649,7 +1693,11 @@ function runtimeEntryIsCoveredByHydratedOutput(
   entry: TimelineEntry,
   runState: RuntimeRunState,
   hydratedText: string,
+  hydratedToolKeys: Set<string>,
 ): boolean {
+  if (runtimeEntryIsCoveredByHydratedTool(entry, hydratedToolKeys)) {
+    return true;
+  }
   if (entry.kind === "text_delta" || entry.kind === "output_delta") {
     const entryTexts = runtimeHydrationComparisonTexts(entry);
     if (entryTexts.some((entryText) => hydratedText.includes(entryText))) {
@@ -1663,6 +1711,49 @@ function runtimeEntryIsCoveredByHydratedOutput(
     entry.kind === "run_resumed" ||
     entry.kind === "run_completed"
   );
+}
+
+function runtimeEntryIsCoveredByHydratedTool(
+  entry: TimelineEntry,
+  hydratedToolKeys: Set<string>,
+): boolean {
+  const runtimeToolKey = runtimeToolHydrationKey(entry);
+  return runtimeToolKey !== null && hydratedToolKeys.has(runtimeToolKey);
+}
+
+function runtimeToolHydrationKey(entry: TimelineEntry): string | null {
+  const phase = runtimeToolHydrationPhase(entry.kind);
+  if (phase === null) {
+    return null;
+  }
+  const payload = jsonObject(entry.payload);
+  if (payload === null) {
+    return null;
+  }
+  const callId = objectString(payload, "tool_call_id");
+  return callId.length > 0 ? timelineToolHydrationKey(callId, phase) : null;
+}
+
+function runtimeToolHydrationPhase(
+  kind: TimelineEntry["kind"],
+): TimelineToolPart["phase"] | null {
+  switch (kind) {
+    case "tool_call":
+      return "call";
+    case "tool_result":
+      return "result";
+    case "tool_input_validation_failed":
+      return "validation";
+    default:
+      return null;
+  }
+}
+
+function timelineToolHydrationKey(
+  callId: string,
+  phase: TimelineToolPart["phase"],
+): string {
+  return `${callId}:${phase}`;
 }
 
 function runtimeHydrationComparisonTexts(entry: TimelineEntry): string[] {

@@ -44,6 +44,12 @@ test("opens round rail retry and todo detail", async ({ page }) => {
     });
     await expect(roundButton).toBeVisible();
     await expect(roundButton).toHaveClass(/is-warning/);
+    await expect(roundRail.locator(".at-round-rail-item")).toHaveCount(1);
+    await expect(roundRail.locator(".at-round-rail-dot")).toHaveCount(1);
+    await expect(roundRail.locator(".at-round-rail-title")).toHaveText("Export prompt");
+    await expect(
+      roundRail.locator(".idx, .round-nav-node, .round-nav-item, .round-nav-dot, .round-nav-detail"),
+    ).toHaveCount(0);
     await expect(roundButton.locator(".at-round-rail-dot")).not.toHaveAttribute("title", /.+/);
     await roundButton.hover();
 

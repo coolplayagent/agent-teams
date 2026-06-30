@@ -6,66 +6,6 @@ from pathlib import Path
 import subprocess
 
 
-def test_round_nav_renders_timeline_without_numeric_indices(tmp_path: Path) -> None:
-    payload = _run_round_nav_script(
-        tmp_path=tmp_path,
-        runner_source="""
-const rounds = [
-    {
-        run_id: 'run-1',
-        intent: 'Inspect issue',
-        created_at: '2026-04-25T02:35:38',
-    },
-    {
-        run_id: 'run-2',
-        intent: 'Implement feature',
-        created_at: '2026-04-25T02:36:26',
-        run_status: 'completed',
-    },
-];
-
-const { renderRoundNavigator } = await import('./navigator.mjs');
-renderRoundNavigator(rounds, () => undefined, { activeRunId: 'run-2' });
-
-const nav = document.getElementById('round-nav-float');
-const run2Node = nav.querySelector('.round-nav-node[data-run-id="run-2"]');
-
-console.log(JSON.stringify({
-    hostClass: document.querySelector('.chat-container').className,
-    navParentClass: nav.parentNode?.className || null,
-    nodeCount: nav.querySelectorAll('.round-nav-node').length,
-    activeRunId: nav.querySelector('.round-nav-item.active')?.dataset?.runId || null,
-    hasNumericIndex: nav.querySelector('.idx') !== null,
-    hasTimelineDot: run2Node?.querySelector('.round-nav-dot') !== null,
-    stateTone: run2Node?.dataset?.stateTone || null,
-    dotTitle: run2Node?.querySelector('.round-nav-dot')?.title || null,
-    dotAriaLabel: run2Node?.querySelector('.round-nav-dot')?.getAttribute('aria-label') || null,
-    hasOrdinaryStateMeta: run2Node?.querySelector('.round-nav-meta') !== null,
-    timeText: run2Node?.querySelector('.round-nav-time')?.textContent || null,
-    previewText: run2Node?.querySelector('.txt')?.textContent || null,
-    inlineDetailCount: nav.querySelectorAll('.round-nav-detail').length,
-    activeDetail: run2Node?.querySelector('.round-nav-detail') !== null,
-}));""".strip(),
-    )
-
-    assert payload == {
-        "hostClass": "chat-container rounds-timeline-visible",
-        "navParentClass": "chat-container rounds-timeline-visible",
-        "nodeCount": 2,
-        "activeRunId": "run-2",
-        "hasNumericIndex": False,
-        "hasTimelineDot": True,
-        "stateTone": "success",
-        "dotTitle": "rounds.state.completed",
-        "dotAriaLabel": "rounds.state.completed",
-        "hasOrdinaryStateMeta": False,
-        "timeText": "02:36:26",
-        "previewText": "Implement feature",
-        "inlineDetailCount": 2,
-        "activeDetail": True,
-    }
-
-
 def test_round_nav_patches_todo_without_rebuilding_list(tmp_path: Path) -> None:
     payload = _run_round_nav_script(
         tmp_path=tmp_path,

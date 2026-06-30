@@ -14,6 +14,7 @@ import {
   listAgentMessages,
   listSessionMessages,
   listSessionRounds,
+  listSessionSubagents,
 } from "../api/client";
 import { SubagentSessionView } from "../features/sessions/SubagentSessionView";
 import type { ActiveSubagentSession } from "../features/sessions/SessionsSidebar";
@@ -26,11 +27,13 @@ vi.mock("../api/client", () => ({
   listAgentMessages: vi.fn(),
   listSessionMessages: vi.fn(),
   listSessionRounds: vi.fn(),
+  listSessionSubagents: vi.fn(),
 }));
 
 const listAgentMessagesMock = vi.mocked(listAgentMessages);
 const listSessionMessagesMock = vi.mocked(listSessionMessages);
 const listSessionRoundsMock = vi.mocked(listSessionRounds);
+const listSessionSubagentsMock = vi.mocked(listSessionSubagents);
 
 beforeEach(() => {
   listAgentMessagesMock.mockResolvedValue([]);
@@ -40,6 +43,7 @@ beforeEach(() => {
     items: [],
     next_cursor: null,
   });
+  listSessionSubagentsMock.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -93,6 +97,38 @@ describe("SubagentSessionView", () => {
     await waitFor(() =>
       expect(controller.startRunStream).toHaveBeenCalledWith({
         afterEventId: undefined,
+        foreground: true,
+        runId: "subagent_run_1",
+        sessionId: "session-parent",
+      }),
+    );
+  });
+
+  it("shows a waiting state while a running subagent has no output yet", async () => {
+    const controller = createRunStreamController();
+
+    renderSubagentSessionView({
+      controller,
+      subagent: createSubagent({
+        instanceId: "subagent-instance-1",
+        lastEventId: 41,
+        runId: "subagent_run_1",
+        runPhase: "running",
+        runStatus: "running",
+        status: "running",
+        title: "Explore skills implementation",
+      }),
+    });
+
+    expect(await screen.findByText("Waiting for subagent output...")).toBeVisible();
+    expect(screen.queryByText("No subagent activity")).not.toBeInTheDocument();
+    expect(listAgentMessagesMock).toHaveBeenCalledWith(
+      "session-parent",
+      "subagent-instance-1",
+    );
+    await waitFor(() =>
+      expect(controller.startRunStream).toHaveBeenCalledWith({
+        afterEventId: 41,
         foreground: true,
         runId: "subagent_run_1",
         sessionId: "session-parent",
@@ -382,6 +418,43 @@ describe("SubagentSessionView", () => {
       expect(controller.startRunStream).not.toHaveBeenCalled();
     },
   );
+
+  it("uses the latest subagent record to clear stale running badges", async () => {
+    const controller = createRunStreamController();
+    listSessionSubagentsMock.mockResolvedValue([
+      {
+        instance_id: "subagent-instance-1",
+        role_id: "explorer",
+        run_id: "subagent_run_1",
+        run_phase: "completed",
+        run_status: "completed",
+        session_id: "session-parent",
+        status: "completed",
+        title: "Explorer review",
+      },
+    ]);
+    listAgentMessagesMock.mockResolvedValue([
+      {
+        content: "Final subagent answer",
+        message_id: "subagent-message-final",
+        role: "assistant",
+        run_id: "subagent_run_1",
+      },
+    ]);
+
+    renderSubagentSessionView({
+      controller,
+      subagent: createSubagent({ runStatus: "running", status: "running" }),
+    });
+
+    expect(await screen.findByText("Final subagent answer")).toBeVisible();
+    expect(await screen.findByText("completed")).toBeVisible();
+    expect(screen.queryByText("running")).not.toBeInTheDocument();
+    expect(listSessionSubagentsMock).toHaveBeenCalledWith(
+      "session-parent",
+      true,
+    );
+  });
 });
 
 function renderSubagentSessionView({

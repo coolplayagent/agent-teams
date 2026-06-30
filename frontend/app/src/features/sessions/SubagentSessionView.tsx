@@ -1,9 +1,9 @@
 import { Button, Typography } from "antd";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { listAgentMessages } from "../../api/client";
+import { listAgentMessages, listSessionSubagents } from "../../api/client";
 import type { ContentPart, JsonValue, TimelineMessage } from "../../api/contracts";
 import type { RunEventType } from "../../runtime/events";
 import { useRuntimeStore } from "../../runtime/runtimeStore";
@@ -11,7 +11,10 @@ import type { RuntimeRunState, TimelineEntry } from "../../runtime/reducers";
 import type { RunStreamController } from "../../runtime/useRunStreamController";
 import { useTranslations } from "../../i18n";
 import { MessageTimeline } from "../timeline/MessageTimeline";
-import type { ActiveSubagentSession } from "./SessionsSidebar";
+import {
+  normalizeSessionSubagent,
+  type ActiveSubagentSession,
+} from "./SessionsSidebar";
 
 const SUBAGENT_TERMINAL_SETTLE_DELAY_MS = 80;
 const SUBAGENT_TERMINAL_SETTLE_MAX_ATTEMPTS = 3;
@@ -31,16 +34,35 @@ export function SubagentSessionView({
   const t = useTranslations();
   const runStreamControllerRef = useRef(runStreamController);
   const previouslyTrackedRunRef = useRef(false);
+  const [pollSubagentRecord, setPollSubagentRecord] = useState(
+    () => subagentHasStreamingStatus(subagent),
+  );
   const runId = subagent.runId.trim();
   const instanceId = subagent.instanceId.trim();
   const runtimeRunState = useRuntimeStore((state) =>
     runId ? state.runtimeState.runs[runId] ?? null : null,
   );
   const runtimeTerminalEventType = runtimeRunState?.terminalEventType ?? null;
-  const displayedSubagent = useMemo(
-    () => subagentWithRuntimeTerminalStatus(subagent, runtimeTerminalEventType),
-    [runtimeTerminalEventType, subagent],
+  const subagentRecordsQuery = useQuery({
+    queryKey: ["sessions", subagent.sessionId, "subagents"],
+    queryFn: () => listSessionSubagents(subagent.sessionId, true),
+    enabled: subagent.sessionId.trim().length > 0,
+    refetchInterval: pollSubagentRecord ? 2000 : false,
+    staleTime: 1000,
+  });
+  const latestSubagentRecord = useMemo(
+    () => matchingSubagentFromRecords(subagentRecordsQuery.data, subagent),
+    [subagent, subagentRecordsQuery.data],
   );
+  const recordAwareSubagent = latestSubagentRecord ?? subagent;
+  const displayedSubagent = useMemo(
+    () => subagentWithRuntimeTerminalStatus(
+      recordAwareSubagent,
+      runtimeTerminalEventType,
+    ),
+    [recordAwareSubagent, runtimeTerminalEventType],
+  );
+  const subagentWaitingForOutput = subagentHasStreamingStatus(displayedSubagent);
   const expectedTerminalToolCallIds = useMemo(
     () => runtimeToolCallIds(runtimeRunState, subagent.sessionId, runId),
     [runId, runtimeRunState, subagent.sessionId],
@@ -79,6 +101,26 @@ export function SubagentSessionView({
   useEffect(() => {
     runStreamControllerRef.current = runStreamController;
   }, [runStreamController]);
+
+  useEffect(() => {
+    setPollSubagentRecord(subagentHasStreamingStatus(subagent));
+  }, [
+    subagent.instanceId,
+    subagent.runId,
+    subagent.runPhase,
+    subagent.runStatus,
+    subagent.sessionId,
+    subagent.status,
+  ]);
+
+  useEffect(() => {
+    if (
+      latestSubagentRecord !== null &&
+      !subagentHasStreamingStatus(latestSubagentRecord)
+    ) {
+      setPollSubagentRecord(false);
+    }
+  }, [latestSubagentRecord]);
 
   useEffect(() => {
     let startedRunStream = false;
@@ -165,6 +207,11 @@ export function SubagentSessionView({
         {canRenderTimeline ? (
           <MessageTimeline
             emptyDescription={t("subagentSessionEmpty")}
+            emptyFallback={
+              subagentWaitingForOutput ? (
+                <SubagentPendingState label={t("subagentSessionWaiting")} />
+              ) : undefined
+            }
             fallbackRunId={runId}
             loadErrorDescription={t("subagentSessionLoadError")}
             loadMessages={loadSubagentMessages}
@@ -175,12 +222,18 @@ export function SubagentSessionView({
             variant="subagent-panel"
           />
         ) : (
-          <div className="at-subagent-session-pending" role="status">
-            <span aria-hidden="true" className="at-subagent-session-pending-dot" />
-            <span>{t("subagentSessionStarting")}</span>
-          </div>
+          <SubagentPendingState label={t("subagentSessionStarting")} />
         )}
       </div>
+    </div>
+  );
+}
+
+function SubagentPendingState({ label }: { label: string }) {
+  return (
+    <div className="at-subagent-session-pending" role="status">
+      <span aria-hidden="true" className="at-subagent-session-pending-dot" />
+      <span>{label}</span>
     </div>
   );
 }
@@ -317,6 +370,39 @@ function jsonString(value: JsonValue | undefined | null): string | null {
     : null;
 }
 
+function matchingSubagentFromRecords(
+  records: Awaited<ReturnType<typeof listSessionSubagents>> | undefined,
+  subagent: ActiveSubagentSession,
+): ActiveSubagentSession | null {
+  const normalized = (records ?? [])
+    .map((record) => normalizeSessionSubagent(record, subagent.sessionId))
+    .filter((record): record is ActiveSubagentSession => record !== null);
+  const runId = subagent.runId.trim();
+  const instanceId = subagent.instanceId.trim();
+  const roleId = subagent.roleId.trim().toLowerCase();
+  for (const record of normalized) {
+    if (runId.length > 0 && record.runId === runId) {
+      return record;
+    }
+    if (instanceId.length > 0 && record.instanceId === instanceId) {
+      return record;
+    }
+  }
+  if (normalized.length === 1) {
+    const onlyRecord = normalized[0];
+    if (
+      onlyRecord !== undefined &&
+      (
+        roleId.length === 0 ||
+        onlyRecord.roleId.trim().toLowerCase() === roleId
+      )
+    ) {
+      return onlyRecord;
+    }
+  }
+  return null;
+}
+
 function subagentWithRuntimeTerminalStatus(
   subagent: ActiveSubagentSession,
   terminalEventType: RunEventType | null,
@@ -389,6 +475,14 @@ function isTerminalRunStatus(status: string | undefined): boolean {
     default:
       return false;
   }
+}
+
+function subagentHasStreamingStatus(subagent: ActiveSubagentSession): boolean {
+  return [
+    subagent.runPhase,
+    subagent.runStatus,
+    subagent.status,
+  ].some(isStreamingRunStatus);
 }
 
 function subagentBadgeClassName(subagent: ActiveSubagentSession): string {

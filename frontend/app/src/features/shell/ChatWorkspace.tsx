@@ -90,6 +90,7 @@ export function ChatWorkspace({
     >
       <MessageTimeline
         onSubagentOpen={onSubagentOpen}
+        primaryRoleId={primaryRoleId}
         sessionId={sessionId}
         workspaceId={workspaceId ?? null}
       />

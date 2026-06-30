@@ -3324,6 +3324,208 @@ describe("MessageTimeline", () => {
     expect(toolRow).toHaveAttribute("data-instance-id", "inst-subagent");
   });
 
+  it("keeps live subagent stream rows out of the main session timeline", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "tool_call",
+        instance_id: "main-instance",
+        role_id: "MainAgent",
+        run_id: "parent_run_1",
+        trace_id: "parent_run_1",
+        payload_json: JSON.stringify({
+          args: {
+            description: "Explore skill implementation",
+            prompt: "Read the project and report back.",
+            role_id: "Explorer",
+          },
+          tool_call_id: "call-spawn-explorer",
+          tool_name: "spawn_subagent",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "thinking_started",
+        instance_id: "subagent-instance-1",
+        role_id: "Explorer",
+        run_id: "subagent_run_1",
+        trace_id: "subagent_run_1",
+        payload_json: JSON.stringify({ part_index: 0 }),
+      }),
+      relayRunEvent({
+        event_id: 3,
+        event_type: "thinking_delta",
+        instance_id: "subagent-instance-1",
+        role_id: "Explorer",
+        run_id: "subagent_run_1",
+        trace_id: "subagent_run_1",
+        payload_json: JSON.stringify({
+          part_index: 0,
+          text: "child thought should stay in panel",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 4,
+        event_type: "text_delta",
+        instance_id: "subagent-instance-1",
+        role_id: "Explorer",
+        run_id: "subagent_run_1",
+        trace_id: "subagent_run_1",
+        payload_json: JSON.stringify({
+          text: "Now let me read all the core source files concurrently.",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 5,
+        event_type: "tool_call",
+        instance_id: "subagent-instance-1",
+        role_id: "Explorer",
+        run_id: "subagent_run_1",
+        trace_id: "subagent_run_1",
+        payload_json: JSON.stringify({
+          args: { path: "src/relay_teams/skills/__init__.py" },
+          tool_call_id: "call-subagent-read",
+          tool_name: "read",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 6,
+        event_type: "text_delta",
+        instance_id: "subagent-instance-1",
+        role_id: "Explorer",
+        run_id: "parent_run_1",
+        trace_id: "parent_run_1",
+        payload_json: JSON.stringify({
+          text: "child output with parent run id should stay out",
+        }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline("session-1", {
+      primaryRoleId: "MainAgent",
+    });
+
+    expect(await screen.findByText("Starting subagent")).toBeVisible();
+    expect(
+      screen.queryByText("child thought should stay in panel"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Now let me read all the core source files concurrently."),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("child output with parent run id should stay out"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Tool call: read")).not.toBeInTheDocument();
+    expect(container.querySelector('[data-role-id="Explorer"]')).toBeNull();
+  });
+
+  it("renders selected subagent stream without repeated role labels", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "thinking_started",
+        instance_id: "subagent-instance-1",
+        role_id: "Explorer",
+        run_id: "subagent_run_1",
+        trace_id: "subagent_run_1",
+        payload_json: JSON.stringify({ part_index: 0 }),
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "thinking_delta",
+        instance_id: "subagent-instance-1",
+        role_id: "Explorer",
+        run_id: "subagent_run_1",
+        trace_id: "subagent_run_1",
+        payload_json: JSON.stringify({
+          part_index: 0,
+          text: "child thought should stay in panel",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 3,
+        event_type: "text_delta",
+        instance_id: "subagent-instance-1",
+        role_id: "Explorer",
+        run_id: "subagent_run_1",
+        trace_id: "subagent_run_1",
+        payload_json: JSON.stringify({
+          text: "Now let me read all the core source files concurrently.",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 4,
+        event_type: "tool_call",
+        instance_id: "subagent-instance-1",
+        role_id: "Explorer",
+        run_id: "subagent_run_1",
+        trace_id: "subagent_run_1",
+        payload_json: JSON.stringify({
+          args: { path: "src/relay_teams/skills/__init__.py" },
+          tool_call_id: "call-subagent-read",
+          tool_name: "read",
+        }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline("session-1", {
+      runtimeRunId: "subagent_run_1",
+      variant: "subagent-panel",
+    });
+
+    expect(
+      await screen.findByText("Now let me read all the core source files concurrently."),
+    ).toBeVisible();
+    expect(screen.getByText("child thought should stay in panel")).toBeVisible();
+    expect(await screen.findByText("Tool call: read")).toBeVisible();
+    expect(container.querySelector(".at-message-role")).toBeNull();
+    expect(screen.queryByText("Explorer")).not.toBeInTheDocument();
+  });
+
+  it("does not leave a streaming cursor on a completed subagent stream", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "text_delta",
+        instance_id: "subagent-instance-1",
+        role_id: "Explorer",
+        run_id: "subagent_run_done",
+        trace_id: "subagent_run_done",
+        payload_json: JSON.stringify({ text: "Subagent final answer" }),
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "run_completed",
+        instance_id: "subagent-instance-1",
+        role_id: "Explorer",
+        run_id: "subagent_run_done",
+        trace_id: "subagent_run_done",
+        payload_json: JSON.stringify({ status: "completed" }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "Subagent final answer",
+        instance_id: "subagent-instance-1",
+        message_id: "subagent-final-answer",
+        role_id: "Explorer",
+        run_id: "subagent_run_done",
+      },
+    ]);
+
+    const { container } = renderTimeline("session-1", {
+      runtimeRunId: "subagent_run_done",
+      variant: "subagent-panel",
+    });
+
+    expect(await screen.findByText("Subagent final answer")).toBeVisible();
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
+    expect(container.querySelectorAll(".is-streaming")).toHaveLength(0);
+    expect(container.querySelectorAll('[data-streaming="true"]')).toHaveLength(0);
+  });
+
   it("renders MainAgent tool calls before role metadata hydration", async () => {
     setRuntimeStateFromEvents([
       relayRunEvent({
@@ -6680,7 +6882,9 @@ describe("MessageTimeline", () => {
 
 interface RenderTimelineOptions {
   onSubagentOpen?: Parameters<typeof MessageTimeline>[0]["onSubagentOpen"];
+  primaryRoleId?: string | null;
   runtimeRunId?: string | null;
+  variant?: Parameters<typeof MessageTimeline>[0]["variant"];
   workspaceId?: string | null;
 }
 
@@ -6702,8 +6906,10 @@ function renderTimeline(
         <AntApp>
           <MessageTimeline
             onSubagentOpen={options.onSubagentOpen}
+            primaryRoleId={options.primaryRoleId ?? null}
             sessionId={sessionId}
             runtimeRunId={options.runtimeRunId ?? null}
+            variant={options.variant ?? "session"}
             workspaceId={options.workspaceId ?? null}
           />
         </AntApp>

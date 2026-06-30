@@ -7819,3 +7819,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent goal/ledger scan, V1 run-indicator harness mapping, V2 production selected-session indicator fix, focused/full SessionsSidebar verification, frontend typecheck/build, and partial Python UI harness retirement completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-06-30 Large Sidebar Group DOM Cap Harness Migration
+
+### Scope
+- Re-checked the active frontend rewrite goal, product parity checklist, quality gates, current worktree status, and remaining frontend Python UI harness inventory before selecting this slice.
+- Selected the V1 `test_projects_sidebar_renders_2000_sessions_without_full_dom_expansion` behavior because it protects sidebar density, local scroll performance, and the fixed-frame shell direction called out by the current V2 frontend goal.
+- Migrated the 2000-session workspace behavior into V2 `SessionsSidebar.test.tsx`, covering the real React sidebar component instead of the old source-copy harness.
+- Added coverage proving a 2000-session workspace initially renders only 10 `.at-session-item` rows, keeps the next item out of the DOM, shows the `10/2000` load-more affordance, and fetches sidebar sessions once.
+- Removed the matching old V1 source-copy Python harness function from `tests/integration_tests/frontend/test_projects_sidebar_ui.py`.
+- Kept production UI code, sidebar/settings item inventory, secondary-page routing, appearance settings layout, visual framework CSS, stream controller behavior, replay/recovery code, and build output unchanged in this slice.
+- This slice retires one Projects Sidebar Python UI harness and tightens one sidebar performance/density parity boundary. It does not claim complete Sessions Sidebar PASS, complete visual parity, complete stream/replay PASS, interrupted-stream recovery PASS, broader Python UI harness migration PASS, reviewer sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm test -- SessionsSidebar.test.tsx -t "2000-session"` passed with 1 focused test.
+- `npm test -- SessionsSidebar.test.tsx` passed with 32 tests.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_projects_sidebar_ui.py` passed.
+- `rg -n "test_projects_sidebar_renders_2000_sessions_without_full_dom_expansion|renders_2000_sessions_without_full_dom_expansion|2000-session workspace" tests\integration_tests\frontend frontend\app\src\test` returned only the new V2 TS test name.
+
+### Reviewer
+- Main-agent goal/checklist scan, V1 2000-session DOM-cap harness mapping, V2 SessionsSidebar coverage, focused/full SessionsSidebar verification, and partial Python UI harness retirement completed for this slice. No subsystem PASS or final V2 completion is claimed.

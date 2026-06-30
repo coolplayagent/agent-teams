@@ -1507,6 +1507,37 @@ describe("SessionsSidebar", () => {
     expect(screen.getByText("Hidden session 2")).toBeVisible();
   });
 
+  it("keeps a 2000-session workspace capped instead of expanding the full DOM", async () => {
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+    ]);
+    listSidebarSessionsMock.mockResolvedValue(
+      Array.from({ length: 2000 }, (_, index) => ({
+        session_id: `session-${String(index).padStart(4, "0")}`,
+        title: `Session title ${index}`,
+        updated_at: new Date(Date.UTC(2026, 5, 23, 10, 0, 2000 - index))
+          .toISOString(),
+        workspace_id: "workspace-1",
+      })),
+    );
+
+    renderSidebar();
+
+    expect(await screen.findByText("Session title 0")).toBeVisible();
+    expect(screen.getByText("Session title 9")).toBeVisible();
+    expect(screen.queryByText("Session title 10")).not.toBeInTheDocument();
+    expect(document.querySelectorAll(".at-session-item")).toHaveLength(10);
+    expect(screen.getByText("10/2000")).toBeVisible();
+    expect(screen.getByRole("button", {
+      name: "Show more sessions in Agent Teams",
+    })).toBeVisible();
+    expect(listSidebarSessionsMock).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps filtered workspace results uncapped", async () => {
     listWorkspacesMock.mockResolvedValue([
       {

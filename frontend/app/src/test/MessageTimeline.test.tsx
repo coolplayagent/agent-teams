@@ -1433,6 +1433,9 @@ describe("MessageTimeline", () => {
     fireEvent.click(summary as Element);
 
     expect(details).toHaveAttribute("open");
+    expect(summary).not.toHaveTextContent(
+      "Create a migration plan for the frontend rewrite.",
+    );
   });
 
   it("collapses one-line round prompts before the marker title becomes unreadable", async () => {
@@ -1468,8 +1471,10 @@ describe("MessageTimeline", () => {
     expect(details).not.toHaveAttribute("open");
     expect(details?.querySelector(".at-round-marker-intent-action"))
       .toHaveTextContent("Expand");
-    fireEvent.click(details?.querySelector(".at-round-marker-intent-summary") as Element);
+    const summary = details?.querySelector(".at-round-marker-intent-summary");
+    fireEvent.click(summary as Element);
     expect(details).toHaveAttribute("open");
+    expect(summary).not.toHaveTextContent(prompt);
     expect(details?.querySelector(".at-round-marker-intent-body")).toHaveTextContent(prompt);
   });
 
@@ -3587,12 +3592,15 @@ describe("MessageTimeline", () => {
     ]);
     listSessionMessagesMock.mockResolvedValue([]);
 
-    renderTimeline("session-1", {
+    const { container } = renderTimeline("session-1", {
       onSubagentOpen,
       runtimeRunId: "run-main-tool",
     });
 
     fireEvent.click(await screen.findByText("Subagent started"));
+    expect(toolPreviewTexts(container)).toEqual([
+      "Explore skills implementation",
+    ]);
 
     expect(onSubagentOpen).toHaveBeenCalledWith(expect.objectContaining({
       instanceId: "subagent-instance-1",

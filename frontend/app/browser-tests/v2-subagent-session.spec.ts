@@ -28,6 +28,8 @@ const SCREENSHOT_FOLDER = "frontend-v2-ts-subagent-session";
 
 interface SubagentSessionMockState {
   completed: boolean;
+  delayFinalMessages: boolean;
+  releaseFinalMessages: Array<() => void>;
   messageRequestCount: number;
 }
 
@@ -50,6 +52,8 @@ test("opens a nested subagent session and refreshes history after terminal strea
   const appServer = await serveFrontendDist();
   const state: SubagentSessionMockState = {
     completed: false,
+    delayFinalMessages: false,
+    releaseFinalMessages: [],
     messageRequestCount: 0,
   };
   const unhandledApiRoutes: string[] = [];
@@ -68,13 +72,7 @@ test("opens a nested subagent session and refreshes history after terminal strea
       .toBeVisible();
     await expect(page.getByText("Parent session output")).toBeVisible();
 
-    await page.getByRole("button", { name: "Toggle subagent sessions" }).click();
-    await expect(page.getByRole("button", {
-      name: "Open subagent session Explorer review",
-    })).toBeVisible();
-    await page.getByRole("button", {
-      name: "Open subagent session Explorer review",
-    }).click();
+    await openSubagentPanelFromToolCard(page, "Explorer review");
 
     await expect(page.getByRole("heading", { name: "Explorer review" }))
       .toBeVisible();
@@ -84,7 +82,7 @@ test("opens a nested subagent session and refreshes history after terminal strea
     await waitForEventSourceUrl(
       page,
       new RegExp(
-        `/api/ag-ui/runs/${SUBAGENT_RUN_ID}/events\\?after_event_id=41$`,
+        `/api/sessions/${SESSION_ID}/subagents/events\\?after_event_id=0$`,
       ),
     );
     await waitForEventSourceOpenCount(page, 1);
@@ -98,6 +96,7 @@ test("opens a nested subagent session and refreshes history after terminal strea
     await expect(page.getByText("Live browser subagent output.")).toBeVisible();
 
     state.completed = true;
+    state.delayFinalMessages = true;
     await dispatchSubagentRunEvent(page, {
       eventId: 43,
       payload: { status: "completed" },
@@ -105,8 +104,13 @@ test("opens a nested subagent session and refreshes history after terminal strea
       type: "run.completed",
     });
     await waitForEventSourceOpenCount(page, 0);
-    await expect(page.locator(".at-subagent-session-badge")).toHaveText("completed");
     await expect.poll(() => state.messageRequestCount).toBeGreaterThanOrEqual(2);
+    await expect(page.getByText("Live browser subagent output.")).toBeVisible();
+    await expect(page.getByText("No subagent activity")).toHaveCount(0);
+    await expect(page.locator(".at-subagent-session-view .ant-skeleton")).toHaveCount(0);
+
+    releaseFinalSubagentMessages(state);
+    await expect(page.locator(".at-subagent-session-badge")).toHaveText("completed");
     await expect(page.getByText("Final persisted subagent answer")).toBeVisible();
 
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
@@ -125,6 +129,7 @@ test("opens a nested subagent session and refreshes history after terminal strea
     await expectComposerControlsDoNotOverlap(page);
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
   } finally {
+    releaseFinalSubagentMessages(state);
     await appServer.close();
   }
 });
@@ -202,16 +207,8 @@ test("keeps send, session switch, and subagent view responsive under sidebar loa
     });
     await expect(page.getByRole("button", { name: "Stop" })).toBeHidden();
 
-    const subagentToggle = page.getByRole("button", {
-      name: "Toggle subagent sessions",
-    });
-    await subagentToggle.click();
-    const childButton = page.getByRole("button", {
-      name: "Open subagent session Pressure review",
-    });
-    await expect(childButton).toBeVisible();
     const childStarted = Date.now();
-    await childButton.click();
+    await openSubagentPanelFromToolCard(page, "Pressure review");
     await expect(page.getByRole("heading", { name: "Pressure review" }))
       .toBeVisible({ timeout: 2500 });
     expect(Date.now() - childStarted).toBeLessThan(2500);
@@ -226,7 +223,7 @@ test("keeps send, session switch, and subagent view responsive under sidebar loa
     await expect(page.getByRole("heading", { name: "Pressure review" }))
       .toHaveCount(0);
 
-    await childButton.click();
+    await openSubagentPanelFromToolCard(page, "Pressure review");
     await expect(page.getByRole("heading", { name: "Pressure review" }))
       .toBeVisible();
     await page.getByRole("button", { name: "Main session" }).click();
@@ -279,33 +276,30 @@ test("keeps a subagent session selected while parent hydration races", async ({
     await waitForV2Shell(page);
     await expect(page.getByText("Control session output")).toBeVisible();
 
-    await page.getByRole("button", { name: "Toggle subagent sessions" }).click();
-    const subagentButton = page.getByRole("button", {
-      name: "Open subagent session Race review",
-    });
-    await expect(subagentButton).toBeVisible();
+    await page.getByRole("button", { name: "TS race parent" }).click();
+    await expect(page.getByText("Race parent output")).toBeVisible();
+    await openSubagentPanelFromToolCard(page, "Race review");
+    await expect(page.getByRole("heading", { name: "Race review" })).toBeVisible();
+    await page.getByRole("button", { name: "TS control session" }).click();
+    await expect(page.getByText("Control session output")).toBeVisible();
 
     state.delayParentRequests = true;
     await page.getByRole("button", { name: "TS race parent" }).click();
     await expect.poll(() => state.delayedParentRequestCount).toBeGreaterThan(0);
-    await subagentButton.click();
-
-    await expect(page.getByRole("heading", { name: "Race review" })).toBeVisible();
-    await expect(page.getByText("Race subagent checkpoint")).toBeVisible();
-    await expect(page.getByText("Race parent output")).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Race review" })).toHaveCount(0);
+    await expect(page.getByText("Race subagent checkpoint")).toHaveCount(0);
 
     releaseParentRequests(state);
+    await expect(page.getByText("Race parent output")).toBeVisible();
+    await openSubagentPanelFromToolCard(page, "Race review");
     await expect(page.getByRole("heading", { name: "Race review" })).toBeVisible();
     await expect(page.getByText("Race subagent checkpoint")).toBeVisible();
-    await expect(page.getByText("Race parent output")).toHaveCount(0);
-
-    await page.getByRole("button", { name: "Main session" }).click();
-    await expect(page.getByText("Race parent output")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Race review" })).toHaveCount(0);
 
     await page.getByRole("button", { name: "TS control session" }).click();
     await expect(page.getByText("Control session output")).toBeVisible();
-    await subagentButton.click();
+    await page.getByRole("button", { name: "TS race parent" }).click();
+    await expect(page.getByText("Race parent output")).toBeVisible();
+    await openSubagentPanelFromToolCard(page, "Race review");
     await expect(page.getByRole("heading", { name: "Race review" })).toBeVisible();
     await expect(page.getByText("Race subagent checkpoint")).toBeVisible();
 
@@ -360,10 +354,27 @@ async function handleSubagentSessionApi(
     `/sessions/${SESSION_ID}/agents/${SUBAGENT_INSTANCE_ID}/messages`
   ) {
     state.messageRequestCount += 1;
+    if (state.completed && state.delayFinalMessages) {
+      await new Promise<void>((resolve) => {
+        state.releaseFinalMessages.push(resolve);
+      });
+    }
     await context.fulfillJson(subagentMessages(state));
     return true;
   }
   return false;
+}
+
+async function openSubagentPanelFromToolCard(
+  page: Page,
+  title: string,
+): Promise<void> {
+  const card = page
+    .locator('.at-message-tool.is-openable-subagent[data-tool-name="spawn_subagent"]')
+    .filter({ hasText: title })
+    .first();
+  await expect(card).toBeVisible();
+  await card.locator(".at-message-tool-summary").click();
 }
 
 async function handleSubagentRaceApi(
@@ -483,6 +494,10 @@ async function handleSubagentPressureApi(
     await context.fulfillJson([]);
     return true;
   }
+  if (context.path === "/automation/delivery-bindings") {
+    await context.fulfillJson([]);
+    return true;
+  }
   if (context.path === `/sessions/${SESSION_ID}/subagents`) {
     state.subagentListRequestPaths.push(`${context.path}${context.url.search}`);
     await context.fulfillJson([pressureSubagentRecord()]);
@@ -553,6 +568,14 @@ async function delayParentRequestIfNeeded(
 function releaseParentRequests(state: SubagentRaceMockState): void {
   state.delayParentRequests = false;
   const releases = state.releaseParentRequests.splice(0);
+  for (const release of releases) {
+    release();
+  }
+}
+
+function releaseFinalSubagentMessages(state: SubagentSessionMockState): void {
+  state.delayFinalMessages = false;
+  const releases = state.releaseFinalMessages.splice(0);
   for (const release of releases) {
     release();
   }
@@ -734,6 +757,16 @@ function pressureSessionMessages(
       role_id: "MainAgent",
       run_id: `run-${String(session.session_id)}`,
     },
+    ...(session.session_id === SESSION_ID
+      ? [
+        subagentToolMessage({
+          createdAt: "2026-06-26T11:00:02Z",
+          messageId: "pressure-subagent-tool",
+          roleId: "reviewer",
+          title: "Pressure review",
+        }),
+      ]
+      : []),
   ];
 }
 
@@ -746,6 +779,12 @@ function parentSessionMessages(): Record<string, unknown>[] {
       role_id: "MainAgent",
       run_id: "run-parent",
     },
+    subagentToolMessage({
+      createdAt: "2026-06-26T09:00:02Z",
+      messageId: "parent-subagent-tool",
+      roleId: "explorer",
+      title: "Explorer review",
+    }),
   ];
 }
 
@@ -758,6 +797,12 @@ function raceParentMessages(): Record<string, unknown>[] {
       role_id: "MainAgent",
       run_id: "run-race-parent",
     },
+    subagentToolMessage({
+      createdAt: "2026-06-26T10:00:02Z",
+      messageId: "race-subagent-tool",
+      roleId: "reviewer",
+      title: "Race review",
+    }),
   ];
 }
 
@@ -771,6 +816,41 @@ function controlSessionMessages(): Record<string, unknown>[] {
       run_id: "run-control",
     },
   ];
+}
+
+function subagentToolMessage({
+  createdAt,
+  messageId,
+  roleId,
+  title,
+}: {
+  createdAt: string;
+  messageId: string;
+  roleId: string;
+  title: string;
+}): Record<string, unknown> {
+  return {
+    created_at: createdAt,
+    message: {
+      parts: [
+        {
+          content: {
+            subagent_instance_id: SUBAGENT_INSTANCE_ID,
+            subagent_role_id: roleId,
+            subagent_run_id: SUBAGENT_RUN_ID,
+            title,
+          },
+          kind: "tool-return",
+          outcome: "completed",
+          tool_call_id: `call-${messageId}`,
+          tool_name: "spawn_subagent",
+        },
+      ],
+    },
+    message_id: messageId,
+    role_id: "MainAgent",
+    run_id: `run-${messageId}`,
+  };
 }
 
 function subagentRecord(state: SubagentSessionMockState): Record<string, unknown> {

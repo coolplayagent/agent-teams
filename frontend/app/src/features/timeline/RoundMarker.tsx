@@ -1,3 +1,5 @@
+import { useState, type MouseEvent } from "react";
+
 import type { SessionRound } from "../../api/contracts";
 import type { Translate, TranslationKey } from "../../i18n";
 import {
@@ -14,6 +16,7 @@ interface RoundMarkerProps {
 }
 
 export function RoundMarker({ index, round, t }: RoundMarkerProps) {
+  const [promptOpen, setPromptOpen] = useState(false);
   const summary = roundSummary(round, index);
   const metaItems = [
     summary.timeLabel,
@@ -38,6 +41,12 @@ export function RoundMarker({ index, round, t }: RoundMarkerProps) {
     summary.statusLabel ?? "",
     summary.durationLabel !== null ? `${summary.durationLabel}` : "",
   ].filter(Boolean);
+  const handlePromptSummaryClick = (event: MouseEvent<HTMLElement>) => {
+    const details = event.currentTarget.parentElement;
+    if (details instanceof HTMLDetailsElement) {
+      setPromptOpen(!details.open);
+    }
+  };
 
   return (
     <div className="at-round-marker-content">
@@ -47,9 +56,17 @@ export function RoundMarker({ index, round, t }: RoundMarkerProps) {
         ))}
       </div>
       {summary.promptCollapsible ? (
-        <details className="at-round-marker-intent">
-          <summary className="at-round-marker-intent-summary">
-            <span className="at-round-marker-title">{summary.title}</span>
+        <details
+          className="at-round-marker-intent"
+          onToggle={(event) => setPromptOpen(event.currentTarget.open)}
+        >
+          <summary
+            className="at-round-marker-intent-summary"
+            onClick={handlePromptSummaryClick}
+          >
+            {promptOpen ? null : (
+              <span className="at-round-marker-title">{summary.title}</span>
+            )}
             <span className="at-round-marker-intent-action" aria-hidden="true">
               <span className="at-round-marker-intent-action-expand">
                 {t("timelineRoundExpand")}

@@ -41,10 +41,10 @@ session-switch recovery where applicable.
 | SESS-01 | Workspace/project selector | project list, active project, reload, project open/close, path display | `WorkspaceProjectView.tsx`, `SessionsSidebar.tsx` | V1/V2 screenshots and click flow | Not checked |  |
 | SESS-02 | Session list | search, create, refresh, active highlight, unread/background run indicator, delete/rename if present | `SessionsSidebar.tsx` | Browser flow and component tests | Not checked |  |
 | SESS-03 | Session switch during active run | switch away, stream continues or is recoverable, switch back restores exact content | `ChatWorkspace.tsx`, `useRunStreamController.ts`, `MessageTimeline.tsx` | Timed stream sampling before/after switch, no duplicate/missing/order changes | In progress | Must compare row content, not just non-empty DOM. |
-| MSG-01 | Historical replay | round marker, prompt, processed work, final answer, copy placement | `MessageTimeline.tsx`, `RoundMarker.tsx` | Complex history replay screenshots and DOM row snapshots | In progress | Current duplicate prompt and odd dividers are known gaps. |
+| MSG-01 | Historical replay | round marker, prompt, processed work, final answer, copy placement | `MessageTimeline.tsx`, `RoundMarker.tsx` | Complex history replay screenshots and DOM row snapshots | In progress | Expanded round markers no longer repeat the full prompt in summary/body; still needs complex hard-refresh replay comparison and divider/copy placement review. |
 | MSG-02 | Live text streaming | empty start, first token, long output, terminal close | `reducers.ts`, `streamClient.ts`, `MessageTimeline.tsx` | Timeline samples at 250ms intervals and final replay comparison | In progress | Current blank cursor/`passed` row gap. |
 | MSG-03 | Thinking/reasoning | start, delta, finish, terminal folded under processed group | `MessageTimeline.tsx` | Live and replay screenshots with opened/closed processed group | In progress | Must avoid duplicate thinking blocks. |
-| MSG-04 | Tool call lifecycle | pending call shows running, result fills same card, validation failure/error, compact collapsed rows | `MessageTimeline.tsx` | Tool-heavy session replay and live tool run; component tests | In progress | Tool call/result must not split into two unrelated cards. |
+| MSG-04 | Tool call lifecycle | pending call shows running, result fills same card, validation failure/error, compact collapsed rows | `MessageTimeline.tsx` | Tool-heavy session replay and live tool run; component tests | In progress | Subagent tool-card previews now use title/description instead of raw JSON fragments; full tool call/result lifecycle is still not Verified. |
 | MSG-05 | Processed group | terminal work folds under one `已处理` affordance, no decorative divider abuse | `MessageTimeline.tsx`, CSS | Screenshot, click expand/collapse, virtual row measurement test | In progress | Current styling is being corrected. |
 | MSG-06 | Markdown/media/code | tables, links, code highlight, image previews, long outputs | `MarkdownMessage.tsx`, timeline render parts | Component tests and screenshot fixture | Not checked |  |
 | MSG-07 | Scroll behavior | bottom follow, scroll anchor during hydration, virtualizer row measurement | `MessageTimeline.tsx` | Component tests plus browser scroll recording | Not checked |  |
@@ -76,7 +76,7 @@ session-switch recovery where applicable.
 | PAGE-05 | Connectors | connector list, runtime tools, enable/status/detail flows | `ConnectorsView.tsx`, `RuntimeToolsSection.tsx` | V1/V2 screenshot and tests | Not checked |  |
 | PAGE-06 | Memory | memory facts, sessions, edit/delete if V1 has it | `MemoryView.tsx` | V1/V2 screenshot and tests | Not checked |  |
 | PAGE-07 | Observability | metrics, events, trends, lineage panels | `ObservabilityPanel.tsx`, `ObservabilityTrends.tsx`, `SpecLineagePanel.tsx` | V1/V2 screenshot and tests | Not checked |  |
-| SUB-01 | Subagent rail/session | subagent list, active/stopped/resumed, parent-child relation | `SubagentSessionView.tsx`, sidebar subagent UI | Complex orchestration history replay and live stream | Not checked |  |
+| SUB-01 | Subagent rail/session | subagent list, active/stopped/resumed, parent-child relation | `SubagentSessionView.tsx`, sidebar subagent UI | Complex orchestration history replay and live stream | In progress | Browser coverage now opens subagents from the parent tool card, verifies session-scoped subagent streaming, delayed terminal history refill, send/switch pressure, and parent hydration race. Resizable panel, live real-backend run, and broader orchestration replay still remain. |
 | DESK-01 | Desktop packaging | Electron shell, backend process lifecycle, app refresh, deep links if present | desktop target | Desktop run evidence | Not checked |  |
 | CLEAN-01 | V2 cleanup | no user-facing V2 naming except migration boundary | all frontend files | grep and screenshot check | Not checked |  |
 
@@ -96,7 +96,7 @@ The current batch closes these rows first:
 
 | Row | Required Fix | Verification |
 | --- | --- | --- |
-| MSG-01 | Prompt appears only in the round marker, not duplicated as a user row. | Replay complex histories and hard refresh the same session. |
+| MSG-01 | Prompt appears only in the round marker, not duplicated as a user row. | Added round-marker expanded browser fixture; still must replay complex histories and hard refresh the same session. |
 | MSG-02 | Live stream has no giant blank cursor row and no stray internal `passed` text. | 250ms live samples from send to terminal, then refresh and compare rows. |
 | MSG-03 | Thinking appears once and folds into `已处理` after terminal state. | Live stream, terminal replay, expanded/collapsed processed group. |
 | MSG-04 | Tool call and result occupy one lifecycle card: running while pending, filled when done, compact after processed. | Tool-heavy normal and orchestration sessions. |

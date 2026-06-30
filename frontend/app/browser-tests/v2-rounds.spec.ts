@@ -21,6 +21,10 @@ const PAGED_MIDDLE_RUN_ID = "run-v2-paged-middle";
 const PAGED_LATEST_RUN_ID = "run-v2-paged-latest";
 const PAGED_CURSOR_RUN_ID = "run-v2-paged-cursor";
 const VERIFICATION_RUN_ID = "run-v2-verification-warning";
+const LONG_PROMPT_RUN_ID = "run-v2-long-prompt-marker";
+
+const LONG_PROMPT_TEXT =
+  "流式从头到尾慢速真实验证-1782818317613：请启动一个 Explorer 子代理，只读检查下面 10 个文件，并在子代理完成后用中文总结 6 点。";
 
 test("opens round rail retry and todo detail", async ({ page }) => {
   const appServer = await serveFrontendDist();
@@ -150,6 +154,57 @@ test("keeps todo details scoped to the round rail", async ({ page }) => {
     );
     await page.screenshot({
       path: screenshotPath("v2-round-todo-detail.png", SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("does not repeat the round prompt title after expanding the marker", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: handleLongPromptRoundApi,
+      sessionTitle: "TS long prompt marker",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+
+    await expect(page.getByText("Long prompt marker answer")).toBeVisible();
+    const marker = page.locator("details.at-round-marker-intent");
+    await expect(marker).toBeVisible();
+    const summary = marker.locator(".at-round-marker-intent-summary");
+    await expect(summary).toContainText("流式从头到尾慢速真实验证");
+
+    await summary.click();
+
+    await expect(marker).toHaveAttribute("open", "");
+    await expect(summary).not.toContainText(LONG_PROMPT_TEXT);
+    await expect(summary).toContainText("Collapse");
+    await expect(marker.locator(".at-round-marker-intent-body"))
+      .toHaveText(LONG_PROMPT_TEXT);
+    await expect(
+      page
+        .locator(".at-round-marker-intent-body")
+        .filter({ hasText: LONG_PROMPT_TEXT }),
+    ).toHaveCount(1);
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "expanded round prompt marker should stay inside the fixed V2 shell",
+    );
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-round-marker-expanded-no-duplicate.png",
+        SCREENSHOT_FOLDER,
+      ),
     });
   } finally {
     await appServer.close();
@@ -379,6 +434,24 @@ async function handleTodoRailApi(
   return false;
 }
 
+async function handleLongPromptRoundApi(
+  context: MockApiRouteContext,
+): Promise<boolean> {
+  if (context.method === "GET" && context.path === `/sessions/${SESSION_ID}/rounds`) {
+    await context.fulfillJson({
+      has_more: false,
+      items: [longPromptRound()],
+      next_cursor: null,
+    });
+    return true;
+  }
+  if (context.method === "GET" && context.path === `/sessions/${SESSION_ID}/messages`) {
+    await context.fulfillJson([longPromptMessage()]);
+    return true;
+  }
+  return false;
+}
+
 function roundRailMessage(): Record<string, unknown> {
   return {
     created_at: "2026-06-25T08:00:02Z",
@@ -427,6 +500,23 @@ function verificationWarningMessage(): Record<string, unknown> {
     message_id: "message-round-verification-warning-output",
     role_id: "MainAgent",
     run_id: VERIFICATION_RUN_ID,
+  };
+}
+
+function longPromptMessage(): Record<string, unknown> {
+  return {
+    created_at: "2026-06-25T08:30:02Z",
+    message: {
+      parts: [
+        {
+          content: "Long prompt marker answer",
+          part_kind: "text",
+        },
+      ],
+    },
+    message_id: "message-long-prompt-output",
+    role_id: "MainAgent",
+    run_id: LONG_PROMPT_RUN_ID,
   };
 }
 
@@ -736,6 +826,34 @@ function roundRailRound(): Record<string, unknown> {
       updated_at: "2026-06-25T08:00:03Z",
       version: 1,
     },
+    verification_status: "verified",
+  };
+}
+
+function longPromptRound(): Record<string, unknown> {
+  return {
+    coordinator_messages: [
+      {
+        created_at: "2026-06-25T08:30:02Z",
+        message: {
+          parts: [
+            {
+              content: "Long prompt marker answer",
+              part_kind: "text",
+            },
+          ],
+        },
+        role_id: "MainAgent",
+      },
+    ],
+    created_at: "2026-06-25T08:30:01Z",
+    has_final_output: true,
+    intent: LONG_PROMPT_TEXT,
+    intent_parts: [{ kind: "text", text: LONG_PROMPT_TEXT }],
+    run_id: LONG_PROMPT_RUN_ID,
+    run_phase: "completed",
+    run_status: "completed",
+    run_user_message: LONG_PROMPT_TEXT,
     verification_status: "verified",
   };
 }

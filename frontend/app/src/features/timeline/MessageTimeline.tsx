@@ -5824,6 +5824,14 @@ function jsonStringArrayInlineText(value: JsonValue | undefined): string {
 }
 
 function toolSummaryPreview(tool: TimelineToolPart): string {
+  if (tool.subagent !== null) {
+    return truncatePreview(
+      tool.subagent.title ??
+        tool.subagent.description ??
+        tool.subagent.roleId ??
+        "",
+    );
+  }
   if (tool.phase === "call") {
     return truncatePreview(toolCallPreview(tool.body));
   }

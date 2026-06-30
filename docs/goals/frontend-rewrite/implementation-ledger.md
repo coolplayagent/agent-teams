@@ -2,6 +2,27 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-06-30 Timeline Round Marker And Subagent Tool-Card Browser Coverage
+
+### Scope
+- Re-checked the frontend rewrite goal and the V1/V2 closure matrix before editing, then focused this slice on the current message timeline/subagent regressions without changing the V1-aligned sidebar or Settings item inventory.
+- Fixed expanded round markers so the collapsed summary title is removed from the DOM while the full prompt body is open. The same prompt no longer appears once in the header and once in the expanded body.
+- Changed subagent tool-card previews to prefer the subagent title, description, or role id instead of showing the first line of the JSON tool result body.
+- Updated `v2-subagent-session.spec.ts` to use the current product interaction: clicking the parent `spawn_subagent` tool card opens the right-side subagent session, including running and completed subagents. The spec now exercises the session-scoped subagent event stream endpoint, delayed terminal history refill, send/session-switch pressure, and parent hydration race.
+- Added `v2-rounds.spec.ts` browser coverage for the exact expanded prompt duplicate regression, with a screenshot fixture at `.tmp/frontend-v2-ts-rounds/v2-round-marker-expanded-no-duplicate.png`.
+- Kept the matrix rows `MSG-01`, `MSG-04`, and `SUB-01` at `In progress`; this slice does not claim complete message timeline, stream/replay, tool lifecycle, or subagent subsystem parity.
+
+### Verification
+- `npm test -- --run src/test/MessageTimeline.test.tsx -t "round prompts|completed subagent tool card"` passed.
+- `npm run build` passed.
+- `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium` passed with 3 browser tests.
+- `npm run test:browser -- v2-rounds.spec.ts --project=chromium -g "does not repeat the round prompt"` passed.
+- Manual screenshot inspection confirmed the expanded round marker shows the full prompt only in the body, and the subagent tool card preview now shows `Race review` instead of `{`.
+
+### Reviewer
+- Main-agent round-marker duplicate fix, subagent tool-card preview fix, targeted unit/browser coverage, screenshot inspection, and closure-matrix update completed for this slice. This does not claim full V2 frontend completion, full Message Timeline PASS, full Subagents PASS, full stream/replay PASS, reviewer sign-off, or release cleanup sign-off.
+- A full `npm test -- --run src/test/MessageTimeline.test.tsx` attempt still has existing broader failures in virtualized timeline cases, so the next timeline slice must address or isolate those before any row can move to `Verified`.
+
 ## 2026-06-30 Agent Runtime Settings TS Migration
 
 ### Scope

@@ -2,6 +2,21 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-01 Closure Snapshot Audit
+
+### Scope
+- Re-read the frontend rewrite README and the detailed V1 parity matrix after the image-preview harness cleanup.
+- Parsed the detailed matrix status rows: `SET-03` and `SET-04` are the only `Verified` rows; the remaining 42 detailed rows are still `In progress`.
+- Added a `Current Closure Snapshot` section to the matrix so the next work proceeds by priority order instead of screenshot-by-screenshot reaction.
+- Attempted to inspect the currently open in-app browser page directly, but the browser bridge timed out during DOM sampling. This is recorded as not verified; the timeout is not being treated as browser evidence.
+
+### Verification
+- `git status --short` was clean after commit `cbd97dfc` and before the new closure snapshot edit.
+- `rg -n "Not checked|In progress|Verified|Still needs|needs formal|needs real|needs broader" docs/goals/frontend-rewrite/07-v1-parity-closure-matrix.md` was used to identify the open row groups.
+
+### Reviewer
+- Main-agent decision: the goal cannot be called close to done while only 2 of 44 detailed rows are `Verified`. Runtime/shell/session/subagent closure remains the first priority before page polish.
+
 ## 2026-07-01 Image Preview Python Harness Removal
 
 ### Scope

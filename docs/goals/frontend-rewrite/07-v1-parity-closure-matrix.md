@@ -17,6 +17,28 @@ verification must check order, duplication, missing content, disabled states,
 loading states, error states, terminal states, scroll behavior, and refresh or
 session-switch recovery where applicable.
 
+## Current Closure Snapshot
+
+Last audited: 2026-07-01.
+
+| State | Count | Rows |
+| --- | ---: | --- |
+| Verified | 2 | `SET-03`, `SET-04` |
+| In progress | 42 | All remaining matrix rows |
+| Not checked | 0 | None in the detailed matrix; the closure-order bands for sessions/projects/subagents, visual polish, and cleanup still remain open because their row groups have not reached `Verified`. |
+
+The execution rule from here is deliberately narrow: finish rows to
+`Verified` in priority order, and do not mark a row done until V1 capture, V2
+browser evidence, automated coverage, and manual visual review all agree.
+
+| Order | Rows | Closure Work |
+| --- | --- | --- |
+| 1 | `SHELL-01`..`SHELL-03`, `SESS-03`, `MSG-01`..`MSG-07`, `STREAM-01`, `STREAM-02`, `REC-01`, `REC-02`, `SUB-01` | Stabilize the runtime-visible product: fixed shell, live stream, replay, refresh/reconnect, processed work, tools, thinking, subagents, pending actions, and session switching. |
+| 2 | `COMP-01`..`COMP-03`, `SESS-01`, `SESS-02` | Close run creation and navigation workflows: composer, modes, stop/resume/injection, projects, session list, indicators, and exact switch-back recovery. |
+| 3 | `SET-01`, `SET-02`, `SET-05`..`SET-14` | Finish Settings against V1: first-level entries, second-level pages, loading/error/disabled states, save behavior, and no flattened secondary pages. |
+| 4 | `PAGE-01`..`PAGE-07` | Finish primary product surfaces: Automation, Skills, Board, Search, Connectors, Memory, and Observability with V1 screenshots plus browser action coverage. |
+| 5 | `DESK-01`, `CLEAN-01` | Finish desktop packaging and migration cleanup: packaging evidence, naming sweep, old harness retirement, and final reviewer sign-off. |
+
 ## Closure Order
 
 | Priority | Area | Why It Comes Here | Exit Condition | Status |

@@ -81,6 +81,10 @@ def test_decrypt_legacy_machine_features_marks_migration(
     )
     assert service.needs_migration is True
 
+    current_token = service.encrypt("current-password")
+    assert service.decrypt(current_token) == "current-password"
+    assert service.needs_migration is False
+
 
 def test_derive_key_and_collect_machine_features_validate_inputs(
     monkeypatch: pytest.MonkeyPatch,
@@ -152,6 +156,17 @@ def test_platform_machine_id_collectors_parse_valid_values(
         ),
     )
     assert service._get_macos_id() == "ABCDEF12-3456-7890"
+
+    monkeypatch.setattr(
+        service,
+        "_run_text_command",
+        lambda command: subprocess.CompletedProcess(
+            list(command),
+            0,
+            stdout='    "IOPlatformUUID" = "FEDCBA98-7654-3210"\n',
+        ),
+    )
+    assert service._get_macos_id() == "FEDCBA98-7654-3210"
 
 
 def test_linux_id_reads_first_valid_machine_file(
@@ -267,6 +282,12 @@ def test_macos_and_uuid_mac_fallbacks(
     monkeypatch.setattr(encryption_module.uuid, "getnode", lambda: 0xAABBCCDDEEFF)
     assert service._get_uuid_mac_address() == "aabbccddeeff"
 
+    monkeypatch.setattr(encryption_module.uuid, "getnode", lambda: 0x010203040506)
+    assert service._get_uuid_mac_address() is None
+
+    monkeypatch.setattr(encryption_module.uuid, "getnode", lambda: 0x1000000000000)
+    assert service._get_uuid_mac_address() is None
+
     monkeypatch.setattr(encryption_module.uuid, "getnode", lambda: 0)
     assert service._get_uuid_mac_address() is None
 
@@ -289,6 +310,8 @@ def test_legacy_machine_features_and_helpers(
     assert service._is_valid_id("00000000") is False
     assert service._normalize_mac("aa-bb-cc-dd-ee-ff") == "aabbccddeeff"
     assert service._normalize_mac("ff:ff:ff:ff:ff:ff") is None
+    assert service._is_multicast_uuid_node(0x010203040506) is True
+    assert service._is_multicast_uuid_node(0x020203040506) is False
     assert service._is_ignored_windows_adapter("Ethernet", "Intel") is False
     assert service._is_ignored_windows_adapter("vethernet", "hyper-v") is True
 

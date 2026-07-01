@@ -47,10 +47,52 @@ class AppSecretStore:
         index = self._load_index(config_dir)
         entry = _find_entry(index, coordinate)
         if entry is not None and entry.storage == "file":
-            return _file_secret_value_for_read(entry.coordinate(), entry.value)
+            value = _file_secret_value_for_read(entry.coordinate(), entry.value)
+            if value is not None:
+                self._migrate_file_secret_if_needed(config_dir, index, entry, value)
+            return value
         if not self.has_usable_keyring_backend():
             return None
         return self._get_from_keyring(config_dir, coordinate)
+
+    def _migrate_file_secret_if_needed(
+        self,
+        config_dir: Path,
+        index: SecretIndexDocument,
+        entry: SecretIndexEntry,
+        plaintext: str,
+    ) -> None:
+        coordinate = entry.coordinate()
+        service = get_encryption_service()
+        if (
+            entry.value is None
+            or not _requires_file_encryption(coordinate)
+            or not service.is_encrypted(entry.value)
+            or not service.needs_migration
+        ):
+            return
+        try:
+            next_value = service.encrypt(plaintext)
+        except SecretEncryptionError:
+            _log_secret_encryption_failure(
+                event="secret_store.file_secret_migration_encrypt_failed",
+                message="Failed to re-encrypt legacy file-backed secret",
+                coordinate=coordinate,
+            )
+            return
+        self._save_index(
+            config_dir,
+            _upsert_entry(
+                index,
+                SecretIndexEntry(
+                    namespace=entry.namespace,
+                    owner_id=entry.owner_id,
+                    field_name=entry.field_name,
+                    storage="file",
+                    value=next_value,
+                ),
+            ),
+        )
 
     def set_secret(
         self,

@@ -6,12 +6,19 @@ from json import loads
 from pathlib import Path
 from typing import cast
 
+from cryptography.fernet import Fernet
 import pytest
 from pydantic import JsonValue
 
 from relay_teams.providers.codeagent_auth import codeagent_password_secret_field_name
 from relay_teams.providers.maas_auth import maas_password_secret_field_name
-from relay_teams.secrets import AppSecretStore, SecretIndexDocument, SecretIndexEntry
+from relay_teams.secrets import (
+    AppSecretStore,
+    EncryptionService,
+    SecretIndexDocument,
+    SecretIndexEntry,
+)
+import relay_teams.secrets.secret_store as secret_store_module
 from relay_teams.secrets.secret_models import SecretCoordinate
 
 
@@ -311,6 +318,72 @@ def test_legacy_plaintext_model_password_with_enc_prefix_is_readable(
         )
         == "ENC:legacy-password"
     )
+
+
+def test_legacy_encrypted_model_password_is_reencrypted_after_read(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = _FileOnlySecretStore()
+    service = EncryptionService()
+    current_features = "current-machine-id"
+    legacy_features = "legacy-machine-id|old-host|Linux-6.1"
+    monkeypatch.setattr(service, "collect_machine_features", lambda: current_features)
+    monkeypatch.setattr(
+        service,
+        "_get_legacy_machine_features",
+        lambda: (legacy_features,),
+    )
+    monkeypatch.setattr(
+        secret_store_module,
+        "get_encryption_service",
+        lambda: service,
+    )
+    legacy_token = Fernet(service.derive_key_from_features(legacy_features)).encrypt(
+        b"legacy-password"
+    )
+    legacy_value = f"{service.ENCRYPTION_PREFIX}{legacy_token.decode('utf-8')}"
+    store._save_index(
+        tmp_path,
+        SecretIndexDocument(
+            entries=(
+                SecretIndexEntry(
+                    namespace=_MODEL_PROFILE_SECRET_NAMESPACE,
+                    owner_id="legacy",
+                    field_name=maas_password_secret_field_name(),
+                    storage="file",
+                    value=legacy_value,
+                ),
+            )
+        ),
+    )
+
+    assert (
+        store.get_secret(
+            tmp_path,
+            namespace=_MODEL_PROFILE_SECRET_NAMESPACE,
+            owner_id="legacy",
+            field_name=maas_password_secret_field_name(),
+        )
+        == "legacy-password"
+    )
+    entries = _secret_entries(tmp_path)
+    migrated_value = entries[0]["value"]
+    assert isinstance(migrated_value, str)
+    assert migrated_value.startswith(service.ENCRYPTION_PREFIX)
+    assert migrated_value != legacy_value
+
+    monkeypatch.setattr(service, "_get_legacy_machine_features", tuple)
+    assert (
+        store.get_secret(
+            tmp_path,
+            namespace=_MODEL_PROFILE_SECRET_NAMESPACE,
+            owner_id="legacy",
+            field_name=maas_password_secret_field_name(),
+        )
+        == "legacy-password"
+    )
+    assert service.needs_migration is False
 
 
 def test_corrupt_encrypted_model_password_returns_none_and_logs(

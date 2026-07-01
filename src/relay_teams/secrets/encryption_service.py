@@ -53,6 +53,7 @@ class EncryptionService:
         if not self.is_encrypted(ciphertext):
             raise SecretDecryptionError("Secret value is not encrypted.")
 
+        self._needs_migration = False
         token = ciphertext[len(self.ENCRYPTION_PREFIX) :].encode("utf-8")
         try:
             return Fernet(self._get_key()).decrypt(token).decode("utf-8")
@@ -160,7 +161,7 @@ class EncryptionService:
         )
         if result is None or result.returncode != 0:
             return None
-        match = re.search(r'IOPlatformUUID\s*=\s*"([^"]+)"', result.stdout)
+        match = re.search(r'"?IOPlatformUUID"?\s*=\s*"([^"]+)"', result.stdout)
         if match is None:
             return None
         candidate = match.group(1).strip()
@@ -261,6 +262,10 @@ class EncryptionService:
 
     def _get_uuid_mac_address(self) -> str | None:
         node = uuid.getnode()
+        if node < 0 or node > 0xFFFFFFFFFFFF:
+            return None
+        if self._is_multicast_uuid_node(node):
+            return None
         normalized = self._normalize_mac(f"{node:012x}")
         if normalized is None:
             return None
@@ -327,6 +332,11 @@ class EncryptionService:
         if normalized == "0" * 12 or normalized == "f" * 12:
             return None
         return normalized
+
+    @staticmethod
+    def _is_multicast_uuid_node(node: int) -> bool:
+        first_octet = (node >> 40) & 0xFF
+        return bool(first_octet & 0x01)
 
     @staticmethod
     def _is_ignored_windows_adapter(

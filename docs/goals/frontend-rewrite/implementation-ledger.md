@@ -2,6 +2,23 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-02 Plugin Settings API Gap Closure
+
+### Scope
+- Audited `tests/integration_tests/frontend/test_plugins_settings_ui.py` before migration and found a real V1 parity gap rather than a stale harness: V1 plugin settings covered add/install, source kind/reference fields, marketplace provider/version payloads, and typed `user_config` configuration forms.
+- Kept the legacy Python harness in place because the current React Plugins settings page still lacks the V1 install/configure/marketplace UI. This slice does not claim plugin settings parity.
+- Added V2 frontend API contracts for plugin install and configure requests, including `source_kind`, `source_ref`, marketplace provider/source/ref/version, safety flags, and nested `user_config` payloads.
+- Added `installPlugin()` and `configurePlugin()` client helpers so the future V2 settings UI can use the existing `/api/system/configs/plugins:install` and `/api/system/configs/plugins/{name}:configure` backend contracts instead of inventing local request shapes.
+- Extended `frontend/app/src/test/apiClient.test.ts` to lock the minimal local install payload, rich marketplace/git install payload, configure payload, and existing enable/disable/update/delete calls against the system config endpoints.
+
+### Verification
+- `npm test -- src/test/apiClient.test.ts -t "manages plugins"` passed with 1 matching test.
+- `npm test -- src/test/apiClient.test.ts` passed with 35 tests.
+- `npm run lint` passed.
+
+### Reviewer
+- Main-agent decision: this tightens `SET-14` and prepares the V2 plugin settings UI restoration, but deliberately does not retire `test_plugins_settings_ui.py`, does not mark Plugins settings complete, and does not claim final Settings parity.
+
 ## 2026-07-02 Trigger Settings Python Harness Removal
 
 ### Scope

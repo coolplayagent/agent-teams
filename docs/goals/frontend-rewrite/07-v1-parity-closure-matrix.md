@@ -114,6 +114,12 @@ For every row moved to `Verified`, record:
 
 ## Verification Ledger
 
+### 2026-07-02 Plugin Settings API Gap Closure
+
+- `SET-14` tightened: the frontend API layer now exposes the existing backend plugin install and configure contracts that V1 plugin settings depended on, including source references, marketplace provider/source/ref/version fields, safety flags, and typed `user_config` payloads.
+- `CLEAN-01` unchanged for this harness: `tests/integration_tests/frontend/test_plugins_settings_ui.py` remains because V2 still needs the actual Plugins settings add/install/configure UI restored before the legacy proof path can be retired.
+- Evidence: `npm test -- src/test/apiClient.test.ts -t "manages plugins"`, `npm test -- src/test/apiClient.test.ts`, and `npm run lint`.
+
 ### 2026-07-02 Trigger Settings Harness Migration
 
 - `SET-14` tightened: the System-owned Gateway secondary page now has V2-native component coverage for Feishu/WeChat provider inventory, Feishu detail-page editing, create/update payloads, WeChat login start/wait polling, and WeChat edit payloads.

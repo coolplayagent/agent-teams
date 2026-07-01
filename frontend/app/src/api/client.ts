@@ -140,6 +140,8 @@ import type {
   SystemConfigStatus,
   TaskSpecArtifactDiffResponse,
   TaskSpecArtifactsResponse,
+  PluginConfigureRequest,
+  PluginInstallRequest,
   PluginsRuntimePayload,
   PluginScopeRequest,
   PluginUpdateRequest,
@@ -1882,6 +1884,28 @@ export function getPluginsRuntime(): Promise<PluginsRuntimePayload> {
 
 export function getPluginsConfig(): Promise<PluginsRuntimePayload> {
   return requestJson<PluginsRuntimePayload>("/system/configs/plugins");
+}
+
+export function installPlugin(
+  payload: PluginInstallRequest,
+): Promise<PluginsRuntimePayload> {
+  return requestJson<PluginsRuntimePayload>("/system/configs/plugins:install", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function configurePlugin(
+  name: string,
+  payload: PluginConfigureRequest,
+): Promise<PluginsRuntimePayload> {
+  return requestJson<PluginsRuntimePayload>(
+    `/system/configs/plugins/${encodeURIComponent(name)}:configure`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
 export function enablePlugin(

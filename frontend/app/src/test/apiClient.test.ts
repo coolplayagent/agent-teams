@@ -5,6 +5,7 @@ import {
   archiveBoardTodo,
   browseClawHubSkillMarket,
   addRuntimeToolsSystemPath,
+  configurePlugin,
   createAutomationProject,
   createBoardTodoSource,
   createFeishuGatewayAccount,
@@ -136,6 +137,7 @@ import {
   syncBoardTodos,
   testConnector,
   installClawHubMarketSkill,
+  installPlugin,
   uninstallClawHubMarketSkill,
   uninstallRuntimeSkill,
   updateAutomationProject,
@@ -2538,8 +2540,47 @@ describe("api client", () => {
       ),
     );
     vi.stubGlobal("fetch", fetchMock);
+    const localInstallPayload = {
+      enabled: true,
+      marketplace: null,
+      scope: "user" as const,
+      source: "C:/plugins/local-quality",
+      version: null,
+    };
+    const marketplaceInstallPayload = {
+      allow_community_plugins: true,
+      allow_executes_code: true,
+      allow_missing_digest: true,
+      allow_unclean_scan: true,
+      enabled: false,
+      marketplace: "quality-tools",
+      marketplace_provider: "clawhub" as const,
+      marketplace_ref: "main",
+      marketplace_source: "clawhub://quality-tools",
+      scope: "project" as const,
+      source: "quality-tools",
+      source_kind: "git" as const,
+      source_ref: "v1.2.0",
+      version: "2.0.0",
+    };
+    const configurePayload = {
+      scope: "user" as const,
+      user_config: {
+        enabled: true,
+        endpoint: "https://docs.test",
+        nested: { mode: "strict" },
+        retries: 3,
+      },
+    };
 
     await expect(getPluginsConfig()).resolves.toEqual(pluginPayload);
+    await expect(installPlugin(localInstallPayload)).resolves.toEqual(pluginPayload);
+    await expect(installPlugin(marketplaceInstallPayload)).resolves.toEqual(
+      pluginPayload,
+    );
+    await expect(configurePlugin("quality-tools", configurePayload)).resolves.toEqual(
+      pluginPayload,
+    );
     await expect(enablePlugin("quality-tools", { scope: "user" })).resolves.toEqual(
       pluginPayload,
     );
@@ -2562,6 +2603,33 @@ describe("api client", () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
+      "/api/system/configs/plugins:install",
+      expect.objectContaining({
+        body: JSON.stringify(localInstallPayload),
+        method: "POST",
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/system/configs/plugins:install",
+      expect.objectContaining({
+        body: JSON.stringify(marketplaceInstallPayload),
+        method: "POST",
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/system/configs/plugins/quality-tools:configure",
+      expect.objectContaining({
+        body: JSON.stringify(configurePayload),
+        method: "POST",
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
       "/api/system/configs/plugins/quality-tools:enable",
       expect.objectContaining({
         body: JSON.stringify({ scope: "user" }),
@@ -2570,7 +2638,7 @@ describe("api client", () => {
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      3,
+      6,
       "/api/system/configs/plugins/quality-tools:disable",
       expect.objectContaining({
         body: JSON.stringify({ scope: "project" }),
@@ -2579,7 +2647,7 @@ describe("api client", () => {
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      4,
+      7,
       "/api/system/configs/plugins/quality-tools:update",
       expect.objectContaining({
         body: JSON.stringify({ scope: "user", version: "2.0.0" }),
@@ -2588,7 +2656,7 @@ describe("api client", () => {
       }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
-      5,
+      8,
       "/api/system/configs/plugins/quality-tools?prune=true&scope=project",
       expect.objectContaining({
         method: "DELETE",

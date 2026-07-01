@@ -215,6 +215,36 @@ export interface PluginScopeRequest {
   scope: "local" | "project" | "user";
 }
 
+export type PluginInstallSourceKind =
+  | "local"
+  | "git"
+  | "git_subdir"
+  | "http_archive"
+  | "marketplace"
+  | "unsupported";
+
+export type PluginMarketplaceProviderKind = "local_json" | "claude" | "clawhub";
+
+export interface PluginInstallRequest extends PluginScopeRequest {
+  allow_community_plugins?: boolean;
+  allow_executes_code?: boolean;
+  allow_missing_digest?: boolean;
+  allow_unclean_scan?: boolean;
+  enabled?: boolean;
+  marketplace?: string | null;
+  marketplace_provider?: PluginMarketplaceProviderKind;
+  marketplace_ref?: string;
+  marketplace_source?: string;
+  source: string;
+  source_kind?: PluginInstallSourceKind | null;
+  source_ref?: string;
+  version?: string | null;
+}
+
+export interface PluginConfigureRequest extends PluginScopeRequest {
+  user_config: Record<string, JsonValue>;
+}
+
 export interface PluginUpdateRequest extends PluginScopeRequest {
   allow_community_plugins?: boolean;
   allow_executes_code?: boolean;

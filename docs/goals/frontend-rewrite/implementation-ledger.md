@@ -2,6 +2,23 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-02 Orchestration Session-Switch Browser Closure
+
+### Scope
+- Re-checked the open P0 runtime rows and selected the gap that was still only covered for normal foreground streams: switching away from an active orchestration/tool-heavy stream and switching back without losing, duplicating, or reordering runtime rows.
+- Added a packed-browser `/app/` scenario in `v2-session-switch-stream.spec.ts` that runs an orchestration session, emits thinking, a pending `read` tool, switches to another session, receives the tool result plus answer text while hidden, switches back, and verifies the thinking card, merged tool result, and answer text appear in order exactly once.
+- Tightened the test so completed streams must have no stale `.streaming-cursor`, no selected-session running indicator, no document-level scroll, no composer overlap, and no naked `.at-message-role` labels.
+- Removed naked runtime role labels from `MessageTimeline.tsx`. Role IDs still remain in row metadata for filtering, dedupe, and copy boundaries, but user-facing `Coordinator`/`Explorer`/`Crafter` standalone labels no longer appear as transcript rows.
+- Rebuilt `frontend/dist/app` so the packed browser evidence exercises the current source instead of stale dist assets.
+
+### Verification
+- `npm run build` passed.
+- `npm run test:browser -- v2-session-switch-stream.spec.ts --project=chromium` passed with both normal and orchestration session-switch scenarios.
+- Main-agent screenshot inspection reviewed `.tmp/frontend-v2-ts-session-switch/v2-orchestration-tool-session-switch.png` after the rebuild; the final state shows one answer row, no naked `Coordinator` label, no stale cursor, and the fixed shell/composer intact.
+
+### Reviewer
+- Main-agent decision: this tightens `SESS-03`, `MSG-02`, `MSG-04`, and `STREAM-02` for the packed-browser orchestration/tool-heavy switch path. It does not claim full stream/replay completion, live real-backend orchestration/tool-heavy PASS, final V1 paired visual sign-off, reviewer sign-off, or final V2 frontend completion.
+
 ## 2026-07-02 Real Backend History Audit Hardening
 
 ### Scope

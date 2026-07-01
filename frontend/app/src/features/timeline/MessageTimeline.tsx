@@ -6555,21 +6555,9 @@ function shouldShowRoleLabel(
   row: TimelineRow,
   variant: "session" | "subagent-panel",
 ): boolean {
-  if (
-    variant === "subagent-panel" ||
-    row.source !== "runtime" ||
-    timelineRowIsToolOnly(row)
-  ) {
-    return false;
-  }
-  const normalized = normalizedRole(row.role);
-  return (
-    normalized.length > 0 &&
-    normalized !== "user" &&
-    normalized !== "assistant" &&
-    normalized !== "agent" &&
-    normalized !== "mainagent"
-  );
+  void row;
+  void variant;
+  return false;
 }
 
 function estimateRowSize(row: TimelineRow | undefined): number {

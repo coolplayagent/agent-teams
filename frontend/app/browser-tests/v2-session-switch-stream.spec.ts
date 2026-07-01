@@ -21,6 +21,7 @@ import {
 } from "./support/frontend-app";
 
 const RUN_ID = "run-ts-session-switch";
+const ORCHESTRATION_RUN_ID = "run-ts-orchestration-session-switch";
 const SECOND_SESSION_ID = "session-v2-secondary";
 const SCREENSHOT_FOLDER = "frontend-v2-ts-session-switch";
 
@@ -31,7 +32,11 @@ interface CapturedRunCreateRequest {
 
 interface SessionSwitchMockState {
   completed: boolean;
+  runId: string;
   runCreateRequests: CapturedRunCreateRequest[];
+  secondarySessionTitle: string;
+  sourceSessionMode: "normal" | "orchestration";
+  sourceSessionTitle: string;
 }
 
 test("isolates an active foreground stream and restores exact content after switching back", async ({
@@ -40,7 +45,11 @@ test("isolates an active foreground stream and restores exact content after swit
   const appServer = await serveFrontendDist();
   const state: SessionSwitchMockState = {
     completed: false,
+    runId: RUN_ID,
     runCreateRequests: [],
+    secondarySessionTitle: "TS secondary session",
+    sourceSessionMode: "normal",
+    sourceSessionTitle: "TS active stream source",
   };
   const unhandledApiRoutes: string[] = [];
   try {
@@ -49,7 +58,7 @@ test("isolates an active foreground stream and restores exact content after swit
     await mockShellApi(page, appServer.url, unhandledApiRoutes, {
       handleRequest: (context) =>
         handleSessionSwitchApi(context, state),
-      sessionTitle: "TS active stream source",
+      sessionTitle: state.sourceSessionTitle,
     });
     await ensureScreenshotDir(SCREENSHOT_FOLDER);
 
@@ -66,10 +75,7 @@ test("isolates an active foreground stream and restores exact content after swit
       input: [{ kind: "text", text: promptText }],
       session_id: SESSION_ID,
     });
-    await waitForEventSourceUrl(
-      page,
-      /\/api\/ag-ui\/runs\/run-ts-session-switch\/events\?after_event_id=0$/,
-    );
+    await waitForEventSourceUrl(page, runEventsUrlPattern(RUN_ID, 0));
     await waitForEventSourceOpenCount(page, 1);
     await expect(page.getByRole("button", { name: "Stop" })).toBeVisible();
 
@@ -88,7 +94,7 @@ test("isolates an active foreground stream and restores exact content after swit
     });
     await expect(page.getByText(streamedText)).toBeVisible();
 
-    await page.getByRole("button", { name: "TS secondary session" }).click();
+    await page.getByRole("button", { name: state.secondarySessionTitle }).click();
 
     await expect(page.getByText("Second session hydrated output")).toBeVisible();
     await expect(page.getByText(streamedText)).toHaveCount(0);
@@ -106,7 +112,7 @@ test("isolates an active foreground stream and restores exact content after swit
     });
     await expect(page.getByText(hiddenBackgroundChunk)).toHaveCount(0);
 
-    await page.getByRole("button", { name: "TS active stream source" }).click();
+    await page.getByRole("button", { name: state.sourceSessionTitle }).click();
     await expect(page.getByText("Second session hydrated output")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Stop" })).toBeVisible();
     await expect(page.getByText(streamedText)).toHaveCount(1);
@@ -159,6 +165,176 @@ test("isolates an active foreground stream and restores exact content after swit
   }
 });
 
+test("restores orchestration thinking, tools, and text in order after session switch", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state: SessionSwitchMockState = {
+    completed: false,
+    runId: ORCHESTRATION_RUN_ID,
+    runCreateRequests: [],
+    secondarySessionTitle: "TS quiet secondary session",
+    sourceSessionMode: "orchestration",
+    sourceSessionTitle: "TS orchestration tool stream",
+  };
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await installMockEventSource(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleSessionSwitchApi(context, state),
+      sessionTitle: state.sourceSessionTitle,
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+
+    const promptText = "Switch sessions during orchestration tool-heavy stream";
+    await page.getByRole("textbox", { name: "Prompt" }).fill(promptText);
+    await page.getByRole("button", { name: "Send" }).click();
+
+    await expect.poll(() => state.runCreateRequests.length).toBe(1);
+    expect(state.runCreateRequests[0]).toMatchObject({
+      input: [{ kind: "text", text: promptText }],
+      session_id: SESSION_ID,
+    });
+    await waitForEventSourceUrl(page, runEventsUrlPattern(ORCHESTRATION_RUN_ID, 0));
+    await waitForEventSourceOpenCount(page, 1);
+    await expect(page.getByRole("button", { name: "Stop" })).toBeVisible();
+
+    const thinkingText = "Coordinator plans the read before delegating.";
+    const toolPath = "src/relay_teams/agents/orchestration/coordinator.py";
+    const toolResult = "Read 42 orchestration lines.";
+    const hiddenOutput = "Background orchestration output after read.";
+    const foregroundOutput = " Foreground orchestration answer tail.";
+
+    await dispatchRunEvent(page, {
+      eventId: 1,
+      payload: { phase: "streaming" },
+      relayEventType: "run_started",
+      runId: ORCHESTRATION_RUN_ID,
+      type: "run.started",
+    });
+    await dispatchRunEvent(page, {
+      eventId: 2,
+      payload: { part_index: 0 },
+      relayEventType: "thinking_started",
+      roleId: "Coordinator",
+      runId: ORCHESTRATION_RUN_ID,
+      type: "thinking.started",
+    });
+    await dispatchRunEvent(page, {
+      eventId: 3,
+      payload: { part_index: 0, text: thinkingText },
+      relayEventType: "thinking_delta",
+      roleId: "Coordinator",
+      runId: ORCHESTRATION_RUN_ID,
+      type: "thinking.delta",
+    });
+    await expect(page.locator(".at-message-thinking")).toContainText(thinkingText);
+    await dispatchRunEvent(page, {
+      eventId: 4,
+      payload: {
+        args: { path: toolPath },
+        tool_call_id: "call-orchestration-read",
+        tool_name: "read",
+      },
+      relayEventType: "tool_call",
+      roleId: "Coordinator",
+      runId: ORCHESTRATION_RUN_ID,
+      type: "tool_call.started",
+    });
+    await expect(page.locator(".at-message-tool", { hasText: "Tool call: read" }))
+      .toHaveCount(1);
+
+    await page.getByRole("button", { name: state.secondarySessionTitle }).click();
+    await expect(page.getByText("Second session hydrated output")).toBeVisible();
+    await expect(page.getByText(thinkingText)).toHaveCount(0);
+    await expect(page.getByText(toolPath)).toHaveCount(0);
+
+    await dispatchRunEvent(page, {
+      eventId: 5,
+      payload: {
+        result: { data: toolResult, ok: true },
+        tool_call_id: "call-orchestration-read",
+        tool_name: "read",
+      },
+      relayEventType: "tool_result",
+      roleId: "Coordinator",
+      runId: ORCHESTRATION_RUN_ID,
+      sourceIndex: 0,
+      type: "tool_result.completed",
+    });
+    await dispatchRunEvent(page, {
+      eventId: 6,
+      payload: { output: [{ kind: "text", text: hiddenOutput }] },
+      relayEventType: "output_delta",
+      roleId: "Coordinator",
+      runId: ORCHESTRATION_RUN_ID,
+      sourceIndex: 0,
+      type: "message.output.delta",
+    });
+    await expect(page.getByText(toolResult)).toHaveCount(0);
+    await expect(page.getByText(hiddenOutput)).toHaveCount(0);
+
+    await page.getByRole("button", { name: state.sourceSessionTitle }).click();
+    await expect(page.getByText("Second session hydrated output")).toHaveCount(0);
+    await expect(page.locator(".at-message-thinking")).toHaveCount(1);
+    await expect(page.locator(".at-message-thinking")).toContainText(thinkingText);
+    await expect(page.locator(".at-message-tool", { hasText: "Tool result: read" }))
+      .toHaveCount(1);
+    await expect(page.locator(".at-message-tool")).toContainText(toolResult);
+    await expect(page.getByText(hiddenOutput)).toHaveCount(1);
+    await expect(page.locator(".at-message-role")).toHaveCount(0);
+    await expect.poll(() =>
+      timelineOrderedCheckpoints(page, [thinkingText, "Tool result: read", hiddenOutput]),
+    ).toEqual([thinkingText, "Tool result: read", hiddenOutput]);
+
+    await dispatchRunEvent(page, {
+      eventId: 7,
+      payload: { output: [{ kind: "text", text: foregroundOutput }] },
+      relayEventType: "output_delta",
+      roleId: "Coordinator",
+      runId: ORCHESTRATION_RUN_ID,
+      sourceIndex: 0,
+      type: "message.output.delta",
+    });
+    await expect(page.getByText(`${hiddenOutput}${foregroundOutput}`)).toHaveCount(1);
+    await expect(page.locator(".at-message-role")).toHaveCount(0);
+    await expect.poll(() => roleOnlyLineCount(page, ["Coordinator"])).toBe(0);
+
+    state.completed = true;
+    await dispatchRunEvent(page, {
+      eventId: 8,
+      payload: { status: "completed" },
+      relayEventType: "run_completed",
+      runId: ORCHESTRATION_RUN_ID,
+      sourceIndex: 0,
+      type: "run.completed",
+    });
+    await expect.poll(() => eventSourceOpenCount(page)).toBe(0);
+    await expect(page.locator(".streaming-cursor")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Stop" })).toBeHidden();
+    await expect(page.getByText(`${hiddenOutput}${foregroundOutput}`)).toHaveCount(1);
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "orchestration tool-heavy session switch should stay inside the fixed V2 shell",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-orchestration-tool-session-switch.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
 async function handleSessionSwitchApi(
   context: MockApiRouteContext,
   state: SessionSwitchMockState,
@@ -167,7 +343,7 @@ async function handleSessionSwitchApi(
     state.runCreateRequests.push(readRunCreateRequest(context.route.request().postData()));
     state.completed = false;
     await context.fulfillJson({
-      run_id: RUN_ID,
+      run_id: state.runId,
       session_id: SESSION_ID,
       target_role_id: null,
     });
@@ -179,24 +355,28 @@ async function handleSessionSwitchApi(
   if (context.path === "/sessions/sidebar") {
     await context.fulfillJson([
       sourceSessionSidebarRecord(state),
-      secondarySessionSidebarRecord(),
+      secondarySessionSidebarRecord(state),
     ]);
     return true;
   }
   if (context.path === `/workspaces/${WORKSPACE_ID}/sessions/sidebar`) {
     await context.fulfillJson({
       has_more: false,
-      items: [sourceSessionSidebarRecord(state), secondarySessionSidebarRecord()],
+      items: [sourceSessionSidebarRecord(state), secondarySessionSidebarRecord(state)],
       next_cursor: null,
     });
     return true;
   }
   if (context.path === `/sessions/${SESSION_ID}`) {
-    await context.fulfillJson(sessionRecord(SESSION_ID, "TS active stream source"));
+    await context.fulfillJson(
+      sessionRecord(SESSION_ID, state.sourceSessionTitle, state.sourceSessionMode),
+    );
     return true;
   }
   if (context.path === `/sessions/${SECOND_SESSION_ID}`) {
-    await context.fulfillJson(sessionRecord(SECOND_SESSION_ID, "TS secondary session"));
+    await context.fulfillJson(
+      sessionRecord(SECOND_SESSION_ID, state.secondarySessionTitle, "normal"),
+    );
     return true;
   }
   if (context.path === `/sessions/${SESSION_ID}/messages`) {
@@ -266,33 +446,39 @@ function sourceSessionSidebarRecord(state: SessionSwitchMockState): Record<strin
     created_at: "2026-06-25T08:00:00Z",
     message_count: 1,
     session_id: SESSION_ID,
-    title: "TS active stream source",
+    session_mode: state.sourceSessionMode,
+    title: state.sourceSessionTitle,
     updated_at: "2026-06-25T08:32:00Z",
     workspace_id: WORKSPACE_ID,
   };
 }
 
-function secondarySessionSidebarRecord(): Record<string, unknown> {
+function secondarySessionSidebarRecord(state?: SessionSwitchMockState): Record<string, unknown> {
   return {
     active_run_status: null,
     created_at: "2026-06-25T08:01:00Z",
     message_count: 1,
     session_id: SECOND_SESSION_ID,
-    title: "TS secondary session",
+    session_mode: "normal",
+    title: state?.secondarySessionTitle ?? "TS secondary session",
     updated_at: "2026-06-25T08:31:00Z",
     workspace_id: WORKSPACE_ID,
   };
 }
 
-function sessionRecord(sessionId: string, title: string): Record<string, unknown> {
+function sessionRecord(
+  sessionId: string,
+  title: string,
+  sessionMode: "normal" | "orchestration",
+): Record<string, unknown> {
   return {
     can_switch_mode: true,
     created_at: "2026-06-25T08:00:00Z",
     normal_model_profile: null,
-    normal_root_role_id: "MainAgent",
-    orchestration_preset_id: null,
+    normal_root_role_id: sessionMode === "normal" ? "MainAgent" : null,
+    orchestration_preset_id: sessionMode === "orchestration" ? "default" : null,
     session_id: sessionId,
-    session_mode: "normal",
+    session_mode: sessionMode,
     title,
     updated_at: "2026-06-25T08:30:00Z",
     workspace_id: WORKSPACE_ID,
@@ -331,19 +517,22 @@ interface BrowserRunEvent {
   eventId: number;
   payload: Record<string, unknown>;
   relayEventType: string;
+  roleId?: string;
+  runId?: string;
   sourceIndex?: number;
   type: string;
 }
 
 async function dispatchRunEvent(page: Page, event: BrowserRunEvent): Promise<void> {
+  const runId = event.runId ?? RUN_ID;
   await dispatchEventSourceMessage(page, {
     data: {
       event_id: event.eventId,
       occurred_at: `2026-06-26T10:00:0${event.eventId}Z`,
       payload: event.payload,
       relay_event_type: event.relayEventType,
-      role_id: "MainAgent",
-      run_id: RUN_ID,
+      role_id: event.roleId ?? "MainAgent",
+      run_id: runId,
       session_id: SESSION_ID,
       trace_id: "trace-ts-session-switch",
       type: event.type,
@@ -352,4 +541,37 @@ async function dispatchRunEvent(page: Page, event: BrowserRunEvent): Promise<voi
     sourceIndex: event.sourceIndex ?? null,
     type: event.type,
   });
+}
+
+function runEventsUrlPattern(runId: string, afterEventId: number): RegExp {
+  return new RegExp(
+    `/api/ag-ui/runs/${runId}/events\\?after_event_id=${afterEventId}$`,
+  );
+}
+
+async function timelineOrderedCheckpoints(
+  page: Page,
+  checkpoints: string[],
+): Promise<string[]> {
+  return page.locator(".at-timeline").evaluate((timeline, expected) => {
+    const text = timeline.textContent ?? "";
+    return expected
+      .map((checkpoint) => ({
+        checkpoint,
+        index: text.indexOf(checkpoint),
+      }))
+      .filter((item) => item.index >= 0)
+      .sort((left, right) => left.index - right.index)
+      .map((item) => item.checkpoint);
+  }, checkpoints);
+}
+
+async function roleOnlyLineCount(page: Page, roleNames: string[]): Promise<number> {
+  return page.locator(".at-timeline").evaluate((timeline, roles) => {
+    const roleSet = new Set(roles);
+    return (timeline.textContent ?? "")
+      .split("\n")
+      .filter((line) => roleSet.has(line.trim()))
+      .length;
+  }, roleNames);
 }

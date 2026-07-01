@@ -11,6 +11,7 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 ### Verification
 - `npm run test:browser -- v2-subagent-session.spec.ts v2-real-sse-stale-recovery.spec.ts --project=chromium` passed: 28 tests, 28 passed, about 1.2 minutes.
 - Covered named browser scenarios include live orchestration subagent cadence, hard-refresh restored subagent panel, terminal catch-up replay, real SSE recovery checkpoint replay, stale reconnect suppression, real SSE background-subagent isolation, and real SSE subagent stdout through the right panel with replay parity.
+- Main-agent visual inspection opened `.tmp/frontend-v2-ts-subagent-session/v2-subagent-orchestration-live-stream-mid.png`, `.tmp/frontend-v2-ts-stream/v2-real-sse-subagent-stdout-mid-stream.png`, and `.tmp/frontend-v2-ts-stream/v2-real-sse-subagent-stdout-replay.png`: the parent timeline stayed clean, the right panel showed the child stream/replay content, and the visible running state was a small panel badge/cursor rather than a top-page running banner.
 
 ### Reviewer
 - Main-agent decision: the automated P0 subagent/real-SSE suite is currently green, but `SUB-01`, `STREAM-02`, and related runtime rows remain `In progress` until paired V1/manual browser evidence is complete.

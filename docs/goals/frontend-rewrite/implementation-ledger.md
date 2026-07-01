@@ -8544,3 +8544,19 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent matrix scan, scoped Python-to-TS UI harness migration, failed-test reproduction, helper fix, focused verification, and matrix update completed for this slice. No Settings subsystem PASS, cleanup PASS, reviewer sign-off, or final V2 completion is claimed.
+
+## 2026-07-01 Backend Status UI Harness Migration
+
+### Scope
+- Re-checked the remaining Python UI harness inventory and selected `tests/integration_tests/frontend/test_backend_status_ui.py` because it was a self-contained legacy V1/dist UI module test.
+- Confirmed the file read `frontend/dist/js/utils/backendStatus.js`, built fake DOM/window objects, and asserted old status-hint/fallback-port behavior that no longer exists in the V2 React app.
+- Added V2-native `AppShell.test.tsx` coverage instead of carrying over obsolete implementation details: health failures render `Backend offline` with offline tone, reachable non-ok health payloads render their status text without a fake busy state, and manual topbar refresh returns the shell to `Backend connected`.
+- Kept the existing packed-browser pressure test as the real `/app/` evidence that backend health polling remains online while unrelated API requests are stalled.
+- Deleted `test_backend_status_ui.py`. This does not claim all frontend Python UI harnesses are migrated.
+
+### Verification
+- `npm test -- src/test/AppShell.test.tsx -t "backend status|health failures|non-ok backend"` passed with 3 focused tests.
+- `npm run test:browser -- v2-backend-status-pressure.spec.ts --project=chromium` passed with 1 Chromium browser test.
+
+### Reviewer
+- Main-agent source mapping, obsolete V1 harness identification, V2 behavior coverage, browser pressure verification, and matrix update completed for this slice. No cleanup PASS, reviewer sign-off, or final V2 completion is claimed.

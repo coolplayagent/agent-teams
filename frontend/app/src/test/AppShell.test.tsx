@@ -1037,6 +1037,71 @@ describe("AppShell", () => {
     ).toHaveAttribute("aria-busy", "false");
   });
 
+  it("surfaces backend health failures without falling back to a fake busy state", async () => {
+    getHealthMock.mockRejectedValue(new ApiError("Health check failed", 503, null));
+
+    renderShell();
+
+    const sidebar = await screen.findByTestId("sessions-sidebar");
+    await waitFor(() =>
+      expect(within(sidebar).getByRole("status")).toHaveTextContent(
+        "Backend offline",
+      ),
+    );
+    expect(within(sidebar).getByRole("status")).toHaveAttribute(
+      "data-tone",
+      "offline",
+    );
+    expect(within(sidebar).getByRole("status")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+
+    const topbar = htmlElement(document.querySelector(".at-topbar"), "topbar");
+    const healthButton = within(topbar).getByRole("button", {
+      name: "Backend offline",
+    });
+    expect(healthButton).toHaveTextContent("off");
+    expect(healthButton).toHaveClass("is-offline");
+    expect(healthButton).toHaveAttribute("aria-busy", "false");
+  });
+
+  it("shows reachable non-ok backend statuses and refreshes back to connected", async () => {
+    getHealthMock
+      .mockResolvedValueOnce({ status: "starting" })
+      .mockResolvedValueOnce({ status: "ok" });
+
+    renderShell();
+
+    const sidebar = await screen.findByTestId("sessions-sidebar");
+    await waitFor(() =>
+      expect(within(sidebar).getByRole("status")).toHaveTextContent("starting"),
+    );
+    expect(within(sidebar).getByRole("status")).toHaveAttribute(
+      "data-tone",
+      "online",
+    );
+
+    const topbar = htmlElement(document.querySelector(".at-topbar"), "topbar");
+    const startingHealth = within(topbar).getByRole("button", {
+      name: "starting",
+    });
+    expect(startingHealth).toHaveTextContent("starting");
+    expect(startingHealth).toHaveClass("is-online");
+
+    fireEvent.click(startingHealth);
+
+    await waitFor(() => expect(getHealthMock).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(within(sidebar).getByRole("status")).toHaveTextContent(
+        "Backend connected",
+      ),
+    );
+    expect(
+      within(topbar).getByRole("button", { name: "Backend connected" }),
+    ).toHaveTextContent("ok");
+  });
+
   it("keeps V1 topbar actions visible in the narrow shell", async () => {
     mockViewportMatch(true);
     renderShell();

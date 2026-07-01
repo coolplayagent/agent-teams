@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import {
   dispatchEventSourceMessage,
@@ -179,6 +179,9 @@ test("streams subagent deltas incrementally before terminal history refill", asy
     await expect(panel.locator(".at-subagent-session-prompt")).toContainText(
       SUBAGENT_PROMPT,
     );
+    await expect.poll(() => subagentPromptLayout(page)).toMatchObject({
+      promptBeforeTimeline: true,
+    });
     await expect(panel.getByText("Persisted subagent checkpoint")).toBeVisible();
     await expect.poll(() => state.messageRequestCount).toBe(1);
     await waitForEventSourceUrl(
@@ -206,6 +209,17 @@ test("streams subagent deltas incrementally before terminal history refill", asy
     await expect(liveStreamText).toBeVisible();
     const firstDisplaySample = await liveStreamText.textContent();
     expect(firstDisplaySample ?? "").not.toContain("SUB_STREAM_ALPHA_17");
+    const revealSamples = await sampleTextLengths(liveStreamText, 6, 70);
+    const firstStreamLength = firstStreamText.length;
+    expect(revealSamples[0] ?? firstStreamLength).toBeLessThan(firstStreamLength);
+    expect(Math.max(...revealSamples)).toBeLessThan(firstStreamLength);
+    expect(new Set(revealSamples).size).toBeGreaterThanOrEqual(4);
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-subagent-typewriter-mid-reveal.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
     await expect(liveRow).toContainText(firstStreamText);
     await expect(liveRow).not.toContainText("BETA");
     await expect(
@@ -1243,5 +1257,45 @@ async function dispatchSubagentRunEvent(
     },
     lastEventId: String(event.eventId),
     type: event.type,
+  });
+}
+
+async function sampleTextLengths(
+  locator: Locator,
+  count: number,
+  intervalMs: number,
+): Promise<number[]> {
+  const lengths: number[] = [];
+  for (let index = 0; index < count; index += 1) {
+    lengths.push(((await locator.textContent()) ?? "").length);
+    await locator.page().waitForTimeout(intervalMs);
+  }
+  return lengths;
+}
+
+interface SubagentPromptLayout {
+  promptBeforeTimeline: boolean;
+  promptTop: number;
+  timelineTop: number;
+}
+
+async function subagentPromptLayout(page: Page): Promise<SubagentPromptLayout> {
+  return page.locator(".at-subagent-session-view").evaluate((root) => {
+    const prompt = root.querySelector(".at-subagent-session-prompt");
+    const timeline = root.querySelector(".at-timeline");
+    if (!(prompt instanceof HTMLElement) || !(timeline instanceof HTMLElement)) {
+      return {
+        promptBeforeTimeline: false,
+        promptTop: 0,
+        timelineTop: 0,
+      };
+    }
+    const promptRect = prompt.getBoundingClientRect();
+    const timelineRect = timeline.getBoundingClientRect();
+    return {
+      promptBeforeTimeline: promptRect.top < timelineRect.top,
+      promptTop: promptRect.top,
+      timelineTop: timelineRect.top,
+    };
   });
 }

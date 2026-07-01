@@ -8481,3 +8481,25 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent matrix scan, focused desktop build/smoke verification, screenshot inspection, log inspection, and matrix/ledger updates completed for this slice. No Desktop packaging PASS or final V2 completion is claimed.
+
+## 2026-07-01 Subagent Typewriter And Prompt Ordering Closure
+
+### Scope
+- Re-checked the frontend rewrite matrix after the user called out that subagent streaming still felt like a jump-cut and that prompt/process information in the right panel was not normal.
+- Found that the browser specs serve `frontend/dist`, so source edits must be followed by `npm run build` before screenshot evidence is meaningful. Rebuilt before the final browser pass.
+- Slowed the production presentation-layer stream reveal from the previous large-step cadence to smaller 28ms steps. Reducer state still keeps the exact full SSE payload; only the visible text reveal is buffered.
+- Strengthened `v2-subagent-session.spec.ts` so it samples six 70ms visible-length checkpoints before the first large child delta finishes revealing. The test now fails if a large chunk jumps from the first characters to the full sentence without intermediate lengths.
+- Screenshot inspection of the rebuilt packed app caught that the subagent prompt could appear below streamed output. Replaced the subagent panel body grid/`:has()` positioning with explicit column flex layout and added browser layout metrics proving the prompt is above the timeline.
+- Updated `MSG-02` and `SUB-01` evidence. This slice does not claim complete stream/replay PASS, real-backend orchestration PASS, reviewer sign-off, release cleanup sign-off, or final V2 frontend completion.
+
+### Verification
+- `npm test -- src/test/ShellLayoutCss.test.ts -t "subagent sessions"` passed.
+- `npm test -- src/test/MessageTimeline.test.tsx -t "long open runtime text streams|streaming cursor|subagent stream"` passed with 9 focused tests.
+- `npm run build` passed and regenerated `frontend/dist/app`.
+- `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium` passed with 5 browser tests.
+- `npm run test:browser -- v2-stream-create-run.spec.ts v2-stream-refresh.spec.ts v2-session-switch-stream.spec.ts --project=chromium` passed with 6 browser tests.
+- `npm run lint` passed.
+- Inspected `.tmp/frontend-v2-ts-subagent-session/v2-subagent-typewriter-mid-reveal.png`; it shows the prompt above the timeline, partial child output only through `SUB_STREAM_ALPHA_3...`, and the loading cursor at the next reveal point while the parent chat remains isolated.
+
+### Reviewer
+- Main-agent code inspection, source/dist mismatch correction, focused browser sampling, screenshot inspection, stream regression browser coverage, matrix update, and ledger update completed for this slice. No subsystem PASS or final V2 completion is claimed.

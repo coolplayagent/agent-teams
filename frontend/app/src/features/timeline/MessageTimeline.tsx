@@ -31,8 +31,8 @@ import { roundPromptText, roundTitle } from "./roundMetadata";
 
 const TIMELINE_BOTTOM_FOLLOW_THRESHOLD_PX = 96;
 const LONG_STREAM_TEXT_THRESHOLD = 12000;
-const STREAM_TYPEWRITER_DELAY_MS = 22;
-const STREAM_TYPEWRITER_MIN_STEP = 2;
+const STREAM_TYPEWRITER_DELAY_MS = 28;
+const STREAM_TYPEWRITER_MIN_STEP = 1;
 const ROUND_RAIL_PAGE_LIMIT = 100;
 const ROUND_RAIL_MAX_PAGES = 10;
 const TOOL_RESULT_MAX_LINES = 200;
@@ -4873,14 +4873,16 @@ function revealNextStreamingText(current: string, target: string): string {
     return target;
   }
   let step = STREAM_TYPEWRITER_MIN_STEP;
-  if (remaining > 240) {
-    step = 28;
-  } else if (remaining > 120) {
-    step = 16;
-  } else if (remaining > 48) {
+  if (remaining > 800) {
+    step = 12;
+  } else if (remaining > 320) {
     step = 8;
+  } else if (remaining > 120) {
+    step = 5;
+  } else if (remaining > 48) {
+    step = 3;
   } else if (remaining > 16) {
-    step = 4;
+    step = 2;
   }
   return target.slice(0, Math.min(target.length, current.length + step));
 }

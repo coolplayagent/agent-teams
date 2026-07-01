@@ -1151,8 +1151,8 @@ body {
 }
 
 .at-subagent-session-body {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -1174,12 +1174,9 @@ body {
 }
 
 .at-subagent-session-body .at-timeline {
-  grid-row: 1 / -1;
+  flex: 1 1 auto;
+  min-height: 0;
   padding: 14px 16px 24px;
-}
-
-.at-subagent-session-body:has(.at-subagent-session-prompt) .at-timeline {
-  grid-row: 2;
 }
 
 .at-subagent-session-pending {

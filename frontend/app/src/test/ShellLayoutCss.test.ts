@@ -254,10 +254,10 @@ describe("shell layout CSS", () => {
       /\.at-subagent-session-title\.ant-typography\s*{[\s\S]*?min-width:\s*0;[\s\S]*?overflow:\s*hidden;[\s\S]*?text-overflow:\s*ellipsis;[\s\S]*?white-space:\s*nowrap;/,
     );
     expect(themeCss).toMatch(
-      /\.at-subagent-session-body\s*{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-rows:\s*auto minmax\(0, 1fr\);[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/,
+      /\.at-subagent-session-body\s*{[\s\S]*?display:\s*flex;[\s\S]*?flex-direction:\s*column;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/,
     );
     expect(themeCss).toMatch(
-      /\.at-subagent-session-body:has\(\.at-subagent-session-prompt\) \.at-timeline\s*{[\s\S]*?grid-row:\s*2;/,
+      /\.at-subagent-session-body \.at-timeline\s*{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?min-height:\s*0;[\s\S]*?padding:\s*14px 16px 24px;/,
     );
   });
 

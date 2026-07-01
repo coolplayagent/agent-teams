@@ -185,6 +185,117 @@ test("captures the light appearance controls and preset menu", async ({
   }
 });
 
+test("copies, imports, and resets appearance themes through browser controls", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  try {
+    await installShellState(page);
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: {
+          writeText: async (value: string) => {
+            window.localStorage.setItem("agentTeams.testAppearanceClipboard", value);
+          },
+        },
+      });
+    });
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      sessionTitle: "TS appearance import copy reset",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    await page.locator(".at-topbar").getByRole("button", { name: "Settings" })
+      .click();
+
+    const settings = page.getByRole("dialog", { name: "Settings" });
+    await expect(settings).toBeVisible();
+    await settings.getByRole("button", { name: "Light" }).click();
+    await expect(settings.getByRole("button", { name: "Theme preset" }))
+      .toContainText("GitHub");
+
+    await settings.getByRole("button", { name: "Copy theme" }).click();
+    await expect
+      .poll(async () => copiedAppearanceTheme(page))
+      .toMatchObject({
+        accent: "#0969DA",
+        background: "#FFFFFF",
+        foreground: "#1F2328",
+        themePreset: "github",
+      });
+
+    const importedTheme = {
+      accent: "#D946EF",
+      background: "#FEF2F2",
+      codeFont: "JetBrains Mono, ui-monospace",
+      codeFontSize: 13,
+      contrast: 58,
+      diffMarker: "sign",
+      foreground: "#111827",
+      lineHeight: 160,
+      messageDensity: 70,
+      motion: "reduce",
+      pointerCursor: true,
+      showDiagnostics: true,
+      themePreset: "imported-magenta",
+      translucentSidebar: true,
+      uiFont: "Inter, sans-serif",
+      uiFontSize: 15,
+    } as const;
+    const fileChooserPromise = page.waitForEvent("filechooser");
+    await settings.getByRole("button", { name: "Import" }).click();
+    const fileChooser = await fileChooserPromise;
+    await fileChooser.setFiles({
+      buffer: Buffer.from(JSON.stringify(importedTheme)),
+      mimeType: "application/json",
+      name: "imported-magenta-theme.json",
+    });
+
+    await expect.poll(() => appearanceStorage(page)).toMatchObject(importedTheme);
+    await expect.poll(() => appearanceFrameMetrics(page)).toMatchObject({
+      accent: "#D946EF",
+      background: "#FEF2F2",
+      foreground: "#111827",
+    });
+    await expect(settings.getByRole("button", { name: "Theme preset" }))
+      .toContainText("imported-magenta");
+    await expect(settings.getByRole("textbox", { name: "UI font" }))
+      .toHaveValue("Inter, sans-serif");
+    await expect(settings.getByRole("textbox", { name: "Code font" }))
+      .toHaveValue("JetBrains Mono, ui-monospace");
+    await expect(settings.getByLabel("Translucent sidebar")).toBeChecked();
+    await expect(settings.getByLabel("Use pointer cursor")).toBeChecked();
+    await expect(settings.getByLabel("Show diagnostic information")).toBeChecked();
+
+    await page.screenshot({
+      path: screenshotPath("v2-appearance-imported-theme.png", SCREENSHOT_FOLDER),
+    });
+    await settings.getByRole("button", { name: "Reset appearance" }).click();
+    await expect.poll(() => appearanceStorage(page)).toEqual({});
+    await expect.poll(() => appearanceFrameMetrics(page)).toMatchObject({
+      accent: "",
+      background: "",
+      foreground: "",
+    });
+    await expect(settings.getByRole("button", { name: "Theme preset" }))
+      .toContainText("GitHub");
+    await expect(settings.getByLabel("Translucent sidebar")).not.toBeChecked();
+    await expect(settings.getByLabel("Use pointer cursor")).not.toBeChecked();
+    await expect(settings.getByLabel("Show diagnostic information")).not.toBeChecked();
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(page, "appearance import/copy/reset should stay framed");
+    await page.screenshot({
+      path: screenshotPath("v2-appearance-reset-default.png", SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
 test("keeps the workspace fixed under the narrow sidebar overlay", async ({
   page,
 }) => {
@@ -305,6 +416,17 @@ async function presetOptionLabels(listbox: Locator): Promise<string[]> {
 async function appearanceStorage(page: Page): Promise<AppearanceStorage> {
   return page.evaluate(() => {
     const raw = window.localStorage.getItem("agent_teams_appearance") ?? "{}";
+    const parsed: unknown = JSON.parse(raw);
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+      ? parsed
+      : {};
+  });
+}
+
+async function copiedAppearanceTheme(page: Page): Promise<AppearanceStorage> {
+  return page.evaluate(() => {
+    const raw =
+      window.localStorage.getItem("agentTeams.testAppearanceClipboard") ?? "{}";
     const parsed: unknown = JSON.parse(raw);
     return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
       ? parsed

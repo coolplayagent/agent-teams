@@ -2,6 +2,20 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-01 Appearance Import Copy Reset Browser Evidence
+
+### Scope
+- Extended `v2-appearance-layout.spec.ts` with a real browser flow for the Appearance settings actions that were still missing from `SET-02`: copy the active GitHub theme through `navigator.clipboard.writeText`, import a JSON theme through the file chooser, verify localStorage and live CSS variables update, then reset back to the default appearance state.
+- Captured the imported and reset states inside the fixed Settings shell so the evidence covers both behavior and layout framing.
+
+### Verification
+- `npm run test:browser -- v2-appearance-layout.spec.ts --project=chromium -g "copies, imports, and resets"` passed.
+- `npm run test:browser -- v2-appearance-layout.spec.ts --project=chromium` passed.
+- Screenshots: `.tmp/frontend-v2-ts-appearance/v2-appearance-imported-theme.png`, `.tmp/frontend-v2-ts-appearance/v2-appearance-reset-default.png`.
+
+### Reviewer
+- Main-agent decision: this narrows `SET-02` by proving the import/copy/reset happy path in the packed browser UI. `SET-02` stays `In progress` until final V1 paired visual sign-off and failure/fallback states are covered.
+
 ## 2026-07-01 Recovery Stream Python Harness Removal
 
 ### Scope

@@ -8443,3 +8443,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent matrix scan, focused browser evidence strengthening, failed-selector reproduction, screenshot-quality rejection, browser and component verification, screenshot inspection, and matrix/ledger updates completed for this slice. No Settings subsystem PASS or final V2 completion is claimed.
+
+## 2026-07-01 Settings System Landing Browser Evidence Closure
+
+### Scope
+- Re-checked the frontend rewrite matrix and selected `SET-14 System` because it was still `Not checked` after the surrounding Settings entries had moved to `In progress`.
+- Confirmed that the current V2 System surface is a landing page for system status and secondary settings pages, not a flat page containing every System-owned control. This preserves the V1-style secondary-page logic the user explicitly called out.
+- Strengthened the packed Settings parity browser survey with explicit System assertions: first-level Settings navigation still excludes MCP, Plugins, Commands, Hooks, Agent Runtime, GitHub, and Gateway; the System landing shows `Skills loaded` as enabled; raw skill descriptions are not leaked as landing-page rows; and the secondary launcher order is exactly MCP, Plugins, Commands, Hooks, Agent Runtime, GitHub, Gateway.
+- Added direct System landing screenshot evidence at `.tmp/frontend-v2-ts-settings-parity/v2-settings-system-landing.png` instead of relying only on the broader Settings survey screenshot.
+- Updated `SET-14` from `Not checked` to `In progress`. This slice does not claim System `Verified`, complete Settings parity, formal V1 visual/DOM pairing, deep MCP/Commands/GitHub/Gateway browser sign-off, reviewer sign-off, release cleanup sign-off, or final V2 frontend completion.
+
+### Verification
+- `npm run test:browser -- v2-settings-parity.spec.ts --project=chromium -g "surveys V1 settings sections"` passed with 1 browser test.
+- `npm test -- src/test/SettingsNavigationParity.test.ts` passed with 2 focused static navigation tests.
+- `npm test -- src/test/SettingsDrawer.test.tsx -t "renders a real settings center"` passed with 1 focused Settings integration test and 39 skipped tests; jsdom emitted the known pseudo-element `getComputedStyle` warning.
+- `npm run lint` passed.
+- Inspected `.tmp/frontend-v2-ts-settings-parity/v2-settings-system-landing.png`.
+
+### Reviewer
+- Main-agent matrix scan, System landing evidence strengthening, browser/component/static verification, screenshot inspection, and matrix/ledger updates completed for this slice. No Settings subsystem PASS or final V2 completion is claimed.

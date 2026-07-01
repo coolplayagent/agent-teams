@@ -86,6 +86,11 @@ test("surveys V1 settings sections and nested system pages from the browser", as
     }
 
     await expect(settings.getByText("Skills loaded")).toBeVisible();
+    await expect(settings.getByText("Enabled")).toBeVisible();
+    await expect(settings.getByText("Frontend parity verification.")).not.toBeVisible();
+    await expect
+      .poll(async () => systemPageLabels(settings))
+      .toEqual([...SECONDARY_SYSTEM_PAGES]);
     for (const secondaryLabel of SECONDARY_SYSTEM_PAGES) {
       await expect(
         settings.locator(".at-settings-list-button").filter({
@@ -96,6 +101,9 @@ test("surveys V1 settings sections and nested system pages from the browser", as
 
     await expectNoDocumentScroll(page, "v2 settings parity survey should stay framed");
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await page.screenshot({
+      path: screenshotPath("v2-settings-system-landing.png", SCREENSHOT_FOLDER),
+    });
     await page.screenshot({
       path: screenshotPath("v2-settings-v1-section-survey.png", SCREENSHOT_FOLDER),
     });
@@ -209,6 +217,14 @@ async function openSettingsDialog(page: Page): Promise<Locator> {
 async function sectionLabels(sections: Locator): Promise<string[]> {
   return sections.getByRole("button").evaluateAll((buttons) =>
     buttons.map((button) => button.textContent?.trim() ?? ""),
+  );
+}
+
+async function systemPageLabels(settings: Locator): Promise<string[]> {
+  return settings.locator(".at-settings-list-button").evaluateAll((buttons) =>
+    buttons.map((button) =>
+      button.querySelector(".at-settings-list-main span")?.textContent?.trim() ?? "",
+    ),
   );
 }
 

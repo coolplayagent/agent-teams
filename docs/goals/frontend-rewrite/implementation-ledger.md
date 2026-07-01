@@ -2,6 +2,26 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-01 Memory Surface Browser Coverage
+
+### Scope
+- Re-checked the closure matrix and selected `PAGE-06` because Memory was still marked `Not checked` while it is a primary V1 sidebar surface.
+- Added a dedicated `/app/` Playwright path for the V2 Memory surface: sidebar navigation, workspace-scoped list loading, row/detail selection, active/default filtering, search request body validation, matched snippet rendering, empty search state, superseded status filtering, rebuild-index action, and success alert.
+- Verified the page inside the fixed shell rather than a component-only render; screenshots cover selected detail, search hit, empty search, and rebuild success.
+- Kept `PAGE-06` at `In progress`; this slice adds V2 browser evidence and screenshot inspection, not final V1 visual/DOM pairing, V1 edit/delete confirmation, loading/error browser captures, or narrow-density sign-off.
+
+### Verification
+- `npm run test:browser -- v2-memory-view.spec.ts --project=chromium` passed.
+- `npm run test -- src/test/MemoryView.test.tsx` passed with 3 tests.
+- Browser screenshot artifacts inspected:
+  - `.tmp/frontend-v2-ts-memory/v2-memory-selected-detail.png`
+  - `.tmp/frontend-v2-ts-memory/v2-memory-search-hit.png`
+  - `.tmp/frontend-v2-ts-memory/v2-memory-empty-search.png`
+  - `.tmp/frontend-v2-ts-memory/v2-memory-rebuild-result.png`
+
+### Reviewer
+- Main-agent browser inspection confirmed the Memory surface stays in the fixed shell, search does not leave stale rows or details, the selected detail follows row selection/filter changes, empty search removes the detail pane, and rebuild results render in place. Remaining before verification: V1 screenshot/DOM comparison, loading/error browser states, V1 edit/delete behavior if present, and narrow viewport density review.
+
 ## 2026-07-01 Connectors Surface Browser Coverage
 
 ### Scope

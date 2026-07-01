@@ -5351,6 +5351,35 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText("output delta")).not.toBeInTheDocument();
   });
 
+  it("joins top-level output_delta text onto one streaming runtime segment", async () => {
+    setRuntimeEntries([
+      runtimeOutputDeltaEntry({
+        eventId: 1,
+        id: "run-output:1:0",
+        payload: { text: "SUBCLEAN_1\n" },
+      }),
+      runtimeOutputDeltaEntry({
+        eventId: 2,
+        id: "run-output:2:1",
+        payload: { delta: "SUBCLEAN_2\n" },
+      }),
+    ], "open");
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    await waitFor(() => {
+      expect(container).toHaveTextContent("SUBCLEAN_1");
+      expect(container).toHaveTextContent("SUBCLEAN_2");
+    });
+    const rows = Array.from(container.querySelectorAll("article.at-message"));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toHaveClass("is-streaming");
+    expect(rows[0]?.textContent).toContain("SUBCLEAN_1");
+    expect(rows[0]?.textContent).toContain("SUBCLEAN_2");
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
+  });
+
   it("closes runtime text before rendering media_ref output parts", async () => {
     setRuntimeEntries([
       runtimeTextDeltaEntry({

@@ -3969,8 +3969,17 @@ function applyRuntimeOutputDeltaEvent(
   nextTextSegmentSequence: () => number,
 ): boolean {
   const parts = runtimeOutputParts(entry);
-  if (parts === null || parts.length === 0) {
+  if (parts === null) {
     return false;
+  }
+  if (parts.length === 0) {
+    return appendRuntimeTextSegment(
+      entry,
+      runtimeTextDeltaText(entry),
+      rows,
+      activeText,
+      nextTextSegmentSequence,
+    );
   }
   let rendered = false;
   let structuredParts: TimelineRenderPart[] = [];

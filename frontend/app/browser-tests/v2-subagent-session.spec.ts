@@ -283,6 +283,85 @@ test("streams subagent deltas incrementally before terminal history refill", asy
   }
 });
 
+test("streams top-level subagent output deltas inside the right panel", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state: SubagentSessionMockState = {
+    completed: false,
+    delayFinalMessages: false,
+    releaseFinalMessages: [],
+    messageRequestCount: 0,
+  };
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await installMockEventSource(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleSubagentSessionApi(context, state),
+      sessionTitle: "TS parent session",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    await openSubagentPanelFromToolCard(page, "Explorer review");
+    const panel = page.locator(".at-subagent-session-view");
+    await waitForEventSourceUrl(
+      page,
+      new RegExp(
+        `/api/sessions/${SESSION_ID}/subagents/events\\?after_event_id=0$`,
+      ),
+    );
+    await waitForEventSourceOpenCount(page, 1);
+
+    await dispatchSubagentRunEvent(page, {
+      eventId: 42,
+      payload: { text: "SUB_STDOUT_1\n" },
+      relayEventType: "output_delta",
+      type: "message.output.delta",
+    });
+    const liveRow = panel
+      .locator(`.at-timeline-row.is-streaming[data-run-id="${SUBAGENT_RUN_ID}"]`)
+      .filter({ hasText: "SUB_STDOUT_1" });
+    await expect(liveRow).toHaveCount(1);
+    await expect(liveRow.locator(".streaming-cursor")).toHaveCount(1);
+    await expect(
+      page.locator(".at-chat-view").getByText("SUB_STDOUT_1"),
+    ).toHaveCount(0);
+
+    await dispatchSubagentRunEvent(page, {
+      eventId: 43,
+      payload: { delta: "SUB_STDOUT_2\n" },
+      relayEventType: "output_delta",
+      type: "message.output.delta",
+    });
+    await expect(liveRow).toContainText("SUB_STDOUT_1");
+    await expect(liveRow).toContainText("SUB_STDOUT_2");
+    await expect(
+      panel.locator(`.at-timeline-row[data-run-id="${SUBAGENT_RUN_ID}"]`)
+        .filter({ hasText: "SUB_STDOUT_" }),
+    ).toHaveCount(1);
+    await expect(
+      page.locator(".at-chat-view").getByText("SUB_STDOUT_2"),
+    ).toHaveCount(0);
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-subagent-top-level-output-delta.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "subagent output deltas should stay inside the fixed V2 shell",
+    );
+  } finally {
+    await appServer.close();
+  }
+});
+
 test("restores an open subagent panel after hard refresh without replay leakage", async ({
   page,
 }) => {

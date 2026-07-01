@@ -300,6 +300,14 @@ For every row moved to `Verified`, record:
 - Automated evidence: `npm test -- src/test/RoundMarker.test.tsx`, `npm test -- src/test/MessageTimeline.test.tsx -t "pending runtime cursor"`, `npm test -- src/test/MessageTimeline.test.tsx -t "pending cursor for an open scoped run"`, `npm test -- src/test/MessageTimeline.test.tsx`, `npm run build`.
 - Browser evidence: `.tmp/live-pending-cursor-final.json`, `.tmp/round-marker-expanded-final.json`, `.tmp/pending-cursor-roundmarker-final.png`.
 
+### 2026-07-01 Top-Level Subagent Output Delta Streaming
+
+- `MSG-02` tightened: `output_delta` events that arrive as top-level `text`, `delta`, `content`, or `message` payloads now join the active runtime text stream instead of falling back to separate non-streaming `output delta` rows.
+- `SUB-01` tightened: the right-side subagent panel now streams top-level child `message.output.delta` payloads inside one live row with a cursor, while the parent `.at-chat-view` stays clean.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx`, `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium`, `npm run lint`, `npm run build`.
+- Browser evidence: `.tmp/frontend-v2-ts-subagent-session/v2-subagent-top-level-output-delta.png`.
+- Remaining before verification: real-backend shell/stdout subagent runs, hard-refresh replay while stdout is mid-stream, and live orchestration variants.
+
 ### 2026-07-01 Timeline Background Notification And Prompt Expansion
 
 - `STREAM-01` tightened: managed background task completion notifications are hidden from the user-visible transcript even when replayed from persisted `message.parts[*].part_kind="user-prompt"` payloads.

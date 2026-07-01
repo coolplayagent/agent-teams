@@ -8640,3 +8640,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent runtime reducer fix, timeline containment fix, subagent panel duplicate suppression, focused TS coverage, dist rebuild, and partial real-app observation completed for this slice. This does not claim full streaming cadence PASS, full subagent side-panel PASS, complete V1/V2 parity closure, reviewer sign-off, or final V2 frontend completion.
+
+## 2026-07-01 Top-Level Subagent Output Delta Streaming Slice
+
+### Scope
+- Reproduced a concrete streaming gap: `message.output.delta` events with top-level `text`/`delta` payloads rendered as separate non-streaming fallback rows instead of joining the live text stream.
+- Updated `MessageTimeline` so top-level `output_delta` text uses the same active runtime text accumulator as `text_delta` and structured `output[]` text parts.
+- Added App-level browser coverage proving the right-side subagent panel streams top-level child stdout-style output into one live row with a cursor and does not leak that output into the parent chat timeline.
+- Rebuilt the packaged V2 frontend assets under `frontend/dist/app`.
+
+### Verification
+- The new focused checks failed before the fix: `npm test -- src/test/MessageTimeline.test.tsx -t "top-level output_delta"` showed two `output delta` fallback rows, and `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium -g "top-level subagent output"` found no streaming subagent row.
+- After the fix, `npm test -- src/test/MessageTimeline.test.tsx -t "top-level output_delta"` passed.
+- `npm test -- src/test/MessageTimeline.test.tsx` passed with 151 tests.
+- `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium` passed with 7 Chromium tests.
+- `npm run lint` passed.
+- `npm run build` passed and produced the current `frontend/dist/app` bundle.
+- Inspected `.tmp/frontend-v2-ts-subagent-session/v2-subagent-top-level-output-delta.png`; it shows the main timeline containing only the compact `Subagent started` card while the right panel contains `SUB_STDOUT_1 SUB_STDOUT_2` as live subagent output.
+
+### Reviewer
+- Main-agent failure reproduction, streaming accumulator fix, component coverage, App-level browser coverage, screenshot inspection, dist rebuild, and matrix update completed for this slice. This does not claim full real-backend stdout streaming PASS, interrupted mid-stdout refresh recovery, live orchestration PASS, reviewer sign-off, or final V2 frontend completion.

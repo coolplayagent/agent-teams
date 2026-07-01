@@ -13,6 +13,7 @@ import type { ReactNode } from "react";
 
 import {
   addMcpServer,
+  configurePlugin,
   createFeishuGatewayAccount,
   createCommand,
   deleteAgentRuntime,
@@ -54,6 +55,7 @@ import {
   getRoleConfig,
   getRoleConfigOptions,
   getWebConfig,
+  installPlugin,
   installAgentRuntimeFromRegistry,
   listRoleConfigs,
   listSshProfiles,
@@ -118,6 +120,7 @@ import { useUiStore } from "../runtime/uiStore";
 
 vi.mock("../api/client", () => ({
   addMcpServer: vi.fn(),
+  configurePlugin: vi.fn(),
   createFeishuGatewayAccount: vi.fn(),
   createCommand: vi.fn(),
   deleteAgentRuntime: vi.fn(),
@@ -159,6 +162,7 @@ vi.mock("../api/client", () => ({
   getRoleConfig: vi.fn(),
   getRoleConfigOptions: vi.fn(),
   getWebConfig: vi.fn(),
+  installPlugin: vi.fn(),
   installAgentRuntimeFromRegistry: vi.fn(),
   listRoleConfigs: vi.fn(),
   listMcpServers: vi.fn(),
@@ -220,6 +224,7 @@ vi.mock("../api/speech", () => ({
 vi.setConfig({ testTimeout: 15000 });
 
 const addMcpServerMock = vi.mocked(addMcpServer);
+const configurePluginMock = vi.mocked(configurePlugin);
 const createFeishuGatewayAccountMock = vi.mocked(createFeishuGatewayAccount);
 const createCommandMock = vi.mocked(createCommand);
 const deleteAgentRuntimeMock = vi.mocked(deleteAgentRuntime);
@@ -261,6 +266,7 @@ const getProxyConfigMock = vi.mocked(getProxyConfig);
 const getRoleConfigMock = vi.mocked(getRoleConfig);
 const getRoleConfigOptionsMock = vi.mocked(getRoleConfigOptions);
 const getWebConfigMock = vi.mocked(getWebConfig);
+const installPluginMock = vi.mocked(installPlugin);
 const installAgentRuntimeFromRegistryMock = vi.mocked(installAgentRuntimeFromRegistry);
 const listRoleConfigsMock = vi.mocked(listRoleConfigs);
 const listMcpServersMock = vi.mocked(listMcpServers);
@@ -1030,9 +1036,31 @@ beforeEach(() => {
         command_sources: [{ name: "workspace-command" }],
         description: "Workspace utilities",
         enabled: true,
+        manifest: {
+          user_config: {
+            allow: {
+              sensitive: true,
+              title: "Allow",
+              type: "boolean",
+            },
+            endpoint: {
+              title: "Endpoint",
+              type: "string",
+            },
+            payload: {
+              title: "Payload",
+              type: "object",
+            },
+          },
+        },
         name: "workspace-tools",
         scope: "user",
         skill_sources: [{ name: "workspace-skill" }],
+        user_config: {
+          allow: "<configured>",
+          endpoint: "https://docs.example",
+          payload: { mode: "strict" },
+        },
         valid: true,
         version: "1.0.0",
       },
@@ -1066,6 +1094,8 @@ beforeEach(() => {
   disablePluginMock.mockResolvedValue({ diagnostics: [], plugins: [] });
   updatePluginMock.mockResolvedValue({ diagnostics: [], plugins: [] });
   deletePluginMock.mockResolvedValue({ diagnostics: [], plugins: [] });
+  installPluginMock.mockResolvedValue({ diagnostics: [], plugins: [] });
+  configurePluginMock.mockResolvedValue({ diagnostics: [], plugins: [] });
   getHooksConfigMock.mockResolvedValue({
     hooks: {
       SessionStart: [
@@ -1867,6 +1897,64 @@ describe("SettingsDrawer", () => {
       expect(deletePluginMock).toHaveBeenCalledWith("workspace-tools", {
         prune: false,
         scope: "user",
+      }),
+    );
+  });
+
+  it("installs a plugin from the System Plugins secondary page", async () => {
+    renderDrawer();
+
+    fireEvent.click((await screen.findAllByRole("button", { name: "System" }))[0] as HTMLElement);
+    fireEvent.click((await screen.findByText("Plugins")).closest("button") as HTMLElement);
+    fireEvent.click(await screen.findByRole("button", { name: "Add Plugin" }));
+
+    fireEvent.mouseDown(await screen.findByRole("combobox", { name: "Source type" }));
+    fireEvent.click(await screen.findByText("Git"));
+    fireEvent.change(await screen.findByLabelText("Source"), {
+      target: { value: "https://example.test/plugins/quality.git" },
+    });
+    fireEvent.change(await screen.findByLabelText("Source ref"), {
+      target: { value: "v1.2.0" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add Plugin" }));
+
+    await waitFor(() =>
+      expect(installPluginMock).toHaveBeenCalledWith({
+        enabled: true,
+        scope: "user",
+        source: "https://example.test/plugins/quality.git",
+        source_kind: "git",
+        source_ref: "v1.2.0",
+      }),
+    );
+  });
+
+  it("configures plugin user_config without resending unchanged sensitive values", async () => {
+    renderDrawer();
+
+    fireEvent.click((await screen.findAllByRole("button", { name: "System" }))[0] as HTMLElement);
+    fireEvent.click((await screen.findByText("Plugins")).closest("button") as HTMLElement);
+
+    const enabledRow = (await screen.findByText("workspace-tools")).closest(
+      ".at-plugin-list-row",
+    ) as HTMLElement;
+    fireEvent.click(within(enabledRow).getByRole("button", { name: "Configure" }));
+
+    fireEvent.change(await screen.findByLabelText("Endpoint"), {
+      target: { value: "https://docs.changed" },
+    });
+    fireEvent.change(await screen.findByLabelText("Payload"), {
+      target: { value: '{"mode":"loose"}' },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(configurePluginMock).toHaveBeenCalledWith("workspace-tools", {
+        scope: "user",
+        user_config: {
+          endpoint: "https://docs.changed",
+          payload: { mode: "loose" },
+        },
       }),
     );
   });

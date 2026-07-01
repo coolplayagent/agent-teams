@@ -114,6 +114,12 @@ For every row moved to `Verified`, record:
 
 ## Verification Ledger
 
+### 2026-07-02 Plugin Settings Install And Configure UI
+
+- `SET-14` tightened: Plugins settings now has V2-native install and configure sub-views, uses the backend plugin registry manifest `user_config` schema, preserves V1-relevant install payload fields, parses JSON config values, and avoids resending unchanged sensitive `<configured>` values.
+- `CLEAN-01` unchanged for the legacy plugins harness: `tests/integration_tests/frontend/test_plugins_settings_ui.py` still remains because marketplace browsing/version selection, ClawHub full-safe browsing behavior, marketplace update version filtering, and browser screenshot evidence are not closed in this slice.
+- Evidence: `npm test -- src/test/SettingsDrawer.test.tsx -t "plugin"`, `npm run lint`, and `npm run build`. Browser verification was attempted after build, but the in-app browser tab selection timed out, so no screenshot sign-off is claimed.
+
 ### 2026-07-02 Plugin Settings API Gap Closure
 
 - `SET-14` tightened: the frontend API layer now exposes the existing backend plugin install and configure contracts that V1 plugin settings depended on, including source references, marketplace provider/source/ref/version fields, safety flags, and typed `user_config` payloads.

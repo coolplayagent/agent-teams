@@ -2,6 +2,26 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-02 Plugin Settings Install And Configure UI
+
+### Scope
+- Restored the V2 Plugins settings secondary-page flow for adding and configuring plugins instead of leaving the page as a list-only manager.
+- Added a Plugins sub-view for installing local, git, git-subdir, HTTP archive, and marketplace plugin sources. The install form preserves V1-relevant fields such as `source_kind`, `source_ref`, marketplace provider/source/ref/version, and install safety flags.
+- Added a Plugins sub-view for manifest-declared `user_config` fields. The form renders booleans, numbers, strings/passwords, text, object, and array values; JSON values are parsed before submission; unchanged sensitive `<configured>` values are not resent.
+- Added frontend contract fields for plugin `manifest.user_config` and component counts so V2 reads the same backend registry data that V1 used for configuration forms.
+- Extended `SettingsDrawer.test.tsx` to cover plugin install payloads and configure payloads, including unchanged sensitive values.
+- Built the React app so `frontend/dist/app` points at the new bundle.
+- Did not remove `tests/integration_tests/frontend/test_plugins_settings_ui.py`: marketplace browsing/version selection, ClawHub full-safe browsing details, marketplace update version filtering, and full browser visual evidence still need their own closure pass.
+
+### Verification
+- `npm test -- src/test/SettingsDrawer.test.tsx -t "plugin"` passed with 3 matching tests.
+- `npm run lint` passed.
+- `npm run build` passed.
+- Browser verification was attempted against the in-app browser after build, but selecting the current tab timed out twice. This slice is not claiming browser screenshot sign-off.
+
+### Reviewer
+- Main-agent decision: this closes the first real Plugins settings UI gap found while migrating `test_plugins_settings_ui.py`, but keeps `SET-14` in progress and leaves the old Python harness until the marketplace/update/browser evidence is migrated.
+
 ## 2026-07-02 Plugin Settings API Gap Closure
 
 ### Scope

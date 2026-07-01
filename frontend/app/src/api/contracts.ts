@@ -181,10 +181,12 @@ export interface McpServerConnectionTestResult {
 
 export interface PluginRuntimeRecord {
   command_sources?: JsonValue[];
+  component_counts?: Record<string, number>;
   description?: string | null;
   diagnostics?: JsonValue;
   enabled?: boolean | null;
   hook_sources?: JsonValue[];
+  manifest?: PluginManifestView;
   manifest_path?: string | null;
   mcp_sources?: JsonValue[];
   name?: string | null;
@@ -197,6 +199,22 @@ export interface PluginRuntimeRecord {
   user_config?: Record<string, JsonValue>;
   valid?: boolean | null;
   version?: string | null;
+}
+
+export interface PluginManifestView {
+  description?: string | null;
+  name?: string | null;
+  user_config?: Record<string, PluginUserConfigField>;
+  version?: string | null;
+}
+
+export interface PluginUserConfigField {
+  default?: JsonValue | null;
+  description?: string;
+  required?: boolean;
+  sensitive?: boolean;
+  title?: string;
+  type?: string;
 }
 
 export interface PluginRuntimeDiagnostics {

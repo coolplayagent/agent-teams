@@ -1,9 +1,10 @@
 import { Play, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { App, Button, Form, Input, Popconfirm, Progress, Select, Switch, Typography } from "antd";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import {
+  configurePlugin,
   deletePlugin,
   deleteAgentRuntime,
   disablePlugin,
@@ -17,6 +18,7 @@ import {
   getHooksConfig,
   getPluginsConfig,
   getPluginsRuntime,
+  installPlugin,
   installAgentRuntimeFromRegistry,
   refreshAgentRuntimeRegistry,
   saveHooksConfig,
@@ -41,8 +43,11 @@ import type {
   HooksConfigPayload,
   JsonValue,
   LoadedHookRecord,
+  PluginInstallRequest,
+  PluginInstallSourceKind,
   PluginRuntimeDiagnostics,
   PluginRuntimeRecord,
+  PluginUserConfigField,
 } from "../../api/contracts";
 import { useTranslations, type Translate } from "../../i18n";
 import { SettingsQueryState, SettingsSection } from "./SettingsShared";
@@ -50,16 +55,40 @@ import { SettingsQueryState, SettingsSection } from "./SettingsShared";
 type AgentRuntimeBindingConfig = AgentRuntimeSecretBinding;
 type PluginScope = NonNullable<PluginRuntimeRecord["scope"]>;
 type PluginAction = "delete" | "disable" | "enable" | "update";
+type PluginSettingsView =
+  | { type: "list" }
+  | { type: "install" }
+  | { plugin: PluginRuntimeRecord; type: "configure" };
 
 interface PluginActionRequest {
   action: PluginAction;
   plugin: PluginRuntimeRecord;
 }
 
+interface PluginInstallFormValues {
+  allow_community_plugins?: boolean;
+  allow_executes_code?: boolean;
+  allow_missing_digest?: boolean;
+  allow_unclean_scan?: boolean;
+  marketplace?: string;
+  marketplace_provider?: PluginInstallRequest["marketplace_provider"];
+  marketplace_ref?: string;
+  marketplace_source?: string;
+  scope?: PluginScope;
+  source?: string;
+  source_kind?: PluginInstallSourceKind;
+  source_ref?: string;
+  version?: string;
+}
+
+type PluginConfigFormValue = boolean | number | string | undefined;
+type PluginConfigFormValues = Record<string, PluginConfigFormValue>;
+
 export function PluginsSettingsSection() {
   const t = useTranslations();
   const { message } = App.useApp();
   const queryClient = useQueryClient();
+  const [view, setView] = useState<PluginSettingsView>({ type: "list" });
   const configQuery = useQuery({
     queryKey: ["settings", "plugins", "config"],
     queryFn: getPluginsConfig,
@@ -104,6 +133,27 @@ export function PluginsSettingsSection() {
     actionMutation.isPending && actionMutation.variables !== undefined
       ? pluginActionKey(actionMutation.variables)
       : null;
+  if (view.type === "install") {
+    return (
+      <SettingsSection title={t("settingsPlugins")}>
+        <PluginInstallView
+          onBack={() => setView({ type: "list" })}
+          onSaved={() => setView({ type: "list" })}
+        />
+      </SettingsSection>
+    );
+  }
+  if (view.type === "configure") {
+    return (
+      <SettingsSection title={t("settingsPlugins")}>
+        <PluginConfigureView
+          onBack={() => setView({ type: "list" })}
+          onSaved={() => setView({ type: "list" })}
+          plugin={view.plugin}
+        />
+      </SettingsSection>
+    );
+  }
   return (
     <SettingsSection title={t("settingsPlugins")}>
       <SettingsQueryState error={error} loading={loading} />
@@ -127,8 +177,16 @@ export function PluginsSettingsSection() {
             >
               {t("settingsPluginsRefresh")}
             </Button>
+            <Button
+              icon={<Plus size={15} />}
+              onClick={() => setView({ type: "install" })}
+              type="primary"
+            >
+              {t("settingsPluginsInstall")}
+            </Button>
           </div>
           <PluginRuntimeList
+            onConfigure={(plugin) => setView({ plugin, type: "configure" })}
             onAction={(request) => actionMutation.mutate(request)}
             pendingActionKey={pendingActionKey}
             plugins={plugins}
@@ -321,11 +379,315 @@ export function AgentRuntimeSettingsSection() {
   );
 }
 
+function PluginInstallView({
+  onBack,
+  onSaved,
+}: {
+  onBack: () => void;
+  onSaved: () => void;
+}) {
+  const { message } = App.useApp();
+  const queryClient = useQueryClient();
+  const t = useTranslations();
+  const [form] = Form.useForm<PluginInstallFormValues>();
+  const sourceKind = Form.useWatch("source_kind", form) ?? "local";
+  const installMutation = useMutation({
+    mutationFn: (values: PluginInstallFormValues) =>
+      installPlugin(buildPluginInstallRequest(values)),
+    onSuccess: async () => {
+      void message.success(t("settingsPluginsInstalled"));
+      await queryClient.invalidateQueries({ queryKey: ["settings", "plugins"] });
+      onSaved();
+    },
+    onError: (error) => {
+      void message.error(error instanceof Error ? error.message : t("settingsSaveFailed"));
+    },
+  });
+
+  return (
+    <>
+      <div className="at-settings-section-actions">
+        <Button onClick={onBack}>{t("settingsBack")}</Button>
+      </div>
+      <Form
+        form={form}
+        initialValues={{
+          allow_community_plugins: false,
+          allow_executes_code: false,
+          allow_missing_digest: false,
+          allow_unclean_scan: false,
+          marketplace_provider: "local_json",
+          scope: "user",
+          source_kind: "local",
+        }}
+        layout="vertical"
+        onFinish={(values) => installMutation.mutate(values)}
+      >
+        <Form.Item
+          label={t("settingsPluginsInstallSourceType")}
+          name="source_kind"
+          rules={[{ required: true }]}
+        >
+          <Select
+            options={[
+              { label: t("settingsPluginsInstallSourceLocal"), value: "local" },
+              { label: t("settingsPluginsInstallSourceGit"), value: "git" },
+              {
+                label: t("settingsPluginsInstallSourceGitSubdir"),
+                value: "git_subdir",
+              },
+              {
+                label: t("settingsPluginsInstallSourceArchive"),
+                value: "http_archive",
+              },
+              {
+                label: t("settingsPluginsInstallSourceMarketplace"),
+                value: "marketplace",
+              },
+            ]}
+          />
+        </Form.Item>
+        <Form.Item
+          label={t("settingsPluginsInstallSource")}
+          name="source"
+          rules={[{ required: true, whitespace: true }]}
+        >
+          <Input />
+        </Form.Item>
+        <Form.Item label={t("settingsPluginsInstallScope")} name="scope">
+          <Select
+            options={[
+              { label: t("settingsPluginsScopeUser"), value: "user" },
+              { label: t("settingsPluginsScopeProject"), value: "project" },
+              { label: t("settingsPluginsScopeLocal"), value: "local" },
+            ]}
+          />
+        </Form.Item>
+        {sourceKind === "git" ||
+        sourceKind === "git_subdir" ||
+        sourceKind === "http_archive" ? (
+          <Form.Item label={t("settingsPluginsInstallSourceRef")} name="source_ref">
+            <Input />
+          </Form.Item>
+        ) : null}
+        {sourceKind === "marketplace" ? (
+          <>
+            <Form.Item
+              label={t("settingsPluginsInstallMarketplace")}
+              name="marketplace"
+            >
+              <Input />
+            </Form.Item>
+            <Form.Item
+              label={t("settingsPluginsInstallMarketplaceProvider")}
+              name="marketplace_provider"
+            >
+              <Select
+                options={[
+                  { label: "local_json", value: "local_json" },
+                  { label: "claude", value: "claude" },
+                  { label: "clawhub", value: "clawhub" },
+                ]}
+              />
+            </Form.Item>
+            <Form.Item
+              label={t("settingsPluginsInstallMarketplaceSource")}
+              name="marketplace_source"
+            >
+              <Input />
+            </Form.Item>
+            <Form.Item
+              label={t("settingsPluginsInstallMarketplaceRef")}
+              name="marketplace_ref"
+            >
+              <Input />
+            </Form.Item>
+            <Form.Item label={t("settingsPluginsInstallVersion")} name="version">
+              <Input />
+            </Form.Item>
+            <Form.Item
+              label={t("settingsPluginsAllowCommunity")}
+              name="allow_community_plugins"
+              valuePropName="checked"
+            >
+              <Switch />
+            </Form.Item>
+            <Form.Item
+              label={t("settingsPluginsAllowExecutesCode")}
+              name="allow_executes_code"
+              valuePropName="checked"
+            >
+              <Switch />
+            </Form.Item>
+            <Form.Item
+              label={t("settingsPluginsAllowMissingDigest")}
+              name="allow_missing_digest"
+              valuePropName="checked"
+            >
+              <Switch />
+            </Form.Item>
+            <Form.Item
+              label={t("settingsPluginsAllowUncleanScan")}
+              name="allow_unclean_scan"
+              valuePropName="checked"
+            >
+              <Switch />
+            </Form.Item>
+          </>
+        ) : null}
+        <div className="at-settings-section-actions">
+          <Button
+            htmlType="submit"
+            loading={installMutation.isPending}
+            type="primary"
+          >
+            {t("settingsPluginsInstall")}
+          </Button>
+          <Button onClick={onBack}>{t("sidebarDeleteCancel")}</Button>
+        </div>
+      </Form>
+    </>
+  );
+}
+
+function PluginConfigureView({
+  onBack,
+  onSaved,
+  plugin,
+}: {
+  onBack: () => void;
+  onSaved: () => void;
+  plugin: PluginRuntimeRecord;
+}) {
+  const { message } = App.useApp();
+  const queryClient = useQueryClient();
+  const t = useTranslations();
+  const [form] = Form.useForm<PluginConfigFormValues>();
+  const [dirtyFields, setDirtyFields] = useState<Set<string>>(() => new Set());
+  const fields = pluginConfigFields(plugin);
+  const title = pluginTitle(plugin, t("settingsPluginsUnnamed"));
+  const configureMutation = useMutation({
+    mutationFn: (values: PluginConfigFormValues) => {
+      const name = pluginName(plugin);
+      if (name === null) {
+        throw new Error(t("settingsPluginsNameRequired"));
+      }
+      return configurePlugin(name, {
+        scope: pluginScope(plugin),
+        user_config: buildPluginConfigPayload(plugin, values, dirtyFields, t),
+      });
+    },
+    onSuccess: async () => {
+      void message.success(t("settingsPluginsConfigured"));
+      await queryClient.invalidateQueries({ queryKey: ["settings", "plugins"] });
+      onSaved();
+    },
+    onError: (error) => {
+      void message.error(error instanceof Error ? error.message : t("settingsSaveFailed"));
+    },
+  });
+
+  useEffect(() => {
+    form.setFieldsValue(pluginConfigInitialValues(plugin));
+    setDirtyFields(new Set());
+  }, [form, plugin]);
+
+  return (
+    <>
+      <div className="at-settings-section-actions">
+        <Button onClick={onBack}>{t("settingsBack")}</Button>
+      </div>
+      <Typography.Title level={4}>{title}</Typography.Title>
+      {fields.length === 0 ? (
+        <div className="at-settings-empty">{t("settingsPluginsNoConfig")}</div>
+      ) : (
+        <Form
+          form={form}
+          layout="vertical"
+          onFinish={(values) => configureMutation.mutate(values)}
+          onValuesChange={(changedValues) => {
+            const changedKeys = Object.keys(changedValues);
+            setDirtyFields((current) => {
+              const next = new Set(current);
+              for (const key of changedKeys) {
+                next.add(key);
+              }
+              return next;
+            });
+          }}
+        >
+          {fields.map(([key, field]) => (
+            <PluginConfigFormItem field={field} key={key} name={key} />
+          ))}
+          <div className="at-settings-section-actions">
+            <Button
+              htmlType="submit"
+              loading={configureMutation.isPending}
+              type="primary"
+            >
+              {t("settingsSave")}
+            </Button>
+            <Button onClick={onBack}>{t("sidebarDeleteCancel")}</Button>
+          </div>
+        </Form>
+      )}
+    </>
+  );
+}
+
+function PluginConfigFormItem({
+  field,
+  name,
+}: {
+  field: PluginUserConfigField;
+  name: string;
+}) {
+  const t = useTranslations();
+  const fieldType = normalizedPluginConfigType(field.type);
+  const label = field.title?.trim() || name;
+  const description = pluginConfigFieldDescription(field, t);
+  if (fieldType === "boolean") {
+    return (
+      <Form.Item
+        extra={description}
+        label={label}
+        name={name}
+        valuePropName="checked"
+      >
+        <Switch />
+      </Form.Item>
+    );
+  }
+  return (
+    <Form.Item extra={description} label={label} name={name}>
+      {pluginConfigControl(fieldType, field)}
+    </Form.Item>
+  );
+}
+
+function pluginConfigControl(
+  fieldType: string,
+  field: PluginUserConfigField,
+): ReactNode {
+  if (fieldType === "text" || fieldType === "object" || fieldType === "array") {
+    return <Input.TextArea rows={fieldType === "text" ? 3 : 6} spellCheck={false} />;
+  }
+  if (fieldType === "number" || fieldType === "integer") {
+    return <Input type="number" />;
+  }
+  if (field.sensitive === true || fieldType === "password") {
+    return <Input.Password />;
+  }
+  return <Input />;
+}
+
 function PluginRuntimeList({
+  onConfigure,
   onAction,
   pendingActionKey,
   plugins,
 }: {
+  onConfigure: (plugin: PluginRuntimeRecord) => void;
   onAction: (request: PluginActionRequest) => void;
   pendingActionKey: string | null;
   plugins: PluginRuntimeRecord[];
@@ -340,6 +702,7 @@ function PluginRuntimeList({
         const title = pluginTitle(plugin, t("settingsPluginsUnnamed"));
         const name = pluginName(plugin);
         const enabled = plugin.enabled !== false;
+        const hasConfig = pluginConfigFields(plugin).length > 0;
         return (
           <div
             className="at-settings-list-row at-plugin-list-row"
@@ -359,6 +722,15 @@ function PluginRuntimeList({
               {pluginStatus(plugin, t)}
             </Typography.Text>
             <div className="at-settings-list-actions at-plugin-actions">
+              {hasConfig ? (
+                <Button
+                  disabled={name === null}
+                  onClick={() => onConfigure(plugin)}
+                  size="small"
+                >
+                  {t("settingsPluginsConfigure")}
+                </Button>
+              ) : null}
               <Button
                 disabled={name === null}
                 loading={pendingActionKey === pluginActionKey({ action: enabled ? "disable" : "enable", plugin })}
@@ -1186,6 +1558,185 @@ function hookDetail(hook: LoadedHookRecord): string {
     .map((value) => value?.trim() ?? "")
     .filter(Boolean)
     .join(" · ") || "-";
+}
+
+function requiredTrimmed(value: string | undefined): string {
+  return value?.trim() ?? "";
+}
+
+function optionalTrimmed(value: string | undefined): string | undefined {
+  const trimmed = value?.trim() ?? "";
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function buildPluginInstallRequest(
+  values: PluginInstallFormValues,
+): PluginInstallRequest {
+  const sourceKind = values.source_kind ?? "local";
+  const request: PluginInstallRequest = {
+    enabled: true,
+    scope: values.scope ?? "user",
+    source: requiredTrimmed(values.source),
+    source_kind: sourceKind,
+  };
+  const sourceRef = optionalTrimmed(values.source_ref);
+  if (sourceRef !== undefined) {
+    request.source_ref = sourceRef;
+  }
+  if (sourceKind === "marketplace") {
+    request.marketplace = optionalTrimmed(values.marketplace) ?? null;
+    request.marketplace_provider = values.marketplace_provider ?? "local_json";
+    request.marketplace_source = optionalTrimmed(values.marketplace_source) ?? "";
+    request.marketplace_ref = optionalTrimmed(values.marketplace_ref) ?? "";
+    request.version = optionalTrimmed(values.version) ?? null;
+    request.allow_community_plugins = values.allow_community_plugins === true;
+    request.allow_executes_code = values.allow_executes_code === true;
+    request.allow_missing_digest = values.allow_missing_digest === true;
+    request.allow_unclean_scan = values.allow_unclean_scan === true;
+  }
+  return request;
+}
+
+function pluginConfigFields(
+  plugin: PluginRuntimeRecord,
+): Array<[string, PluginUserConfigField]> {
+  const fields = plugin.manifest?.user_config ?? {};
+  return Object.entries(fields);
+}
+
+function pluginConfigInitialValues(plugin: PluginRuntimeRecord): PluginConfigFormValues {
+  const values: PluginConfigFormValues = {};
+  for (const [key, field] of pluginConfigFields(plugin)) {
+    values[key] = pluginConfigInitialValue(field, plugin.user_config?.[key]);
+  }
+  return values;
+}
+
+function pluginConfigInitialValue(
+  field: PluginUserConfigField,
+  value: JsonValue | undefined,
+): PluginConfigFormValue {
+  const fieldType = normalizedPluginConfigType(field.type);
+  if (field.sensitive === true && value === "<configured>") {
+    return fieldType === "boolean" ? true : "";
+  }
+  const effectiveValue = value ?? field.default ?? "";
+  if (fieldType === "boolean") {
+    return effectiveValue === true;
+  }
+  if (fieldType === "number" || fieldType === "integer") {
+    return typeof effectiveValue === "number" ? effectiveValue : String(effectiveValue);
+  }
+  if (fieldType === "object" || fieldType === "array") {
+    return effectiveValue === "" ? "" : JSON.stringify(effectiveValue, null, 2);
+  }
+  return typeof effectiveValue === "string"
+    ? effectiveValue
+    : JSON.stringify(effectiveValue);
+}
+
+function buildPluginConfigPayload(
+  plugin: PluginRuntimeRecord,
+  values: PluginConfigFormValues,
+  dirtyFields: Set<string>,
+  t: Translate,
+): Record<string, JsonValue> {
+  const payload: Record<string, JsonValue> = {};
+  for (const [key, field] of pluginConfigFields(plugin)) {
+    if (
+      field.sensitive === true &&
+      plugin.user_config?.[key] === "<configured>" &&
+      !dirtyFields.has(key)
+    ) {
+      continue;
+    }
+    payload[key] = parsePluginConfigValue(key, field, values[key], t);
+  }
+  return payload;
+}
+
+function parsePluginConfigValue(
+  key: string,
+  field: PluginUserConfigField,
+  value: PluginConfigFormValue,
+  t: Translate,
+): JsonValue {
+  const fieldType = normalizedPluginConfigType(field.type);
+  if (fieldType === "boolean") {
+    return value === true;
+  }
+  const textValue = String(value ?? "");
+  if (fieldType === "number" || fieldType === "integer") {
+    const trimmed = textValue.trim();
+    if (trimmed.length === 0) {
+      return "";
+    }
+    const numberValue = Number(trimmed);
+    if (!Number.isFinite(numberValue)) {
+      throw new Error(t("settingsPluginsInvalidNumber", { name: key }));
+    }
+    return fieldType === "integer" ? Math.trunc(numberValue) : numberValue;
+  }
+  if (fieldType === "object" || fieldType === "array") {
+    const trimmed = textValue.trim();
+    if (trimmed.length === 0) {
+      return "";
+    }
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      if (isJsonValue(parsed)) {
+        return parsed;
+      }
+    } catch (error) {
+      throw new Error(
+        error instanceof Error
+          ? t("settingsPluginsInvalidJson", { message: error.message, name: key })
+          : t("settingsPluginsInvalidJson", { message: "", name: key }),
+      );
+    }
+    throw new Error(t("settingsPluginsInvalidJson", { message: "", name: key }));
+  }
+  return textValue;
+}
+
+function isJsonValue(value: unknown): value is JsonValue {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return true;
+  }
+  if (Array.isArray(value)) {
+    return value.every(isJsonValue);
+  }
+  if (typeof value === "object") {
+    return Object.values(value as Record<string, unknown>).every(isJsonValue);
+  }
+  return false;
+}
+
+function normalizedPluginConfigType(type: string | undefined): string {
+  const normalized = type?.trim().toLowerCase() ?? "string";
+  if (normalized === "bool") {
+    return "boolean";
+  }
+  if (normalized === "int") {
+    return "integer";
+  }
+  return normalized;
+}
+
+function pluginConfigFieldDescription(
+  field: PluginUserConfigField,
+  t: Translate,
+): string | undefined {
+  const details = [
+    field.description?.trim() ?? "",
+    field.sensitive === true ? t("settingsPluginsConfiguredSecret") : "",
+  ].filter(Boolean);
+  return details.length > 0 ? details.join(" ") : undefined;
 }
 
 function pluginTitle(plugin: PluginRuntimeRecord, fallback: string): string {

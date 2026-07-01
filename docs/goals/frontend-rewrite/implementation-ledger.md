@@ -2,6 +2,27 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-02 Plugin Settings Marketplace Selection And Update
+
+### Scope
+- Added V2 frontend client contracts for plugin marketplace index, search, and inspect endpoints so the Plugins settings UI can query the same marketplace data paths that the backend exposes.
+- Extended the Plugins install secondary page with an explicit marketplace load action. The form now applies provider defaults, loads supported marketplace entries, filters unsupported versions, lets the user select a supported plugin/version, and preserves the marketplace install safety flags in the submitted payload.
+- Added a marketplace update secondary page for already-installed marketplace plugins. Update now loads the plugin's marketplace source, presents supported versions, and submits the selected version through the existing plugin update endpoint instead of treating marketplace plugins as a one-click blind update.
+- Extended `SettingsDrawer.test.tsx` to cover marketplace install loading/filtering, selected install payloads, marketplace update loading, version selection, and update payloads.
+- Extended the packed Chromium settings action spec so the browser opens Settings > System > Plugins, loads a mocked marketplace, filters unsupported entries, installs the selected marketplace plugin, opens marketplace update, chooses a prior version, and captures the result.
+- Kept `tests/integration_tests/frontend/test_plugins_settings_ui.py` in place. ClawHub full-safe browsing details, deeper marketplace inspect behavior, in-app/manual visual sign-off, and the broader System settings surface still need closure before the old harness can be retired.
+
+### Verification
+- `npm test -- src/test/apiClient.test.ts -t "plugin marketplace"` passed with 1 matching test.
+- `npm test -- src/test/SettingsDrawer.test.tsx -t "plugin"` passed with 5 matching tests.
+- `npm run test:browser -- v2-settings-actions.spec.ts -g "manages Plugins" --project=chromium` passed with 1 packed-browser test; screenshot: `.tmp/frontend-v2-ts-settings-actions/v2-plugin-marketplace-actions.png`.
+- `npm run lint` passed.
+- `npm run build` passed.
+- In-app browser verification was attempted separately, but page DOM reads timed out and reset the browser-control session. This slice claims the packed Chromium browser evidence above, not in-app browser sign-off.
+
+### Reviewer
+- Main-agent decision: this tightens `SET-14` by closing the next concrete Plugins marketplace gap with unit and packed-browser evidence, but does not mark Plugins/System settings complete or retire the legacy plugins harness.
+
 ## 2026-07-02 Plugin Settings Install And Configure UI
 
 ### Scope

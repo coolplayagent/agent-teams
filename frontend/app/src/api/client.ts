@@ -142,6 +142,10 @@ import type {
   TaskSpecArtifactsResponse,
   PluginConfigureRequest,
   PluginInstallRequest,
+  PluginMarketplaceIndex,
+  PluginMarketplaceInspectRequest,
+  PluginMarketplaceRequest,
+  PluginMarketplaceSearchRequest,
   PluginsRuntimePayload,
   PluginScopeRequest,
   PluginUpdateRequest,
@@ -1893,6 +1897,39 @@ export function installPlugin(
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export function loadPluginMarketplace(
+  payload: PluginMarketplaceRequest,
+): Promise<PluginMarketplaceIndex> {
+  return requestJson<PluginMarketplaceIndex>("/system/configs/plugins/marketplace", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function searchPluginMarketplace(
+  payload: PluginMarketplaceSearchRequest,
+): Promise<PluginMarketplaceIndex> {
+  return requestJson<PluginMarketplaceIndex>(
+    "/system/configs/plugins/marketplace:search",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export function inspectPluginMarketplace(
+  payload: PluginMarketplaceInspectRequest,
+): Promise<PluginsRuntimePayload> {
+  return requestJson<PluginsRuntimePayload>(
+    "/system/configs/plugins/marketplace:inspect",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
 export function configurePlugin(

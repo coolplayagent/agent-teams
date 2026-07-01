@@ -57,6 +57,7 @@ import {
   getWebConfig,
   installPlugin,
   installAgentRuntimeFromRegistry,
+  loadPluginMarketplace,
   listRoleConfigs,
   listSshProfiles,
   listMcpServers,
@@ -164,6 +165,7 @@ vi.mock("../api/client", () => ({
   getWebConfig: vi.fn(),
   installPlugin: vi.fn(),
   installAgentRuntimeFromRegistry: vi.fn(),
+  loadPluginMarketplace: vi.fn(),
   listRoleConfigs: vi.fn(),
   listMcpServers: vi.fn(),
   listSshProfiles: vi.fn(),
@@ -268,6 +270,7 @@ const getRoleConfigOptionsMock = vi.mocked(getRoleConfigOptions);
 const getWebConfigMock = vi.mocked(getWebConfig);
 const installPluginMock = vi.mocked(installPlugin);
 const installAgentRuntimeFromRegistryMock = vi.mocked(installAgentRuntimeFromRegistry);
+const loadPluginMarketplaceMock = vi.mocked(loadPluginMarketplace);
 const listRoleConfigsMock = vi.mocked(listRoleConfigs);
 const listMcpServersMock = vi.mocked(listMcpServers);
 const listSshProfilesMock = vi.mocked(listSshProfiles);
@@ -1073,6 +1076,21 @@ beforeEach(() => {
         valid: true,
         version: "2.0.0",
       },
+      {
+        description: "Marketplace quality tools",
+        enabled: true,
+        name: "market-quality",
+        scope: "user",
+        source: {
+          kind: "marketplace",
+          marketplace: "C:/plugins/marketplace.json",
+          marketplace_provider: "local_json",
+          marketplace_source: "",
+          value: "market-quality",
+        },
+        valid: true,
+        version: "1.1.0",
+      },
     ],
   });
   getPluginsRuntimeMock.mockResolvedValue({
@@ -1095,6 +1113,35 @@ beforeEach(() => {
   updatePluginMock.mockResolvedValue({ diagnostics: [], plugins: [] });
   deletePluginMock.mockResolvedValue({ diagnostics: [], plugins: [] });
   installPluginMock.mockResolvedValue({ diagnostics: [], plugins: [] });
+  loadPluginMarketplaceMock.mockResolvedValue({
+    plugins: [
+      {
+        latest: "1.2.0",
+        name: "market-quality",
+        versions: [
+          {
+            source: { kind: "git", ref: "v1.1.0", value: "https://repo/quality" },
+            version: "1.1.0",
+          },
+          {
+            source: { kind: "git", ref: "v1.2.0", value: "https://repo/quality" },
+            version: "1.2.0",
+          },
+        ],
+      },
+      {
+        latest: "2.0.0",
+        name: "unsupported-quality",
+        versions: [
+          {
+            source: { kind: "unsupported", value: "@example/plugin" },
+            unsupported_reason: "npm is not supported",
+            version: "2.0.0",
+          },
+        ],
+      },
+    ],
+  });
   configurePluginMock.mockResolvedValue({ diagnostics: [], plugins: [] });
   getHooksConfigMock.mockResolvedValue({
     hooks: {
@@ -1925,6 +1972,95 @@ describe("SettingsDrawer", () => {
         source: "https://example.test/plugins/quality.git",
         source_kind: "git",
         source_ref: "v1.2.0",
+      }),
+    );
+  });
+
+  it("loads marketplace plugins before installing the selected version", async () => {
+    renderDrawer();
+
+    fireEvent.click((await screen.findAllByRole("button", { name: "System" }))[0] as HTMLElement);
+    fireEvent.click((await screen.findByText("Plugins")).closest("button") as HTMLElement);
+    fireEvent.click(await screen.findByRole("button", { name: "Add Plugin" }));
+
+    fireEvent.mouseDown(await screen.findByRole("combobox", { name: "Source type" }));
+    fireEvent.click(await screen.findByText("Marketplace"));
+    fireEvent.change(await screen.findByLabelText("Marketplace"), {
+      target: { value: "C:/plugins/marketplace.json" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Load marketplace" }));
+
+    await waitFor(() =>
+      expect(loadPluginMarketplaceMock).toHaveBeenCalledWith({
+        allow_community_plugins: false,
+        allow_executes_code: false,
+        allow_missing_digest: false,
+        allow_unclean_scan: false,
+        fetch_all: true,
+        include_details: false,
+        marketplace: "C:/plugins/marketplace.json",
+        marketplace_provider: "local_json",
+        marketplace_ref: "",
+        marketplace_source: "",
+        refresh: true,
+      }),
+    );
+    expect(await screen.findByText("market-quality 1.2.0")).toBeVisible();
+    expect(screen.queryByText("unsupported-quality")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add Plugin" }));
+    await waitFor(() =>
+      expect(installPluginMock).toHaveBeenCalledWith({
+        allow_community_plugins: false,
+        allow_executes_code: false,
+        allow_missing_digest: false,
+        allow_unclean_scan: false,
+        enabled: true,
+        marketplace: "C:/plugins/marketplace.json",
+        marketplace_provider: "local_json",
+        marketplace_ref: "",
+        marketplace_source: "",
+        scope: "user",
+        source: "market-quality",
+        source_kind: "marketplace",
+        version: null,
+      }),
+    );
+  });
+
+  it("selects a marketplace version before updating marketplace plugins", async () => {
+    renderDrawer();
+
+    fireEvent.click((await screen.findAllByRole("button", { name: "System" }))[0] as HTMLElement);
+    fireEvent.click((await screen.findByText("Plugins")).closest("button") as HTMLElement);
+
+    const marketRow = (await screen.findByText("market-quality")).closest(
+      ".at-plugin-list-row",
+    ) as HTMLElement;
+    fireEvent.click(within(marketRow).getByRole("button", { name: "Update" }));
+
+    await waitFor(() =>
+      expect(loadPluginMarketplaceMock).toHaveBeenCalledWith({
+        allow_missing_digest: false,
+        fetch_all: true,
+        include_details: false,
+        marketplace: "C:/plugins/marketplace.json",
+        marketplace_provider: "local_json",
+        marketplace_ref: "",
+        marketplace_source: "",
+        refresh: true,
+      }),
+    );
+    expect(await screen.findByText("latest (1.2.0)")).toBeVisible();
+    fireEvent.mouseDown(screen.getByRole("combobox"));
+    fireEvent.click(await screen.findByText("1.1.0 v1.1.0"));
+    fireEvent.click(screen.getByRole("button", { name: "Update" }));
+
+    await waitFor(() =>
+      expect(updatePluginMock).toHaveBeenCalledWith("market-quality", {
+        allow_missing_digest: false,
+        scope: "user",
+        version: "1.1.0",
       }),
     );
   });

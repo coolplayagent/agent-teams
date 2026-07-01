@@ -53,6 +53,8 @@ interface SettingsActionState {
   pluginDeleteRequests: Record<string, unknown>[];
   pluginDisableRequests: Record<string, unknown>[];
   pluginEnableRequests: Record<string, unknown>[];
+  pluginInstallRequests: Record<string, unknown>[];
+  pluginMarketplaceRequests: Record<string, unknown>[];
   pluginUpdateRequests: Record<string, unknown>[];
   plugins: Record<string, unknown>[];
   requestedPaths: string[];
@@ -152,10 +154,10 @@ test("manages Plugins from the System secondary settings page", async ({
     await openSystemSettingsPage(settings, "Plugins");
     await expect(settings.getByRole("heading", { name: "Plugins" })).toBeVisible();
     await expect(settings.getByText("workspace-tools")).toBeVisible();
-    await expect(settings.getByText("quality")).toBeVisible();
+    await expect(settings.getByText("quality", { exact: true })).toBeVisible();
 
     const qualityRow = settings.locator(".at-plugin-list-row").filter({
-      hasText: "quality",
+      hasText: "1 components",
     });
     await qualityRow.getByRole("button", { name: "Enable" }).click();
     await expect.poll(() => state.pluginEnableRequests).toEqual([
@@ -177,6 +179,109 @@ test("manages Plugins from the System secondary settings page", async ({
         payload: { scope: "user", version: "1.0.0" },
       },
     ]);
+
+    await settings.getByRole("button", { name: "Add Plugin" }).click();
+    await settings
+      .locator(".ant-form-item", { hasText: "Source type" })
+      .locator(".ant-select-selector")
+      .click();
+    const sourceKindDropdown = page.locator(
+      ".ant-select-dropdown:not(.ant-select-dropdown-hidden)",
+    );
+    const marketplaceSourceOption = sourceKindDropdown.locator(
+      ".ant-select-item-option-content",
+      { hasText: "Marketplace" },
+    );
+    await expect(marketplaceSourceOption).toBeVisible();
+    await marketplaceSourceOption.click();
+    await settings
+      .getByRole("textbox", { exact: true, name: "Marketplace" })
+      .fill("C:/plugins/marketplace.json");
+    await settings.getByRole("button", { name: "Load marketplace" }).click();
+    await expect.poll(() => state.pluginMarketplaceRequests).toEqual([
+      {
+        allow_community_plugins: false,
+        allow_executes_code: false,
+        allow_missing_digest: false,
+        allow_unclean_scan: false,
+        fetch_all: true,
+        include_details: false,
+        marketplace: "C:/plugins/marketplace.json",
+        marketplace_provider: "local_json",
+        marketplace_ref: "",
+        marketplace_source: "",
+        refresh: true,
+      },
+    ]);
+    await expect(settings.getByText("market-install 0.2.0")).toBeVisible();
+    await expect(settings.getByText("unsupported-quality")).toHaveCount(0);
+    await settings.getByRole("button", { name: "Add Plugin" }).click();
+    await expect.poll(() => state.pluginInstallRequests).toEqual([
+      {
+        allow_community_plugins: false,
+        allow_executes_code: false,
+        allow_missing_digest: false,
+        allow_unclean_scan: false,
+        enabled: true,
+        marketplace: "C:/plugins/marketplace.json",
+        marketplace_provider: "local_json",
+        marketplace_ref: "",
+        marketplace_source: "",
+        scope: "user",
+        source: "market-install",
+        source_kind: "marketplace",
+        version: null,
+      },
+    ]);
+    await expect(settings.getByText("market-install")).toBeVisible();
+
+    const marketplaceRow = settings.locator(".at-plugin-list-row").filter({
+      hasText: "Marketplace quality tools",
+    });
+    await marketplaceRow.getByRole("button", { name: "Update" }).click();
+    await expect.poll(() => state.pluginMarketplaceRequests.length).toBe(2);
+    expect(state.pluginMarketplaceRequests[1]).toEqual({
+      allow_missing_digest: false,
+      fetch_all: true,
+      include_details: false,
+      marketplace: "C:/plugins/marketplace.json",
+      marketplace_provider: "local_json",
+      marketplace_ref: "",
+      marketplace_source: "",
+      refresh: true,
+    });
+    await expect(settings.getByText("latest (1.2.0)")).toBeVisible();
+    await settings
+      .locator(".ant-form-item", { hasText: "Version" })
+      .locator(".ant-select-selector")
+      .click();
+    const versionDropdown = page.locator(
+      ".ant-select-dropdown:not(.ant-select-dropdown-hidden)",
+    );
+    const previousVersionOption = versionDropdown.locator(
+      ".ant-select-item-option-content",
+      { hasText: "1.1.0 v1.1.0" },
+    );
+    await expect(previousVersionOption).toBeVisible();
+    await previousVersionOption.click();
+    await settings.getByRole("button", { name: "Update" }).click();
+    await expect.poll(() => state.pluginUpdateRequests).toEqual([
+      {
+        name: "workspace-tools",
+        payload: { scope: "user", version: "1.0.0" },
+      },
+      {
+        name: "market-quality",
+        payload: {
+          allow_missing_digest: false,
+          scope: "user",
+          version: "1.1.0",
+        },
+      },
+    ]);
+    await page.screenshot({
+      path: screenshotPath("v2-plugin-marketplace-actions.png", SCREENSHOT_FOLDER),
+    });
 
     await workspaceRow.getByRole("button", { name: "Delete" }).click();
     await page.getByRole("button", { name: "OK", exact: true }).click();
@@ -1605,6 +1710,8 @@ function settingsActionState(): SettingsActionState {
     pluginDeleteRequests: [],
     pluginDisableRequests: [],
     pluginEnableRequests: [],
+    pluginInstallRequests: [],
+    pluginMarketplaceRequests: [],
     pluginUpdateRequests: [],
     plugins: pluginsConfigItems(),
     requestedPaths: [],
@@ -1868,6 +1975,36 @@ async function handleSettingsActionApi(
   }
   if (method === "GET" && path === "/system/configs/plugins/runtime") {
     await context.fulfillJson(pluginsConfigResponse(state));
+    return true;
+  }
+  if (method === "POST" && path === "/system/configs/plugins:install") {
+    const payload = readJsonBody(context);
+    state.pluginInstallRequests.push(payload);
+    state.plugins = [
+      ...state.plugins,
+      {
+        description: "Installed from marketplace",
+        enabled: payload.enabled !== false,
+        name: String(payload.source ?? "market-install"),
+        scope: String(payload.scope ?? "user"),
+        source: {
+          kind: "marketplace",
+          marketplace: String(payload.marketplace ?? ""),
+          marketplace_provider: String(payload.marketplace_provider ?? "local_json"),
+          marketplace_source: String(payload.marketplace_source ?? ""),
+          value: String(payload.source ?? ""),
+        },
+        valid: true,
+        version: payload.version,
+      },
+    ];
+    await context.fulfillJson(pluginsConfigResponse(state));
+    return true;
+  }
+  if (method === "POST" && path === "/system/configs/plugins/marketplace") {
+    const payload = readJsonBody(context);
+    state.pluginMarketplaceRequests.push(payload);
+    await context.fulfillJson(pluginMarketplaceResponse());
     return true;
   }
   if (method === "POST" && path.startsWith("/system/configs/plugins/")) {
@@ -2407,6 +2544,21 @@ function pluginsConfigItems(): Record<string, unknown>[] {
       valid: true,
       version: "2.0.0",
     },
+    {
+      description: "Marketplace quality tools",
+      enabled: true,
+      name: "market-quality",
+      scope: "user",
+      source: {
+        kind: "marketplace",
+        marketplace: "C:/plugins/marketplace.json",
+        marketplace_provider: "local_json",
+        marketplace_source: "",
+        value: "market-quality",
+      },
+      valid: true,
+      version: "1.1.0",
+    },
   ];
 }
 
@@ -2414,6 +2566,60 @@ function pluginsConfigResponse(state: SettingsActionState): Record<string, unkno
   return {
     diagnostics: [],
     plugins: state.plugins,
+  };
+}
+
+function pluginMarketplaceResponse(): Record<string, unknown> {
+  return {
+    plugins: [
+      {
+        latest: "0.2.0",
+        name: "market-install",
+        versions: [
+          {
+            source: {
+              kind: "git",
+              ref: "v0.2.0",
+              value: "https://repo.example/market-install",
+            },
+            version: "0.2.0",
+          },
+        ],
+      },
+      {
+        latest: "1.2.0",
+        name: "market-quality",
+        versions: [
+          {
+            source: {
+              kind: "git",
+              ref: "v1.1.0",
+              value: "https://repo.example/quality",
+            },
+            version: "1.1.0",
+          },
+          {
+            source: {
+              kind: "git",
+              ref: "v1.2.0",
+              value: "https://repo.example/quality",
+            },
+            version: "1.2.0",
+          },
+        ],
+      },
+      {
+        latest: "2.0.0",
+        name: "unsupported-quality",
+        versions: [
+          {
+            source: { kind: "unsupported", value: "@example/plugin" },
+            unsupported_reason: "npm is not supported",
+            version: "2.0.0",
+          },
+        ],
+      },
+    ],
   };
 }
 

@@ -20,6 +20,7 @@ import {
   getPluginsRuntime,
   installPlugin,
   installAgentRuntimeFromRegistry,
+  loadPluginMarketplace,
   refreshAgentRuntimeRegistry,
   saveHooksConfig,
   saveAgentRuntime,
@@ -45,6 +46,10 @@ import type {
   LoadedHookRecord,
   PluginInstallRequest,
   PluginInstallSourceKind,
+  PluginMarketplaceEntry,
+  PluginMarketplaceIndex,
+  PluginMarketplaceRequest,
+  PluginMarketplaceVersion,
   PluginRuntimeDiagnostics,
   PluginRuntimeRecord,
   PluginUserConfigField,
@@ -58,7 +63,8 @@ type PluginAction = "delete" | "disable" | "enable" | "update";
 type PluginSettingsView =
   | { type: "list" }
   | { type: "install" }
-  | { plugin: PluginRuntimeRecord; type: "configure" };
+  | { plugin: PluginRuntimeRecord; type: "configure" }
+  | { plugin: PluginRuntimeRecord; type: "marketplace-update" };
 
 interface PluginActionRequest {
   action: PluginAction;
@@ -79,6 +85,14 @@ interface PluginInstallFormValues {
   source_kind?: PluginInstallSourceKind;
   source_ref?: string;
   version?: string;
+}
+
+interface PluginMarketplaceSourceDraft {
+  marketplace: string;
+  marketplace_provider?: PluginInstallRequest["marketplace_provider"];
+  marketplace_ref?: string;
+  marketplace_source?: string;
+  value?: string;
 }
 
 type PluginConfigFormValue = boolean | number | string | undefined;
@@ -133,6 +147,13 @@ export function PluginsSettingsSection() {
     actionMutation.isPending && actionMutation.variables !== undefined
       ? pluginActionKey(actionMutation.variables)
       : null;
+  const requestPluginAction = (request: PluginActionRequest) => {
+    if (request.action === "update" && pluginMarketplaceSource(request.plugin) !== null) {
+      setView({ plugin: request.plugin, type: "marketplace-update" });
+      return;
+    }
+    actionMutation.mutate(request);
+  };
   if (view.type === "install") {
     return (
       <SettingsSection title={t("settingsPlugins")}>
@@ -147,6 +168,17 @@ export function PluginsSettingsSection() {
     return (
       <SettingsSection title={t("settingsPlugins")}>
         <PluginConfigureView
+          onBack={() => setView({ type: "list" })}
+          onSaved={() => setView({ type: "list" })}
+          plugin={view.plugin}
+        />
+      </SettingsSection>
+    );
+  }
+  if (view.type === "marketplace-update") {
+    return (
+      <SettingsSection title={t("settingsPlugins")}>
+        <PluginMarketplaceUpdateView
           onBack={() => setView({ type: "list" })}
           onSaved={() => setView({ type: "list" })}
           plugin={view.plugin}
@@ -187,7 +219,7 @@ export function PluginsSettingsSection() {
           </div>
           <PluginRuntimeList
             onConfigure={(plugin) => setView({ plugin, type: "configure" })}
-            onAction={(request) => actionMutation.mutate(request)}
+            onAction={requestPluginAction}
             pendingActionKey={pendingActionKey}
             plugins={plugins}
           />
@@ -390,7 +422,16 @@ function PluginInstallView({
   const queryClient = useQueryClient();
   const t = useTranslations();
   const [form] = Form.useForm<PluginInstallFormValues>();
+  const [marketplaceIndex, setMarketplaceIndex] =
+    useState<PluginMarketplaceIndex | null>(null);
   const sourceKind = Form.useWatch("source_kind", form) ?? "local";
+  const selectedSource = Form.useWatch("source", form) ?? "";
+  const marketplaceEntries = marketplaceEntriesForInstall(marketplaceIndex);
+  const selectedMarketplaceEntry = marketplaceEntries.find(
+    (entry) => entry.name === selectedSource,
+  );
+  const marketplaceVersionOptions =
+    marketplaceVersionSelectOptions(selectedMarketplaceEntry);
   const installMutation = useMutation({
     mutationFn: (values: PluginInstallFormValues) =>
       installPlugin(buildPluginInstallRequest(values)),
@@ -398,6 +439,23 @@ function PluginInstallView({
       void message.success(t("settingsPluginsInstalled"));
       await queryClient.invalidateQueries({ queryKey: ["settings", "plugins"] });
       onSaved();
+    },
+    onError: (error) => {
+      void message.error(error instanceof Error ? error.message : t("settingsSaveFailed"));
+    },
+  });
+  const marketplaceMutation = useMutation({
+    mutationFn: () =>
+      loadPluginMarketplace(buildPluginMarketplaceRequest(form.getFieldsValue(), true)),
+    onSuccess: (index) => {
+      const entries = marketplaceEntriesForInstall(index);
+      setMarketplaceIndex(index);
+      if (entries.length > 0) {
+        form.setFieldsValue({
+          source: entries[0].name,
+          version: marketplaceDefaultVersion(entries[0]),
+        });
+      }
     },
     onError: (error) => {
       void message.error(error instanceof Error ? error.message : t("settingsSaveFailed"));
@@ -429,6 +487,12 @@ function PluginInstallView({
           rules={[{ required: true }]}
         >
           <Select
+            onChange={(value) => {
+              if (value === "marketplace") {
+                form.setFieldsValue(pluginMarketplaceProviderDefaults("local_json"));
+              }
+              setMarketplaceIndex(null);
+            }}
             options={[
               { label: t("settingsPluginsInstallSourceLocal"), value: "local" },
               { label: t("settingsPluginsInstallSourceGit"), value: "git" },
@@ -452,7 +516,20 @@ function PluginInstallView({
           name="source"
           rules={[{ required: true, whitespace: true }]}
         >
-          <Input />
+          {sourceKind === "marketplace" && marketplaceEntries.length > 0 ? (
+            <Select
+              onChange={(value) => {
+                const entry = marketplaceEntries.find((item) => item.name === value);
+                form.setFieldsValue({ version: marketplaceDefaultVersion(entry) });
+              }}
+              options={marketplaceEntries.map((entry) => ({
+                label: marketplaceEntryLabel(entry),
+                value: entry.name,
+              }))}
+            />
+          ) : (
+            <Input />
+          )}
         </Form.Item>
         <Form.Item label={t("settingsPluginsInstallScope")} name="scope">
           <Select
@@ -483,6 +560,10 @@ function PluginInstallView({
               name="marketplace_provider"
             >
               <Select
+                onChange={(value) => {
+                  form.setFieldsValue(pluginMarketplaceProviderDefaults(value));
+                  setMarketplaceIndex(null);
+                }}
                 options={[
                   { label: "local_json", value: "local_json" },
                   { label: "claude", value: "claude" },
@@ -503,8 +584,20 @@ function PluginInstallView({
               <Input />
             </Form.Item>
             <Form.Item label={t("settingsPluginsInstallVersion")} name="version">
-              <Input />
+              {marketplaceVersionOptions.length > 0 ? (
+                <Select options={marketplaceVersionOptions} />
+              ) : (
+                <Input />
+              )}
             </Form.Item>
+            <div className="at-settings-section-actions">
+              <Button
+                loading={marketplaceMutation.isPending}
+                onClick={() => marketplaceMutation.mutate()}
+              >
+                {t("settingsPluginsLoadMarketplace")}
+              </Button>
+            </div>
             <Form.Item
               label={t("settingsPluginsAllowCommunity")}
               name="allow_community_plugins"
@@ -631,6 +724,104 @@ function PluginConfigureView({
           </div>
         </Form>
       )}
+    </>
+  );
+}
+
+function PluginMarketplaceUpdateView({
+  onBack,
+  onSaved,
+  plugin,
+}: {
+  onBack: () => void;
+  onSaved: () => void;
+  plugin: PluginRuntimeRecord;
+}) {
+  const { message } = App.useApp();
+  const queryClient = useQueryClient();
+  const t = useTranslations();
+  const source = pluginMarketplaceSource(plugin);
+  const [selectedVersion, setSelectedVersion] = useState("");
+  const title = pluginTitle(plugin, t("settingsPluginsUnnamed"));
+  const marketplaceQuery = useQuery({
+    enabled: source !== null,
+    queryKey: ["settings", "plugins", "marketplace-update", pluginKey(plugin, title)],
+    queryFn: () => loadPluginMarketplace(buildPluginMarketplaceRequestFromSource(source)),
+  });
+  const marketplaceEntry = marketplaceEntryForPlugin(plugin, marketplaceQuery.data);
+  const versionOptions = marketplaceVersionSelectOptions(marketplaceEntry);
+  const updateMutation = useMutation({
+    mutationFn: () => {
+      const name = pluginName(plugin);
+      if (name === null) {
+        throw new Error(t("settingsPluginsNameRequired"));
+      }
+      return updatePlugin(name, {
+        allow_missing_digest: source?.marketplace_provider === "clawhub",
+        scope: pluginScope(plugin),
+        version: selectedVersion || null,
+      });
+    },
+    onSuccess: async () => {
+      void message.success(t("settingsPluginsUpdated"));
+      await queryClient.invalidateQueries({ queryKey: ["settings", "plugins"] });
+      onSaved();
+    },
+    onError: (error) => {
+      void message.error(error instanceof Error ? error.message : t("settingsSaveFailed"));
+    },
+  });
+
+  useEffect(() => {
+    setSelectedVersion(marketplaceDefaultVersion(marketplaceEntry));
+  }, [marketplaceEntry]);
+
+  return (
+    <>
+      <div className="at-settings-section-actions">
+        <Button onClick={onBack}>{t("settingsBack")}</Button>
+      </div>
+      <Typography.Title level={4}>{title}</Typography.Title>
+      <SettingsQueryState
+        error={marketplaceQuery.error}
+        loading={marketplaceQuery.isLoading}
+      />
+      {!marketplaceQuery.isLoading && marketplaceQuery.data !== undefined ? (
+        <>
+          {versionOptions.length > 0 ? (
+            <Form layout="vertical">
+              <Form.Item label={t("settingsPluginsInstallVersion")}>
+                <Select
+                  onChange={(value) => setSelectedVersion(value)}
+                  options={versionOptions}
+                  value={selectedVersion}
+                />
+              </Form.Item>
+            </Form>
+          ) : (
+            <div className="at-settings-empty">
+              {t("settingsPluginsMarketplaceEmpty")}
+            </div>
+          )}
+          <div className="at-settings-section-actions">
+            <Button
+              disabled={versionOptions.length === 0}
+              loading={updateMutation.isPending}
+              onClick={() => updateMutation.mutate()}
+              type="primary"
+            >
+              {t("settingsPluginsUpdate")}
+            </Button>
+            <Button
+              loading={marketplaceQuery.isFetching}
+              onClick={() => void marketplaceQuery.refetch()}
+            >
+              {t("settingsPluginsLoadMarketplace")}
+            </Button>
+            <Button onClick={onBack}>{t("sidebarDeleteCancel")}</Button>
+          </div>
+        </>
+      ) : null}
     </>
   );
 }
@@ -1595,6 +1786,190 @@ function buildPluginInstallRequest(
     request.allow_unclean_scan = values.allow_unclean_scan === true;
   }
   return request;
+}
+
+function buildPluginMarketplaceRequest(
+  values: PluginInstallFormValues,
+  refresh: boolean,
+): PluginMarketplaceRequest {
+  const provider = values.marketplace_provider ?? "local_json";
+  const defaults = pluginMarketplaceProviderDefaults(provider);
+  return {
+    allow_community_plugins: values.allow_community_plugins === true,
+    allow_executes_code: values.allow_executes_code === true,
+    allow_missing_digest: values.allow_missing_digest === true,
+    allow_unclean_scan: values.allow_unclean_scan === true,
+    fetch_all: true,
+    include_details: false,
+    marketplace: requiredTrimmed(values.marketplace ?? defaults.marketplace),
+    marketplace_provider: provider,
+    marketplace_ref: optionalTrimmed(values.marketplace_ref) ?? "",
+    marketplace_source:
+      optionalTrimmed(values.marketplace_source ?? defaults.marketplace_source) ?? "",
+    refresh,
+  };
+}
+
+function buildPluginMarketplaceRequestFromSource(
+  source: PluginMarketplaceSourceDraft | null,
+): PluginMarketplaceRequest {
+  if (source === null) {
+    return {
+      marketplace: "",
+      refresh: true,
+    };
+  }
+  const provider = source.marketplace_provider ?? "local_json";
+  return {
+    allow_missing_digest: provider === "clawhub",
+    fetch_all: true,
+    include_details: provider === "clawhub",
+    marketplace: source.marketplace,
+    marketplace_provider: provider,
+    marketplace_ref: source.marketplace_ref ?? "",
+    marketplace_source: source.marketplace_source ?? "",
+    refresh: true,
+  };
+}
+
+function pluginMarketplaceSource(
+  plugin: PluginRuntimeRecord,
+): PluginMarketplaceSourceDraft | null {
+  const source = plugin.source;
+  if (source === null || typeof source !== "object" || Array.isArray(source)) {
+    return null;
+  }
+  const kind = stringRecordValue(source, "kind");
+  if (kind !== "marketplace") {
+    return null;
+  }
+  const marketplace = stringRecordValue(source, "marketplace");
+  if (marketplace.length === 0) {
+    return null;
+  }
+  return {
+    marketplace,
+    marketplace_provider: pluginMarketplaceProviderValue(
+      stringRecordValue(source, "marketplace_provider"),
+    ),
+    marketplace_ref: stringRecordValue(source, "marketplace_ref"),
+    marketplace_source: stringRecordValue(source, "marketplace_source"),
+    value: stringRecordValue(source, "value"),
+  };
+}
+
+function pluginMarketplaceProviderValue(
+  value: string,
+): PluginInstallRequest["marketplace_provider"] | undefined {
+  if (value === "claude" || value === "clawhub" || value === "local_json") {
+    return value;
+  }
+  return undefined;
+}
+
+function stringRecordValue(source: Record<string, JsonValue>, key: string): string {
+  const value = source[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function pluginMarketplaceProviderDefaults(
+  provider: PluginInstallRequest["marketplace_provider"],
+): Partial<PluginInstallFormValues> {
+  if (provider === "claude") {
+    return {
+      allow_missing_digest: false,
+      marketplace: "claude-plugins-official",
+      marketplace_source: "anthropics/claude-plugins-official",
+      source: "",
+      version: "",
+    };
+  }
+  if (provider === "clawhub") {
+    return {
+      allow_missing_digest: true,
+      marketplace: "clawhub",
+      marketplace_source: "https://clawhub.ai",
+      source: "",
+      version: "",
+    };
+  }
+  return {
+    allow_missing_digest: false,
+    marketplace: "",
+    marketplace_source: "",
+    source: "",
+    version: "",
+  };
+}
+
+function marketplaceEntriesForInstall(
+  index: PluginMarketplaceIndex | null,
+): PluginMarketplaceEntry[] {
+  return (index?.plugins ?? []).filter(
+    (entry) => supportedMarketplaceVersions(entry).length > 0,
+  );
+}
+
+function marketplaceEntryForPlugin(
+  plugin: PluginRuntimeRecord,
+  index: PluginMarketplaceIndex | undefined,
+): PluginMarketplaceEntry | undefined {
+  const source = pluginMarketplaceSource(plugin);
+  const names = [
+    source?.value ?? "",
+    pluginName(plugin) ?? "",
+    plugin.plugin_id?.trim() ?? "",
+  ].filter(Boolean);
+  return (index?.plugins ?? []).find((entry) => names.includes(entry.name));
+}
+
+function supportedMarketplaceVersions(
+  entry: PluginMarketplaceEntry | undefined,
+): PluginMarketplaceVersion[] {
+  return (entry?.versions ?? []).filter(
+    (version) =>
+      !version.unsupported_reason &&
+      version.source?.kind !== "unsupported",
+  );
+}
+
+function marketplaceDefaultVersion(
+  entry: PluginMarketplaceEntry | undefined,
+): string {
+  if (entry === undefined) {
+    return "";
+  }
+  const versions = supportedMarketplaceVersions(entry);
+  if (entry.latest && versions.some((version) => version.version === entry.latest)) {
+    return "";
+  }
+  return versions[0]?.version ?? "";
+}
+
+function marketplaceVersionSelectOptions(
+  entry: PluginMarketplaceEntry | undefined,
+): Array<{ label: string; value: string }> {
+  if (entry === undefined) {
+    return [];
+  }
+  const versions = supportedMarketplaceVersions(entry);
+  const options = versions.map((version) => ({
+    label: marketplaceVersionLabel(version),
+    value: version.version,
+  }));
+  if (entry.latest && versions.some((version) => version.version === entry.latest)) {
+    return [{ label: `latest (${entry.latest})`, value: "" }, ...options];
+  }
+  return options;
+}
+
+function marketplaceEntryLabel(entry: PluginMarketplaceEntry): string {
+  return entry.latest ? `${entry.name} ${entry.latest}` : entry.name;
+}
+
+function marketplaceVersionLabel(version: PluginMarketplaceVersion): string {
+  const sourceRef = version.source?.ref?.trim();
+  return sourceRef ? `${version.version} ${sourceRef}` : version.version;
 }
 
 function pluginConfigFields(

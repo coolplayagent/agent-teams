@@ -65,6 +65,7 @@ import {
   getWorkspaceFileContent,
   getWorkspaceSnapshot,
   getWorkspaceTree,
+  inspectPluginMarketplace,
   installAgentRuntimeFromRegistry,
   listAutomationProjectSessions,
   listAutomationProjects,
@@ -106,6 +107,7 @@ import {
   reloadSkillsConfig,
   resolveToolApproval,
   resolveCommandPrompt,
+  loadPluginMarketplace,
   saveEnvironmentVariable,
   saveAgentRuntime,
   saveClawHubConfig,
@@ -119,6 +121,7 @@ import {
   saveSshProfile,
   saveUiLanguageSettings,
   saveWebConfig,
+  searchPluginMarketplace,
   searchClawHubSkillMarket,
   searchMemories,
   searchWorkspacePaths,
@@ -2660,6 +2663,91 @@ describe("api client", () => {
       "/api/system/configs/plugins/quality-tools?prune=true&scope=project",
       expect.objectContaining({
         method: "DELETE",
+        headers: expect.any(Headers),
+      }),
+    );
+  });
+
+  it("loads plugin marketplace indexes through the system config endpoints", async () => {
+    const marketplacePayload = {
+      plugins: [
+        {
+          latest: "1.2.0",
+          name: "quality-tools",
+          versions: [{ version: "1.2.0" }],
+        },
+      ],
+    };
+    const pluginPayload = {
+      diagnostics: [],
+      plugins: [{ name: "quality-tools", scope: "user" }],
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(marketplacePayload), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(marketplacePayload), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(pluginPayload), { status: 200 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const marketplaceRequest = {
+      fetch_all: true,
+      include_details: true,
+      marketplace: "clawhub",
+      marketplace_provider: "clawhub" as const,
+      marketplace_ref: "main",
+      marketplace_source: "https://clawhub.ai",
+      refresh: true,
+    };
+    await expect(loadPluginMarketplace(marketplaceRequest)).resolves.toEqual(
+      marketplacePayload,
+    );
+    await expect(
+      searchPluginMarketplace({ ...marketplaceRequest, query: "quality" }),
+    ).resolves.toEqual(marketplacePayload);
+    await expect(
+      inspectPluginMarketplace({
+        ...marketplaceRequest,
+        name: "quality-tools",
+        scope: "project",
+        version: "1.2.0",
+      }),
+    ).resolves.toEqual(pluginPayload);
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/system/configs/plugins/marketplace",
+      expect.objectContaining({
+        body: JSON.stringify(marketplaceRequest),
+        method: "POST",
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/system/configs/plugins/marketplace:search",
+      expect.objectContaining({
+        body: JSON.stringify({ ...marketplaceRequest, query: "quality" }),
+        method: "POST",
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/system/configs/plugins/marketplace:inspect",
+      expect.objectContaining({
+        body: JSON.stringify({
+          ...marketplaceRequest,
+          name: "quality-tools",
+          scope: "project",
+          version: "1.2.0",
+        }),
+        method: "POST",
         headers: expect.any(Headers),
       }),
     );

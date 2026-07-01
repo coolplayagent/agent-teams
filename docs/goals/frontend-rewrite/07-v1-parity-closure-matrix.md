@@ -114,6 +114,12 @@ For every row moved to `Verified`, record:
 
 ## Verification Ledger
 
+### 2026-07-02 Plugin Settings Marketplace Selection And Update
+
+- `SET-14` tightened: Plugins settings now has V2-native marketplace loading on the Add Plugin secondary page, filters unsupported marketplace versions, preserves provider/source/ref/version/safety payload fields, and opens a marketplace-specific Update secondary page for installed marketplace plugins.
+- `CLEAN-01` unchanged for the legacy plugins harness: `tests/integration_tests/frontend/test_plugins_settings_ui.py` still remains because ClawHub full-safe marketplace browsing, deeper inspect behavior, in-app/manual visual pairing, and broader System settings closure are not done in this slice.
+- Evidence: `npm test -- src/test/apiClient.test.ts -t "plugin marketplace"`, `npm test -- src/test/SettingsDrawer.test.tsx -t "plugin"`, `npm run test:browser -- v2-settings-actions.spec.ts -g "manages Plugins" --project=chromium`, `npm run lint`, and `npm run build`; screenshot `.tmp/frontend-v2-ts-settings-actions/v2-plugin-marketplace-actions.png`. In-app browser control was attempted but DOM reads timed out, so this entry does not claim in-app-browser sign-off.
+
 ### 2026-07-02 Plugin Settings Install And Configure UI
 
 - `SET-14` tightened: Plugins settings now has V2-native install and configure sub-views, uses the backend plugin registry manifest `user_config` schema, preserves V1-relevant install payload fields, parses JSON config values, and avoids resending unchanged sensitive `<configured>` values.

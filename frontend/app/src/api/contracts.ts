@@ -243,6 +243,71 @@ export type PluginInstallSourceKind =
 
 export type PluginMarketplaceProviderKind = "local_json" | "claude" | "clawhub";
 
+export interface PluginInstallSourceView {
+  adapter?: string;
+  kind?: PluginInstallSourceKind;
+  marketplace?: string;
+  marketplace_provider?: string;
+  marketplace_ref?: string;
+  marketplace_source?: string;
+  ref?: string;
+  requested_version?: string | null;
+  sha?: string;
+  subdir?: string;
+  value?: string;
+}
+
+export interface PluginMarketplaceVersion {
+  dependencies?: JsonValue[];
+  sha256?: string;
+  source?: PluginInstallSourceView;
+  unsupported_reason?: string;
+  version: string;
+  warnings?: string[];
+}
+
+export interface PluginMarketplaceEntry {
+  compatibility?: "direct" | "partial" | "native_only" | "unknown";
+  compatibility_reason?: string;
+  description?: string;
+  latest?: string;
+  name: string;
+  provider_family?: string;
+  versions?: PluginMarketplaceVersion[];
+}
+
+export interface PluginMarketplaceIndex {
+  next_cursor?: string;
+  plugins?: PluginMarketplaceEntry[];
+  version?: string;
+}
+
+export interface PluginMarketplaceRequest {
+  allow_community_plugins?: boolean;
+  allow_executes_code?: boolean;
+  allow_missing_digest?: boolean;
+  allow_unclean_scan?: boolean;
+  cursor?: string;
+  fetch_all?: boolean;
+  include_details?: boolean;
+  limit?: number;
+  marketplace: string;
+  marketplace_provider?: PluginMarketplaceProviderKind;
+  marketplace_ref?: string;
+  marketplace_source?: string;
+  refresh?: boolean;
+}
+
+export interface PluginMarketplaceSearchRequest extends PluginMarketplaceRequest {
+  query?: string;
+}
+
+export interface PluginMarketplaceInspectRequest extends PluginMarketplaceRequest {
+  name: string;
+  scope?: "local" | "project" | "user";
+  version?: string | null;
+}
+
 export interface PluginInstallRequest extends PluginScopeRequest {
   allow_community_plugins?: boolean;
   allow_executes_code?: boolean;

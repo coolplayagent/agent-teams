@@ -2,6 +2,26 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-01 Automation Browser And Component Evidence Sweep
+
+### Scope
+- Re-checked the closure matrix and selected `PAGE-01` because Automation was still `Not checked` while it is a primary V1 surface.
+- Ran the packed `/app/` browser automation action path: sidebar navigation, project list/detail rendering, enable/disable endpoints, create modal with workspace, schedule, delivery target, delivery events, created-project detail, Run now session handoff, and delete confirmation.
+- Inspected the generated screenshots and confirmed the Automation surface stays inside the fixed shell and exposes list, detail, create, delivery, run, enable/disable, and delete controls without falling back to placeholder content.
+- Fixed the stale `AutomationView.test.tsx` API mock for `listAutomationDeliveryBindings`, then expanded the fixture to cover a project-level Xiaoluban delivery binding and the run-now workspace-aware session callback.
+- Kept `PAGE-01` at `In progress`; this round adds V2 browser/component evidence, not final V1 screenshot/DOM pairing, loading/error browser states, monitor/follow-up workflow inventory, or narrow-density sign-off.
+
+### Verification
+- `npm run test:browser -- v2-module-actions.spec.ts --project=chromium -g "automation"` passed with 2 Chromium tests.
+- `npm test -- src/test/AutomationView.test.tsx` passed with 4 tests.
+- Browser screenshot artifacts inspected:
+  - `.tmp/frontend-v2-ts-module-actions/v2-automation-toggle-actions.png`
+  - `.tmp/frontend-v2-ts-module-actions/v2-automation-create-xiaoluban-dialog.png`
+  - `.tmp/frontend-v2-ts-module-actions/v2-automation-create-detail.png`
+
+### Reviewer
+- Main-agent screenshot inspection confirmed the Automation page is a real in-shell surface with project list/detail, create modal, delivery target selection, status actions, run handoff, and delete flow visible. Remaining before verification: V1 screenshot/DOM comparison, loading/error browser evidence, monitor/follow-up workflow parity, and compact-width density review.
+
 ## 2026-07-01 Observability Browser Evidence Sweep
 
 ### Scope

@@ -14,12 +14,16 @@ import {
   disableAutomationProject,
   enableAutomationProject,
   getAutomationProject,
+  listAutomationDeliveryBindings,
   listAutomationProjects,
   listAutomationProjectSessions,
   listWorkspaces,
   runAutomationProject,
 } from "../api/client";
-import type { AutomationProjectRecord } from "../api/contracts";
+import type {
+  AutomationProjectRecord,
+  AutomationXiaolubanBindingCandidate,
+} from "../api/contracts";
 import { AutomationView } from "../features/automation/AutomationView";
 import { useUiStore } from "../runtime/uiStore";
 
@@ -27,6 +31,7 @@ vi.mock("../api/client", () => ({
   disableAutomationProject: vi.fn(),
   enableAutomationProject: vi.fn(),
   getAutomationProject: vi.fn(),
+  listAutomationDeliveryBindings: vi.fn(),
   listAutomationProjectSessions: vi.fn(),
   listAutomationProjects: vi.fn(),
   listWorkspaces: vi.fn(),
@@ -36,6 +41,7 @@ vi.mock("../api/client", () => ({
 const disableAutomationProjectMock = vi.mocked(disableAutomationProject);
 const enableAutomationProjectMock = vi.mocked(enableAutomationProject);
 const getAutomationProjectMock = vi.mocked(getAutomationProject);
+const listAutomationDeliveryBindingsMock = vi.mocked(listAutomationDeliveryBindings);
 const listAutomationProjectSessionsMock = vi.mocked(listAutomationProjectSessions);
 const listAutomationProjectsMock = vi.mocked(listAutomationProjects);
 const listWorkspacesMock = vi.mocked(listWorkspaces);
@@ -87,6 +93,12 @@ beforeEach(() => {
       workspace_id: "workspace-1",
     },
   ]);
+  listAutomationDeliveryBindingsMock.mockResolvedValue([
+    deliveryBindingCandidate({
+      display_name: "Daily room",
+      source_label: "Xiaoluban",
+    }),
+  ]);
   listWorkspacesMock.mockResolvedValue([
     {
       display_name: "Agent Teams",
@@ -134,6 +146,7 @@ describe("AutomationView", () => {
     expect(screen.getByText("0 9 * * *")).toBeVisible();
     expect(screen.getByText("Daily triage run")).toBeVisible();
     expect(screen.getByText("C:/work/agent-teams")).toBeVisible();
+    expect(screen.getByText("Xiaoluban / Daily room")).toBeVisible();
   });
 
   it("filters automation projects without replacing backend data", async () => {
@@ -167,7 +180,10 @@ describe("AutomationView", () => {
     await waitFor(() =>
       expect(runAutomationProjectMock).toHaveBeenCalledWith("aut-daily"),
     );
-    expect(onSessionSelected).toHaveBeenCalledWith("session-automation");
+    expect(onSessionSelected).toHaveBeenCalledWith(
+      "session-automation",
+      "workspace-1",
+    );
   });
 
   it("toggles the selected automation through the real status endpoint", async () => {
@@ -201,6 +217,20 @@ function renderAutomation(onSessionSelected = vi.fn()) {
   );
 }
 
+function deliveryBindingCandidate(
+  overrides: Partial<AutomationXiaolubanBindingCandidate>,
+): AutomationXiaolubanBindingCandidate {
+  return {
+    account_id: "xiaoluban-account",
+    derived_uid: "daily-room",
+    display_name: "Daily room",
+    provider: "xiaoluban",
+    source_label: "Xiaoluban",
+    updated_at: "2026-06-24T06:15:00Z",
+    ...overrides,
+  };
+}
+
 function automationProject(
   overrides: Partial<AutomationProjectRecord>,
 ): AutomationProjectRecord {
@@ -209,7 +239,13 @@ function automationProject(
     automation_project_id: "aut-daily",
     created_at: "2026-06-24T00:00:00Z",
     cron_expression: "0 9 * * *",
-    delivery_binding: null,
+    delivery_binding: {
+      account_id: "xiaoluban-account",
+      derived_uid: "daily-room",
+      display_name: "Daily room",
+      provider: "xiaoluban",
+      source_label: "Xiaoluban",
+    },
     delivery_events: [],
     display_name: "Daily triage",
     interval_every: null,

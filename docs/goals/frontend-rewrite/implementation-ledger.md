@@ -2,6 +2,29 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-01 Observability Browser Evidence Sweep
+
+### Scope
+- Re-checked the closure matrix and selected `PAGE-07` because Observability was still `Not checked` while it is a primary V1 sidebar/top-bar surface.
+- Ran the existing packed `/app/` browser spec instead of relying on component assumptions: top-bar navigation, global/session scope switch, metric summary cards, trend buckets, breakdown tables, gateway signals/breakdowns, spec lineage, direct task lineage URL loading, and empty/error states.
+- Inspected each generated screenshot and confirmed the Observability surface stays inside the fixed shell, charts/tables/lineage render in-page, and empty/error states do not fall back to chat timeline content.
+- Kept `PAGE-07` at `In progress`; this round adds current V2 browser evidence, not final V1 screenshot/DOM pairing, event-specific V1 inventory, loading-state capture, or narrow-density sign-off.
+
+### Verification
+- `npm run test:browser -- v2-observability.spec.ts --project=chromium` passed with 3 Chromium tests.
+- `npm test -- src/test/SpecLineagePanel.test.tsx` passed with 2 tests. Vitest emitted the existing jsdom pseudo-element `getComputedStyle` environment warning.
+- Browser screenshot artifacts inspected:
+  - `.tmp/frontend-v2-ts-observability/v2-observability-session.png`
+  - `.tmp/frontend-v2-ts-observability/v2-observability-trends.png`
+  - `.tmp/frontend-v2-ts-observability/v2-observability-gateway.png`
+  - `.tmp/frontend-v2-ts-observability/v2-observability-spec-lineage.png`
+  - `.tmp/frontend-v2-ts-observability/v2-observability-trends-empty.png`
+  - `.tmp/frontend-v2-ts-observability/v2-observability-trends-error.png`
+  - `.tmp/frontend-v2-ts-observability/v2-spec-lineage-direct-task.png`
+
+### Reviewer
+- Main-agent screenshot inspection confirmed the V2 Observability page renders metrics, trends, gateway data, lineage, empty states, and error states inside the fixed shell without document-level scroll drift. Remaining before verification: V1 screenshot/DOM comparison, loading-state browser evidence, event-panel inventory if V1 has a distinct event view, and compact-width density review.
+
 ## 2026-07-01 Streaming Typewriter And Subagent Prompt Pass
 
 ### Scope

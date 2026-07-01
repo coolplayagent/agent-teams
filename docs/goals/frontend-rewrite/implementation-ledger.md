@@ -8462,3 +8462,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent matrix scan, System landing evidence strengthening, browser/component/static verification, screenshot inspection, and matrix/ledger updates completed for this slice. No Settings subsystem PASS or final V2 completion is claimed.
+
+## 2026-07-01 Desktop Packaging Smoke Evidence Closure
+
+### Scope
+- Re-checked the frontend rewrite matrix and selected `DESK-01 Desktop packaging` because desktop readiness is a README non-negotiable outcome and the row was still `Not checked`.
+- Ran the focused desktop build instead of a full suite: `npm run desktop:build` generated the Electron main/preload target without TypeScript errors.
+- Ran the dedicated Electron smoke spec. It covered renderer handoff into `/app/`, isolated preload API exposure, blocked renderer access to `window.require` and `window.process`, backend status propagation, startup-failure diagnostics with copy/retry controls, external-link routing through the preload/main boundary, rejection of `file://` external links, and managed backend startup/auto-quit lifecycle.
+- Inspected the generated desktop screenshots. `v2-electron-renderer.png` shows the packaged Electron shell rendering the normal app frame with sidebar, top bar, backend status, timeline content, and composer; `v2-electron-startup-failed.png` shows a readable failure state with diagnostics plus Copy diagnostics and Retry startup controls.
+- Inspected the generated logs: `open-external.log` recorded only the allowed `https://example.com/...` URLs, `copy-diagnostics.log` contained the failed backend URL/status, and the managed backend logs showed `scheduled:750`, `fired`, `/api/system/health`, and `/app/`.
+- Updated `DESK-01` from `Not checked` to `In progress`. This slice does not claim Desktop packaging `Verified`, installer/distribution readiness, updater/restart parity, formal deep-link coverage, reviewer sign-off, release cleanup sign-off, or final V2 frontend completion.
+
+### Verification
+- `npm run desktop:build` passed.
+- `npm run test:browser -- v2-desktop-smoke.spec.ts` passed with 4 Electron smoke tests.
+- Inspected `.tmp/frontend-v2-desktop/v2-electron-renderer.png` and `.tmp/frontend-v2-desktop/v2-electron-startup-failed.png`.
+- Inspected `.tmp/frontend-v2-desktop/open-external.log`, `.tmp/frontend-v2-desktop/copy-diagnostics.log`, `.tmp/frontend-v2-desktop/auto-quit-28598.log`, and `.tmp/frontend-v2-desktop/managed-28598.log`.
+
+### Reviewer
+- Main-agent matrix scan, focused desktop build/smoke verification, screenshot inspection, log inspection, and matrix/ledger updates completed for this slice. No Desktop packaging PASS or final V2 completion is claimed.

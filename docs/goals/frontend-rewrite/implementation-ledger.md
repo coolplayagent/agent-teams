@@ -8947,3 +8947,25 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent V1 harness audit, real V2 Memory surface implementation, typed API coverage, component coverage, packed browser coverage for the new Memory secondary tabs, screenshot inspection, old unit harness retirement, and matrix/ledger update completed for this slice. This does not claim Memory `Verified`, formal V1 screenshot pairing, new secondary-tab browser error/loading coverage, broad integration harness retirement, reviewer sign-off, or final V2 frontend completion.
+
+## 2026-07-01 Speech And Message Action Parity Slice
+
+### Scope
+- Re-checked the remaining V1 speech UI harness before touching cleanup. The old harness still covered two real product behaviors: V2 composer voice capture and message read-aloud reuse of answer actions.
+- Added a packed `/app/` browser voice-input scenario to the existing audio spec. It grants microphone permission, drives the V2 composer voice button, verifies start/stop WebSocket frames plus PCM byte streaming, receives a completed transcript, and asserts the prompt is updated without breaking the fixed shell or overlapping controls.
+- Found a real V2 parity gap: the React timeline exposed only the final-answer copy action and had no message read-aloud path. Added a browser-supported read-aloud action next to copy, using `SpeechSynthesisUtterance`, with disabled state matching copy while a stream is open.
+- Added English and Chinese labels for the read-aloud action and unavailable/empty states.
+- Did not retire `test_speech_ui.py` in this slice because the remaining toast-dedupe assertion still needs a V2-native owner before the old Python harness can be removed honestly.
+
+### Verification
+- `npm test -- src/test/MessageTimeline.test.tsx -t "copies the latest|reads the latest|final answer actions"` passed with 3 focused tests.
+- `npm run test:browser -- voice-input-audio.spec.ts --project=chromium -g "V2 composer voice input"` passed.
+- `npm test -- src/test/Composer.test.tsx -t "voice input|transcription|speech"` passed with 7 focused tests.
+- `npm run test:browser -- voice-input-audio.spec.ts --project=chromium` passed with all 10 voice-input browser tests.
+- `npm test -- src/test/MessageTimeline.test.tsx` passed with all 154 tests.
+- `npm run lint` passed.
+- `npm run build` passed and produced the current `frontend/dist/app` bundle.
+- `git diff --check` passed.
+
+### Reviewer
+- Main-agent V1 harness audit, actual V2 parity gap fix, focused timeline action coverage, packed browser voice capture coverage, and matrix/ledger update completed for this slice. This does not claim full speech cleanup, real microphone/provider sign-off, toast-dedupe migration, formal V1 visual pairing, reviewer sign-off, or final V2 frontend completion.

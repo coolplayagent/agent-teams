@@ -6,6 +6,7 @@ import {
   fireEvent,
   render,
   screen,
+  within,
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -354,6 +355,62 @@ describe("MessageTimeline", () => {
     fireEvent.click(copyButton);
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("Latest answer"));
+  });
+
+  it("reads the latest answer aloud from the same final answer actions", async () => {
+    class FakeSpeechSynthesisUtterance {
+      lang = "";
+
+      readonly text: string;
+
+      constructor(text = "") {
+        this.text = text;
+      }
+    }
+    const cancel = vi.fn();
+    const speak = vi.fn();
+    vi.stubGlobal("speechSynthesis", { cancel, speak });
+    vi.stubGlobal("SpeechSynthesisUtterance", FakeSpeechSynthesisUtterance);
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message_id: "user-1",
+        role: "user",
+        content: "Read this?",
+      },
+      {
+        message_id: "assistant-1",
+        role: "assistant",
+        content: "Earlier answer",
+      },
+      {
+        message_id: "assistant-2",
+        role_id: "MainAgent",
+        content: "Latest answer",
+      },
+    ]);
+
+    renderTimeline();
+
+    const readButton = await screen.findByRole("button", {
+      name: "Read last answer aloud",
+    });
+    await waitFor(() => expect(readButton).toBeEnabled());
+    const actions = readButton.closest(".at-message-actions");
+    expect(actions).not.toBeNull();
+    expect(actions?.previousElementSibling).toHaveClass("at-message-content");
+    expect(
+      within(actions as HTMLElement).getByRole("button", {
+        name: "Copy last answer",
+      }),
+    ).toBeVisible();
+
+    fireEvent.click(readButton);
+
+    await waitFor(() => expect(speak).toHaveBeenCalledTimes(1));
+    expect(cancel).toHaveBeenCalledTimes(1);
+    const spoken = speak.mock.calls[0]?.[0] as FakeSpeechSynthesisUtterance | undefined;
+    expect(spoken).toBeInstanceOf(FakeSpeechSynthesisUtterance);
+    expect(spoken?.text).toBe("Latest answer");
   });
 
   it("does not let runtime terminal rows replace the copied answer", async () => {

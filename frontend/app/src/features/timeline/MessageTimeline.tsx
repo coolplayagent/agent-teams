@@ -1,7 +1,7 @@
 import { App, Button, Empty, Image, Skeleton, Tooltip, Typography } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Copy, Wrench } from "lucide-react";
+import { Copy, Volume2, Wrench } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent, PointerEvent, ReactNode } from "react";
 
@@ -330,8 +330,12 @@ export function MessageTimeline({
     }
     return undefined;
   }, [rows]);
+  const canReadAnswerAloud = supportsMessageSpeech();
   const handleCopyAnswer = useCallback((row: TimelineRow | undefined) => {
     void copyLastAnswer(row, message, t);
+  }, [message, t]);
+  const handleReadAnswerAloud = useCallback((row: TimelineRow | undefined) => {
+    void readLastAnswerAloud(row, message, t);
   }, [message, t]);
   const activeRoundRunId =
     activeRunId ?? latestRowRunId(rows) ?? latestRoundRunId(railRounds);
@@ -491,7 +495,9 @@ export function MessageTimeline({
               t,
               lastAnswer?.key ?? null,
               streamOpenForSession,
+              canReadAnswerAloud,
               handleCopyAnswer,
+              handleReadAnswerAloud,
               handleToggleHistorySegment,
               onSubagentOpen,
               sessionId,
@@ -813,7 +819,9 @@ function timelineRowElement(
   t: Translate,
   lastAnswerKey: string | null,
   streamOpenForSession: boolean,
+  canReadAnswerAloud: boolean,
   onCopyAnswer: (row: TimelineRow | undefined) => void,
+  onReadAnswerAloud: (row: TimelineRow | undefined) => void,
   onToggleHistorySegment: (segmentId: string) => void,
   onSubagentOpen: ((subagent: TimelineSubagentReference) => void) | undefined,
   sessionId: string,
@@ -902,8 +910,10 @@ function timelineRowElement(
       />
       {showActions ? (
         <MessageRowActions
+          canReadAloud={canReadAnswerAloud}
           disabled={streamOpenForSession}
           onCopy={() => onCopyAnswer(row)}
+          onReadAloud={() => onReadAnswerAloud(row)}
           t={t}
         />
       ) : null}
@@ -5045,12 +5055,16 @@ function StreamingCursor() {
 }
 
 function MessageRowActions({
+  canReadAloud,
   disabled,
   onCopy,
+  onReadAloud,
   t,
 }: {
+  canReadAloud: boolean;
   disabled: boolean;
   onCopy: () => void;
+  onReadAloud: () => void;
   t: Translate;
 }) {
   return (
@@ -5067,6 +5081,20 @@ function MessageRowActions({
           type="text"
         />
       </Tooltip>
+      {canReadAloud ? (
+        <Tooltip
+          title={disabled ? t("timelineReadAloudAfterStream") : t("timelineReadAloudLastAnswer")}
+        >
+          <Button
+            aria-label={t("timelineReadAloudLastAnswer")}
+            disabled={disabled}
+            icon={<Volume2 size={14} />}
+            onClick={onReadAloud}
+            size="small"
+            type="text"
+          />
+        </Tooltip>
+      ) : null}
     </div>
   );
 }
@@ -6959,6 +6987,41 @@ function formatRuntimeCount(value: number): string {
 
 function isAnswerRole(role: string): boolean {
   return role.trim().toLowerCase() !== "user";
+}
+
+function supportsMessageSpeech(): boolean {
+  return (
+    typeof globalThis.speechSynthesis !== "undefined" &&
+    typeof globalThis.SpeechSynthesisUtterance !== "undefined"
+  );
+}
+
+async function readLastAnswerAloud(
+  row: TimelineRow | undefined,
+  messenger: ReturnType<typeof App.useApp>["message"],
+  t: Translate,
+): Promise<void> {
+  const text = row?.text.trim() ?? "";
+  if (!text) {
+    void messenger.warning(t("timelineReadAloudEmpty"));
+    return;
+  }
+  if (!supportsMessageSpeech()) {
+    void messenger.warning(t("timelineReadAloudUnavailable"));
+    return;
+  }
+  try {
+    globalThis.speechSynthesis.cancel();
+    const utterance = new globalThis.SpeechSynthesisUtterance(text);
+    const language = document.documentElement.lang || navigator.language;
+    if (language.trim().length > 0) {
+      utterance.lang = language;
+    }
+    globalThis.speechSynthesis.speak(utterance);
+    void messenger.success(t("timelineReadAloudStarted"));
+  } catch (_error) {
+    void messenger.error(t("timelineReadAloudUnavailable"));
+  }
 }
 
 async function copyLastAnswer(

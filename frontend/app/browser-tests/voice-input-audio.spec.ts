@@ -1,6 +1,16 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 
-import { serveFrontendDist } from "./support/frontend-app";
+import {
+  expectComposerControlsDoNotOverlap,
+  expectNoDocumentScroll,
+  expectNoUnhandledApiRoutes,
+  installShellState,
+  mockShellApi,
+  serveFrontendDist,
+  waitForV2Shell,
+  WORKSPACE_ID,
+  type MockApiRouteContext,
+} from "./support/frontend-app";
 
 const VIEWPORT_WIDTH = 1280;
 const VIEWPORT_HEIGHT = 900;
@@ -60,6 +70,53 @@ test.beforeEach(async ({ page }) => {
     height: VIEWPORT_HEIGHT,
     width: VIEWPORT_WIDTH,
   });
+});
+
+test("V2 composer voice input sends PCM bytes and writes the transcript", async ({
+  context,
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  try {
+    await prepareV2VoiceInputPage(context, page, appServer.url, {
+      probeScript: voiceAudioProbeScript({
+        completeOnStopText: "browser dictated",
+      }),
+    });
+
+    const prompt = page.getByRole("textbox", { name: "Prompt" });
+    await expect(prompt).toBeVisible();
+    await prompt.fill("");
+    await page.getByRole("button", { exact: true, name: "Voice input" }).click();
+
+    await waitForV2VoiceState(page, "listening");
+    await page.waitForFunction(
+      () =>
+        (window as unknown as VoiceProbeWindow).__voiceProbe.sent.some((item) =>
+          String(item).startsWith("bytes:"),
+        ),
+      undefined,
+      { timeout: WAIT_TIMEOUT_MS },
+    );
+
+    await page.getByRole("button", { name: "Stop voice input" }).click();
+    await waitForV2VoiceState(page, "idle");
+    await expect(prompt).toHaveValue("browser dictated");
+
+    const result = await readV2VoiceRuntime(page);
+    expect(result.active).toBe(false);
+    expect(result.state).toBe("idle");
+    expect(result.sent).toContain('{"type":"start"}');
+    expect(result.sent).toContain('{"type":"stop"}');
+    expect(result.sent.some((item) => item.startsWith("bytes:"))).toBe(true);
+    await expectComposerControlsDoNotOverlap(page);
+    await expectNoDocumentScroll(
+      page,
+      "v2 voice input should stay inside the fixed app shell",
+    );
+  } finally {
+    await appServer.close();
+  }
 });
 
 test("voice input sends PCM bytes and stops after silence", async ({
@@ -450,6 +507,63 @@ async function prepareVoiceInputPage(
   );
 }
 
+async function prepareV2VoiceInputPage(
+  context: BrowserContext,
+  page: Page,
+  baseUrl: string,
+  options: {
+    configScript?: string;
+    probeScript: string;
+  },
+): Promise<void> {
+  await context.grantPermissions(["microphone"], { origin: baseUrl });
+  if (options.configScript !== undefined) {
+    await context.addInitScript({ content: options.configScript });
+  }
+  await context.addInitScript({ content: options.probeScript });
+  await installShellState(page);
+  const unhandledApiRoutes: string[] = [];
+  await mockShellApi(page, baseUrl, unhandledApiRoutes, {
+    handleRequest: handleV2VoiceApi,
+    sessionTitle: "TS V2 voice input",
+  });
+  await page.goto(`${baseUrl}/app/`);
+  await waitForV2Shell(page);
+  await expect(
+    page.getByRole("button", { exact: true, name: "Voice input" }),
+  ).toBeEnabled();
+  expectNoUnhandledApiRoutes(unhandledApiRoutes);
+}
+
+async function handleV2VoiceApi(
+  context: MockApiRouteContext,
+): Promise<boolean> {
+  if (context.method === "GET" && context.path === "/speech/config") {
+    await context.fulfillJson({
+      configured: true,
+      language: "zh-CN",
+      prompt: null,
+      stt_profile_name: "test-stt",
+    });
+    return true;
+  }
+  if (context.method === "GET" && context.path === "/system/commands:catalog") {
+    await context.fulfillJson({
+      app_commands: [],
+      workspaces: [
+        {
+          can_create_commands: true,
+          commands: [],
+          root_path: "C:/Users/yex/Documents/workspace/agent-teams",
+          workspace_id: WORKSPACE_ID,
+        },
+      ],
+    });
+    return true;
+  }
+  return false;
+}
+
 async function openLegacyFrontend(page: Page, baseUrl: string): Promise<void> {
   await page.goto(`${baseUrl}/`, { waitUntil: "load" });
 }
@@ -490,6 +604,17 @@ async function waitForVoiceState(page: Page, expectedState: string): Promise<voi
   );
 }
 
+async function waitForV2VoiceState(
+  page: Page,
+  expectedState: string,
+): Promise<void> {
+  await expect(page.locator(".at-voice-input-button")).toHaveAttribute(
+    "data-voice-state",
+    expectedState,
+    { timeout: WAIT_TIMEOUT_MS },
+  );
+}
+
 async function readVoiceRuntime(page: Page): Promise<VoiceRuntimeResult> {
   return page.evaluate<VoiceRuntimeResult>(() => {
     const voiceWindow = window as unknown as VoiceProbeWindow;
@@ -503,16 +628,31 @@ async function readVoiceRuntime(page: Page): Promise<VoiceRuntimeResult> {
   });
 }
 
+async function readV2VoiceRuntime(page: Page): Promise<VoiceRuntimeResult> {
+  return page.evaluate<VoiceRuntimeResult>(() => {
+    const voiceWindow = window as unknown as VoiceProbeWindow;
+    return {
+      active: voiceWindow.__relayTeamsVoiceInputActive === true,
+      sent: voiceWindow.__voiceProbe.sent,
+      state:
+        document.querySelector<HTMLButtonElement>(".at-voice-input-button")
+          ?.dataset.voiceState ?? "",
+    };
+  });
+}
+
 function voiceAudioProbeScript(
   options: {
     backpressured?: boolean;
     closeOnStop?: boolean;
+    completeOnStopText?: string;
     readyDelayMs?: number;
     sampleRate?: number;
   } = {},
 ): string {
   const bufferedAmount = options.backpressured === true ? "3000000" : "0";
   const closeOnStop = options.closeOnStop === false ? "false" : "true";
+  const completeOnStopText = JSON.stringify(options.completeOnStopText ?? "");
   const readyDelayMs = String(options.readyDelayMs ?? 20);
   const sampleRate = String(options.sampleRate ?? 16000);
   return `
@@ -539,6 +679,15 @@ function voiceAudioProbeScript(
         connect(target) {
           target.__sourceConnected = true;
           return target;
+        },
+        disconnect() {},
+      };
+    }
+    createGain() {
+      return {
+        gain: { value: 1 },
+        connect() {
+          return this;
         },
         disconnect() {},
       };
@@ -608,8 +757,15 @@ function voiceAudioProbeScript(
         ? data
         : \`bytes:\${data.byteLength || data.size || 0}\`;
       window.__voiceProbe.sent.push(value);
-      if (typeof data === "string" && data.includes("stop") && ${closeOnStop}) {
-        window.setTimeout(() => this.close(), 20);
+      if (typeof data === "string" && data.includes("stop")) {
+        if (${completeOnStopText}.trim()) {
+          window.setTimeout(() => {
+            this._message({ type: "completed", text: ${completeOnStopText} });
+          }, 5);
+        }
+        if (${closeOnStop}) {
+          window.setTimeout(() => this.close(), 30);
+        }
       }
     }
     close() {

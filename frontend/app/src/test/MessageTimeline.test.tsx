@@ -2224,7 +2224,7 @@ describe("MessageTimeline", () => {
           "run-1": {
             runId: "run-1",
             status: "open",
-            lastEventId: 4,
+            lastEventId: 3,
             seenEventKeys: [],
             terminalEventType: null,
             entries: [
@@ -2482,7 +2482,7 @@ describe("MessageTimeline", () => {
           "run-1": {
             runId: "run-1",
             status: "open",
-            lastEventId: 3,
+            lastEventId: 4,
             seenEventKeys: [],
             terminalEventType: null,
             entries: [
@@ -3950,6 +3950,7 @@ describe("MessageTimeline", () => {
 
     expect(onSubagentOpen).toHaveBeenCalledWith(expect.objectContaining({
       description: "Explore how Skills are implemented in this project",
+      prompt: "Explore the project without editing files.",
       roleId: "Explorer",
       sessionId: "session-1",
       status: "running",
@@ -6407,6 +6408,65 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText("Thinking")).not.toBeInTheDocument();
   });
 
+  it("drops whitespace-only thinking deltas before visible streamed text", async () => {
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: ["run-blank-thinking-delta"],
+        runs: {
+          "run-blank-thinking-delta": {
+            runId: "run-blank-thinking-delta",
+            status: "open",
+            lastEventId: 3,
+            seenEventKeys: [],
+            terminalEventType: null,
+            entries: [
+              {
+                id: "run-blank-thinking-delta:1:0",
+                sessionId: "session-1",
+                runId: "run-blank-thinking-delta",
+                roleId: "MainAgent",
+                kind: "thinking_started",
+                text: "thinking started",
+                payload: { part_index: 0 },
+                eventId: 1,
+                occurredAt: "2026-06-23T00:00:00Z",
+              },
+              {
+                id: "run-blank-thinking-delta:2:1",
+                sessionId: "session-1",
+                runId: "run-blank-thinking-delta",
+                roleId: "MainAgent",
+                kind: "thinking_delta",
+                text: "\n  ",
+                payload: { part_index: 0, text: "\n  " },
+                eventId: 2,
+                occurredAt: "2026-06-23T00:00:01Z",
+              },
+              {
+                id: "run-blank-thinking-delta:3:2",
+                sessionId: "session-1",
+                runId: "run-blank-thinking-delta",
+                roleId: "MainAgent",
+                kind: "text_delta",
+                text: "Visible streamed answer.",
+                payload: { text: "Visible streamed answer." },
+                eventId: 3,
+                occurredAt: "2026-06-23T00:00:02Z",
+              },
+            ],
+          },
+        },
+      },
+    });
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("Visible streamed answer.")).toBeVisible();
+    expect(container.querySelector(".at-message-thinking")).toBeNull();
+    expect(screen.queryByText("Thinking")).not.toBeInTheDocument();
+  });
+
   it("falls back to runtime text for malformed thinking payloads", async () => {
     useRuntimeStore.setState({
       runtimeState: {
@@ -6452,6 +6512,17 @@ describe("MessageTimeline", () => {
                 eventId: 3,
                 occurredAt: "2026-06-23T00:00:02Z",
               },
+              {
+                id: "run-malformed-thinking:4:3",
+                sessionId: "session-1",
+                runId: "run-malformed-thinking",
+                roleId: "MainAgent",
+                kind: "text_delta",
+                text: "Visible answer after noisy thinking deltas.",
+                payload: { text: "Visible answer after noisy thinking deltas." },
+                eventId: 4,
+                occurredAt: "2026-06-23T00:00:03Z",
+              },
             ],
           },
         },
@@ -6462,8 +6533,13 @@ describe("MessageTimeline", () => {
     const { container } = renderTimeline();
 
     expect(await screen.findByText("thinking payload fallback")).toBeVisible();
-    expect(screen.getByText("thinking delta missing text fallback")).toBeVisible();
-    expect(screen.getByText("thinking delta number fallback")).toBeVisible();
+    expect(
+      await screen.findByText("Visible answer after noisy thinking deltas."),
+    ).toBeVisible();
+    expect(
+      screen.queryByText("thinking delta missing text fallback"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("thinking delta number fallback")).not.toBeInTheDocument();
     expect(container.querySelector(".at-message-thinking")).toBeNull();
   });
 

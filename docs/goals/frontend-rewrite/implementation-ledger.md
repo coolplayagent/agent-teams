@@ -2,6 +2,31 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-01 Streaming Typewriter And Subagent Prompt Pass
+
+### Scope
+- Re-checked the closure matrix and focused this round on the P0 timeline/subagent gaps the browser screenshots exposed: empty thinking cards, child-stream prompt loss, subagent output leaking or going stale across live/terminal/replay, and stream chunks arriving as abrupt whole sentences.
+- Added a presentation-layer typewriter buffer for live text rows. Runtime state still stores the exact SSE payload, but production UI now reveals large incoming chunks progressively while unit tests keep deterministic immediate rendering.
+- Treated whitespace-only or structurally empty thinking deltas as internal stream noise, so live and replay no longer show empty `Thinking` cards or fallback strings like missing-text diagnostics. Malformed payload diagnostics are still visible.
+- Promoted subagent prompt text from tool-call metadata into the subagent panel state, persisted it across the open-panel localStorage path, and preserved it when authoritative subagent records hydrate IDs/status. The right panel shows the prompt during live waiting/streaming without flattening completed replay content.
+- Extended the subagent browser stream test to sample a large first delta before it finishes revealing, append a second delta into the same live row, close the stream before final history refill, verify parent timeline isolation, and then verify hard-refresh restoration.
+- Kept the affected rows at `In progress`; this is a focused normal-mode/mock-SSE pass, not final real-backend/orchestration/V1 visual sign-off.
+
+### Verification
+- `npm test -- MessageTimeline.test.tsx` passed with 148 tests.
+- `npm test -- SubagentSessionView.test.tsx` passed with 19 tests.
+- `npm test -- AppShell.test.tsx SessionsSidebar.test.tsx` passed with 67 tests.
+- `npm test -- ShellLayoutCss.test.ts` passed with 19 tests.
+- `npm run build` passed.
+- `npm run lint` passed.
+- `npm run test:browser -- v2-subagent-session.spec.ts` passed with 5 Chromium tests.
+- Browser screenshot artifacts inspected:
+  - `.tmp/frontend-v2-ts-subagent-session/v2-subagent-incremental-stream-before-refill.png`
+  - `.tmp/frontend-v2-ts-subagent-session/v2-subagent-hard-refresh-restored.png`
+
+### Reviewer
+- Main-agent browser inspection confirmed child text remains in the right subagent panel through live and delayed terminal refill, does not appear in `.at-chat-view`, terminal state removes the running spinner/badge state, hard refresh restores the subagent panel with only the persisted child answer, and composer/sidebar stay inside the fixed shell. Remaining before verification: real backend stream sampling, orchestration-mode subagents, live subagent prompt screenshot before terminal close, and broader tool/thinking-heavy session comparisons.
+
 ## 2026-07-01 Memory Surface Browser Coverage
 
 ### Scope

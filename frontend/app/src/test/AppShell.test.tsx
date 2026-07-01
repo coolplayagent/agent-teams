@@ -123,6 +123,7 @@ vi.mock("../features/sessions/SessionsSidebar", () => ({
         typeof record.last_event_id === "number" && record.last_event_id > 0
           ? Math.floor(record.last_event_id)
           : null,
+      promptText: "",
       roleId,
       runId,
       runPhase: firstTrimmed(record.run_phase),
@@ -248,6 +249,7 @@ vi.mock("../features/sessions/SubagentSessionView", () => ({
   }) => (
     <div
       data-instance-id={subagent.instanceId}
+      data-prompt-text={subagent.promptText}
       data-run-id={subagent.runId}
       data-run-status={subagent.runStatus}
       data-session-id={subagent.sessionId}
@@ -275,6 +277,7 @@ vi.mock("../features/timeline/MessageTimeline", () => ({
     onSubagentOpen?: (subagent: {
       description?: string;
       instanceId?: string;
+      prompt?: string;
       roleId?: string;
       runId?: string;
       sessionId: string;
@@ -294,6 +297,7 @@ vi.mock("../features/timeline/MessageTimeline", () => ({
           const secondSession = sessionId === "session-2";
           onSubagentOpen?.({
             instanceId: secondSession ? "subagent-instance-2" : "subagent-instance-1",
+            prompt: secondSession ? "Research second session" : "Explore first session",
             roleId: "explorer",
             runId: secondSession ? "subagent-run-2" : "subagent-run-1",
             sessionId: sessionId ?? "session-1",
@@ -309,6 +313,7 @@ vi.mock("../features/timeline/MessageTimeline", () => ({
         onClick={() => {
           onSubagentOpen?.({
             description: "Explore skills implementation",
+            prompt: "Explore skills without editing files.",
             roleId: "explorer",
             sessionId: sessionId ?? "session-1",
             title: "Explore skills implementation",

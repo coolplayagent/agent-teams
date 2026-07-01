@@ -14,6 +14,7 @@ import {
 } from "../../runtime/streamClient";
 import type { RunStreamController } from "../../runtime/useRunStreamController";
 import { useTranslations } from "../../i18n";
+import { MarkdownMessage } from "../timeline/MarkdownMessage";
 import { MessageTimeline } from "../timeline/MessageTimeline";
 import {
   normalizeSessionSubagent,
@@ -56,7 +57,10 @@ export function SubagentSessionView({
     () => matchingSubagentFromRecords(subagentRecordsQuery.data, subagent),
     [subagent, subagentRecordsQuery.data],
   );
-  const recordAwareSubagent = latestSubagentRecord ?? subagent;
+  const recordAwareSubagent =
+    latestSubagentRecord === null
+      ? subagent
+      : mergeSubagentRecordContext(latestSubagentRecord, subagent);
   const sessionId = recordAwareSubagent.sessionId;
   const runId = recordAwareSubagent.runId.trim();
   const instanceId = recordAwareSubagent.instanceId.trim();
@@ -72,6 +76,9 @@ export function SubagentSessionView({
     [recordAwareSubagent, runtimeTerminalEventType],
   );
   const subagentWaitingForOutput = subagentHasStreamingStatus(displayedSubagent);
+  const subagentPromptText = displayedSubagent.promptText.trim();
+  const shouldShowLivePrompt =
+    subagentWaitingForOutput && subagentPromptText.length > 0;
   const streamStatusKey = [
     displayedSubagent.status,
     displayedSubagent.runStatus,
@@ -239,6 +246,11 @@ export function SubagentSessionView({
         </div>
       </header>
       <div className="at-subagent-session-body">
+        {shouldShowLivePrompt ? (
+          <div className="at-subagent-session-prompt">
+            <MarkdownMessage text={subagentPromptText} />
+          </div>
+        ) : null}
         {canRenderTimeline ? (
           <MessageTimeline
             emptyDescription={t("subagentSessionEmpty")}
@@ -552,6 +564,17 @@ function matchingSubagentFromRecords(
   return null;
 }
 
+function mergeSubagentRecordContext(
+  record: ActiveSubagentSession,
+  source: ActiveSubagentSession,
+): ActiveSubagentSession {
+  return {
+    ...record,
+    promptText: firstNonEmpty(record.promptText, source.promptText),
+    title: firstNonEmpty(record.title, source.title),
+  };
+}
+
 function subagentWithRuntimeTerminalStatus(
   subagent: ActiveSubagentSession,
   terminalEventType: RunEventType | null,
@@ -659,4 +682,8 @@ function humanizeRoleId(roleId: string): string {
     .replaceAll("_", " ")
     .replaceAll("-", " ")
     .replace(/\b\w/g, (match) => match.toUpperCase());
+}
+
+function firstNonEmpty(first: string, second: string): string {
+  return first.trim() || second.trim();
 }

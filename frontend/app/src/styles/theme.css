@@ -1152,14 +1152,34 @@ body {
 
 .at-subagent-session-body {
   display: grid;
-  grid-template-rows: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   overflow: hidden;
 }
 
+.at-subagent-session-prompt {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--at-border);
+  background: var(--at-bg);
+  color: var(--at-text);
+}
+
+.at-subagent-session-prompt .at-message-markdown {
+  max-width: 100%;
+}
+
+.at-subagent-session-prompt .at-message-markdown p:last-child {
+  margin-bottom: 0;
+}
+
 .at-subagent-session-body .at-timeline {
+  grid-row: 1 / -1;
   padding: 14px 16px 24px;
+}
+
+.at-subagent-session-body:has(.at-subagent-session-prompt) .at-timeline {
+  grid-row: 2;
 }
 
 .at-subagent-session-pending {

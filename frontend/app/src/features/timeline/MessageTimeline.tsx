@@ -31,6 +31,8 @@ import { roundPromptText, roundTitle } from "./roundMetadata";
 
 const TIMELINE_BOTTOM_FOLLOW_THRESHOLD_PX = 96;
 const LONG_STREAM_TEXT_THRESHOLD = 12000;
+const STREAM_TYPEWRITER_DELAY_MS = 22;
+const STREAM_TYPEWRITER_MIN_STEP = 2;
 const ROUND_RAIL_PAGE_LIMIT = 100;
 const ROUND_RAIL_MAX_PAGES = 10;
 const TOOL_RESULT_MAX_LINES = 200;
@@ -94,6 +96,7 @@ export interface TimelineSubagentReference {
   instanceId?: string;
   interactive?: boolean;
   lastEventId?: number | null;
+  prompt?: string;
   roleId?: string;
   runId?: string;
   runPhase?: string;
@@ -1717,6 +1720,7 @@ function mergeSubagentReference(
     instanceId: next.instanceId || existing.instanceId,
     interactive: next.interactive ?? existing.interactive,
     lastEventId: next.lastEventId ?? existing.lastEventId,
+    prompt: next.prompt || existing.prompt,
     roleId: next.roleId || existing.roleId,
     runId: next.runId || existing.runId,
     runPhase: next.runPhase || existing.runPhase,
@@ -4588,10 +4592,11 @@ function MessageRowContent({
 }
 
 function MessageText({ part }: { part: TimelineTextPart }) {
+  const displayedText = useStreamingDisplayText(part.text, part.streaming);
   if (part.streaming && part.text.length >= LONG_STREAM_TEXT_THRESHOLD) {
     return (
       <pre className="at-message-plain-stream" data-render-mode="plain-stream">
-        {part.text}
+        {displayedText}
         <StreamingCursor />
       </pre>
     );
@@ -4599,12 +4604,75 @@ function MessageText({ part }: { part: TimelineTextPart }) {
   if (part.streaming) {
     return (
       <div className="at-message-streaming-text" data-streaming="true">
-        <MarkdownMessage text={part.text} />
+        <MarkdownMessage text={displayedText} />
         <StreamingCursor />
       </div>
     );
   }
   return <MarkdownMessage text={part.text} />;
+}
+
+function useStreamingDisplayText(targetText: string, streaming: boolean): string {
+  const smoothStreaming = streaming && import.meta.env.MODE !== "test";
+  const [displayedText, setDisplayedText] = useState(() =>
+    smoothStreaming ? initialStreamingText(targetText) : targetText,
+  );
+
+  useEffect(() => {
+    if (!smoothStreaming) {
+      setDisplayedText(targetText);
+      return;
+    }
+    setDisplayedText((current) => {
+      if (targetText.startsWith(current)) {
+        return current;
+      }
+      return initialStreamingText(targetText);
+    });
+  }, [smoothStreaming, targetText]);
+
+  useEffect(() => {
+    if (!smoothStreaming || displayedText.length >= targetText.length) {
+      return;
+    }
+    if (!targetText.startsWith(displayedText)) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setDisplayedText((current) => revealNextStreamingText(current, targetText));
+    }, STREAM_TYPEWRITER_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [displayedText, smoothStreaming, targetText]);
+
+  return smoothStreaming ? displayedText : targetText;
+}
+
+function initialStreamingText(text: string): string {
+  if (text.length <= STREAM_TYPEWRITER_MIN_STEP) {
+    return text;
+  }
+  return text.slice(0, STREAM_TYPEWRITER_MIN_STEP);
+}
+
+function revealNextStreamingText(current: string, target: string): string {
+  if (!target.startsWith(current)) {
+    return initialStreamingText(target);
+  }
+  const remaining = target.length - current.length;
+  if (remaining <= 0) {
+    return target;
+  }
+  let step = STREAM_TYPEWRITER_MIN_STEP;
+  if (remaining > 240) {
+    step = 28;
+  } else if (remaining > 120) {
+    step = 16;
+  } else if (remaining > 48) {
+    step = 8;
+  } else if (remaining > 16) {
+    step = 4;
+  }
+  return target.slice(0, Math.min(target.length, current.length + step));
 }
 
 function StreamingCursor() {
@@ -4646,6 +4714,9 @@ function MessageThinkingBlock({
   t: Translate;
 }) {
   const hasText = thinking.text.trim().length > 0;
+  if (!hasText) {
+    return null;
+  }
   return (
     <details
       className="at-message-thinking"
@@ -5155,8 +5226,9 @@ function applyRuntimeThinkingEvent(
   }
   if (entry.kind === "thinking_delta") {
     const deltaText = thinkingDeltaText(entry);
-    if (!deltaText) {
-      return false;
+    if (deltaText.trim().length === 0) {
+      ensureRuntimeThinkingAccumulator(entry, partIndex, activeThinking);
+      return true;
     }
     const accumulator = ensureRuntimeThinkingAccumulator(
       entry,
@@ -5723,8 +5795,6 @@ function subagentReferenceFromValues({
     description: subagentStringField(candidateObjects, [
       "description",
       "task",
-      "prompt",
-      "instructions",
     ]),
     instanceId: subagentStringField(candidateObjects, [
       "subagent_instance_id",
@@ -5736,6 +5806,11 @@ function subagentReferenceFromValues({
       "last_event_id",
       "checkpoint_event_id",
       "lastEventId",
+    ]),
+    prompt: subagentStringField(candidateObjects, [
+      "prompt",
+      "instructions",
+      "task",
     ]),
     roleId: subagentStringField(candidateObjects, [
       "subagent_role_id",

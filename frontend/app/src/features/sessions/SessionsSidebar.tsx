@@ -90,6 +90,7 @@ export interface ActiveSubagentSession {
   instanceId: string;
   interactive: boolean;
   lastEventId: number | null;
+  promptText: string;
   roleId: string;
   runId: string;
   runPhase: string;
@@ -1137,6 +1138,7 @@ export function normalizeSessionSubagent(
     instanceId,
     interactive: record.interactive === true || subagentKind === "orchestration",
     lastEventId: normalizedPositiveInteger(record.last_event_id),
+    promptText: "",
     roleId,
     runId,
     runPhase: firstTrimmed(record.run_phase),

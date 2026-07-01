@@ -25,6 +25,7 @@ const CONTROL_SESSION_ID = "session-v2-subagent-control";
 const PRESSURE_NEW_SESSION_ID = "session-v2-pressure-new";
 const PRESSURE_RUN_ID = "run-v2-pressure-send";
 const SCREENSHOT_FOLDER = "frontend-v2-ts-subagent-session";
+const SUBAGENT_PROMPT = "Inspect the project and report the subagent stream checkpoints.";
 
 interface SubagentSessionMockState {
   completed: boolean;
@@ -175,6 +176,9 @@ test("streams subagent deltas incrementally before terminal history refill", asy
 
     await openSubagentPanelFromToolCard(page, "Explorer review");
     const panel = page.locator(".at-subagent-session-view");
+    await expect(panel.locator(".at-subagent-session-prompt")).toContainText(
+      SUBAGENT_PROMPT,
+    );
     await expect(panel.getByText("Persisted subagent checkpoint")).toBeVisible();
     await expect.poll(() => state.messageRequestCount).toBe(1);
     await waitForEventSourceUrl(
@@ -185,20 +189,27 @@ test("streams subagent deltas incrementally before terminal history refill", asy
     );
     await waitForEventSourceOpenCount(page, 1);
 
+    const firstStreamText = Array.from(
+      { length: 18 },
+      (_, index) => `SUB_STREAM_ALPHA_${index}`,
+    ).join(" ");
     await dispatchSubagentRunEvent(page, {
       eventId: 42,
-      payload: { text: "SUB_STREAM_ALPHA" },
+      payload: { text: firstStreamText },
       relayEventType: "text_delta",
       type: "message.text.delta",
     });
     const liveRow = panel
-      .locator(`.at-timeline-row[data-run-id="${SUBAGENT_RUN_ID}"]`)
-      .filter({ hasText: "SUB_STREAM_ALPHA" });
+      .locator(`.at-timeline-row.is-streaming[data-run-id="${SUBAGENT_RUN_ID}"]`);
+    const liveStreamText = liveRow.locator(".at-message-streaming-text");
     await expect(liveRow).toHaveCount(1);
-    await expect(liveRow).toContainText("SUB_STREAM_ALPHA");
+    await expect(liveStreamText).toBeVisible();
+    const firstDisplaySample = await liveStreamText.textContent();
+    expect(firstDisplaySample ?? "").not.toContain("SUB_STREAM_ALPHA_17");
+    await expect(liveRow).toContainText(firstStreamText);
     await expect(liveRow).not.toContainText("BETA");
     await expect(
-      page.locator(".at-chat-view").getByText("SUB_STREAM_ALPHA"),
+      page.locator(".at-chat-view").getByText(firstStreamText),
     ).toHaveCount(0);
     await expect(page.getByText("Final persisted subagent answer")).toHaveCount(0);
     await expect.poll(() => state.messageRequestCount).toBe(1);
@@ -210,9 +221,9 @@ test("streams subagent deltas incrementally before terminal history refill", asy
       type: "message.text.delta",
     });
     await expect(liveRow).toHaveCount(1);
-    await expect(liveRow).toContainText("SUB_STREAM_ALPHA and BETA");
+    await expect(liveRow).toContainText(`${firstStreamText} and BETA`);
     await expect(
-      page.locator(".at-chat-view").getByText("SUB_STREAM_ALPHA and BETA"),
+      page.locator(".at-chat-view").getByText(`${firstStreamText} and BETA`),
     ).toHaveCount(0);
     await expect.poll(() => state.messageRequestCount).toBe(1);
 
@@ -226,7 +237,10 @@ test("streams subagent deltas incrementally before terminal history refill", asy
     });
     await waitForEventSourceOpenCount(page, 0);
     await expect.poll(() => state.messageRequestCount).toBeGreaterThanOrEqual(2);
-    await expect(liveRow).toContainText("SUB_STREAM_ALPHA and BETA");
+    const terminalRuntimeRow = panel
+      .locator(`.at-timeline-row[data-run-id="${SUBAGENT_RUN_ID}"]`)
+      .filter({ hasText: firstStreamText });
+    await expect(terminalRuntimeRow).toContainText(`${firstStreamText} and BETA`);
     await expect(page.getByText("Final persisted subagent answer")).toHaveCount(0);
 
     await page.screenshot({
@@ -1018,11 +1032,13 @@ function controlSessionMessages(): Record<string, unknown>[] {
 function subagentToolMessage({
   createdAt,
   messageId,
+  prompt = SUBAGENT_PROMPT,
   roleId,
   title,
 }: {
   createdAt: string;
   messageId: string;
+  prompt?: string;
   roleId: string;
   title: string;
 }): Record<string, unknown> {
@@ -1035,6 +1051,7 @@ function subagentToolMessage({
             subagent_instance_id: SUBAGENT_INSTANCE_ID,
             subagent_role_id: roleId,
             subagent_run_id: SUBAGENT_RUN_ID,
+            prompt,
             title,
           },
           kind: "tool-return",

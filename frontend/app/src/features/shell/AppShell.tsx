@@ -204,7 +204,10 @@ export function AppShell() {
               setActiveSubagent((current) =>
                 current === null ||
                 activeSubagentStillMatchesTimelineReference(current, reference)
-                  ? authoritative
+                  ? mergeActiveSubagentPanelContext(
+                    authoritative,
+                    current ?? provisionalSubagent,
+                  )
                   : current,
               );
               return;
@@ -1051,6 +1054,7 @@ function writeActiveSubagentPanel(subagent: ActiveSubagentSession | null): void 
       instanceId: subagent.instanceId,
       interactive: subagent.interactive,
       lastEventId: subagent.lastEventId,
+      promptText: subagent.promptText,
       roleId: subagent.roleId,
       runId: subagent.runId,
       runPhase: subagent.runPhase,
@@ -1085,6 +1089,7 @@ function activeSubagentPanelFromRecord(
     instanceId,
     interactive: value.interactive === true,
     lastEventId: nullableNumberRecordValue(value, "lastEventId"),
+    promptText: stringRecordValue(value, "promptText"),
     roleId: stringRecordValue(value, "roleId"),
     runId,
     runPhase: stringRecordValue(value, "runPhase"),
@@ -1164,6 +1169,7 @@ function activeSubagentFromTimelineReference(
     instanceId,
     interactive: reference.interactive ?? false,
     lastEventId: reference.lastEventId ?? null,
+    promptText: firstNonBlank(reference.prompt),
     roleId,
     runId,
     runPhase,
@@ -1186,7 +1192,11 @@ function matchingSubagentFromRecords(
     .map((record) => normalizeSessionSubagent(record, reference.sessionId))
     .filter((record): record is ActiveSubagentSession =>
       record !== null && record.sessionId === reference.sessionId,
-    );
+    )
+    .map((record) => ({
+      ...record,
+      promptText: firstNonBlank(record.promptText, reference.prompt),
+    }));
   if (runId.length === 0 && instanceId.length === 0 && normalized.length === 1) {
     return normalized.length === 1 ? normalized[0] : null;
   }
@@ -1220,6 +1230,20 @@ function subagentTitleFromReference(reference: TimelineSubagentReference): strin
     reference.instanceId?.trim() ||
     "Subagent"
   );
+}
+
+function mergeActiveSubagentPanelContext(
+  authoritative: ActiveSubagentSession,
+  previous: ActiveSubagentSession | null,
+): ActiveSubagentSession {
+  if (previous === null) {
+    return authoritative;
+  }
+  return {
+    ...authoritative,
+    promptText: firstNonBlank(authoritative.promptText, previous.promptText),
+    title: firstNonBlank(authoritative.title, previous.title),
+  };
 }
 
 function activeSubagentStillMatchesTimelineReference(

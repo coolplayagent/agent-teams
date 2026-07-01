@@ -155,6 +155,54 @@ describe("SubagentSessionView", () => {
     );
   });
 
+  it("keeps the live subagent prompt after the latest record hydrates ids", async () => {
+    const controller = createRunStreamController();
+    listSessionSubagentsMock.mockResolvedValue([
+      {
+        created_at: "2026-06-23T10:02:00Z",
+        instance_id: "subagent-instance-hydrated",
+        last_event_id: 41,
+        role_id: "explorer",
+        run_id: "subagent_run_hydrated",
+        run_phase: "running",
+        run_status: "running",
+        session_id: "session-parent",
+        status: "running",
+        subagent_kind: "normal",
+        title: "Explore skills implementation",
+        updated_at: "2026-06-23T10:03:00Z",
+      },
+    ]);
+
+    renderSubagentSessionView({
+      controller,
+      subagent: createSubagent({
+        instanceId: "",
+        lastEventId: null,
+        promptText: "Read the project and report back without editing files.",
+        runId: "",
+        title: "Explore skills implementation",
+      }),
+    });
+
+    expect(
+      await screen.findByText("Read the project and report back without editing files."),
+    ).toBeVisible();
+    await waitFor(() =>
+      expect(listAgentMessagesMock).toHaveBeenCalledWith(
+        "session-parent",
+        "subagent-instance-hydrated",
+      ),
+    );
+    await waitFor(() =>
+      expectSubagentSessionStreamStarted({
+        afterEventId: 0,
+        runId: "subagent_run_hydrated",
+        sessionId: "session-parent",
+      }),
+    );
+  });
+
   it("replays a running subagent from the beginning when no live cursor exists", async () => {
     const controller = createRunStreamController();
 
@@ -743,6 +791,7 @@ function createSubagent(
     instanceId: "subagent-instance-1",
     interactive: false,
     lastEventId: 41,
+    promptText: "",
     roleId: "explorer",
     runId: "subagent_run_1",
     runPhase: "running",

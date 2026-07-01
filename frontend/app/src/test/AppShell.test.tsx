@@ -711,7 +711,7 @@ describe("AppShell", () => {
     fireEvent.click(screen.getByTestId("open-subagent-from-timeline"));
     expect(await screen.findByTestId("subagent-session-view")).toBeVisible();
 
-    fireEvent.click(screen.getByTestId("select-session-from-sidebar"));
+    fireEvent.click(screen.getByRole("button", { name: "Back to chat" }));
 
     expect(await screen.findByTestId("timeline")).toBeVisible();
     expect(screen.queryByTestId("subagent-session-view")).not.toBeInTheDocument();
@@ -1391,10 +1391,10 @@ describe("AppShell", () => {
     const panelResizer = screen.getByRole("separator", {
       name: "Resize subagent panel",
     });
-    expect(panelResizer).toHaveAttribute("aria-valuenow", "620");
+    expect(panelResizer).toHaveAttribute("aria-valuenow", "560");
     fireEvent.keyDown(panelResizer, { key: "ArrowLeft" });
-    expect(panelResizer).toHaveAttribute("aria-valuenow", "644");
-    expect(window.localStorage.getItem("agentTeams.subagentPanelWidth")).toBe("644");
+    expect(panelResizer).toHaveAttribute("aria-valuenow", "584");
+    expect(window.localStorage.getItem("agentTeams.subagentPanelWidth")).toBe("584");
     expect(document.querySelector("#agent-drawer")).toBeNull();
     expect(document.querySelector("#right-rail")).toBeNull();
     expect(document.querySelector(".agent-panel")).toBeNull();
@@ -1427,12 +1427,12 @@ describe("AppShell", () => {
       );
 
       fireEvent.keyDown(panelResizer, { key: "ArrowLeft" });
-      expect(panelResizer).toHaveAttribute("aria-valuenow", "644");
+      expect(panelResizer).toHaveAttribute("aria-valuenow", "584");
       fireEvent.keyDown(panelResizer, { key: "ArrowLeft" });
 
-      expect(panelResizer).toHaveAttribute("aria-valuenow", "648");
+      expect(panelResizer).toHaveAttribute("aria-valuenow", "608");
       expect(window.localStorage.getItem("agentTeams.subagentPanelWidth"))
-        .toBe("648");
+        .toBe("608");
     } finally {
       restoreClientWidth();
     }
@@ -1600,24 +1600,107 @@ describe("AppShell", () => {
     expect(useUiStore.getState().selectedWorkspaceId).toBe("workspace-2");
   });
 
-  it("clears the active subagent view when the sidebar returns to chat", async () => {
+  it("closes the active subagent panel only from its explicit back action", async () => {
     renderShell();
 
     expect(await screen.findByTestId("timeline")).toBeVisible();
     fireEvent.click(screen.getByTestId("open-subagent-from-timeline"));
     expect(await screen.findByTestId("subagent-session-view")).toBeVisible();
 
-    fireEvent.click(screen.getByTestId("select-session-from-sidebar"));
+    fireEvent.click(screen.getByRole("button", { name: "Back to chat" }));
 
     expect(await screen.findByTestId("timeline")).toBeVisible();
     expect(screen.getByTestId("composer")).toHaveAttribute(
       "data-session-id",
       "session-1",
     );
-    expect(screen.getByText("Loading session...")).toBeVisible();
     expect(screen.queryByTestId("subagent-session-view")).not.toBeInTheDocument();
+    expect(window.localStorage.getItem("agentTeams.activeSubagentPanel")).toBeNull();
     expect(useUiStore.getState().selectedSessionId).toBe("session-1");
     expect(useUiStore.getState().selectedWorkspaceId).toBe("workspace-1");
+  });
+
+  it("hides and restores the active subagent panel across session switches", async () => {
+    getSessionMock.mockImplementation(async (sessionId: string) => ({
+      normal_root_role_id: "MainAgent",
+      session_id: sessionId,
+      workspace_id: sessionId === "session-2" ? "workspace-2" : "workspace-1",
+    }));
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        session_id: "session-1",
+        workspace_id: "workspace-1",
+        title: "Session 1",
+      },
+      {
+        session_id: "session-2",
+        workspace_id: "workspace-2",
+        title: "Session 2",
+      },
+    ]);
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+      {
+        workspace_id: "workspace-2",
+        root_path: "C:/work/research",
+        display_name: "Research",
+      },
+    ]);
+
+    renderShell();
+
+    expect(await screen.findByTestId("timeline")).toBeVisible();
+    fireEvent.click(screen.getByTestId("open-subagent-from-timeline"));
+
+    const subagentSurface = await screen.findByTestId("subagent-session-view");
+    expect(subagentSurface).toHaveAttribute("data-session-id", "session-1");
+    expect(subagentSurface).toHaveAttribute(
+      "data-instance-id",
+      "subagent-instance-1",
+    );
+    expect(window.localStorage.getItem("agentTeams.activeSubagentPanel")).toContain(
+      "subagent-instance-1",
+    );
+
+    await act(async () => {
+      useUiStore.getState().setSelectedSessionId("session-2");
+      useUiStore.getState().setSelectedWorkspaceId("workspace-2");
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("timeline")).toHaveAttribute(
+        "data-session-id",
+        "session-2",
+      ),
+    );
+    expect(screen.queryByTestId("subagent-session-view")).not.toBeInTheDocument();
+    expect(window.localStorage.getItem("agentTeams.activeSubagentPanel")).toContain(
+      "subagent-instance-1",
+    );
+
+    await act(async () => {
+      useUiStore.getState().setSelectedSessionId("session-1");
+      useUiStore.getState().setSelectedWorkspaceId("workspace-1");
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("subagent-session-view")).toHaveAttribute(
+        "data-session-id",
+        "session-1",
+      ),
+    );
+    expect(screen.getByTestId("subagent-session-view")).toHaveAttribute(
+      "data-instance-id",
+      "subagent-instance-1",
+    );
+    expect(screen.getByTestId("timeline")).toHaveAttribute(
+      "data-session-id",
+      "session-1",
+    );
   });
 
   it("keeps subagent re-entry active when delayed main session hydration settles", async () => {

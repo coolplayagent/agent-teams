@@ -2,8 +2,8 @@ import { App } from "antd";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
-import { listSessionRounds } from "../api/client";
-import type { JsonValue, SessionRound } from "../api/contracts";
+import { listSessionRounds, listSidebarSessions } from "../api/client";
+import type { JsonValue, SessionRound, SessionSidebarRecord } from "../api/contracts";
 import {
   openMultiplexedRunStream,
   openRunStream,
@@ -20,6 +20,8 @@ const RUN_STREAM_RECONNECT_MAX_ATTEMPTS = 3;
 const TERMINAL_ROUND_SETTLE_DELAY_MS = 900;
 const TERMINAL_ROUND_SETTLE_MAX_ATTEMPTS = 24;
 const TERMINAL_ROUND_SETTLE_PAGE_LIMIT = 100;
+const TERMINAL_SESSION_SETTLE_DELAY_MS = 1500;
+const TERMINAL_SESSION_SETTLE_MAX_ATTEMPTS = 60;
 
 export interface StartRunStreamOptions {
   runId: string;
@@ -238,6 +240,14 @@ export function useRunStreamController(): RunStreamController {
       terminalTargets,
       runtimeStateRef.current,
     );
+    const closedRuntimeState = runtimeStateWithClosedTargets(
+      runtimeStateRef.current,
+      terminalTargets,
+    );
+    if (closedRuntimeState !== runtimeStateRef.current) {
+      runtimeStateRef.current = closedRuntimeState;
+      setRuntimeState(closedRuntimeState);
+    }
     const streamGeneration = streamGenerationRef.current;
     clearReconnectTimer();
     reconnectAttemptRef.current = 0;
@@ -251,12 +261,19 @@ export function useRunStreamController(): RunStreamController {
     refreshSidebarSessions();
     const refreshHydratedSession = () => {
       void queryClient.invalidateQueries({
+        queryKey: ["sessions", "detail", sessionId],
+      });
+      void queryClient.invalidateQueries({
         queryKey: ["sessions", sessionId, "messages"],
       });
       void queryClient.invalidateQueries({
         queryKey: ["sessions", sessionId, "rounds"],
       });
       refreshSidebarSessions();
+      void queryClient.refetchQueries({
+        queryKey: ["sessions", "detail", sessionId],
+        type: "active",
+      });
       void queryClient.refetchQueries({
         queryKey: ["sessions", sessionId, "messages"],
         type: "active",
@@ -270,6 +287,11 @@ export function useRunStreamController(): RunStreamController {
         type: "active",
       });
     };
+    const refreshSidebarSessionsFromServer = async () => {
+      const sessions = await listSidebarSessions(true);
+      queryClient.setQueryData(["sessions", "sidebar"], sessions);
+      return sessions;
+    };
     if (roundSettleTargets.length === 0) {
       refreshHydratedSession();
     } else {
@@ -281,6 +303,14 @@ export function useRunStreamController(): RunStreamController {
         targets: roundSettleTargets,
       });
     }
+    void settleTerminalSessionFromSidebar({
+      currentStreamGeneration: () => streamGenerationRef.current,
+      onReady: refreshHydratedSession,
+      refreshSidebarSessions: refreshSidebarSessionsFromServer,
+      sessionId,
+      streamGeneration,
+      targets: terminalTargets,
+    });
     refreshRecoverySnapshot(sessionId);
     void queryClient.invalidateQueries({
       queryKey: ["sessions", sessionId, "token-usage"],
@@ -561,6 +591,46 @@ function runtimeRunStateWithStartedTarget(
   };
 }
 
+function runtimeStateWithClosedTargets(
+  runtimeState: RuntimeState,
+  runs: StartRunStreamTarget[],
+): RuntimeState {
+  const targetRunIds = new Set(normalizedRunIds(runs));
+  if (targetRunIds.size === 0) {
+    return runtimeState;
+  }
+  let nextRuns: Record<string, RuntimeRunState> | null = null;
+  for (const runId of targetRunIds) {
+    const currentRun = (nextRuns ?? runtimeState.runs)[runId];
+    if (
+      currentRun === undefined ||
+      currentRun.status === "closed" ||
+      currentRun.status === "failed"
+    ) {
+      continue;
+    }
+    nextRuns ??= { ...runtimeState.runs };
+    nextRuns[runId] = {
+      ...currentRun,
+      status: "closed",
+    };
+  }
+  const nextActiveRunIds = runtimeState.activeRunIds.filter(
+    (runId) => !targetRunIds.has(runId),
+  );
+  if (
+    nextRuns === null &&
+    nextActiveRunIds.length === runtimeState.activeRunIds.length
+  ) {
+    return runtimeState;
+  }
+  return {
+    ...runtimeState,
+    activeRunIds: nextActiveRunIds,
+    ...(nextRuns !== null ? { runs: nextRuns } : {}),
+  };
+}
+
 function runtimeTargetMetadata(
   currentRun: RuntimeRunState,
   sessionId: string,
@@ -721,6 +791,15 @@ interface TerminalRoundSettleOptions {
   targets: TerminalRoundSettleTarget[];
 }
 
+interface TerminalSessionSettleOptions {
+  currentStreamGeneration: () => number;
+  onReady: () => void;
+  refreshSidebarSessions: () => Promise<SessionSidebarRecord[]>;
+  sessionId: string;
+  streamGeneration: number;
+  targets: StartRunStreamTarget[];
+}
+
 function terminalRoundSettleTargets(
   runs: StartRunStreamTarget[],
   runtimeState: RuntimeState,
@@ -769,6 +848,63 @@ async function settleTerminalRoundsFromHistory({
   }
 }
 
+async function settleTerminalSessionFromSidebar({
+  currentStreamGeneration,
+  onReady,
+  refreshSidebarSessions,
+  sessionId,
+  streamGeneration,
+  targets,
+}: TerminalSessionSettleOptions): Promise<void> {
+  const targetRunIds = normalizedRunIds(targets);
+  if (targetRunIds.length === 0) {
+    return;
+  }
+  const isCurrentGeneration = () => currentStreamGeneration() === streamGeneration;
+  for (let attempt = 0; attempt < TERMINAL_SESSION_SETTLE_MAX_ATTEMPTS; attempt += 1) {
+    if (!isCurrentGeneration()) {
+      return;
+    }
+    try {
+      const sessions = await refreshSidebarSessions();
+      if (!isCurrentGeneration()) {
+        return;
+      }
+      if (terminalSessionHasTargetRun(sessions, sessionId, targetRunIds)) {
+        onReady();
+        return;
+      }
+    } catch {
+      if (!isCurrentGeneration()) {
+        return;
+      }
+    }
+    if (attempt + 1 < TERMINAL_SESSION_SETTLE_MAX_ATTEMPTS) {
+      await terminalSessionSettleDelay();
+    }
+  }
+}
+
+function terminalSessionSettleDelay(): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, TERMINAL_SESSION_SETTLE_DELAY_MS);
+  });
+}
+
+function terminalSessionHasTargetRun(
+  sessions: SessionSidebarRecord[],
+  sessionId: string,
+  targetRunIds: string[],
+): boolean {
+  const session = sessions.find((item) => item.session_id === sessionId);
+  if (session === undefined) {
+    return false;
+  }
+  const latestRunId = session.latest_terminal_run_id?.trim() ?? "";
+  const latestStatus = session.latest_terminal_run_status?.trim().toLowerCase() ?? "";
+  return targetRunIds.includes(latestRunId) && isTerminalStatus(latestStatus);
+}
+
 function terminalRoundSettleDelay(): Promise<void> {
   return new Promise((resolve) => {
     window.setTimeout(resolve, TERMINAL_ROUND_SETTLE_DELAY_MS);
@@ -785,11 +921,32 @@ function terminalRoundsHaveExpectedToolCalls(
     if (round === undefined) {
       return false;
     }
+    if (!roundHasTerminalStatus(round)) {
+      return false;
+    }
     const toolCallIds = persistedRoundToolCallIds(round);
     return target.expectedToolCallIds.every((toolCallId) =>
       toolCallIds.has(toolCallId),
     );
   });
+}
+
+function roundHasTerminalStatus(round: SessionRound): boolean {
+  return isTerminalStatus(round.run_status) || isTerminalStatus(round.run_phase);
+}
+
+function isTerminalStatus(value: string | null | undefined): boolean {
+  switch ((value ?? "").trim().toLowerCase()) {
+    case "completed":
+    case "failed":
+    case "stopped":
+    case "paused":
+    case "cancelled":
+    case "canceled":
+      return true;
+    default:
+      return false;
+  }
 }
 
 function runtimeToolCallIds(runState: RuntimeRunState | undefined): string[] {

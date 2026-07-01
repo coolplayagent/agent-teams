@@ -10,6 +10,8 @@ import { SessionTokenUsage } from "./SessionTokenUsage";
 
 interface ChatWorkspaceProps {
   contentLoadingKey?: number;
+  latestTerminalRunId?: string | null;
+  latestTerminalRunStatus?: string | null;
   onSubagentOpen?: (subagent: TimelineSubagentReference) => void;
   primaryRoleId: string | null;
   runStreamController: RunStreamController;
@@ -19,6 +21,8 @@ interface ChatWorkspaceProps {
 
 export function ChatWorkspace({
   contentLoadingKey,
+  latestTerminalRunId = null,
+  latestTerminalRunStatus = null,
   onSubagentOpen,
   primaryRoleId,
   runStreamController,
@@ -89,6 +93,8 @@ export function ChatWorkspace({
       className={switching ? "at-chat-view is-session-switching" : "at-chat-view"}
     >
       <MessageTimeline
+        latestTerminalRunId={latestTerminalRunId}
+        latestTerminalRunStatus={latestTerminalRunStatus}
         onSubagentOpen={onSubagentOpen}
         primaryRoleId={primaryRoleId}
         sessionId={sessionId}

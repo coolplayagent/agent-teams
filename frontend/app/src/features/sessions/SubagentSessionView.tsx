@@ -179,6 +179,7 @@ export function SubagentSessionView({
           closedRuntimeState,
           currentRuntimeState: runtimeStateRef.current,
           runId,
+          sessionId,
         });
         runtimeStateRef.current = displayRuntimeState;
         setRuntimeState(displayRuntimeState);
@@ -209,17 +210,19 @@ export function SubagentSessionView({
         }
       },
       onState: (nextRuntimeState) => {
-        const scopedRuntimeState = runtimeStateWithScopedRun(
-          nextRuntimeState,
+        const nextSubagentRun = nextRuntimeState.runs[runId];
+        const scopedRuntimeState = mergeSubagentRunIntoRuntimeState(
+          runtimeStateRef.current,
+          nextSubagentRun,
           runId,
           sessionId,
-          "subagent",
         );
         if (scopedRuntimeState.runs[runId]?.status === "closed") {
           const displayRuntimeState = subagentClosedRuntimeStateForDisplay({
             closedRuntimeState: scopedRuntimeState,
             currentRuntimeState: runtimeStateRef.current,
             runId,
+            sessionId,
           });
           runtimeStateRef.current = displayRuntimeState;
           setRuntimeState(displayRuntimeState);
@@ -325,32 +328,94 @@ function subagentClosedRuntimeStateForDisplay({
   closedRuntimeState,
   currentRuntimeState,
   runId,
+  sessionId,
 }: {
   closedRuntimeState: RuntimeState;
   currentRuntimeState: RuntimeState;
   runId: string;
+  sessionId: string;
 }): RuntimeState {
   const closedRun = closedRuntimeState.runs[runId];
   const currentRun = currentRuntimeState.runs[runId];
-  if (closedRun === undefined || currentRun === undefined) {
-    return closedRuntimeState;
+  if (closedRun === undefined) {
+    return currentRuntimeState;
   }
-  const mergedEntries = mergeTimelineEntries(currentRun.entries, closedRun.entries);
-  if (mergedEntries.length === closedRun.entries.length) {
-    return closedRuntimeState;
+  const mergedRun = mergeSubagentRunState(currentRun, closedRun, runId, sessionId);
+  return runtimeStateWithSubagentRun(currentRuntimeState, mergedRun);
+}
+
+function mergeSubagentRunIntoRuntimeState(
+  currentRuntimeState: RuntimeState,
+  nextRun: RuntimeRunState | undefined,
+  runId: string,
+  sessionId: string,
+): RuntimeState {
+  if (nextRun === undefined) {
+    return runtimeStateWithScopedRun(
+      currentRuntimeState,
+      runId,
+      sessionId,
+      "subagent",
+    );
+  }
+  const mergedRun = mergeSubagentRunState(
+    currentRuntimeState.runs[runId],
+    nextRun,
+    runId,
+    sessionId,
+  );
+  return runtimeStateWithSubagentRun(currentRuntimeState, mergedRun);
+}
+
+function runtimeStateWithSubagentRun(
+  currentRuntimeState: RuntimeState,
+  subagentRun: RuntimeRunState,
+): RuntimeState {
+  const activeRunIds = new Set(currentRuntimeState.activeRunIds);
+  if (subagentRun.status === "closed" || subagentRun.status === "failed") {
+    activeRunIds.delete(subagentRun.runId);
+  } else {
+    activeRunIds.add(subagentRun.runId);
   }
   return {
-    ...closedRuntimeState,
+    ...currentRuntimeState,
+    activeRunIds: Array.from(activeRunIds),
     runs: {
-      ...closedRuntimeState.runs,
-      [runId]: {
-        ...closedRun,
-        entries: mergedEntries,
-        lastEventId: Math.max(closedRun.lastEventId, currentRun.lastEventId),
-        scope: "subagent",
-      },
+      ...currentRuntimeState.runs,
+      [subagentRun.runId]: subagentRun,
     },
   };
+}
+
+function mergeSubagentRunState(
+  currentRun: RuntimeRunState | undefined,
+  nextRun: RuntimeRunState,
+  runId: string,
+  sessionId: string,
+): RuntimeRunState {
+  const mergedEntries = mergeTimelineEntries(
+    currentRun?.entries ?? [],
+    nextRun.entries,
+  );
+  return {
+    ...nextRun,
+    entries: mergedEntries,
+    hadVisibleTextStream:
+      currentRun?.hadVisibleTextStream === true ||
+      nextRun.hadVisibleTextStream === true,
+    lastEventId: Math.max(currentRun?.lastEventId ?? 0, nextRun.lastEventId),
+    runId,
+    seenEventKeys: mergeSeenEventKeys(
+      currentRun?.seenEventKeys ?? [],
+      nextRun.seenEventKeys,
+    ),
+    sessionId: nextRun.sessionId ?? currentRun?.sessionId ?? sessionId,
+    scope: "subagent",
+  };
+}
+
+function mergeSeenEventKeys(left: string[], right: string[]): string[] {
+  return Array.from(new Set([...left, ...right]));
 }
 
 function mergeTimelineEntries(

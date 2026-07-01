@@ -80,7 +80,7 @@ const terminalViewMarkRetryDelayMs = 120;
 const sidebarOverlayMediaQuery = "(max-width: 760px)";
 const shellViewHistoryKey = "agentTeamsShellView";
 const shellViewStorageKey = "agentTeams.shellView";
-const subagentPanelWidthDefault = 620;
+const subagentPanelWidthDefault = 560;
 const subagentPanelWidthMin = 420;
 const subagentPanelWidthMax = 1080;
 const subagentPanelMainMinWidth = 340;
@@ -144,6 +144,12 @@ export function AppShell() {
   const setSelectedWorkspaceId = useUiStore((state) => state.setSelectedWorkspaceId);
   const setThemeMode = useUiStore((state) => state.setThemeMode);
   const setLanguage = useUiStore((state) => state.setLanguage);
+  const visibleActiveSubagent =
+    activeView === "chat" &&
+    activeSubagent !== null &&
+    selectedSessionId === activeSubagent.sessionId
+      ? activeSubagent
+      : null;
   const [sidebarResizing, setSidebarResizing] = useState(false);
   const [sidebarOverlayMode, setSidebarOverlayMode] = useState(readSidebarOverlayMode);
   const messageExporter = useMessageExporter({
@@ -170,20 +176,19 @@ export function AppShell() {
       if (shouldClearForegroundStream) {
         runStreamController.clearRunStream();
       }
-      const leavingSubagentView = activeSubagent !== null;
+      const leavingSubagentView = visibleActiveSubagent !== null;
       setSettingsOpen(false);
-      setActiveSubagent(null);
       if (nextView === "chat" && (activeView !== "chat" || leavingSubagentView)) {
         setChatContentLoadingKey((currentKey) => currentKey + 1);
       }
       navigateShellView(nextView, historyMode);
     },
     [
-      activeSubagent,
       activeView,
       navigateShellView,
       runStreamController,
       selectedSessionId,
+      visibleActiveSubagent,
     ],
   );
   const handleTimelineSubagentOpen = useCallback(
@@ -458,22 +463,6 @@ export function AppShell() {
     writeActiveSubagentPanel(activeSubagent);
   }, [activeSubagent]);
 
-  useEffect(() => {
-    if (activeSubagent === null) {
-      return;
-    }
-    if (activeView !== "chat") {
-      setActiveSubagent(null);
-      return;
-    }
-    if (
-      selectedSessionId !== null &&
-      selectedSessionId !== activeSubagent.sessionId
-    ) {
-      setActiveSubagent(null);
-    }
-  }, [activeSubagent, activeView, selectedSessionId]);
-
   function isRetryableTerminalViewMarkError(error: unknown): boolean {
     if (!(error instanceof ApiError)) {
       return false;
@@ -683,7 +672,7 @@ export function AppShell() {
   }, [subagentPanelLayoutMax, subagentPanelResizing]);
 
   useEffect(() => {
-    if (activeSubagent === null) {
+    if (visibleActiveSubagent === null) {
       return undefined;
     }
     refreshSubagentPanelLayoutMax();
@@ -705,10 +694,10 @@ export function AppShell() {
     window.addEventListener("resize", refreshSubagentPanelLayoutMax);
     return () =>
       window.removeEventListener("resize", refreshSubagentPanelLayoutMax);
-  }, [activeSubagent, refreshSubagentPanelLayoutMax]);
+  }, [refreshSubagentPanelLayoutMax, visibleActiveSubagent]);
 
   useEffect(() => {
-    if (activeSubagent === null) {
+    if (visibleActiveSubagent === null) {
       return;
     }
     const nextWidth = clampSubagentPanelWidth(
@@ -720,7 +709,7 @@ export function AppShell() {
     }
     window.localStorage.setItem(subagentPanelWidthStorageKey, String(nextWidth));
     setSubagentPanelWidthState(nextWidth);
-  }, [activeSubagent, subagentPanelLayoutMax, subagentPanelWidth]);
+  }, [subagentPanelLayoutMax, subagentPanelWidth, visibleActiveSubagent]);
 
   return (
     <Layout className="at-shell">
@@ -877,26 +866,36 @@ export function AppShell() {
           ) : (
             <div
               className={
-                activeSubagent === null
+                visibleActiveSubagent === null
                   ? "at-workspace-chat-shell"
                   : "at-workspace-chat-shell has-subagent-panel"
               }
               ref={chatShellRef}
               style={
-                activeSubagent === null
+                visibleActiveSubagent === null
                   ? undefined
                   : subagentPanelStyle(subagentPanelWidth)
               }
             >
               <ChatWorkspace
                 contentLoadingKey={chatContentLoadingKey}
+                latestTerminalRunId={
+                  sessionDetailQuery.data?.latest_terminal_run_id ??
+                  selectedSession?.latest_terminal_run_id ??
+                  null
+                }
+                latestTerminalRunStatus={
+                  sessionDetailQuery.data?.latest_terminal_run_status ??
+                  selectedSession?.latest_terminal_run_status ??
+                  null
+                }
                 onSubagentOpen={handleTimelineSubagentOpen}
                 primaryRoleId={sessionDetailQuery.data?.normal_root_role_id ?? null}
                 runStreamController={runStreamController}
                 sessionId={selectedSessionId}
                 workspaceId={sessionDetailQuery.data?.workspace_id ?? selectedSession?.workspace_id ?? null}
               />
-              {activeSubagent !== null ? (
+              {visibleActiveSubagent !== null ? (
                 <>
                   <div
                     aria-label={t("appSubagentPanelResize")}
@@ -918,7 +917,7 @@ export function AppShell() {
                   <SubagentSessionView
                     onBack={() => setActiveSubagent(null)}
                     runStreamController={runStreamController}
-                    subagent={activeSubagent}
+                    subagent={visibleActiveSubagent}
                   />
                 </aside>
                 </>

@@ -4,8 +4,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MockInstance } from "vitest";
 
-import { listSessionRounds } from "../api/client";
-import type { SessionRound } from "../api/contracts";
+import { listSessionRounds, listSidebarSessions } from "../api/client";
+import type { SessionRound, SessionSidebarRecord } from "../api/contracts";
 import type { RuntimeState, TimelineEntry } from "../runtime/reducers";
 import { useRuntimeStore } from "../runtime/runtimeStore";
 import type {
@@ -16,6 +16,7 @@ import { useRunStreamController } from "../runtime/useRunStreamController";
 
 vi.mock("../api/client", () => ({
   listSessionRounds: vi.fn(),
+  listSidebarSessions: vi.fn(),
 }));
 
 const streamMocks = vi.hoisted(() => ({
@@ -44,11 +45,14 @@ vi.mock("../runtime/streamClient", () => ({
 }));
 
 const listSessionRoundsMock = vi.mocked(listSessionRounds);
+const listSidebarSessionsMock = vi.mocked(listSidebarSessions);
 type SessionRoundPage = Awaited<ReturnType<typeof listSessionRounds>>;
 
 afterEach(() => {
   cleanup();
   useRuntimeStore.getState().resetRuntimeState();
+  listSessionRoundsMock.mockReset();
+  listSidebarSessionsMock.mockReset();
   streamMocks.handles = [];
   streamMocks.latestOptions = null;
   streamMocks.optionsList = [];
@@ -281,6 +285,106 @@ describe("useRunStreamController", () => {
     });
   });
 
+  it("marks a tracked run closed when the stream ends without a terminal event", () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+    expect(useRuntimeStore.getState().runtimeState.runs["run-1"]).toMatchObject({
+      status: "connecting",
+      terminalEventType: null,
+    });
+
+    const options = streamMocks.latestOptions as { onClosed: () => void };
+    act(() => {
+      options.onClosed();
+    });
+
+    expect(useRuntimeStore.getState().runtimeState.runs["run-1"]).toMatchObject({
+      status: "closed",
+      terminalEventType: null,
+    });
+    expect(useRuntimeStore.getState().runtimeState.activeRunIds)
+      .not.toContain("run-1");
+  });
+
+  it("keeps refreshing after close until sidebar reports the terminal run", async () => {
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [roundWithToolCalls("run-1", [])],
+      next_cursor: null,
+    });
+    listSidebarSessionsMock
+      .mockResolvedValueOnce([
+        sidebarSession({
+          latest_terminal_run_id: null,
+          latest_terminal_run_status: null,
+        }),
+      ])
+      .mockResolvedValue([
+        sidebarSession({
+          latest_terminal_run_id: "run-1",
+          latest_terminal_run_status: "completed",
+        }),
+      ]);
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+    const options = streamMocks.latestOptions as { onClosed: () => void };
+    act(() => {
+      options.onClosed();
+    });
+
+    await waitFor(() =>
+      expect(listSidebarSessionsMock).toHaveBeenCalledWith(true),
+    );
+    await waitFor(() =>
+      expect(queryClient.getQueryData(["sessions", "sidebar"]))
+        .toEqual([
+          expect.objectContaining({
+            latest_terminal_run_id: "run-1",
+            latest_terminal_run_status: "completed",
+          }),
+        ]),
+      { timeout: 3000 },
+    );
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-1", "rounds"],
+    });
+  });
+
   it("waits for terminal round history to include streamed tool calls before refreshing rounds", async () => {
     vi.useFakeTimers();
     listSessionRoundsMock
@@ -349,6 +453,69 @@ describe("useRunStreamController", () => {
       forceRefresh: true,
       limit: 100,
     });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-1", "rounds"],
+    });
+  });
+
+  it("waits for terminal round status before refreshing hydrated rounds", async () => {
+    vi.useFakeTimers();
+    listSessionRoundsMock
+      .mockResolvedValueOnce({
+        has_more: false,
+        items: [
+          {
+            ...roundWithToolCalls("run-1", ["call-1", "call-2"]),
+            run_status: "running",
+          },
+        ],
+        next_cursor: null,
+      })
+      .mockResolvedValueOnce({
+        has_more: false,
+        items: [roundWithToolCalls("run-1", ["call-1", "call-2"])],
+        next_cursor: null,
+      });
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+    const options = streamMocks.latestOptions as RunStreamOptions;
+    const closedState = runtimeStateWithClosedToolCalls(["call-1", "call-2"]);
+    act(() => {
+      options.onState(closedState);
+      options.onClosed?.(closedState);
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(listSessionRoundsMock).toHaveBeenCalledTimes(1);
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-1", "rounds"],
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(900);
+    });
+
+    expect(listSessionRoundsMock).toHaveBeenCalledTimes(2);
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["sessions", "session-1", "rounds"],
     });
@@ -520,6 +687,17 @@ describe("useRunStreamController", () => {
   });
 
   it("releases foreground stream state when a run pauses", async () => {
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          created_at: "2026-06-30T00:00:00Z",
+          run_id: "run-1",
+          run_status: "paused",
+        },
+      ],
+      next_cursor: null,
+    });
     const queryClient = new QueryClient({
       defaultOptions: {
         queries: {
@@ -1828,6 +2006,17 @@ function roundWithToolCalls(runId: string, toolCallIds: string[]): SessionRound 
     created_at: "2026-06-30T00:00:00Z",
     run_id: runId,
     run_status: "completed",
+  };
+}
+
+function sidebarSession(
+  updates: Partial<SessionSidebarRecord> = {},
+): SessionSidebarRecord {
+  return {
+    metadata: { title: "Session 1" },
+    session_id: "session-1",
+    workspace_id: "default",
+    ...updates,
   };
 }
 

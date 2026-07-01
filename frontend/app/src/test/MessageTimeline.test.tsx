@@ -1736,6 +1736,43 @@ describe("MessageTimeline", () => {
     expect(container.querySelectorAll("article.at-message")).toHaveLength(0);
   });
 
+  it("does not downgrade terminal round markers with stale open runtime state", async () => {
+    setRuntimeEntries([], "open", {
+      createdAt: "2026-06-23T12:42:33Z",
+      promptText: "Terminal prompt",
+      sessionId: "session-1",
+    });
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "Terminal answer",
+        message_id: "assistant-terminal-answer",
+        role_id: "MainAgent",
+        run_id: "run-output",
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          created_at: "2026-06-23T12:42:33Z",
+          run_id: "run-output",
+          run_status: "completed",
+          run_user_message: "Terminal prompt",
+        },
+      ],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("Terminal answer")).toBeVisible();
+    await waitFor(() => {
+      const roundMarker = container.querySelector(".at-round-marker");
+      expect(roundMarker).toHaveTextContent("completed");
+      expect(roundMarker).not.toHaveTextContent("running");
+    });
+  });
+
   it("shows a pending runtime cursor row while waiting for first content", async () => {
     setRuntimeEntries(
       [
@@ -1976,6 +2013,99 @@ describe("MessageTimeline", () => {
     expect(marker).toHaveTextContent("completed");
     expect(marker).not.toHaveTextContent("running");
     expect(marker).not.toHaveTextContent("streaming");
+  });
+
+  it("uses latest session terminal status when reload leaves a persisted round running", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "Recovered after reload.",
+        message_id: "assistant-1",
+        role_id: "MainAgent",
+        trace_id: "run-output",
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          created_at: "2026-06-23T12:42:33Z",
+          run_id: "run-output",
+          run_phase: "running",
+          run_status: "running",
+          run_user_message: "Recovered reload task",
+        },
+      ],
+      next_cursor: null,
+    });
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: [],
+        runs: {},
+      },
+    });
+
+    const { container } = renderTimeline("session-1", {
+      latestTerminalRunId: "run-output",
+      latestTerminalRunStatus: "completed",
+    });
+
+    expect(await screen.findByText("Recovered after reload.")).toBeVisible();
+    const marker = container.querySelector(".at-round-marker");
+    expect(marker).not.toBeNull();
+    expect(marker).toHaveTextContent("completed");
+    expect(marker).not.toHaveTextContent("running");
+  });
+
+  it("polls live rounds until the refreshed history returns a terminal status", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "Finished after refresh.",
+        message_id: "assistant-1",
+        role_id: "MainAgent",
+        trace_id: "run-output",
+      },
+    ]);
+    listSessionRoundsMock
+      .mockResolvedValueOnce({
+        has_more: false,
+        items: [
+          {
+            created_at: "2026-06-23T12:42:33Z",
+            run_id: "run-output",
+            run_phase: null,
+            run_status: "running",
+            run_user_message: "Refresh running task",
+          },
+        ],
+        next_cursor: null,
+      })
+      .mockResolvedValueOnce({
+        has_more: false,
+        items: [
+          {
+            created_at: "2026-06-23T12:42:33Z",
+            run_id: "run-output",
+            run_phase: null,
+            run_status: "completed",
+            run_user_message: "Refresh running task",
+          },
+        ],
+        next_cursor: null,
+      });
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("Finished after refresh.")).toBeVisible();
+    expect(container.querySelector(".at-round-marker-meta")).toHaveTextContent("running");
+    await waitFor(() =>
+      expect(listSessionRoundsMock).toHaveBeenCalledTimes(2),
+      { timeout: 3000 },
+    );
+    await waitFor(() => {
+      const markerMeta = container.querySelector(".at-round-marker-meta");
+      expect(markerMeta).toHaveTextContent("completed");
+      expect(markerMeta).not.toHaveTextContent("running");
+    });
   });
 
   it("keeps terminal runtime status when stale round hydration resolves later", async () => {
@@ -8249,6 +8379,8 @@ describe("MessageTimeline", () => {
 });
 
 interface RenderTimelineOptions {
+  latestTerminalRunId?: string | null;
+  latestTerminalRunStatus?: string | null;
   onSubagentOpen?: Parameters<typeof MessageTimeline>[0]["onSubagentOpen"];
   primaryRoleId?: string | null;
   runtimeRunId?: string | null;
@@ -8273,6 +8405,8 @@ function renderTimeline(
       <ConfigProvider>
         <AntApp>
           <MessageTimeline
+            latestTerminalRunId={options.latestTerminalRunId ?? null}
+            latestTerminalRunStatus={options.latestTerminalRunStatus ?? null}
             onSubagentOpen={options.onSubagentOpen}
             primaryRoleId={options.primaryRoleId ?? null}
             sessionId={sessionId}

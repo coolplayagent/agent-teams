@@ -105,6 +105,76 @@ test("real backend normal stream reveals incrementally and survives session swit
   }
 });
 
+test("real backend normal stream survives terminal hard refresh without duplicate rows", async ({
+  page,
+}) => {
+  const title = `real-live-refresh-${Date.now()}`;
+  const session = await createRealSession(title);
+  let runId: string | null = null;
+  try {
+    await openRealBackendSession(page, session, title);
+    await expectRealShellReady(page);
+
+    const refreshText = realRefreshExpectedText(title);
+    const firstToken = realRefreshToken(title, 0);
+    const lastToken = realRefreshToken(title, REAL_REFRESH_TOKEN_COUNT - 1);
+    const promptText = [
+      `${title}: 请只输出下面这一整行文字，不要调用任何工具，不要解释，不要添加标点。`,
+      refreshText,
+    ].join("\n");
+
+    const runResponse = waitForRunCreateResponse(page);
+    await submitPrompt(page, promptText);
+    runId = await runIdFromResponse(await runResponse);
+    await expect(page.getByRole("button", { name: /停止|Stop/ })).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect
+      .poll(() => latestLiveStreamText(page), { timeout: 90_000 })
+      .toContain(firstToken);
+
+    await waitForRunToLeaveActive(page, session.session_id, runId, 150_000);
+    await expect
+      .poll(() => mainTimelineMessageArticleText(page), { timeout: 20_000 })
+      .toContain(lastToken);
+    await expect(page.locator(".streaming-cursor")).toHaveCount(0);
+    await page.screenshot({
+      fullPage: false,
+      path: screenshotPath(
+        "real-live-normal-terminal-catchup-before-refresh.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expectRealShellReady(page);
+    await expect
+      .poll(() => mainTimelineMessageArticleText(page), { timeout: 60_000 })
+      .toContain(lastToken);
+    await expect.poll(() => messageArticleTextOccurrenceCount(page, firstToken))
+      .toBe(1);
+    await expect
+      .poll(() => strictPrefixMessageArticleCount(page, refreshText))
+      .toBe(0);
+    await expect(page.locator(".streaming-cursor")).toHaveCount(0);
+    await expectNoDocumentScroll(
+      page,
+      "real normal terminal refresh should stay inside the fixed V2 shell",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.screenshot({
+      fullPage: false,
+      path: screenshotPath(
+        "real-live-normal-terminal-after-refresh.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+  } finally {
+    await stopRunIfPresent(runId);
+    await deleteRealSession(session.session_id);
+  }
+});
+
 test("real backend subagent stream opens while running and stays out of main timeline", async ({
   page,
 }) => {
@@ -119,7 +189,7 @@ test("real backend subagent stream opens while running and stays out of main tim
     const promptText = [
       `${title}: 请启动一个 Crafter 子代理验证右侧面板流式显示。`,
       "子代理只允许执行下面这个 shell 命令，不要修改任何文件：",
-      `python -c "import time; print('${childMarker}_1', flush=True); time.sleep(2); print('${childMarker}_2', flush=True); time.sleep(2); print('${childMarker}_DONE', flush=True)"`,
+      `python -c "import time; print('${childMarker}_1', flush=True); time.sleep(3); print('${childMarker}_2', flush=True); time.sleep(3); print('${childMarker}_DONE', flush=True)"`,
       "主代理不要复述子代理过程；子代理完成后主代理只用一句中文总结。",
     ].join("\n");
 
@@ -153,12 +223,32 @@ test("real backend subagent stream opens while running and stays out of main tim
       path: screenshotPath("real-live-subagent-running-panel.png", SCREENSHOT_FOLDER),
     });
 
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await waitForV2Shell(page);
+    await expect(page.locator(".at-subagent-session-view")).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect
+      .poll(() => page.locator(".at-subagent-session-prompt").textContent())
+      .toContain(childMarker);
+    await expect
+      .poll(() => page.locator(".at-subagent-session-view").textContent(), {
+        timeout: 90_000,
+      })
+      .toContain(`${childMarker}_1`);
+    await page.screenshot({
+      fullPage: false,
+      path: screenshotPath(
+        "real-live-subagent-after-running-refresh.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+
     await expect
       .poll(() => mainTimelineMessageArticleText(page))
       .not.toContain(`${childMarker}_1`);
     await switchAwayAndBack(page, title);
-    await subagentCard.click();
-    await expect(panel).toBeVisible({ timeout: 20_000 });
+    await expect(panel).toBeVisible({ timeout: 30_000 });
     await expect
       .poll(() => panel.locator(".at-subagent-session-prompt").textContent())
       .toContain(childMarker);
@@ -170,6 +260,14 @@ test("real backend subagent stream opens while running and stays out of main tim
     await expect(panel.locator(".at-subagent-session-badge")).not.toContainText(
       /running/i,
     );
+    await expect(panel.locator(".at-message-streaming-text")).toHaveCount(0);
+    await expect(panel.locator(".ant-skeleton")).toHaveCount(0);
+    await expect
+      .poll(() => mainRoundMarkerText(page), { timeout: 45_000 })
+      .not.toMatch(/\brunning\b/i);
+    await expect
+      .poll(() => workspaceChatShellText(page), { timeout: 45_000 })
+      .not.toMatch(/\brunning\b/i);
     await expect
       .poll(() => mainTimelineMessageArticleText(page))
       .not.toContain(`${childMarker}_DONE`);
@@ -202,8 +300,11 @@ async function openRealBackendSession(
     window.localStorage.setItem("agentTeams.selectedSessionId", sessionId);
     window.localStorage.setItem("agentTeams.selectedWorkspaceId", workspaceId);
     window.localStorage.setItem("agentTeams.shellView", "chat");
-    window.localStorage.setItem("agentTeams.subagentPanelWidth", "760");
-    window.localStorage.removeItem("agentTeams.activeSubagentPanel");
+    window.localStorage.setItem("agentTeams.subagentPanelWidth", "560");
+    if (window.sessionStorage.getItem("agentTeams.realBackendLiveState") !== "1") {
+      window.localStorage.removeItem("agentTeams.activeSubagentPanel");
+      window.sessionStorage.setItem("agentTeams.realBackendLiveState", "1");
+    }
   }, {
     sessionId: session.session_id,
     workspaceId: session.workspace_id ?? "default",
@@ -211,6 +312,18 @@ async function openRealBackendSession(
   await page.goto(`${realBackendUrl()}/app/?codex_verify=${encodeURIComponent(title)}`, {
     waitUntil: "domcontentloaded",
   });
+}
+
+const REAL_REFRESH_TOKEN_COUNT = 32;
+
+function realRefreshExpectedText(title: string): string {
+  return Array.from({ length: REAL_REFRESH_TOKEN_COUNT }, (_, index) =>
+    realRefreshToken(title, index),
+  ).join(" ");
+}
+
+function realRefreshToken(title: string, index: number): string {
+  return `${title.replace(/-/g, "_").toUpperCase()}_${String(index).padStart(2, "0")}`;
 }
 
 async function expectRealShellReady(page: Page): Promise<void> {
@@ -331,6 +444,23 @@ async function mainTimelineMessageArticleText(page: Page): Promise<string> {
   );
 }
 
+async function mainRoundMarkerText(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const shell = document.querySelector(".at-workspace-chat-shell");
+    const chat = shell?.querySelector(":scope > .at-chat-view") ??
+      document.querySelector(".at-chat-view");
+    return Array.from(chat?.querySelectorAll(".at-round-marker") ?? [])
+      .map((node) => node.textContent ?? "")
+      .join("\n");
+  });
+}
+
+async function workspaceChatShellText(page: Page): Promise<string> {
+  return page.locator(".at-workspace-chat-shell").evaluate((node) =>
+    (node.textContent ?? "").replace(/\s+/g, " ").trim(),
+  );
+}
+
 async function waitForRunToLeaveActive(
   page: Page,
   sessionId: string,
@@ -339,7 +469,7 @@ async function waitForRunToLeaveActive(
 ): Promise<void> {
   await expect
     .poll(() => currentRunStatus(sessionId, runId), { timeout: timeoutMs })
-    .not.toBe("active");
+    .toBe("terminal");
   await expect(page.getByRole("button", { name: /停止|Stop/ })).toBeHidden({
     timeout: 20_000,
   });

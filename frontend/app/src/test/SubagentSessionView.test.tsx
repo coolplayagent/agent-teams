@@ -390,6 +390,108 @@ describe("SubagentSessionView", () => {
     ).toBe("subagent");
   });
 
+  it("does not let subagent stream snapshots reopen a completed parent run", async () => {
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: [],
+        runs: {
+          "parent-run": {
+            entries: [],
+            lastEventId: 88,
+            runId: "parent-run",
+            seenEventKeys: [],
+            sessionId: "session-parent",
+            status: "closed",
+            terminalEventType: "run_completed",
+          },
+        },
+      },
+    });
+    renderSubagentSessionView();
+
+    await waitFor(() => expect(openSessionSubagentRunStreamMock).toHaveBeenCalled());
+
+    pushLatestSubagentStreamState({
+      activeRunIds: ["parent-run", "subagent_run_1"],
+      runs: {
+        "parent-run": {
+          entries: [],
+          lastEventId: 87,
+          runId: "parent-run",
+          seenEventKeys: [],
+          sessionId: "session-parent",
+          status: "open",
+          terminalEventType: null,
+        },
+        subagent_run_1: {
+          entries: [
+            runtimeMessageEntry({
+              instanceId: "subagent-instance-1",
+              runId: "subagent_run_1",
+              text: "Child update after parent completed",
+            }),
+          ],
+          lastEventId: 42,
+          runId: "subagent_run_1",
+          seenEventKeys: [],
+          sessionId: "session-parent",
+          status: "open",
+          targetRoleId: "explorer",
+          terminalEventType: null,
+        },
+      },
+    });
+
+    expect(await screen.findByText("Child update after parent completed"))
+      .toBeVisible();
+    expect(useRuntimeStore.getState().runtimeState.runs["parent-run"])
+      .toMatchObject({
+        status: "closed",
+        terminalEventType: "run_completed",
+      });
+    expect(useRuntimeStore.getState().runtimeState.activeRunIds)
+      .not.toContain("parent-run");
+
+    closeLatestSubagentStream({
+      activeRunIds: ["parent-run"],
+      runs: {
+        "parent-run": {
+          entries: [],
+          lastEventId: 87,
+          runId: "parent-run",
+          seenEventKeys: [],
+          sessionId: "session-parent",
+          status: "open",
+          terminalEventType: null,
+        },
+        subagent_run_1: {
+          entries: [
+            runtimeMessageEntry({
+              instanceId: "subagent-instance-1",
+              runId: "subagent_run_1",
+              text: "Child terminal text",
+            }),
+          ],
+          lastEventId: 43,
+          runId: "subagent_run_1",
+          seenEventKeys: [],
+          sessionId: "session-parent",
+          status: "closed",
+          targetRoleId: "explorer",
+          terminalEventType: "run_completed",
+        },
+      },
+    });
+
+    expect(useRuntimeStore.getState().runtimeState.runs["parent-run"])
+      .toMatchObject({
+        status: "closed",
+        terminalEventType: "run_completed",
+      });
+    expect(useRuntimeStore.getState().runtimeState.activeRunIds)
+      .not.toContain("parent-run");
+  });
+
   it("keeps live subagent runtime rows visible while persisted history is loading", async () => {
     const loadingHistory = deferredAgentMessages();
     listAgentMessagesMock.mockReturnValueOnce(loadingHistory.promise);

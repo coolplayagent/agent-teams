@@ -1561,6 +1561,13 @@ export interface SessionRecord {
   normal_root_role_id?: string | null;
   normal_model_profile?: string | null;
   orchestration_preset_id?: string | null;
+  active_run_id?: string | null;
+  active_run_status?: RunStatus | "";
+  active_run_phase?: string | null;
+  latest_terminal_run_id?: string | null;
+  latest_terminal_run_status?: string | null;
+  latest_terminal_run_updated_at?: string | null;
+  latest_terminal_run_verification_status?: string | null;
   can_switch_mode?: boolean;
 }
 

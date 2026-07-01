@@ -74,11 +74,14 @@ const IMAGE_CODE_SPAN_PATTERN = /`([^`\n]+)`/g;
 const IMAGE_BARE_PATH_PATTERN =
   /((?:\/|\.{1,2}\/|[A-Za-z]:[\\/])[^"'`\s<>]+?\.(?:avif|bmp|gif|jpe?g|png|webp))/gi;
 const TRAILING_PATH_PUNCTUATION_PATTERN = /[),.:;!?\\\]}>，。！？；：）】》]+$/u;
+const LIVE_ROUND_REFETCH_MS = 1500;
 
 interface MessageTimelineProps {
   emptyDescription?: string;
   emptyFallback?: ReactNode;
   fallbackRunId?: string | null;
+  latestTerminalRunId?: string | null;
+  latestTerminalRunStatus?: string | null;
   loadErrorDescription?: string;
   loadMessages?: (sessionId: string) => Promise<TimelineMessage[]>;
   messageQueryKey?: readonly unknown[];
@@ -114,6 +117,8 @@ export function MessageTimeline({
   emptyDescription,
   emptyFallback,
   fallbackRunId = null,
+  latestTerminalRunId = null,
+  latestTerminalRunStatus = null,
   loadErrorDescription,
   loadMessages = listSessionMessages,
   messageQueryKey,
@@ -150,6 +155,10 @@ export function MessageTimeline({
       sessionId !== null &&
       !messagesQuery.isLoading &&
       !messagesQuery.isError,
+    refetchInterval: (query) =>
+      roundsNeedLiveRefetch(query.state.data as SessionRound[] | undefined)
+        ? LIVE_ROUND_REFETCH_MS
+        : false,
     staleTime: 0,
   });
 
@@ -162,16 +171,22 @@ export function MessageTimeline({
   const displayRounds = useMemo(
     () =>
       roundChromeEnabled
-        ? roundsWithRuntimeRunState(
-            rounds,
-            runtimeState.runs,
-            sessionId,
-            runtimeRunId,
-            primaryRoleId,
-            variant,
+        ? roundsWithSessionTerminalStatus(
+            roundsWithRuntimeRunState(
+              rounds,
+              runtimeState.runs,
+              sessionId,
+              runtimeRunId,
+              primaryRoleId,
+              variant,
+            ),
+            latestTerminalRunId,
+            latestTerminalRunStatus,
           )
         : [],
     [
+      latestTerminalRunId,
+      latestTerminalRunStatus,
       primaryRoleId,
       roundChromeEnabled,
       rounds,
@@ -2601,6 +2616,7 @@ function roundsWithRuntimeRunState(
     const runtimeStatus = runtimeRoundStatusLabel(runState);
     if (
       runtimeStatus !== null &&
+      !roundHasTerminalStatus(nextRound) &&
       ((nextRound.run_status ?? null) !== runtimeStatus ||
         (nextRound.run_phase ?? null) !== null)
     ) {
@@ -2658,6 +2674,31 @@ function roundsWithRuntimeRunState(
   });
 }
 
+function roundsWithSessionTerminalStatus(
+  rounds: SessionRound[],
+  latestTerminalRunId: string | null,
+  latestTerminalRunStatus: string | null,
+): SessionRound[] {
+  const terminalRunId = latestTerminalRunId?.trim() ?? "";
+  const terminalStatus = normalizedTerminalRoundStatus(latestTerminalRunStatus);
+  if (terminalRunId.length === 0 || terminalStatus === null) {
+    return rounds;
+  }
+  let changed = false;
+  const nextRounds = rounds.map((round) => {
+    if (round.run_id.trim() !== terminalRunId || roundHasTerminalStatus(round)) {
+      return round;
+    }
+    changed = true;
+    return {
+      ...round,
+      run_phase: null,
+      run_status: terminalStatus,
+    };
+  });
+  return changed ? nextRounds : rounds;
+}
+
 function roundsVisibleInTimelineScope(
   rounds: SessionRound[],
   scope: RuntimeTimelineScope,
@@ -2687,6 +2728,64 @@ function timelineRoundLooksDetachedSubagent(
       primaryRoleId,
     ),
   );
+}
+
+function roundHasTerminalStatus(round: SessionRound): boolean {
+  return isTerminalRoundStatus(round.run_status) || isTerminalRoundStatus(round.run_phase);
+}
+
+function roundsNeedLiveRefetch(rounds: SessionRound[] | undefined): boolean {
+  return rounds?.some(roundNeedsLiveRefetch) ?? false;
+}
+
+function roundNeedsLiveRefetch(round: SessionRound): boolean {
+  if (roundHasTerminalStatus(round)) {
+    return false;
+  }
+  return (
+    isLiveRoundStatus(round.run_status) ||
+    isLiveRoundStatus(round.run_phase)
+  );
+}
+
+function isLiveRoundStatus(status: string | null | undefined): boolean {
+  switch ((status ?? "").trim().toLowerCase()) {
+    case "active":
+    case "connecting":
+    case "executing":
+    case "pending":
+    case "queued":
+    case "running":
+    case "started":
+    case "streaming":
+    case "subagent_running":
+      return true;
+    default:
+      return false;
+  }
+}
+
+function isTerminalRoundStatus(status: string | null | undefined): boolean {
+  return normalizedTerminalRoundStatus(status) !== null;
+}
+
+function normalizedTerminalRoundStatus(status: string | null | undefined): string | null {
+  switch ((status ?? "").trim().toLowerCase()) {
+    case "completed":
+      return "completed";
+    case "failed":
+      return "failed";
+    case "stopped":
+      return "stopped";
+    case "paused":
+      return "paused";
+    case "cancelled":
+      return "cancelled";
+    case "canceled":
+      return "canceled";
+    default:
+      return null;
+  }
 }
 
 function runtimeRoundFromRunState(

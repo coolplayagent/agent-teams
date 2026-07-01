@@ -8386,3 +8386,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent matrix scan, stale browser failure reproduction, focused browser test fixes, browser and component verification, screenshot inspection, and matrix/ledger updates completed for this slice. No Settings subsystem PASS or final V2 completion is claimed.
+
+## 2026-07-01 Settings ClawHub Browser Evidence Closure
+
+### Scope
+- Re-checked the frontend rewrite matrix and selected `SET-10 ClawHub` because it was still `Not checked`. Prior work covered ClawHub component behavior and the Skills ClawHub drawer, but not the actual Settings > ClawHub page in the packed browser.
+- Added a focused Settings browser scenario that opens the V1-aligned ClawHub Settings entry, verifies the saved-token facts, masked token field, `autocomplete="new-password"`, and account link, then probes with the saved token through `/api/system/configs/clawhub:probe`.
+- The browser scenario now verifies the auto-install probe notice, saves a replacement token through `/api/system/configs/clawhub`, clears the token, shows the required-token probe error without making a second probe call, and saves the null token payload.
+- Screenshot inspection caught that the first clear-state screenshot would not prove the required-token error because saving the null token refreshes config and clears the probe notice. Added a separate `v2-clawhub-settings-required.png` checkpoint before the save so the visible error state has direct evidence.
+- Updated `SET-10` from `Not checked` to `In progress`. This slice does not claim ClawHub `Verified`, complete Settings parity, formal V1 visual/DOM pairing, Skills market account-status sign-off, reviewer sign-off, release cleanup sign-off, or final V2 frontend completion.
+
+### Verification
+- `npm run test:browser -- v2-settings-actions.spec.ts --project=chromium -g "ClawHub settings"` passed with 1 browser test.
+- `npm test -- src/test/SettingsDrawer.test.tsx -t "ClawHub"` passed with 3 focused component tests; jsdom emitted the known pseudo-element `getComputedStyle` warning.
+- `npm run lint` passed.
+- Inspected `.tmp/frontend-v2-ts-settings-actions/v2-clawhub-settings-probe.png`, `.tmp/frontend-v2-ts-settings-actions/v2-clawhub-settings-required.png`, and `.tmp/frontend-v2-ts-settings-actions/v2-clawhub-settings-clear.png`.
+
+### Reviewer
+- Main-agent matrix scan, missing Settings-page browser coverage identification, focused browser test addition, browser and component verification, screenshot inspection, and matrix/ledger updates completed for this slice. No Settings subsystem PASS or final V2 completion is claimed.

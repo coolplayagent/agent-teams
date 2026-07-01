@@ -22,6 +22,9 @@ interface SettingsActionState {
   agentRuntimeDeleteRequests: string[];
   agentRuntimeSavePayloads: Record<string, unknown>[];
   agentRuntimeSaveRequests: string[];
+  clawHubConfig: Record<string, unknown>;
+  clawHubProbePayloads: Record<string, unknown>[];
+  clawHubSavePayloads: Record<string, unknown>[];
   environmentDeleteRequests: Array<{
     key: string;
     scope: string;
@@ -1197,6 +1200,102 @@ test("saves Web settings and shows save errors", async ({ page }) => {
   }
 });
 
+test("probes, saves, and clears ClawHub settings", async ({ page }) => {
+  const appServer = await serveFrontendDist();
+  const state = settingsActionState();
+  try {
+    await installShellState(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleSettingsActionApi(context, state),
+      sessionTitle: "TS ClawHub settings",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    const settings = await openSettingsDialog(page);
+    await settings
+      .getByRole("navigation", { name: "Settings sections" })
+      .getByRole("button", { name: "ClawHub" })
+      .click();
+
+    await expect(settings.getByRole("heading", { name: "ClawHub" }))
+      .toBeVisible();
+    await expect(settings.locator(".at-settings-facts")).toContainText("Saved");
+    await expect(settings.locator(".at-settings-facts")).toContainText("clawhub.ai");
+
+    const tokenInput = settings.getByLabel("Token");
+    await expect(tokenInput).toHaveAttribute("autocomplete", "new-password");
+    await expect(tokenInput).toHaveAttribute("placeholder", "************");
+    await expect(
+      settings.getByRole("link", { name: /https:\/\/clawhub\.ai\/settings/ }),
+    ).toHaveAttribute("href", /^https:\/\/clawhub\.ai\/settings\/?$/);
+
+    await settings.getByRole("button", { name: "Test connection" }).click();
+    await expect.poll(() => state.clawHubProbePayloads).toEqual([
+      { token: "saved-clawhub-browser-token" },
+    ]);
+    await expect(
+      settings.getByText(
+        "Connected with clawhub 0.9.0 in 4,200 ms. Installed automatically.",
+      ),
+    ).toBeVisible();
+    await page.screenshot({
+      path: screenshotPath("v2-clawhub-settings-probe.png", SCREENSHOT_FOLDER),
+    });
+
+    await tokenInput.fill("next-clawhub-browser-token");
+    await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.request().method() === "PUT" &&
+          response.url().endsWith("/api/system/configs/clawhub") &&
+          response.status() === 200,
+      ),
+      settings.getByRole("button", { name: "Save" }).click(),
+    ]);
+    expect(state.clawHubSavePayloads.at(-1)).toEqual({
+      token: "next-clawhub-browser-token",
+    });
+    await expect(page.getByText("ClawHub settings saved.")).toBeVisible();
+    await expect(page.locator(".ant-message-notice")).toHaveCount(0);
+
+    await settings.getByRole("button", { name: "Clear token" }).click();
+    await expect(settings.locator(".at-settings-facts")).toContainText("Not saved");
+    await settings.getByRole("button", { name: "Test connection" }).click();
+    await expect(
+      settings.getByText("Enter a ClawHub token before testing."),
+    ).toBeVisible();
+    await page.screenshot({
+      path: screenshotPath("v2-clawhub-settings-required.png", SCREENSHOT_FOLDER),
+    });
+    expect(state.clawHubProbePayloads).toEqual([
+      { token: "saved-clawhub-browser-token" },
+    ]);
+
+    await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.request().method() === "PUT" &&
+          response.url().endsWith("/api/system/configs/clawhub") &&
+          response.status() === 200,
+      ),
+      settings.getByRole("button", { name: "Save" }).click(),
+    ]);
+    expect(state.clawHubSavePayloads.at(-1)).toEqual({ token: null });
+    await expect(page.locator(".ant-message-notice")).toHaveCount(0);
+    await page.screenshot({
+      path: screenshotPath("v2-clawhub-settings-clear.png", SCREENSHOT_FOLDER),
+    });
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(page, "v2 ClawHub settings should stay framed");
+  } finally {
+    await appServer.close();
+  }
+});
+
 test("creates remote workspace SSH profiles from settings", async ({
   page,
 }) => {
@@ -1430,6 +1529,9 @@ function settingsActionState(): SettingsActionState {
     agentRuntimeDeleteRequests: [],
     agentRuntimeSavePayloads: [],
     agentRuntimeSaveRequests: [],
+    clawHubConfig: clawHubConfig(),
+    clawHubProbePayloads: [],
+    clawHubSavePayloads: [],
     environmentDeleteRequests: [],
     environmentSavePayloads: [],
     environmentVariables: environmentVariables(),
@@ -1537,6 +1639,37 @@ async function handleSettingsActionApi(
       state.uiLanguage = language;
     }
     await context.fulfillJson({ language: state.uiLanguage });
+    return true;
+  }
+  if (method === "GET" && path === "/system/configs/clawhub") {
+    await context.fulfillJson(state.clawHubConfig);
+    return true;
+  }
+  if (method === "POST" && path === "/system/configs/clawhub:probe") {
+    const payload = readJsonBody(context);
+    state.clawHubProbePayloads.push(payload);
+    await context.fulfillJson({
+      checked_at: "2026-06-30T00:00:00Z",
+      clawhub_path: "C:/bin/clawhub.exe",
+      clawhub_version: "clawhub 0.9.0",
+      diagnostics: {
+        binary_available: true,
+        endpoint_fallback_used: false,
+        installation_attempted: true,
+        installed_during_probe: true,
+        token_configured: true,
+      },
+      latency_ms: 4200,
+      ok: true,
+      retryable: false,
+    });
+    return true;
+  }
+  if (method === "PUT" && path === "/system/configs/clawhub") {
+    const payload = readJsonBody(context);
+    state.clawHubSavePayloads.push(payload);
+    state.clawHubConfig = payload;
+    await context.fulfillJson({ status: "ok" });
     return true;
   }
   if (method === "GET" && path === `/sessions/${SESSION_ID}`) {
@@ -2133,6 +2266,12 @@ function webConfig(): Record<string, unknown> {
     provider: "exa",
     searxng_instance_seeds: ["https://searx.space"],
     searxng_instance_url: "https://search.initial.example/",
+  };
+}
+
+function clawHubConfig(): Record<string, unknown> {
+  return {
+    token: "saved-clawhub-browser-token",
   };
 }
 

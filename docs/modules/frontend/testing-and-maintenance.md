@@ -60,9 +60,10 @@ uv run --extra dev pytest -q tests/integration_tests/browser/test_streaming_mess
 涉及 settings 的变更建议运行对应 panel 测试，例如：
 
 ```powershell
-uv run --extra dev pytest -q tests/unit_tests/frontend/test_settings_shell_ui.py
-uv run --extra dev pytest -q tests/unit_tests/frontend/test_model_profiles_ui.py
-uv run --extra dev pytest -q tests/unit_tests/frontend/test_hooks_settings_ui.py
+cd frontend/app
+npm test -- src/test/SettingsDrawer.test.tsx
+npm test -- src/test/SettingsNavigationParity.test.ts
+npm test -- src/test/RuntimeSettingsSections.test.tsx
 ```
 
 涉及 speech、composer action rail 或 session switch loading 的变更建议补充：

@@ -228,5 +228,5 @@ MAAS 模型发现不复用 OpenAI-compatible `GET /models`。
 - `tests/unit_tests/providers/test_provider_registry.py`
 - `tests/unit_tests/sessions/runs/test_runtime_config.py`
 - `tests/unit_tests/interfaces/server/test_system_router.py`
-- `tests/unit_tests/frontend/test_model_profiles_ui.py`
-- `tests/unit_tests/frontend/test_settings_shell_ui.py`
+- `frontend/app/src/test/SettingsDrawer.test.tsx`
+- `frontend/app/src/test/SettingsNavigationParity.test.ts`

@@ -8596,3 +8596,26 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent V1 harness inspection, V2 behavior mapping, failed-test reproduction, focused component coverage, matrix update, and ledger update completed for this slice. No cleanup PASS, reviewer sign-off, or final V2 completion is claimed.
+
+## 2026-07-01 Settings Shell Harness Retirement
+
+### Scope
+- Re-checked the remaining old Python frontend harness inventory and selected `tests/integration_tests/frontend/test_settings_shell_ui.py` because it still executed the V1 `frontend/dist/js/components/settings/index.js` shell in a fake DOM.
+- Audited the remaining 17 Python tests before deletion. The user-facing pieces are now covered by V2-native tests instead of the old DOM IDs: Settings first-level order and System secondary page order in `SettingsNavigationParity.test.ts`; real Settings center navigation, General related-page routing, Shell policy save, speech/notification/model/system drill-ins, and outside-click behavior in `SettingsDrawer.test.tsx`; Remote workspace SSH profile behavior in `WorkspaceSettingsSection.test.tsx`; and Settings layout/scroll/nav chrome in `ShellLayoutCss.test.ts`.
+- Kept obsolete V1 implementation details out of V2 coverage: the old global `settings-actions-bar`, manually composed hidden tab actions, and `frontend/dist` string snapshots are no longer treated as product behavior.
+- Deleted `test_settings_shell_ui.py`. This is a cleanup/test-migration slice only. It does not claim complete Settings PASS, final cleanup PASS, formal V1 visual sign-off, reviewer sign-off, or V2 frontend completion.
+
+### Verification
+- `npm test -- src/test/SettingsNavigationParity.test.ts` passed with 2 tests.
+- `npm test -- src/test/ShellLayoutCss.test.ts -t "settings navigation"` passed with 1 focused test and 18 skipped tests.
+- `npm test -- src/test/SettingsDrawer.test.tsx -t "renders a real settings center|V1 general|general shell|outside"` passed with 3 focused tests and 42 skipped tests; jsdom emitted the existing pseudo-element `getComputedStyle` warning.
+- `npm test -- src/test/WorkspaceSettingsSection.test.tsx` passed with 4 tests; jsdom emitted the existing pseudo-element `getComputedStyle` warning.
+- `npm run test:browser -- v2-settings-parity.spec.ts --project=chromium` passed with 2 Chromium tests.
+- `npm run test:browser -- v2-settings-actions.spec.ts --project=chromium -g "outside drag"` passed with 1 Chromium test.
+- `uv run --extra dev ruff check tests/integration_tests/frontend` passed.
+- `npm run lint` passed.
+- `git diff --check` passed with only the existing CRLF normalization warnings for edited Markdown files.
+- Inspected `.tmp/frontend-v2-ts-settings-parity/v2-settings-system-landing.png` and `.tmp/frontend-v2-ts-settings-actions/v2-settings-mask-click.png`.
+
+### Reviewer
+- Main-agent old harness mapping, deletion, focused component/static verification, packed-browser verification, screenshot inspection, matrix update, and ledger update completed for this slice. No Settings subsystem PASS, cleanup PASS, reviewer sign-off, or final V2 completion is claimed.

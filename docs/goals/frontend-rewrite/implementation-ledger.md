@@ -8581,3 +8581,18 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent old harness mapping, V2 implementation, focused component verification, matrix update, and ledger update completed for this slice. No cleanup PASS, reviewer sign-off, or final V2 completion is claimed.
+
+## 2026-07-01 Round Todo UI Harness Migration
+
+### Scope
+- Re-checked the remaining old Python frontend harness inventory and selected `tests/integration_tests/frontend/test_round_todo_card_ui.py` because it still executed the V1 `frontend/dist/js/components/rounds` floating round navigator in a fake DOM.
+- Mapped the old harness assertions to V2 product behavior instead of preserving obsolete V1 implementation details: round order, active/current state, run-id selection, stable rerenders, todo snapshot updates, hover/focus detail behavior, clamped popover placement, and todo status labels.
+- Strengthened `RoundRail.test.tsx` with V2-native behavior coverage for those observable user-facing states.
+- Deleted `test_round_todo_card_ui.py`. This does not claim full replay PASS, final round/copy placement review, complete old Python harness retirement, reviewer sign-off, or final V2 frontend completion.
+
+### Verification
+- `npm test -- src/test/RoundRail.test.tsx` initially exposed that this file needed explicit cleanup once it contained multiple renders; after fixing the test harness cleanup, the file passed with 5 tests.
+- `npm run test:browser -- v2-rounds.spec.ts --project=chromium` passed with 5 Chromium browser tests covering round rail retry/todo detail, scoped todo detail, expanded marker no-duplicate prompt, paged round navigation, and verification warning tone.
+
+### Reviewer
+- Main-agent V1 harness inspection, V2 behavior mapping, failed-test reproduction, focused component coverage, matrix update, and ledger update completed for this slice. No cleanup PASS, reviewer sign-off, or final V2 completion is claimed.

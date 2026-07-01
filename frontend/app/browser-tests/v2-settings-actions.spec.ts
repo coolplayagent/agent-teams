@@ -666,15 +666,25 @@ test("manages environment variables and session topology from V2 surfaces", asyn
 
     await settings.locator(".at-settings-env-system-toggle").click();
     await expect(settings.getByText("SYSTEM_BROWSER_ENV")).toBeVisible();
+    await page.screenshot({
+      path: screenshotPath("v2-environment-variables-list.png", SCREENSHOT_FOLDER),
+    });
 
     await settings.getByRole("button", { name: "New variable" }).click();
     const envDialog = page.getByRole("dialog", { name: "New variable" });
     await expect(envDialog).toBeVisible();
     await envDialog.getByLabel("Key").fill("BROWSER_TS_ENV");
     await envDialog.getByLabel("Value").fill("browser-ts-value");
+    await envDialog.screenshot({
+      path: screenshotPath("v2-environment-variable-create-dialog.png", SCREENSHOT_FOLDER),
+    });
     await envDialog.getByRole("button", { name: "Save" }).click();
     await expect(envDialog).toBeHidden();
     await expect(settings.getByText("BROWSER_TS_ENV")).toBeVisible();
+    await expect(page.locator(".ant-message-notice")).toHaveCount(0);
+    await page.screenshot({
+      path: screenshotPath("v2-environment-variable-created.png", SCREENSHOT_FOLDER),
+    });
     expect(state.environmentSavePayloads).toEqual([
       {
         key: "BROWSER_TS_ENV",
@@ -686,16 +696,56 @@ test("manages environment variables and session topology from V2 surfaces", asyn
     const createdEnvRow = settings.locator(".at-settings-env-row").filter({
       hasText: "BROWSER_TS_ENV",
     });
+    await createdEnvRow.getByRole("button", { name: "Edit" }).click();
+    const editDialog = page.getByRole("dialog", {
+      name: "Edit environment variable",
+    });
+    await expect(editDialog).toBeVisible();
+    await expect(editDialog.getByLabel("Key")).toHaveValue("BROWSER_TS_ENV");
+    await expect(editDialog.getByLabel("Value")).toHaveValue("browser-ts-value");
+    await editDialog.getByLabel("Value").fill("browser-ts-value-edited");
+    await editDialog.screenshot({
+      path: screenshotPath("v2-environment-variable-edit-dialog.png", SCREENSHOT_FOLDER),
+    });
+    await editDialog.getByRole("button", { name: "Save" }).click();
+    await expect(editDialog).toBeHidden();
+    await expect(settings.getByText("browser-ts-value-edited")).toBeVisible();
+    await expect(page.locator(".ant-message-notice")).toHaveCount(0);
+    expect(state.environmentSavePayloads).toEqual([
+      {
+        key: "BROWSER_TS_ENV",
+        payload: { source_key: null, value: "browser-ts-value" },
+        scope: "app",
+      },
+      {
+        key: "BROWSER_TS_ENV",
+        payload: {
+          source_key: "BROWSER_TS_ENV",
+          value: "browser-ts-value-edited",
+        },
+        scope: "app",
+      },
+    ]);
+    await page.screenshot({
+      path: screenshotPath("v2-environment-variable-edited.png", SCREENSHOT_FOLDER),
+    });
+
     await createdEnvRow.getByRole("button", { name: "Delete" }).click();
     const confirm = page.locator(".ant-modal-confirm");
+    await expect(confirm).toBeVisible();
     await expect(confirm.locator(".ant-modal-confirm-title")).toHaveText(
       'Delete environment variable "BROWSER_TS_ENV"?',
     );
+    await expect(confirm.getByRole("button", { name: "Delete" })).toBeVisible();
     await confirm.getByRole("button", { name: "Delete" }).click();
     await expect(settings.getByText("BROWSER_TS_ENV")).toHaveCount(0);
     expect(state.environmentDeleteRequests).toEqual([
       { key: "BROWSER_TS_ENV", scope: "app" },
     ]);
+    await expect(page.locator(".ant-message-notice")).toHaveCount(0);
+    await page.screenshot({
+      path: screenshotPath("v2-environment-variable-deleted.png", SCREENSHOT_FOLDER),
+    });
 
     await settings.getByRole("button", { name: "Close" }).click();
     await expect(settings).toHaveCount(0);

@@ -8424,3 +8424,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent matrix scan, focused browser evidence rerun, screenshot-quality fixes, browser and component verification, screenshot inspection, and matrix/ledger updates completed for this slice. No Settings subsystem PASS or final V2 completion is claimed.
+
+## 2026-07-01 Settings Environment Variables Browser Evidence Closure
+
+### Scope
+- Re-checked the frontend rewrite matrix and selected `SET-13 Environment variables` because it was still `Not checked` even though earlier component and browser paths had partial behavior coverage.
+- Found that the existing packed browser path exercised environment variable creation/deletion but only captured the final session topology screenshot after closing Settings, so it did not provide direct visual evidence for the Environment variables page itself.
+- Strengthened the browser scenario to open the V1-aligned `Environment variables` Settings entry, verify hidden app proxy/system keys stay hidden, expand the System group, and capture a direct list screenshot with app and system records visible.
+- Added direct browser evidence for the create dialog, created list state, edit dialog, edited list state, and deleted clean state. The browser path now also asserts edit payload preservation with `source_key: "BROWSER_TS_ENV"` instead of only checking that text appeared.
+- During screenshot inspection, the first delete-confirmation screenshot was invalid because Playwright captured only an Ant modal corner. Removed that bad screenshot from the evidence set and kept explicit confirmation title/button assertions in the browser test instead of pretending the image was useful.
+- Updated `SET-13` from `Not checked` to `In progress`. This slice does not claim Environment variables `Verified`, complete Settings parity, formal V1 visual/DOM pairing, secret/masking policy sign-off, reviewer sign-off, release cleanup sign-off, or final V2 frontend completion.
+
+### Verification
+- `npm run test:browser -- v2-settings-actions.spec.ts --project=chromium -g "environment variables and session topology"` passed with 1 browser test.
+- `npm test -- src/test/SettingsDrawer.test.tsx -t "manages app environment variables"` passed with 1 focused component test; jsdom emitted the known pseudo-element `getComputedStyle` warning.
+- `npm run lint` passed.
+- Inspected `.tmp/frontend-v2-ts-settings-actions/v2-environment-variables-list.png`, `.tmp/frontend-v2-ts-settings-actions/v2-environment-variable-create-dialog.png`, `.tmp/frontend-v2-ts-settings-actions/v2-environment-variable-created.png`, `.tmp/frontend-v2-ts-settings-actions/v2-environment-variable-edit-dialog.png`, `.tmp/frontend-v2-ts-settings-actions/v2-environment-variable-edited.png`, and `.tmp/frontend-v2-ts-settings-actions/v2-environment-variable-deleted.png`.
+
+### Reviewer
+- Main-agent matrix scan, focused browser evidence strengthening, failed-selector reproduction, screenshot-quality rejection, browser and component verification, screenshot inspection, and matrix/ledger updates completed for this slice. No Settings subsystem PASS or final V2 completion is claimed.

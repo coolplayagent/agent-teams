@@ -4,7 +4,12 @@ import { ArrowLeft } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { listAgentMessages, listSessionSubagents } from "../../api/client";
-import type { ContentPart, JsonValue, TimelineMessage } from "../../api/contracts";
+import {
+  contentPartText,
+  type ContentPart,
+  type JsonValue,
+  type TimelineMessage,
+} from "../../api/contracts";
 import type { RunEventType } from "../../runtime/events";
 import { useRuntimeStore } from "../../runtime/runtimeStore";
 import type { RuntimeRunState, RuntimeState, TimelineEntry } from "../../runtime/reducers";
@@ -99,12 +104,14 @@ export function SubagentSessionView({
     [hasMessageHistoryTarget, instanceId, runId, sessionId, title],
   );
   const loadSubagentMessages = useCallback(
-    () => (
-      hasMessageHistoryTarget
-        ? listAgentMessages(sessionId, instanceId)
-        : Promise.resolve([])
-    ),
-    [hasMessageHistoryTarget, instanceId, sessionId],
+    async () => {
+      if (!hasMessageHistoryTarget) {
+        return [];
+      }
+      const messages = await listAgentMessages(sessionId, instanceId);
+      return filterDuplicatePromptMessages(messages, subagentPromptText);
+    },
+    [hasMessageHistoryTarget, instanceId, sessionId, subagentPromptText],
   );
 
   useEffect(() => {
@@ -265,6 +272,7 @@ export function SubagentSessionView({
             roundsEnabled={false}
             runtimeRunId={runId}
             sessionId={sessionId}
+            suppressExactText={subagentPromptText}
             variant="subagent-panel"
           />
         ) : (
@@ -500,6 +508,40 @@ function agentMessagesHaveExpectedToolCalls(
   return expectedToolCallIds.every((toolCallId) =>
     availableToolCallIds.has(toolCallId),
   );
+}
+
+function filterDuplicatePromptMessages(
+  messages: TimelineMessage[],
+  promptText: string,
+): TimelineMessage[] {
+  const normalizedPrompt = normalizedSubagentPromptText(promptText);
+  if (normalizedPrompt.length === 0) {
+    return messages;
+  }
+  let removedDuplicatePrompt = false;
+  return messages.filter((message) => {
+    if (removedDuplicatePrompt) {
+      return true;
+    }
+    if (normalizedTimelineMessageText(message) !== normalizedPrompt) {
+      return true;
+    }
+    removedDuplicatePrompt = true;
+    return false;
+  });
+}
+
+function normalizedTimelineMessageText(message: TimelineMessage): string {
+  const texts = [
+    message.content ?? "",
+    message.message?.content ?? "",
+    ...timelineMessageParts(message).map(contentPartText),
+  ];
+  return normalizedSubagentPromptText(texts.join("\n"));
+}
+
+function normalizedSubagentPromptText(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
 }
 
 function timelineMessageParts(message: TimelineMessage): ContentPart[] {

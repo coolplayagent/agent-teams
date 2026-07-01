@@ -42,7 +42,10 @@ export interface RuntimeState {
 }
 
 export const MAX_SEEN_EVENT_KEYS = 512;
+const SUBAGENT_REFERENCE_MAX_DEPTH = 8;
 const RAW_TEXT_PAYLOAD_KEYS = new Set(["text", "delta", "content", "message"]);
+const SUBAGENT_EXPLICIT_RUN_KEYS = ["subagent_run_id", "subagentRunId"] as const;
+const SUBAGENT_COMPANION_RUN_KEYS = ["run_id", "runId"] as const;
 
 export const initialRuntimeState: RuntimeState = {
   runs: {},
@@ -105,14 +108,146 @@ export function reduceRunEvent(
     activeRunIds.add(runId);
   }
 
-  return {
-    ...state,
-    runs: {
+  const nextRuns = markReferencedSubagentRuns(
+    {
       ...state.runs,
       [runId]: nextRun,
     },
+    event.payload,
+    event.session_id,
+    runId,
+  );
+
+  return {
+    ...state,
+    runs: nextRuns,
     activeRunIds: Array.from(activeRunIds),
   };
+}
+
+function markReferencedSubagentRuns(
+  runs: Record<string, RuntimeRunState>,
+  payload: JsonValue,
+  sessionId: string,
+  sourceRunId: string,
+): Record<string, RuntimeRunState> {
+  const referencedRunIds = subagentRunReferences(payload)
+    .filter((runId) => runId.length > 0 && runId !== sourceRunId);
+  if (referencedRunIds.length === 0) {
+    return runs;
+  }
+  let nextRuns: Record<string, RuntimeRunState> | null = null;
+  for (const runId of referencedRunIds) {
+    const currentRun = (nextRuns ?? runs)[runId];
+    const nextRun = runtimeRunStateWithScope(
+      currentRun,
+      runId,
+      sessionId,
+      "subagent",
+    );
+    if (nextRun === currentRun) {
+      continue;
+    }
+    nextRuns ??= { ...runs };
+    nextRuns[runId] = nextRun;
+  }
+  return nextRuns ?? runs;
+}
+
+function runtimeRunStateWithScope(
+  currentRun: RuntimeRunState | undefined,
+  runId: string,
+  sessionId: string,
+  scope: NonNullable<RuntimeRunState["scope"]>,
+): RuntimeRunState {
+  if (
+    currentRun !== undefined &&
+    currentRun.scope === scope &&
+    currentRun.sessionId !== undefined
+  ) {
+    return currentRun;
+  }
+  return {
+    entries: currentRun?.entries ?? [],
+    lastEventId: currentRun?.lastEventId ?? 0,
+    ...(currentRun?.createdAt !== undefined ? { createdAt: currentRun.createdAt } : {}),
+    ...(currentRun?.promptText !== undefined ? { promptText: currentRun.promptText } : {}),
+    ...(currentRun?.targetRoleId !== undefined
+      ? { targetRoleId: currentRun.targetRoleId }
+      : {}),
+    runId,
+    seenEventKeys: currentRun?.seenEventKeys ?? [],
+    sessionId: currentRun?.sessionId ?? sessionId,
+    status: currentRun?.status ?? "connecting",
+    terminalEventType: currentRun?.terminalEventType ?? null,
+    ...(currentRun?.replayAfterEventId !== undefined
+      ? { replayAfterEventId: currentRun.replayAfterEventId }
+      : {}),
+    scope,
+  };
+}
+
+function subagentRunReferences(payload: JsonValue): string[] {
+  const runIds = new Set<string>();
+  collectSubagentRunReferences(payload, runIds, 0);
+  return Array.from(runIds);
+}
+
+function collectSubagentRunReferences(
+  value: JsonValue,
+  runIds: Set<string>,
+  depth: number,
+): void {
+  if (depth > SUBAGENT_REFERENCE_MAX_DEPTH) {
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectSubagentRunReferences(item, runIds, depth + 1);
+    }
+    return;
+  }
+  if (typeof value !== "object" || value === null) {
+    return;
+  }
+  for (const key of SUBAGENT_EXPLICIT_RUN_KEYS) {
+    const runId = jsonStringField(value, key);
+    if (runId.length > 0) {
+      runIds.add(runId);
+    }
+  }
+  if (jsonObjectHasSubagentMarker(value)) {
+    for (const key of SUBAGENT_COMPANION_RUN_KEYS) {
+      const runId = jsonStringField(value, key);
+      if (runId.length > 0) {
+        runIds.add(runId);
+      }
+    }
+  }
+  for (const child of Object.values(value)) {
+    collectSubagentRunReferences(child, runIds, depth + 1);
+  }
+}
+
+function jsonObjectHasSubagentMarker(value: Record<string, JsonValue>): boolean {
+  return (
+    jsonStringField(value, "kind").toLowerCase() === "subagent" ||
+    jsonStringField(value, "mode").toLowerCase() === "subagent" ||
+    jsonStringField(value, "subagent_instance_id").length > 0 ||
+    jsonStringField(value, "subagentInstanceId").length > 0 ||
+    jsonStringField(value, "subagent_role_id").length > 0 ||
+    jsonStringField(value, "subagentRoleId").length > 0 ||
+    jsonStringField(value, "subagent_kind").length > 0 ||
+    jsonStringField(value, "subagentKind").length > 0
+  );
+}
+
+function jsonStringField(
+  value: Record<string, JsonValue>,
+  key: string,
+): string {
+  const field = value[key];
+  return typeof field === "string" ? field.trim() : "";
 }
 
 function runtimeMetadataFromEvent(

@@ -86,6 +86,7 @@ interface MessageTimelineProps {
   roundsEnabled?: boolean;
   runtimeRunId?: string | null;
   sessionId: string | null;
+  suppressExactText?: string;
   variant?: "session" | "subagent-panel";
   workspaceId?: string | null;
 }
@@ -120,6 +121,7 @@ export function MessageTimeline({
   roundsEnabled = true,
   runtimeRunId = null,
   sessionId,
+  suppressExactText = "",
   variant = "session",
   workspaceId = null,
 }: MessageTimelineProps) {
@@ -265,14 +267,17 @@ export function MessageTimeline({
   );
   const timelineRowsBeforeGrouping = useMemo(
     () =>
-      mergeToolRowsByCallId(
-        mergeRuntimeThinkingRowsIntoHydratedRows(
-          persistedRows,
-          runtimeRows.filter(timelineRowHasRenderableContent),
+      dropExactTextRows(
+        mergeToolRowsByCallId(
+          mergeRuntimeThinkingRowsIntoHydratedRows(
+            persistedRows,
+            runtimeRows.filter(timelineRowHasRenderableContent),
+          ),
+          { dedupeNonToolRows: false },
         ),
-        { dedupeNonToolRows: false },
+        suppressExactText,
       ),
-    [persistedRows, runtimeRows],
+    [persistedRows, runtimeRows, suppressExactText],
   );
   const rows = useMemo(
     () =>
@@ -1064,6 +1069,24 @@ function insertRoundMarkerRowsIfEnabled(
     return baseRows;
   }
   return insertRoundMarkerRows(baseRows, rounds, expandedHistorySegmentIds);
+}
+
+function dropExactTextRows(rows: TimelineRow[], suppressedText: string): TimelineRow[] {
+  const normalizedSuppressedText = normalizedTimelineText(suppressedText);
+  if (normalizedSuppressedText.length === 0) {
+    return rows;
+  }
+  let removed = false;
+  return rows.filter((row) => {
+    if (removed) {
+      return true;
+    }
+    if (normalizedTimelineText(row.text) !== normalizedSuppressedText) {
+      return true;
+    }
+    removed = true;
+    return false;
+  });
 }
 
 function dropRoundPromptDuplicateUserRows(
@@ -4968,6 +4991,7 @@ function MessageToolBlock({
   const preview = toolSummaryPreview(tool);
   const status = toolBlockStatus(tool);
   const isRunning = status === "running";
+  const isSubagentTool = toolActionCategory(tool.toolName) === "subagent";
   const subagentReference = completeSubagentReference(
     tool.subagent,
     sessionId,
@@ -4977,9 +5001,12 @@ function MessageToolBlock({
     onSubagentOpen !== undefined &&
     subagentReference !== null;
   const hasDetails =
-    tool.callId.trim().length > 0 ||
-    tool.body.trim().length > 0 ||
-    tool.mediaParts.length > 0;
+    !isSubagentTool &&
+    (
+      tool.callId.trim().length > 0 ||
+      tool.body.trim().length > 0 ||
+      tool.mediaParts.length > 0
+    );
   const handleSummaryClick = canOpenSubagent
     ? (event: MouseEvent<HTMLElement>) => {
         event.preventDefault();
@@ -5315,11 +5342,15 @@ function contentPartThinking(part: ContentPart): TimelineThinkingPart | null {
   if (contentPartKind(part) !== "thinking") {
     return null;
   }
+  const text = thinkingContentText(part);
+  if (text.trim().length === 0) {
+    return null;
+  }
   return {
     kind: "thinking",
     partIndex: contentPartIndex(part),
     streaming: contentPartStreaming(part) && !contentPartFinished(part),
-    text: thinkingContentText(part),
+    text,
   };
 }
 

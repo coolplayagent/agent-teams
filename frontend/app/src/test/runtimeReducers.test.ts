@@ -353,6 +353,60 @@ describe("runtime reducers", () => {
     ]);
   });
 
+  it("marks explicit child run references as subagent scope before UUID child events arrive", () => {
+    const childRunId = "87f9f69e-8622-4d46-958f-aa0d7d283095";
+    const withReference = reduceRunEvent(
+      initialRuntimeState,
+      runEvent({
+        event_id: 1,
+        event_type: "tool_result",
+        payload_json: JSON.stringify({
+          result: {
+            subagent_instance_id: "22cd6473-7579-438e-90df-d8177cc31e93",
+            subagent_role_id: "Explorer",
+            subagent_run_id: childRunId,
+            title: "Explore skill implementation",
+          },
+          tool_call_id: "call-subagent",
+          tool_name: "spawn_subagent",
+        }),
+      }),
+    );
+
+    expect(withReference.runs[childRunId]).toMatchObject({
+      entries: [],
+      runId: childRunId,
+      scope: "subagent",
+      sessionId: "session-1",
+      status: "connecting",
+    });
+
+    const withChildEvent = reduceRunEvent(
+      withReference,
+      runEvent({
+        event_id: 2,
+        event_type: "text_delta",
+        payload_json: JSON.stringify({
+          text: "Now let me read all the core source files concurrently.",
+        }),
+        role_id: "Explorer",
+        run_id: childRunId,
+        trace_id: childRunId,
+      }),
+    );
+
+    expect(withChildEvent.runs[childRunId]).toMatchObject({
+      runId: childRunId,
+      scope: "subagent",
+      status: "open",
+    });
+    expect(withChildEvent.runs[childRunId].entries).toHaveLength(1);
+    expect(withChildEvent.runs[childRunId].entries[0]).toMatchObject({
+      roleId: "Explorer",
+      text: "Now let me read all the core source files concurrently.",
+    });
+  });
+
   it("reduces AG-UI envelopes without reparsing payload JSON", () => {
     const state = reduceRunEvent(initialRuntimeState, agUiEvent());
 

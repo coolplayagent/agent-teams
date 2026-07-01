@@ -240,6 +240,30 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText("Assistant")).not.toBeInTheDocument();
   });
 
+  it("does not render empty thinking parts from runtime message payloads", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "message",
+        payload_json: JSON.stringify({
+          message: {
+            parts: [
+              { kind: "thinking", streaming: true, text: "" },
+              { kind: "text", text: "Visible answer after empty thinking" },
+            ],
+          },
+        }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("Visible answer after empty thinking")).toBeVisible();
+    expect(container.querySelector(".at-message-thinking")).toBeNull();
+    expect(screen.queryByText("Thinking")).not.toBeInTheDocument();
+  });
+
   it("keeps closed runtime output visible when only the user prompt is hydrated", async () => {
     setRuntimeEntries([
       runtimeTextDeltaEntry({
@@ -3837,6 +3861,8 @@ describe("MessageTimeline", () => {
         trace_id: "run-main-tool",
         payload_json: JSON.stringify({
           result: {
+            output: "SUBAGENT_OUTPUT_SHOULD_STAY_IN_PANEL",
+            prompt: "Read the project without editing files.",
             subagent_instance_id: "subagent-instance-1",
             subagent_role_id: "explorer",
             subagent_run_id: "subagent_run_1",
@@ -3858,6 +3884,12 @@ describe("MessageTimeline", () => {
     expect(toolPreviewTexts(container)).toEqual([
       "Explore skills implementation",
     ]);
+    expect(container.textContent).not.toContain(
+      "SUBAGENT_OUTPUT_SHOULD_STAY_IN_PANEL",
+    );
+    expect(container.textContent).not.toContain(
+      "Read the project without editing files.",
+    );
 
     expect(onSubagentOpen).toHaveBeenCalledWith(expect.objectContaining({
       instanceId: "subagent-instance-1",
@@ -3945,6 +3977,9 @@ describe("MessageTimeline", () => {
     const title = await screen.findByText("Starting subagent");
     const tool = title.closest(".at-message-tool");
     expect(tool).toHaveClass("is-openable-subagent");
+    expect(container.textContent).not.toContain(
+      "Explore the project without editing files.",
+    );
 
     fireEvent.click(title);
 
@@ -4033,6 +4068,70 @@ describe("MessageTimeline", () => {
     expect(
       screen.queryByText("Now let me read all the core source files concurrently."),
     ).not.toBeInTheDocument();
+    expect(container.querySelector('[data-role-id="Explorer"]')).toBeNull();
+  });
+
+  it("keeps explicitly referenced UUID subagent runtime streams out of the main timeline", async () => {
+    const childRunId = "87f9f69e-8622-4d46-958f-aa0d7d283095";
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "tool_result",
+        instance_id: "main-instance",
+        payload_json: JSON.stringify({
+          result: {
+            subagent_instance_id: "22cd6473-7579-438e-90df-d8177cc31e93",
+            subagent_role_id: "Explorer",
+            subagent_run_id: childRunId,
+            title: "Explore skill implementation",
+          },
+          tool_call_id: "call-subagent",
+          tool_name: "spawn_subagent",
+        }),
+        role_id: "MainAgent",
+        run_id: "run-main-tool",
+        trace_id: "run-main-tool",
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "text_delta",
+        payload_json: JSON.stringify({
+          text: "Now let me read all the core source files concurrently.",
+        }),
+        role_id: "Explorer",
+        run_id: childRunId,
+        trace_id: childRunId,
+      }),
+      relayRunEvent({
+        event_id: 3,
+        event_type: "tool_call",
+        payload_json: JSON.stringify({
+          args: { path: "src/relay_teams/skills/__init__.py" },
+          tool_call_id: "call-child-read",
+          tool_name: "read",
+        }),
+        role_id: "Explorer",
+        run_id: childRunId,
+        trace_id: childRunId,
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline("session-1", {
+      primaryRoleId: "MainAgent",
+    });
+
+    expect(await screen.findByText("Subagent started")).toBeVisible();
+    expect(
+      screen.queryByText("Now let me read all the core source files concurrently."),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Tool call: read")).not.toBeInTheDocument();
+    expect(container.querySelector(`[data-run-id="${childRunId}"]`)).toBeNull();
     expect(container.querySelector('[data-role-id="Explorer"]')).toBeNull();
   });
 

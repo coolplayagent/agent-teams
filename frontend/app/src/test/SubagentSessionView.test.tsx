@@ -232,6 +232,43 @@ describe("SubagentSessionView", () => {
     expect(openSessionSubagentRunStreamMock).not.toHaveBeenCalled();
   });
 
+  it("does not duplicate the prompt when persisted subagent history contains it", async () => {
+    const prompt = "Execute the streaming verification command once.";
+    listAgentMessagesMock.mockResolvedValue([
+      {
+        content: prompt,
+        created_at: "2026-06-23T10:01:00Z",
+        message_id: "subagent-user-prompt",
+        role_id: "Crafter",
+        run_id: "subagent_run_1",
+      },
+      {
+        content: "Subagent answer after the command.",
+        created_at: "2026-06-23T10:02:00Z",
+        message_id: "subagent-answer",
+        role_id: "assistant",
+        run_id: "subagent_run_1",
+      },
+    ]);
+    const controller = createRunStreamController();
+
+    renderSubagentSessionView({
+      controller,
+      subagent: createSubagent({
+        promptText: prompt,
+        runPhase: "completed",
+        runStatus: "completed",
+        status: "completed",
+      }),
+    });
+
+    expect(await screen.findByText(prompt)).toBeVisible();
+    expect(await screen.findByText("Subagent answer after the command."))
+      .toBeVisible();
+    expect(document.body.textContent?.match(new RegExp(prompt, "g")) ?? [])
+      .toHaveLength(1);
+  });
+
   it("replays a running subagent from the beginning when no live cursor exists", async () => {
     const controller = createRunStreamController();
 

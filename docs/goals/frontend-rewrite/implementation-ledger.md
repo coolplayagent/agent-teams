@@ -8619,3 +8619,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent old harness mapping, deletion, focused component/static verification, packed-browser verification, screenshot inspection, matrix update, and ledger update completed for this slice. No Settings subsystem PASS, cleanup PASS, reviewer sign-off, or final V2 completion is claimed.
+
+## 2026-07-01 Subagent Stream Timeline Containment Slice
+
+### Scope
+- Fixed a runtime ordering gap where a parent `spawn_subagent` tool result could reference a child run before the child run emitted UUID-tagged events. Explicit `subagent_run_id`/`run_id` references now mark those runtime states as subagent scope early, keeping child events out of the main timeline during streaming and replay.
+- Removed empty thinking cards from runtime message rendering.
+- Kept main-session subagent tool cards compact and openable while suppressing raw subagent prompt/output details in the main timeline. The subagent content belongs in the right-side subagent panel.
+- Suppressed exact duplicate subagent prompt rows inside the right-side panel while preserving the prompt header, so prompt text is not shown twice.
+- Rebuilt the packaged V2 frontend assets under `frontend/dist/app`.
+
+### Verification
+- `npm test -- src/test/runtimeReducers.test.ts` passed with 16 tests.
+- `npm test -- src/test/MessageTimeline.test.tsx` passed with 150 tests.
+- `npm test -- src/test/SubagentSessionView.test.tsx` passed with 21 tests.
+- `npm run lint` passed.
+- `npm run build` passed and produced the current `frontend/dist/app` bundle.
+- `git diff --check` passed with only the existing CRLF normalization warnings for edited files.
+- Actual app observation caught that the browser was initially serving an old bundle before the rebuild. After rebuilding, the app served the updated bundle and the main subagent card for the sampled `ui-subagent-stream-1782892710534` run no longer exposed the raw command/output in the main timeline. The final prompt-dedupe change is covered by tests and build, but the final in-app DOM recheck was blocked by the in-app browser control timing out.
+
+### Reviewer
+- Main-agent runtime reducer fix, timeline containment fix, subagent panel duplicate suppression, focused TS coverage, dist rebuild, and partial real-app observation completed for this slice. This does not claim full streaming cadence PASS, full subagent side-panel PASS, complete V1/V2 parity closure, reviewer sign-off, or final V2 frontend completion.

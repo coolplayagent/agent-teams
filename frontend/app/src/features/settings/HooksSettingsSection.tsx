@@ -713,6 +713,16 @@ function HookHandlerEditor({
             onChange={(runAsync) => onUpdate((current) => ({ ...current, runAsync }))}
           />
         </label>
+        <label className="at-settings-field at-settings-field-wide">
+          <span>{t("settingsHooksStatusMessage")}</span>
+          <Input
+            onChange={(event) =>
+              onUpdate((current) => ({ ...current, statusMessage: event.target.value }))
+            }
+            placeholder={t("settingsHooksStatusMessagePlaceholder")}
+            value={handler.statusMessage}
+          />
+        </label>
         <HookTypeFields
           eventName={eventName}
           handler={handler}

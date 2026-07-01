@@ -2,6 +2,25 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-02 Hooks Settings Handler Field Preservation
+
+### Scope
+- Continued migrating concrete behavior from `tests/integration_tests/frontend/test_hooks_settings_ui.py`, focusing on handler-field fidelity rather than broad Settings churn.
+- Added a structured `Status message` field for hook handlers so the existing `status_message` contract can be viewed and edited from the React Hooks editor.
+- Added TS coverage proving edited `status_message` is serialized on save while hidden backend fields such as command `shell` and prompt `model` are preserved through the structured editor.
+- Kept the System secondary-page placement unchanged and did not add/remove Settings navigation entries.
+- Kept `tests/integration_tests/frontend/test_hooks_settings_ui.py` in place. HTTP field coverage, structured backend error localization, delete failure result mapping, stale reload reconciliation, and final V1 visual pairing still remain open.
+
+### Verification
+- `npm test -- src/test/HooksSettingsSection.test.tsx` passed with 9 tests.
+- `npm test -- src/test/SettingsDrawer.test.tsx -t "hooks"` passed with 1 selected test.
+- `npm run test:browser -- v2-settings-actions.spec.ts -g "validates and saves Hooks"` passed with 1 packed-browser test.
+- `npm run lint` passed.
+- `npm run build` passed and regenerated the packed `frontend/dist/app` bundle.
+
+### Reviewer
+- Main-agent decision: this tightens `SET-14` by replacing another old Hooks settings behavior with V2-native UI and tests, but it does not retire the hooks Python harness.
+
 ## 2026-07-02 Hooks Settings Delete Autosave Baseline
 
 ### Scope

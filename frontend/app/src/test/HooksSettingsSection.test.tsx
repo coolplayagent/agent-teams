@@ -299,6 +299,91 @@ describe("HooksSettingsSection", () => {
     );
     expect(screen.getByDisplayValue("Draft shell guard")).toBeVisible();
   });
+
+  it("edits handler status messages and preserves prompt model extras on save", async () => {
+    getHooksConfigMock.mockResolvedValue({
+      hooks: {
+        Notification: [
+          {
+            hooks: [
+              {
+                command: "python notify.py",
+                name: "notify",
+                run_async: true,
+                shell: "powershell",
+                status_message: "Sending notification",
+                type: "command",
+              },
+            ],
+            name: "Command policy",
+            role_ids: ["coordinator"],
+            run_kinds: ["foreground"],
+            session_modes: ["normal"],
+          },
+        ],
+        Stop: [
+          {
+            hooks: [
+              {
+                model: "gpt-test",
+                name: "summarize final answer",
+                prompt: "summarize",
+                type: "prompt",
+              },
+            ],
+            name: "Prompt policy",
+          },
+        ],
+      },
+    });
+    renderSection();
+
+    await editCard("Command policy");
+    fireEvent.change(screen.getByLabelText("Status message"), {
+      target: { value: "Posting notification" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(saveHooksConfigMock).toHaveBeenCalledWith({
+        hooks: {
+          Notification: [
+            {
+              hooks: [
+                {
+                  command: "python notify.py",
+                  name: "notify",
+                  on_error: "ignore",
+                  run_async: true,
+                  shell: "powershell",
+                  status_message: "Posting notification",
+                  type: "command",
+                },
+              ],
+              name: "Command policy",
+              role_ids: ["coordinator"],
+              run_kinds: ["foreground"],
+              session_modes: ["normal"],
+            },
+          ],
+          Stop: [
+            {
+              hooks: [
+                {
+                  model: "gpt-test",
+                  name: "summarize final answer",
+                  on_error: "ignore",
+                  prompt: "summarize",
+                  type: "prompt",
+                },
+              ],
+              name: "Prompt policy",
+            },
+          ],
+        },
+      }),
+    );
+  });
 });
 
 async function chooseSelectOption(label: string, optionText: string) {

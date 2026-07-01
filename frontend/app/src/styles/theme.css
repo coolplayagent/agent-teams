@@ -7417,6 +7417,13 @@ body {
   min-width: 0;
 }
 
+.at-mcp-editor-head > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
 .at-mcp-editor-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -7440,6 +7447,11 @@ body {
   font-family: var(--at-font-mono);
   font-size: 12px;
   white-space: pre-wrap;
+}
+
+.at-mcp-json-import textarea {
+  font-family: var(--at-font-mono);
+  font-size: 12px;
 }
 
 @media (max-width: 760px) {

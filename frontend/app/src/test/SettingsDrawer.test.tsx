@@ -106,7 +106,7 @@ import {
   validateRoleConfig,
   waitWeChatGatewayLogin,
 } from "../api/client";
-import type { OrchestrationConfig } from "../api/contracts";
+import type { McpServerToolsSummary, OrchestrationConfig } from "../api/contracts";
 import { fetchSpeechConfig, saveSpeechConfig } from "../api/speech";
 import { SettingsDrawer } from "../features/shell/SettingsDrawer";
 import {
@@ -2788,6 +2788,220 @@ describe("SettingsDrawer", () => {
     );
   }, 35000);
 
+  it("imports MCP server JSON into the V2 MCP editor and preserves hidden fields", async () => {
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "System" }));
+    fireEvent.click((await screen.findByText("MCP")).closest("button") as HTMLElement);
+    fireEvent.click(await screen.findByRole("button", { name: "Add Server" }));
+
+    fireEvent.change(await screen.findByLabelText("Import JSON"), {
+      target: {
+        value: JSON.stringify({
+          mcpServers: {
+            docs: {
+              args: ["@modelcontextprotocol/server-filesystem"],
+              command: "npx",
+              cwd: "C:/repo",
+              env: { DEBUG: "pw:mcp" },
+              read_timeout: 300,
+              type: "local",
+            },
+          },
+        }),
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply JSON" }));
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("Server name")).toHaveValue("docs"),
+    );
+    expect(screen.getByLabelText("Command")).toHaveValue("npx");
+    expect(screen.getByLabelText("Arguments")).toHaveValue(
+      "@modelcontextprotocol/server-filesystem",
+    );
+    expect(screen.getByLabelText("Environment")).toHaveValue("DEBUG=pw:mcp");
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(addMcpServerMock).toHaveBeenCalledWith({
+        config: {
+          args: ["@modelcontextprotocol/server-filesystem"],
+          command: "npx",
+          cwd: "C:/repo",
+          env: { DEBUG: "pw:mcp" },
+          read_timeout: 300,
+          transport: "stdio",
+        },
+        name: "docs",
+        overwrite: false,
+      }),
+    );
+  }, 35000);
+
+  it("imports remote MCP JSON aliases and array commands", async () => {
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "System" }));
+    fireEvent.click((await screen.findByText("MCP")).closest("button") as HTMLElement);
+    fireEvent.click(await screen.findByRole("button", { name: "Add Server" }));
+
+    fireEvent.change(await screen.findByLabelText("Import JSON"), {
+      target: {
+        value: JSON.stringify({
+          mcpServers: {
+            docs: {
+              headers: { Authorization: "Bearer token" },
+              type: "streamablehttp",
+              url: "https://example.com/mcp",
+            },
+          },
+        }),
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply JSON" }));
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("Server name")).toHaveValue("docs"),
+    );
+    expect(screen.getByLabelText("Transport")).toHaveValue("streamable-http");
+    expect(screen.getByLabelText("URL")).toHaveValue("https://example.com/mcp");
+    expect(screen.getByLabelText("Headers")).toHaveValue("Authorization=Bearer token");
+
+    fireEvent.change(screen.getByLabelText("Import JSON"), {
+      target: {
+        value: JSON.stringify({
+          mcpServers: {
+            localDocs: {
+              command: ["npx", "-y", "docs-mcp"],
+              type: "local",
+            },
+          },
+        }),
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply JSON" }));
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("Server name")).toHaveValue("localDocs"),
+    );
+    expect(screen.getByLabelText("Command")).toHaveValue("npx");
+    expect(screen.getByLabelText("Arguments")).toHaveValue("-y\ndocs-mcp");
+  }, 35000);
+
+  it("keeps hidden MCP config fields when editing an existing server", async () => {
+    getMcpServerMock.mockResolvedValueOnce({
+      config: {
+        args: ["server-filesystem"],
+        command: "npx",
+        cwd: "C:/workspace",
+        env: { TOKEN: "old" },
+        read_timeout: 300,
+        transport: "stdio",
+      },
+      server: {
+        discovery_status: "ready",
+        enabled: true,
+        name: "filesystem",
+        source: "app",
+        tool_count: 2,
+        transport: "stdio",
+      },
+    });
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "System" }));
+    fireEvent.click((await screen.findByText("MCP")).closest("button") as HTMLElement);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit filesystem" }));
+
+    await waitFor(() => expect(getMcpServerMock).toHaveBeenCalledWith("filesystem"));
+    fireEvent.change(await screen.findByLabelText("Command"), {
+      target: { value: "uvx" },
+    });
+    fireEvent.change(screen.getByLabelText("Environment"), {
+      target: { value: "TOKEN=new" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(updateMcpServerMock).toHaveBeenCalledWith("filesystem", {
+        config: {
+          args: ["server-filesystem"],
+          command: "uvx",
+          cwd: "C:/workspace",
+          env: { TOKEN: "new" },
+          read_timeout: 300,
+          transport: "stdio",
+        },
+      }),
+    );
+  }, 35000);
+
+  it("renders MCP tool loading state before delayed discovery resolves", async () => {
+    let resolveTools: (value: McpServerToolsSummary) => void = () => undefined;
+    getMcpServerToolsMock.mockReturnValue(
+      new Promise<McpServerToolsSummary>((resolve) => {
+        resolveTools = resolve;
+      }),
+    );
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "System" }));
+    fireEvent.click((await screen.findByText("MCP")).closest("button") as HTMLElement);
+
+    expect(await screen.findByText("Loading tools.")).toBeVisible();
+    expect(screen.queryByText("delayed_tool")).toBeNull();
+
+    resolveTools({
+      enabled: true,
+      server: "filesystem",
+      source: "app",
+      status: "ready",
+      tools: [{ description: "Delayed tool", name: "delayed_tool" }],
+      transport: "stdio",
+    });
+
+    expect(await screen.findByText("delayed_tool")).toBeVisible();
+    expect(screen.getByText("Delayed tool")).toBeVisible();
+  }, 35000);
+
+  it("confirms MCP server deletion and hides delete for non-app servers", async () => {
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "System" }));
+    fireEvent.click((await screen.findByText("MCP")).closest("button") as HTMLElement);
+
+    expect(await screen.findByText("filesystem")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Delete github" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete filesystem" }));
+    expect((await screen.findAllByText("Delete MCP server")).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(deleteMcpServerMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete filesystem" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    await waitFor(() =>
+      expect(deleteMcpServerMock).toHaveBeenCalledWith("filesystem"),
+    );
+  }, 35000);
+
   it("manages remote workspace SSH profiles through the workspace config clients", async () => {
     renderDrawer();
 
@@ -3335,7 +3549,7 @@ describe("SettingsDrawer", () => {
     await waitFor(() => expect(reloadProxyConfigMock).toHaveBeenCalledTimes(1));
   }, 10000);
 
-  it("defaults missing Proxy SSL verification to skip verification", async () => {
+  it("defaults missing Proxy SSL verification to inherit", async () => {
     getProxyConfigMock.mockResolvedValueOnce({
       all_proxy: null,
       http_proxy: null,
@@ -3347,7 +3561,7 @@ describe("SettingsDrawer", () => {
     });
     await openProxySettings();
 
-    expect(screen.getByLabelText("Default SSL verification")).toHaveValue("false");
+    expect(screen.getByLabelText("Default SSL verification")).toHaveValue("");
   });
 
   it("ignores Proxy password autofill events until the password field is focused", async () => {

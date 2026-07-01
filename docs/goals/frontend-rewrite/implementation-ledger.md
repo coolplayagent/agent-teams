@@ -8560,3 +8560,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent source mapping, obsolete V1 harness identification, V2 behavior coverage, browser pressure verification, and matrix update completed for this slice. No cleanup PASS, reviewer sign-off, or final V2 completion is claimed.
+
+## 2026-07-01 System Status UI Harness Migration
+
+### Scope
+- Re-checked the remaining old Python frontend harness inventory and selected `tests/integration_tests/frontend/test_system_status_ui.py` because it still executed legacy V1/dist `systemStatus.js` and asserted DOM strings that are no longer the V2 React proof path.
+- Added V2 MCP editor import support to `McpSettingsSection.tsx`: users can paste either a V1-style `mcpServers` block or the current V2 preview payload, apply it to the editor, normalize legacy transport aliases, split array commands, and preserve hidden config fields such as `cwd` and `read_timeout` on save.
+- Added V2-native `SettingsDrawer.test.tsx` coverage for MCP tool loading, delete confirmation, non-app server delete hiding, JSON import aliases, array command import, and hidden config preservation while editing.
+- Added `SkillsView.test.tsx` coverage proving duplicate installed skill names stay distinguishable by ref/source labels without leaking raw source identifiers.
+- Deleted `test_system_status_ui.py`. This does not claim full System Settings parity, full Skills parity, complete old Python harness retirement, reviewer sign-off, or final V2 frontend completion.
+
+### Verification
+- `npm test -- src/test/SettingsDrawer.test.tsx -t "MCP"` passed with 6 focused tests and 39 skipped tests; jsdom emitted the existing pseudo-element `getComputedStyle` warning.
+- `npm test -- src/test/SkillsView.test.tsx -t "duplicate installed skill"` passed with 1 focused test and 8 skipped tests.
+- `npm test -- src/test/SettingsDrawer.test.tsx` initially exposed an unrelated stale Proxy SSL-default assertion, which was corrected to the current inherit-default behavior; the full file then passed with 45 tests.
+- `npm test -- src/test/SkillsView.test.tsx` passed with 9 tests.
+- `npm run lint` passed.
+- `uv run --extra dev ruff check tests/integration_tests/frontend` passed.
+- `git diff --check` passed; Git reported only the existing CRLF normalization warnings for edited files.
+
+### Reviewer
+- Main-agent old harness mapping, V2 implementation, focused component verification, matrix update, and ledger update completed for this slice. No cleanup PASS, reviewer sign-off, or final V2 completion is claimed.

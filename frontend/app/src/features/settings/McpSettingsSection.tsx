@@ -18,7 +18,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   addMcpServer,
@@ -83,6 +83,7 @@ export function McpSettingsSection() {
   const t = useTranslations();
   const [form] = Form.useForm<McpFormValues>();
   const [editor, setEditor] = useState<McpEditorState | null>(null);
+  const editorRef = useRef<McpEditorState | null>(null);
   const [toolStates, setToolStates] = useState<Record<string, ToolState>>({});
   const [testStates, setTestStates] = useState<Record<string, TestState>>({});
 
@@ -145,6 +146,10 @@ export function McpSettingsSection() {
   }, [loadTools, serversQuery.data]);
 
   useEffect(() => {
+    editorRef.current = editor;
+  }, [editor]);
+
+  useEffect(() => {
     if (editor === null) {
       form.resetFields();
       return;
@@ -183,13 +188,14 @@ export function McpSettingsSection() {
     mutationFn: (
       values: McpFormValues,
     ): Promise<McpServerAddResult | McpServerConfigResult> => {
-      if (editor?.mode === "edit") {
-        return updateMcpServer(editor.name, {
-          config: buildMcpConfig(values, editor.config, t),
+      const currentEditor = editorRef.current;
+      if (currentEditor?.mode === "edit") {
+        return updateMcpServer(currentEditor.name, {
+          config: buildMcpConfig(values, currentEditor.config, t),
         });
       }
       return addMcpServer({
-        config: buildMcpConfig(values, {}, t),
+        config: buildMcpConfig(values, currentEditor?.config ?? {}, t),
         name: values.name.trim(),
         overwrite: values.overwrite === true,
       });
@@ -321,11 +327,32 @@ export function McpSettingsSection() {
   async function copyPreview(values: McpFormValues) {
     try {
       await navigator.clipboard.writeText(
-        serializeMcpPayload(values, editor?.config ?? {}),
+        serializeMcpPayload(values, editorRef.current?.config ?? {}),
       );
       void message.success(t("settingsMcpCopied"));
     } catch {
       void message.error(t("settingsMcpCopyFailed"));
+    }
+  }
+
+  function importMcpJson(source: string): boolean {
+    if (editor === null) {
+      return false;
+    }
+    try {
+      const imported = parseMcpImportJson(source, t);
+      const nextEditor = {
+        config: imported.config,
+        mode: editor.mode,
+        name: editor.mode === "edit" ? editor.name : imported.name,
+      };
+      editorRef.current = nextEditor;
+      setEditor(nextEditor);
+      void message.success(t("settingsMcpJsonImported"));
+      return true;
+    } catch (error) {
+      void message.error(errorMessage(error));
+      return false;
     }
   }
 
@@ -388,6 +415,7 @@ export function McpSettingsSection() {
             form={form}
             onCancel={() => setEditor(null)}
             onCopy={copyPreview}
+            onImport={importMcpJson}
             onSubmit={(values) => saveMutation.mutate(values)}
             saving={saveMutation.isPending}
             t={t}
@@ -557,6 +585,7 @@ function McpEditor({
   form,
   onCancel,
   onCopy,
+  onImport,
   onSubmit,
   saving,
   t,
@@ -566,14 +595,26 @@ function McpEditor({
   form: FormInstance<McpFormValues>;
   onCancel: () => void;
   onCopy: (values: McpFormValues) => void;
+  onImport: (source: string) => boolean;
   onSubmit: (values: McpFormValues) => void;
   saving: boolean;
   t: Translate;
   transport: string;
 }) {
   const values = Form.useWatch([], form) ?? formValuesFromEditor(editor);
+  const [jsonImportSource, setJsonImportSource] = useState("");
   const isStdio = transport === "stdio";
   const preview = serializeMcpPayload(values, editor.config);
+  useEffect(() => {
+    setJsonImportSource("");
+  }, [editor]);
+
+  function applyJsonImport() {
+    if (onImport(jsonImportSource)) {
+      setJsonImportSource("");
+    }
+  }
+
   return (
     <Form
       className="at-settings-form at-settings-wide-form at-mcp-editor"
@@ -655,6 +696,27 @@ function McpEditor({
             </Form.Item>
           ) : null}
         </div>
+      </div>
+      <div className="at-settings-form-card at-mcp-json-import">
+        <div className="at-mcp-editor-head">
+          <div>
+            <Typography.Text strong>{t("settingsMcpJsonImport")}</Typography.Text>
+            <Typography.Text className="at-settings-help">
+              {t("settingsMcpJsonImportHelp")}
+            </Typography.Text>
+          </div>
+          <Button htmlType="button" onClick={applyJsonImport}>
+            {t("settingsMcpApplyJson")}
+          </Button>
+        </div>
+        <Input.TextArea
+          aria-label={t("settingsMcpJsonImport")}
+          autoSize={{ maxRows: 8, minRows: 4 }}
+          onChange={(event) => setJsonImportSource(event.target.value)}
+          placeholder={t("settingsMcpJsonImportPlaceholder")}
+          spellCheck={false}
+          value={jsonImportSource}
+        />
       </div>
       <div className="at-settings-form-card at-mcp-json-preview">
         <div className="at-mcp-editor-head">
@@ -750,6 +812,47 @@ function formValuesFromEditor(editor: McpEditorState): McpFormValues {
   };
 }
 
+function parseMcpImportJson(source: string, t: Translate): McpEditorState {
+  const text = source.trim();
+  if (!text) {
+    throw new Error(t("settingsMcpJsonInvalid"));
+  }
+  const parsed = JSON.parse(text) as JsonValue;
+  const root = recordValue(parsed);
+  if (root === null) {
+    throw new Error(t("settingsMcpJsonInvalid"));
+  }
+
+  const previewName = stringValue(root.name);
+  const previewConfig = recordValue(root.config);
+  if (previewName && previewConfig !== null) {
+    return {
+      config: normalizeImportedMcpConfig(previewConfig),
+      mode: "create",
+      name: previewName,
+    };
+  }
+
+  const servers = recordValue(root.mcpServers);
+  if (servers === null) {
+    throw new Error(t("settingsMcpJsonInvalid"));
+  }
+  const entries = Object.entries(servers);
+  if (entries.length !== 1) {
+    throw new Error(t("settingsMcpJsonInvalid"));
+  }
+  const [name, configValue] = entries[0] ?? ["", null];
+  const config = recordValue(configValue);
+  if (!name || config === null) {
+    throw new Error(t("settingsMcpJsonInvalid"));
+  }
+  return {
+    config: normalizeImportedMcpConfig(config),
+    mode: "create",
+    name,
+  };
+}
+
 function serializeMcpPayload(
   values: McpFormValues,
   originalConfig: Record<string, JsonValue>,
@@ -803,6 +906,53 @@ function buildMcpConfigPreview(
   return config;
 }
 
+function normalizeImportedMcpConfig(
+  config: Record<string, JsonValue>,
+): Record<string, JsonValue> {
+  const normalized: Record<string, JsonValue> = { ...config };
+  normalized.transport = normalizeImportedTransport(
+    stringValue(normalized.transport) || stringValue(normalized.type),
+  );
+  delete normalized.type;
+
+  if (Array.isArray(normalized.command)) {
+    const commandParts = normalized.command
+      .map((item) => (typeof item === "string" ? item.trim() : ""))
+      .filter(Boolean);
+    const command = commandParts[0];
+    if (command !== undefined) {
+      normalized.command = command;
+      const args = commandParts.slice(1);
+      if (args.length > 0) {
+        normalized.args = args;
+      } else {
+        delete normalized.args;
+      }
+    } else {
+      delete normalized.command;
+    }
+  }
+
+  return normalized;
+}
+
+function normalizeImportedTransport(value: string): string {
+  const transport = value.trim().toLowerCase();
+  if (transport === "local") {
+    return "stdio";
+  }
+  if (transport === "remote") {
+    return "sse";
+  }
+  if (transport === "streamablehttp" || transport === "streamable_http") {
+    return "streamable-http";
+  }
+  if (transportOptions.some((option) => option === transport)) {
+    return transport;
+  }
+  return "stdio";
+}
+
 function parseLineList(value: string): string[] {
   return value
     .split(/\r?\n/)
@@ -843,6 +993,13 @@ function parseKeyValueLinesLenient(value: string): Record<string, JsonValue> {
     }
   }
   return result;
+}
+
+function recordValue(value: JsonValue | undefined): Record<string, JsonValue> | null {
+  if (value === undefined || value === null || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  return value;
 }
 
 function formatLineList(value: JsonValue | undefined): string {

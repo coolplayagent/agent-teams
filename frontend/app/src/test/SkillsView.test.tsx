@@ -191,6 +191,45 @@ describe("SkillsView", () => {
     expect(screen.getAllByText("runbook-writer")[0]).toBeVisible();
   });
 
+  it("keeps duplicate installed skill names distinguishable by source and ref", async () => {
+    getConfigStatusMock.mockResolvedValueOnce({
+      skills: {
+        loaded: true,
+        skills: [
+          {
+            description: "Builtin time.",
+            name: "time",
+            ref: "builtin:time",
+            source: "builtin",
+          },
+          {
+            description: "Plugin time.",
+            name: "time",
+            ref: "plugin:time",
+            source: "plugin",
+          },
+          {
+            description: "Inspect file changes before replying.",
+            name: "diff",
+            ref: "diff",
+            source: "project_agents",
+          },
+        ],
+      },
+    });
+    renderSkills();
+
+    fireEvent.click(await screen.findByText("Installed"));
+
+    expect(screen.getByText("builtin:time")).toBeVisible();
+    expect(screen.getByText("plugin:time")).toBeVisible();
+    expect(screen.getAllByText("diff").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("Built-in")).toBeVisible();
+    expect(screen.getByText("Plugin")).toBeVisible();
+    expect(screen.getByText("Project")).toBeVisible();
+    expect(screen.queryByText("project_agents")).toBeNull();
+  });
+
   it("searches the ClawHub market when the market query changes", async () => {
     renderSkills();
 

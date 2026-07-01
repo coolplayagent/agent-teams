@@ -2,6 +2,19 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-02 Frontend Logger Python Harness Removal
+
+### Scope
+- Removed `tests/integration_tests/frontend/test_logger_sdk.py`, a legacy harness that copied old `frontend/dist/js/utils/logger.js` into a temporary Node module with fake browser globals.
+- Added `frontend/app/src/runtime/frontendLogger.ts` as the V2-owned logger runtime. It batches structured events to `/api/logs/frontend`, keeps nullable run/session context, defers normal flushes while streams are active, and uses `navigator.sendBeacon` for `beforeunload` keepalive delivery.
+- Added `frontend/app/src/test/frontendLogger.test.ts` to preserve the useful old assertions in the React/Vite test stack: structured batch payloads, full-batch flush without beacon, null run context, `sysLog` feedback behavior without restoring a system-log panel, and unload keepalive while a stream is active.
+
+### Verification
+- `npm test -- src/test/frontendLogger.test.ts` passed with 5 tests.
+
+### Reviewer
+- Main-agent decision: this retires one more integration frontend Python UI harness and tightens `CLEAN-01`. It does not claim full API request helper migration, full integration harness cleanup, reviewer sign-off, or final V2 frontend completion.
+
 ## 2026-07-02 App Build Artifact Python Harness Removal
 
 ### Scope

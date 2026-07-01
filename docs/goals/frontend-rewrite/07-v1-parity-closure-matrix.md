@@ -114,6 +114,14 @@ For every row moved to `Verified`, record:
 
 ## Verification Ledger
 
+### 2026-07-02 Frontend Logger Harness Migration
+
+- `CLEAN-01` tightened: removed `tests/integration_tests/frontend/test_logger_sdk.py`, the old Python integration harness that copied V1 `frontend/dist/js/utils/logger.js` into a fake browser module runner.
+- V2 ownership is now explicit for this proof path: `frontendLogger.test.ts` covers structured `/api/logs/frontend` batches, nullable run/session context, automatic full-batch flush, `sysLog` error feedback without bringing back a system-log panel, and `beforeunload` keepalive delivery while active streams defer normal flushes.
+- Added `runtime/frontendLogger.ts` as the current React/Vite logger runtime instead of relying on the retired `frontend/dist/js` logger module.
+- Automated evidence: `npm test -- src/test/frontendLogger.test.ts`.
+- Remaining before cleanup verification: API request helper harness migration, broader `tests/integration_tests/frontend/*.py` retirement, promoted-route naming decision, migration-only file/test naming decision, and reviewer sign-off.
+
 ### 2026-07-02 App Build Artifact Harness Migration
 
 - `CLEAN-01` tightened: removed `tests/integration_tests/browser/test_frontend_module_loading.py`, the old Python browser-style harness that walked V1 `frontend/dist/js` modules and imported retired `subagentRail.js`, `connectorCards.js`, and `newSessionDraft.js` fake-DOM modules.

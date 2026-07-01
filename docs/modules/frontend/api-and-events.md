@@ -22,6 +22,11 @@ V2 typed client 按后端领域聚合具体 API：
 
 组件不应直接绕过 typed client 在局部重新实现请求封装。新增 API 时应先放入 `frontend/app/src/api/client.ts` 的对应领域函数，并补充 `contracts.ts` 类型和 `apiClient.test.ts` 覆盖。
 
+前端运行时日志由 `frontend/app/src/runtime/frontendLogger.ts` 负责。它批量上报
+`/api/logs/frontend`，保留 nullable 的 run/session 上下文，并在页面卸载时使用
+`navigator.sendBeacon` 做 keepalive 投递；对应 V2 证明路径是
+`frontend/app/src/test/frontendLogger.test.ts`。
+
 ## 请求策略
 
 共享请求 helper 位于 `frontend/app/src/api/http.ts`。

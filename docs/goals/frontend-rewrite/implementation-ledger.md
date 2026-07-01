@@ -2,6 +2,23 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-01 Message Export Python Harness Removal
+
+### Scope
+- Removed `tests/unit_tests/frontend/test_message_export_ui.py`, a legacy V1/static harness that scanned `frontend/dist` HTML, JavaScript, and CSS implementation strings for the old message export control.
+- Mapped its V2-relevant behavior to current React/Playwright ownership: `MessageExportMenu.test.tsx` covers the export menu, active-session guard, paginated round collection, sorting, and HTML/PNG export dispatch; `messageExport.test.ts` covers standalone escaped HTML, prompt media/injection parts, pending/retry details, HTML download, PNG canvas rendering, and oversized PNG splitting; `v2-message-export.spec.ts` covers the packed `/app/` top-bar entry, round selection dialog, selected-round export, parsed HTML transcript content, and decodable PNG download.
+- Left V1-only implementation assertions behind with the removed harness, including old `frontend/dist/js/components/messageExport.js` renderer reuse, static CSS import names, and old DOM id placement. Those do not prove the current React V2 UI.
+
+### Verification
+- `npm test -- src/test/MessageExportMenu.test.tsx src/test/messageExport.test.ts` passed.
+- `npm run test:browser -- browser-tests/v2-message-export.spec.ts --project=chromium` passed.
+- `uv run --extra dev ruff check tests/unit_tests/frontend` passed.
+- `rg -n "test_message_export_ui|frontend/dist/js/components/messageExport.js|message-export-control" tests/unit_tests/frontend frontend/app/src frontend/app/browser-tests` returned no matches, confirming the removed V1 proof path is not referenced by current V2 tests.
+- `git diff --check` passed.
+
+### Reviewer
+- Main-agent decision: this retires the message-export V1/static proof path and tightens `CLEAN-01`. It does not claim complete cleanup, complete V1 visual parity, or final V2 completion because other old frontend Python UI harnesses remain.
+
 ## 2026-07-01 Subagent Stream State And Replay Isolation Fix
 
 ### Scope

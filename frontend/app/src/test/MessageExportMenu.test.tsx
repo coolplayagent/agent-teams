@@ -97,6 +97,7 @@ describe("MessageExportMenu", () => {
     fireEvent.click(screen.getByRole("button", { name: "Export messages" }));
     fireEvent.click(await screen.findByText("HTML"));
 
+    fireEvent.click(await screen.findByRole("button", { name: "Export selected" }));
     await waitFor(() => expect(exportSessionMessagesMock).toHaveBeenCalled());
     expect(listSessionRoundsMock).toHaveBeenNthCalledWith(1, "session-1", {
       cursorRunId: null,

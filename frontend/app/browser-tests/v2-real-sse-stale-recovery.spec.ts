@@ -93,6 +93,18 @@ const RICH_REPLAY_BACKGROUND_TASK_SUMMARY =
   `Background task started: ${RICH_REPLAY_BACKGROUND_TASK}`;
 const STOPPED_MESSAGE = "real SSE run stopped before completion";
 const STREAM_UNAVAILABLE = "run recovery stream is no longer available";
+const REAL_SSE_STDOUT_SUBAGENT_INSTANCE_ID =
+  "inst-real-sse-stdout-subagent";
+const REAL_SSE_STDOUT_SUBAGENT_TITLE = "Real SSE stdout subagent";
+const REAL_SSE_STDOUT_SUBAGENT_PROMPT =
+  "Run a stdout cadence probe and report the streamed command output only.";
+const REAL_SSE_STDOUT_CHUNKS = [
+  `STDOUT_ALPHA ${"alpha cadence ".repeat(18)}`,
+  `\nSTDOUT_BETA ${"beta cadence ".repeat(16)}`,
+  "\nSTDOUT_DONE final stdout line.",
+] as const;
+const REAL_SSE_STDOUT_FULL = REAL_SSE_STDOUT_CHUNKS.join("");
+const REAL_SSE_STDOUT_ROLE_ID = "Crafter";
 const TOOL_CALL_ID = "call-ts-real-sse-approval";
 const QUESTION_ID = "question-ts-real-sse-recovery";
 
@@ -217,7 +229,7 @@ test("reconnects a real SSE interruption from the runtime cursor", async ({
   });
 });
 
-test("streams real SSE recovered background subagent output through multiplexed runs", async ({
+test("filters real SSE recovered background subagent output from the parent timeline", async ({
   page,
 }) => {
   await runRealSseBackgroundSubagentScenario(page, {
@@ -242,13 +254,19 @@ test("drops a terminal real SSE background subagent from reconnect targets", asy
   });
 });
 
-test("streams only the real SSE background subagent for a recoverable parent", async ({
+test("keeps real SSE background-subagent-only output out of the parent timeline", async ({
   page,
 }) => {
   await runRealSseBackgroundSubagentScenario(page, {
     mode: "background-subagent-only",
     screenshotName: "v2-real-sse-background-subagent-only.png",
   });
+});
+
+test("streams real SSE subagent stdout through the right panel with replay parity", async ({
+  page,
+}) => {
+  await runRealSseSubagentStdoutScenario(page);
 });
 
 interface RealSseScenarioOptions {
@@ -331,6 +349,13 @@ interface RealSseState {
   streamRequests: RealSseRequest[];
   subagentStreamRequests: RealSseRequest[];
   terminalSubagentReconnect: boolean;
+}
+
+interface RealSseSubagentStdoutState {
+  completed: boolean;
+  messageRequestCount: number;
+  subagentRecordRequestCount: number;
+  subagentStreamRequests: RealSseRequest[];
 }
 
 interface RealSseInjectionRequest {
@@ -881,6 +906,7 @@ async function runRealSseRichReplayScenario(
       (request) => request.afterEventId === "2",
     )).toBe(true);
 
+    await expandFirstProcessedGroup(page);
     const thinkingSummary = await expectTimelineSelectorVisible(
       page,
       ".at-message-thinking-summary",
@@ -889,25 +915,29 @@ async function runRealSseRichReplayScenario(
     await expectTimelineTextVisible(page, RICH_REPLAY_THINKING);
 
     for (const text of [
-      RICH_REPLAY_TOKEN_SUMMARY,
-      RICH_REPLAY_MODEL_STEP_STARTED_SUMMARY,
-      RICH_REPLAY_MODEL_STEP_FINISHED_SUMMARY,
       RICH_REPLAY_STATE_SNAPSHOT_SUMMARY,
       RICH_REPLAY_STATE_DELTA_SUMMARY,
       RICH_REPLAY_TODO_SUMMARY,
       RICH_REPLAY_NOTIFICATION_SUMMARY,
       RICH_REPLAY_SUBAGENT_STATUS_SUMMARY,
       RICH_REPLAY_BACKGROUND_TASK_SUMMARY,
-      RICH_REPLAY_INJECTION_QUEUED_SUMMARY,
-      RICH_REPLAY_INJECTION_APPLIED_SUMMARY,
-      RICH_REPLAY_QUESTION_SUMMARY,
-      RICH_REPLAY_QUESTION_ANSWER_SUMMARY,
       RICH_REPLAY_SUBAGENT_STOPPED_SUMMARY,
       RICH_REPLAY_SUBAGENT_RESUMED_SUMMARY,
       RICH_REPLAY_MANUAL_ACTION_SUMMARY,
       RICH_REPLAY_OUTPUT_TEXT,
     ]) {
       await expectTimelineTextVisible(page, text);
+    }
+    for (const text of [
+      RICH_REPLAY_TOKEN_SUMMARY,
+      RICH_REPLAY_MODEL_STEP_STARTED_SUMMARY,
+      RICH_REPLAY_MODEL_STEP_FINISHED_SUMMARY,
+      RICH_REPLAY_INJECTION_QUEUED_SUMMARY,
+      RICH_REPLAY_INJECTION_APPLIED_SUMMARY,
+      RICH_REPLAY_QUESTION_SUMMARY,
+      RICH_REPLAY_QUESTION_ANSWER_SUMMARY,
+    ]) {
+      await expect(page.getByText(text)).toHaveCount(0);
     }
     await expectTimelineTextVisible(page, "Tool call: read");
     await expectTimelineTextVisible(page, "Tool result: read");
@@ -1046,7 +1076,9 @@ async function runRealSseBackgroundSubagentScenario(
       expect(state.streamRequests).toEqual([]);
     }
 
-    await expectTimelineTextVisible(page, SUBAGENT_MULTIPLEX_CHUNK);
+    await expect(
+      page.locator(".at-chat-view").getByText(SUBAGENT_MULTIPLEX_CHUNK),
+    ).toHaveCount(0);
     await expect(page.getByRole("button", { exact: true, name: "Stop" })).toBeHidden({
       timeout: 15_000,
     });
@@ -1100,7 +1132,9 @@ async function runRealSseBackgroundSubagentReconnectScenario(
       },
     });
     await expectTimelineTextVisible(page, MAIN_MULTIPLEX_CHUNK);
-    await expectTimelineTextVisible(page, SUBAGENT_MULTIPLEX_CHUNK);
+    await expect(
+      page.locator(".at-chat-view").getByText(SUBAGENT_MULTIPLEX_CHUNK),
+    ).toHaveCount(0);
 
     await expect.poll(() => state.multiplexRequests.some(
       (request) =>
@@ -1110,13 +1144,15 @@ async function runRealSseBackgroundSubagentReconnectScenario(
     )).toBe(true);
 
     await expectTimelineTextVisible(page, MAIN_MULTIPLEX_RESUMED_CHUNK);
-    await expectTimelineTextVisible(page, SUBAGENT_MULTIPLEX_RESUMED_CHUNK);
+    await expect(
+      page.locator(".at-chat-view").getByText(SUBAGENT_MULTIPLEX_RESUMED_CHUNK),
+    ).toHaveCount(0);
     await expect(
       page.locator(".at-message").filter({ hasText: MAIN_MULTIPLEX_CHUNK }),
     ).toHaveCount(1);
     await expect(
       page.locator(".at-message").filter({ hasText: SUBAGENT_MULTIPLEX_CHUNK }),
-    ).toHaveCount(1);
+    ).toHaveCount(0);
     await expect(page.getByRole("button", { exact: true, name: "Stop" })).toBeHidden({
       timeout: 15_000,
     });
@@ -1203,6 +1239,116 @@ async function runRealSseTerminalBackgroundSubagentReconnectScenario(
     await page.mouse.move(320, 120);
     await page.screenshot({
       path: screenshotPath(options.screenshotName, SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+}
+
+async function runRealSseSubagentStdoutScenario(page: Page): Promise<void> {
+  const state = createRealSseSubagentStdoutState();
+  const unhandledApiRoutes: string[] = [];
+  const appServer = await serveFrontendDist({
+    handleRequest: (request, response) =>
+      handleRealSseSubagentStdoutHttpApi(
+        request,
+        response,
+        state,
+        unhandledApiRoutes,
+      ),
+  });
+  try {
+    await installShellState(page);
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expect(page.getByText("Parent real SSE stdout output")).toBeVisible();
+
+    const toolCard = page
+      .locator('.at-message-tool.is-openable-subagent[data-tool-name="spawn_subagent"]')
+      .filter({ hasText: REAL_SSE_STDOUT_SUBAGENT_TITLE })
+      .first();
+    await expect(toolCard).toBeVisible();
+    await toolCard.locator(".at-message-tool-summary").click();
+
+    const panel = page.locator(".at-subagent-session-view");
+    await expect(panel.getByRole("heading", {
+      name: REAL_SSE_STDOUT_SUBAGENT_TITLE,
+    })).toBeVisible();
+    await expect(panel.locator(".at-subagent-session-prompt")).toContainText(
+      REAL_SSE_STDOUT_SUBAGENT_PROMPT,
+    );
+    await expect.poll(() => state.subagentStreamRequests).toEqual([
+      {
+        afterEventId: "0",
+        lastEventId: null,
+      },
+    ]);
+
+    const liveText = panel
+      .locator(`.at-timeline-row[data-run-id="${SUBAGENT_RUN_ID}"]`)
+      .locator(".at-message-streaming-text")
+      .first();
+    await expect(liveText).toBeVisible();
+    await expect.poll(async () => ((await liveText.textContent()) ?? "").length)
+      .toBeGreaterThan(0);
+    const firstSamples = await sampleLocatorTextLengths(liveText, 5, 80);
+    expect(firstSamples[0] ?? 0).toBeGreaterThan(0);
+    expect(firstSamples[0] ?? REAL_SSE_STDOUT_CHUNKS[0].length)
+      .toBeLessThan(REAL_SSE_STDOUT_CHUNKS[0].length);
+    expect(new Set(firstSamples).size).toBeGreaterThanOrEqual(3);
+    expect(Math.max(...firstSamples)).toBeLessThan(REAL_SSE_STDOUT_CHUNKS[0].length);
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-real-sse-subagent-stdout-mid-stream.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+
+    await expect(
+      panel.locator(".at-message").filter({ hasText: REAL_SSE_STDOUT_FULL }),
+    ).toHaveCount(1, {
+      timeout: 20_000,
+    });
+    await expect(panel.locator(".streaming-cursor")).toHaveCount(0, {
+      timeout: 20_000,
+    });
+    await expect(panel.locator(".at-subagent-session-badge")).toHaveText(
+      "completed",
+    );
+    await expect.poll(() => state.messageRequestCount).toBeGreaterThan(0);
+    await expect(
+      page.locator(".at-chat-view").getByText("STDOUT_ALPHA"),
+    ).toHaveCount(0);
+    await expect(
+      panel.locator(".at-message").filter({ hasText: "STDOUT_ALPHA" }),
+    ).toHaveCount(1);
+    await expectNoDocumentScroll(
+      page,
+      "real SSE subagent stdout should stay inside the fixed shell",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+
+    await page.reload();
+    await waitForV2Shell(page);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expect(panel.getByRole("heading", {
+      name: REAL_SSE_STDOUT_SUBAGENT_TITLE,
+    })).toBeVisible();
+    await expect(
+      panel.locator(".at-message").filter({ hasText: REAL_SSE_STDOUT_FULL }),
+    ).toHaveCount(1);
+    await expect(panel.locator(".streaming-cursor")).toHaveCount(0);
+    await expect(
+      page.locator(".at-chat-view").getByText("STDOUT_ALPHA"),
+    ).toHaveCount(0);
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-real-sse-subagent-stdout-replay.png",
+        SCREENSHOT_FOLDER,
+      ),
     });
   } finally {
     await appServer.close();
@@ -1403,6 +1549,177 @@ async function handleRealSseApi(
     return true;
   }
   return false;
+}
+
+async function handleRealSseSubagentStdoutHttpApi(
+  request: IncomingMessage,
+  response: ServerResponse,
+  state: RealSseSubagentStdoutState,
+  unhandledApiRoutes: string[],
+): Promise<boolean> {
+  const url = new URL(request.url ?? "/", "http://127.0.0.1");
+  if (!url.pathname.startsWith("/api/")) {
+    return false;
+  }
+  const path = url.pathname.replace(/^\/api/, "");
+  const method = request.method ?? "GET";
+  if (
+    method === "GET" &&
+    path === `/sessions/${SESSION_ID}/subagents/events`
+  ) {
+    handleTimedSubagentStdoutSse(request, response, state, url);
+    return true;
+  }
+  if (method !== "GET") {
+    sendJson(response, { status: "ok" });
+    return true;
+  }
+  if (path === "/system/health" || path === "/system/live") {
+    sendJson(response, { status: "ok" });
+    return true;
+  }
+  if (path === "/system/control-plane") {
+    sendJson(response, { enabled: false });
+    return true;
+  }
+  if (path === "/system/configs/ui-language") {
+    sendJson(response, { language: "zh-CN" });
+    return true;
+  }
+  if (path === "/system/configs/general") {
+    sendJson(response, { shell_safety_policy_enabled: true });
+    return true;
+  }
+  if (path === "/speech/config") {
+    sendJson(response, {
+      configured: false,
+      language: "zh-CN",
+      supported_models: [],
+    });
+    return true;
+  }
+  if (path === "/workspaces") {
+    sendJson(response, [realSseSubagentStdoutWorkspace()]);
+    return true;
+  }
+  if (path === `/workspaces/${WORKSPACE_ID}/sessions/sidebar`) {
+    sendJson(response, {
+      has_more: false,
+      items: [realSseSubagentStdoutSidebarSession()],
+      next_cursor: null,
+    });
+    return true;
+  }
+  if (path === "/sessions/sidebar") {
+    sendJson(response, [realSseSubagentStdoutSidebarSession()]);
+    return true;
+  }
+  if (path === `/sessions/${SESSION_ID}`) {
+    sendJson(response, realSseSubagentStdoutSession());
+    return true;
+  }
+  if (path === `/sessions/${SESSION_ID}/messages`) {
+    sendJson(response, realSseSubagentStdoutParentMessages());
+    return true;
+  }
+  if (path === `/sessions/${SESSION_ID}/subagents`) {
+    state.subagentRecordRequestCount += 1;
+    sendJson(response, [realSseSubagentStdoutRecord(state)]);
+    return true;
+  }
+  if (
+    path ===
+    `/sessions/${SESSION_ID}/agents/${SUBAGENT_RUN_ID}/messages`
+  ) {
+    sendJson(response, []);
+    return true;
+  }
+  if (
+    path ===
+    `/sessions/${SESSION_ID}/agents/${REAL_SSE_STDOUT_SUBAGENT_INSTANCE_ID}/messages`
+  ) {
+    state.messageRequestCount += 1;
+    sendJson(response, realSseSubagentStdoutMessages(state));
+    return true;
+  }
+  if (
+    path === `/sessions/${SESSION_ID}/agents` ||
+    path === `/sessions/${SESSION_ID}/tasks` ||
+    path === "/automation/projects"
+  ) {
+    sendJson(response, []);
+    return true;
+  }
+  if (path === `/sessions/${SESSION_ID}/rounds`) {
+    sendJson(response, { has_more: false, items: [], next_cursor: null });
+    return true;
+  }
+  if (path === `/sessions/${SESSION_ID}/recovery`) {
+    sendJson(response, {
+      active_run: null,
+      background_tasks: [],
+      paused_subagent: null,
+      pending_tool_approvals: [],
+      pending_user_questions: [],
+      round_snapshot: null,
+    });
+    return true;
+  }
+  if (path === `/sessions/${SESSION_ID}/token-usage`) {
+    sendJson(response, { by_role: {}, input_tokens: 0, output_tokens: 0 });
+    return true;
+  }
+  if (path === "/roles:options") {
+    sendJson(response, {
+      coordinator_role: {
+        description: "Coordinates delegated work.",
+        name: "Coordinator",
+        role_id: "Coordinator",
+      },
+      coordinator_role_id: "Coordinator",
+      main_agent_role: {
+        description: "Handles primary chat work.",
+        name: "Main Agent",
+        role_id: "MainAgent",
+      },
+      main_agent_role_id: "MainAgent",
+      normal_mode_roles: [
+        {
+          description: "Default chat role.",
+          name: "Default",
+          role_id: "MainAgent",
+        },
+      ],
+      subagent_roles: [
+        {
+          description: "Builds and verifies focused changes.",
+          name: REAL_SSE_STDOUT_ROLE_ID,
+          role_id: REAL_SSE_STDOUT_ROLE_ID,
+        },
+      ],
+    });
+    return true;
+  }
+  if (path === "/system/configs/model/profiles") {
+    sendJson(response, {
+      default: {
+        is_default: true,
+        model: "gpt-4o-mini",
+        provider: "openai",
+      },
+    });
+    return true;
+  }
+  if (path === "/system/configs/orchestration") {
+    sendJson(response, {
+      default_orchestration_preset_id: "team",
+      presets: [],
+    });
+    return true;
+  }
+  unhandledApiRoutes.push(`${method} ${path}${url.search}`);
+  sendJson(response, { detail: `Unhandled real SSE stdout route: ${path}` }, 404);
+  return true;
 }
 
 async function handleRuntimeCursorHttpApi(
@@ -1845,6 +2162,114 @@ function handleRuntimeCursorSse(
   response.end();
 }
 
+function handleTimedSubagentStdoutSse(
+  request: IncomingMessage,
+  response: ServerResponse,
+  state: RealSseSubagentStdoutState,
+  url: URL,
+): void {
+  const afterEventId = url.searchParams.get("after_event_id") ?? "0";
+  const lastEventIdHeader = request.headers["last-event-id"];
+  const lastEventId = Array.isArray(lastEventIdHeader)
+    ? lastEventIdHeader[0] ?? null
+    : lastEventIdHeader ?? null;
+  state.subagentStreamRequests.push({
+    afterEventId,
+    lastEventId,
+  });
+  response.writeHead(200, {
+    "Cache-Control": "no-cache",
+    "Content-Type": "text/event-stream",
+    "X-Accel-Buffering": "no",
+  });
+  void writeTimedSubagentStdoutSse(response, state, afterEventId);
+}
+
+async function writeTimedSubagentStdoutSse(
+  response: ServerResponse,
+  state: RealSseSubagentStdoutState,
+  afterEventId: string,
+): Promise<void> {
+  if (afterEventId !== "0") {
+    response.write("retry: 60000\n\n");
+    response.end();
+    return;
+  }
+  response.write("retry: 100\n\n");
+  response.write(sseFrame({
+    data: runEvent({
+      eventId: 1,
+      payload: { phase: "streaming" },
+      relayEventType: "run_started",
+      roleId: REAL_SSE_STDOUT_ROLE_ID,
+      runId: SUBAGENT_RUN_ID,
+      type: "run.started",
+    }),
+    event: "run.started",
+    id: 1,
+  }));
+  await delayMs(120);
+  response.write(sseFrame({
+    data: runEvent({
+      eventId: 2,
+      payload: { text: REAL_SSE_STDOUT_CHUNKS[0] },
+      relayEventType: "text_delta",
+      roleId: REAL_SSE_STDOUT_ROLE_ID,
+      runId: SUBAGENT_RUN_ID,
+      type: "message.text.delta",
+    }),
+    event: "message.text.delta",
+    id: 2,
+  }));
+  await delayMs(900);
+  response.write(sseFrame({
+    data: runEvent({
+      eventId: 3,
+      payload: { text: REAL_SSE_STDOUT_CHUNKS[1] },
+      relayEventType: "text_delta",
+      roleId: REAL_SSE_STDOUT_ROLE_ID,
+      runId: SUBAGENT_RUN_ID,
+      type: "message.text.delta",
+    }),
+    event: "message.text.delta",
+    id: 3,
+  }));
+  await delayMs(900);
+  response.write(sseFrame({
+    data: runEvent({
+      eventId: 4,
+      payload: { text: REAL_SSE_STDOUT_CHUNKS[2] },
+      relayEventType: "text_delta",
+      roleId: REAL_SSE_STDOUT_ROLE_ID,
+      runId: SUBAGENT_RUN_ID,
+      type: "message.text.delta",
+    }),
+    event: "message.text.delta",
+    id: 4,
+  }));
+  await delayMs(120);
+  state.completed = true;
+  response.write(sseFrame({
+    data: runEvent({
+      eventId: 5,
+      payload: { status: "completed" },
+      relayEventType: "run_completed",
+      roleId: REAL_SSE_STDOUT_ROLE_ID,
+      runId: SUBAGENT_RUN_ID,
+      type: "run.completed",
+    }),
+    event: "run.completed",
+    id: 5,
+  }));
+  response.end();
+}
+
+function delayMs(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
+}
+
 function runtimeCursorSidebarSession(): Record<string, unknown> {
   return {
     active_run_status: null,
@@ -1855,6 +2280,130 @@ function runtimeCursorSidebarSession(): Record<string, unknown> {
     updated_at: "2026-06-25T08:30:00Z",
     workspace_id: WORKSPACE_ID,
   };
+}
+
+function createRealSseSubagentStdoutState(): RealSseSubagentStdoutState {
+  return {
+    completed: false,
+    messageRequestCount: 0,
+    subagentRecordRequestCount: 0,
+    subagentStreamRequests: [],
+  };
+}
+
+function realSseSubagentStdoutWorkspace(): Record<string, unknown> {
+  return {
+    display_name: "agent-teams",
+    last_session_id: SESSION_ID,
+    path: "C:/Users/yex/Documents/workspace/agent-teams",
+    updated_at: "2026-06-25T08:00:00Z",
+    workspace_id: WORKSPACE_ID,
+  };
+}
+
+function realSseSubagentStdoutSidebarSession(): Record<string, unknown> {
+  return {
+    active_run_status: null,
+    created_at: "2026-06-25T08:00:00Z",
+    message_count: 2,
+    session_id: SESSION_ID,
+    title: "TS real SSE stdout subagent",
+    updated_at: "2026-06-25T08:30:00Z",
+    workspace_id: WORKSPACE_ID,
+  };
+}
+
+function realSseSubagentStdoutSession(): Record<string, unknown> {
+  return {
+    can_switch_mode: true,
+    created_at: "2026-06-25T08:00:00Z",
+    normal_model_profile: null,
+    normal_root_role_id: "MainAgent",
+    orchestration_preset_id: null,
+    session_id: SESSION_ID,
+    session_mode: "normal",
+    title: "TS real SSE stdout subagent",
+    updated_at: "2026-06-25T08:30:00Z",
+    workspace_id: WORKSPACE_ID,
+  };
+}
+
+function realSseSubagentStdoutParentMessages(): Record<string, unknown>[] {
+  return [
+    {
+      content: "Parent real SSE stdout output",
+      created_at: "2026-06-26T13:00:01Z",
+      message_id: "real-sse-stdout-parent-message",
+      role_id: "MainAgent",
+      run_id: RUN_ID,
+    },
+    {
+      created_at: "2026-06-26T13:00:02Z",
+      message: {
+        parts: [
+          {
+            content: {
+              prompt: REAL_SSE_STDOUT_SUBAGENT_PROMPT,
+              run_status: "running",
+              status: "running",
+              subagent_instance_id: REAL_SSE_STDOUT_SUBAGENT_INSTANCE_ID,
+              subagent_kind: "normal",
+              subagent_role_id: REAL_SSE_STDOUT_ROLE_ID,
+              subagent_run_id: SUBAGENT_RUN_ID,
+              title: REAL_SSE_STDOUT_SUBAGENT_TITLE,
+            },
+            kind: "tool-return",
+            outcome: "completed",
+            tool_call_id: "call-real-sse-stdout-subagent",
+            tool_name: "spawn_subagent",
+          },
+        ],
+      },
+      message_id: "real-sse-stdout-subagent-tool",
+      role_id: "MainAgent",
+      run_id: RUN_ID,
+    },
+  ];
+}
+
+function realSseSubagentStdoutRecord(
+  state: RealSseSubagentStdoutState,
+): Record<string, unknown> {
+  const status = state.completed ? "completed" : "running";
+  return {
+    created_at: "2026-06-26T13:00:02Z",
+    instance_id: REAL_SSE_STDOUT_SUBAGENT_INSTANCE_ID,
+    last_event_id: state.completed ? 5 : 0,
+    prompt: REAL_SSE_STDOUT_SUBAGENT_PROMPT,
+    role_id: REAL_SSE_STDOUT_ROLE_ID,
+    run_id: SUBAGENT_RUN_ID,
+    run_phase: status,
+    run_status: status,
+    session_id: SESSION_ID,
+    status,
+    subagent_kind: "normal",
+    title: REAL_SSE_STDOUT_SUBAGENT_TITLE,
+    updated_at: state.completed
+      ? "2026-06-26T13:00:05Z"
+      : "2026-06-26T13:00:02Z",
+  };
+}
+
+function realSseSubagentStdoutMessages(
+  state: RealSseSubagentStdoutState,
+): Record<string, unknown>[] {
+  if (!state.completed) {
+    return [];
+  }
+  return [
+    {
+      content: REAL_SSE_STDOUT_FULL,
+      created_at: "2026-06-26T13:00:05Z",
+      message_id: "real-sse-stdout-subagent-final",
+      role_id: REAL_SSE_STDOUT_ROLE_ID,
+      run_id: SUBAGENT_RUN_ID,
+    },
+  ];
 }
 
 function sendJson(response: ServerResponse, body: unknown, status = 200): void {
@@ -2769,6 +3318,32 @@ async function expectTimelineSelectorVisible(
   }
   await expect(locator).toBeVisible();
   return locator;
+}
+
+async function expandFirstProcessedGroup(page: Page): Promise<void> {
+  const group = page.locator("details.at-processed-group").first();
+  const summary = page.locator(".at-processed-group-summary").first();
+  await expect(summary).toBeVisible();
+  if (await group.evaluate((element) => (element as HTMLDetailsElement).open)) {
+    return;
+  }
+  await summary.click();
+  await expect.poll(() =>
+    group.evaluate((element) => (element as HTMLDetailsElement).open),
+  ).toBe(true);
+}
+
+async function sampleLocatorTextLengths(
+  locator: Locator,
+  count: number,
+  intervalMs: number,
+): Promise<number[]> {
+  const lengths: number[] = [];
+  for (let index = 0; index < count; index += 1) {
+    lengths.push(((await locator.textContent()) ?? "").length);
+    await locator.page().waitForTimeout(intervalMs);
+  }
+  return lengths;
 }
 
 function countOccurrences(value: string, needle: string): number {

@@ -265,19 +265,28 @@ export function MessageTimeline({
     () => runtimeEntriesToRows(runtimeEntries, runtimeState.runs, variant),
     [runtimeEntries, runtimeState.runs, variant],
   );
+  const displayPersistedRows = useMemo(
+    () =>
+      dropPersistedRowsCoveredByTerminalRuntime(
+        persistedRows,
+        runtimeRows,
+        variant,
+      ),
+    [persistedRows, runtimeRows, variant],
+  );
   const timelineRowsBeforeGrouping = useMemo(
     () =>
       dropExactTextRows(
         mergeToolRowsByCallId(
           mergeRuntimeThinkingRowsIntoHydratedRows(
-            persistedRows,
+            displayPersistedRows,
             runtimeRows.filter(timelineRowHasRenderableContent),
           ),
           { dedupeNonToolRows: false },
         ),
         suppressExactText,
       ),
-    [persistedRows, runtimeRows, suppressExactText],
+    [displayPersistedRows, runtimeRows, suppressExactText],
   );
   const rows = useMemo(
     () =>
@@ -1847,6 +1856,51 @@ function timelineRowNonToolContentDedupeKey(row: TimelineRow): string | null {
   ].join(":");
 }
 
+function dropPersistedRowsCoveredByTerminalRuntime(
+  persistedRows: TimelineRow[],
+  runtimeRows: TimelineRow[],
+  variant: "session" | "subagent-panel",
+): TimelineRow[] {
+  if (variant !== "subagent-panel") {
+    return persistedRows;
+  }
+  const terminalRuntimeTextsByRunId = new Map<string, Set<string>>();
+  for (const row of runtimeRows) {
+    const runId = row.runId?.trim() ?? "";
+    if (runId.length === 0 || row.source !== "runtime") {
+      continue;
+    }
+    const hasOpenText = row.parts.some(
+      (part) => part.kind === "text" && part.streaming,
+    );
+    if (hasOpenText) {
+      continue;
+    }
+    const text = normalizedTimelineText(rowCopyText(row.parts));
+    if (text.length === 0) {
+      continue;
+    }
+    const texts = terminalRuntimeTextsByRunId.get(runId) ?? new Set<string>();
+    texts.add(text);
+    terminalRuntimeTextsByRunId.set(runId, texts);
+  }
+  if (terminalRuntimeTextsByRunId.size === 0) {
+    return persistedRows;
+  }
+  return persistedRows.filter((row) => {
+    const runId = row.runId?.trim() ?? "";
+    if (runId.length === 0) {
+      return true;
+    }
+    const terminalTexts = terminalRuntimeTextsByRunId.get(runId);
+    if (terminalTexts === undefined) {
+      return true;
+    }
+    const text = normalizedTimelineText(rowCopyText(row.parts));
+    return text.length === 0 || !terminalTexts.has(text);
+  });
+}
+
 function timelineNonToolPartDedupeText(part: TimelineRenderPart): string {
   if (part.kind === "text" || part.kind === "thinking") {
     return part.text;
@@ -2836,7 +2890,8 @@ function runtimeEntriesAfterHydration(
         hydratedText ?? "",
         hydratedThinkingText ?? "",
         hydratedToolStates,
-      )
+      ) &&
+        !shouldPreserveTerminalRuntimeTextEntry(nextEntry, runState, variant)
         ? []
         : [nextEntry];
     });
@@ -2904,6 +2959,20 @@ function openRuntimeEntriesWithIdleCursor(
     return [...rowPipelineEntries, runtimePendingCursorEntry(latestEntry, runState)];
   }
   return rowPipelineEntries;
+}
+
+function shouldPreserveTerminalRuntimeTextEntry(
+  entry: TimelineEntry,
+  runState: RuntimeRunState,
+  variant: "session" | "subagent-panel",
+): boolean {
+  return (
+    variant === "subagent-panel" &&
+    runState.scope === "subagent" &&
+    runState.status === "closed" &&
+    (entry.kind === "text_delta" || entry.kind === "output_delta") &&
+    normalizedTimelineText(rowCopyText(runtimeEntryParts(entry, variant))).length > 0
+  );
 }
 
 function runtimeSilentOpenLifecycleEntry(

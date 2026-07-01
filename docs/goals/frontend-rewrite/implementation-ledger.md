@@ -2,6 +2,32 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-01 Real SSE Subagent Stdout Cadence
+
+### Scope
+- Re-checked the matrix rows that were still calling out subagent stdout cadence as a gap: `MSG-02`, `STREAM-02`, and `SUB-01`.
+- Added a packed `/app/` browser scenario that uses a real HTTP `text/event-stream` response with delayed `response.write(...)` chunks for a running subagent stdout flow. This is not a component mock and not a synchronous fixture dump; the browser receives separate SSE writes over time.
+- Preserved closed subagent runtime text rows during terminal history hydration when the hydrated row is just the same final stdout text. This keeps the typewriter catch-up visible, prevents a terminal jump to a fully hydrated row, and avoids replay duplicates in the right-side subagent panel.
+- Verified that the parent `.at-chat-view` stays clean while the right-side subagent panel shows the prompt, running/completed state, incremental stdout text, and replayed final output.
+- Kept final V1 sign-off open; this closes the real HTTP SSE stdout cadence slice, not full production-backend manual orchestration coverage or broad V1 visual parity.
+
+### Verification
+- `npm run build` passed.
+- `npm run test:browser -- v2-real-sse-stale-recovery.spec.ts --project=chromium -g "subagent stdout"` passed with 1 Chromium test.
+- `npm test -- src/test/MessageTimeline.test.tsx` passed with 151 tests.
+- `npm test -- src/test/SubagentSessionView.test.tsx` passed with 21 tests.
+- `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium` passed with 10 Chromium tests.
+- `npm run test:browser -- v2-real-sse-stale-recovery.spec.ts --project=chromium -g "rich real SSE|background subagent|background-subagent|per-run cursors"` passed with 5 Chromium tests.
+- `npm run test:browser -- v2-real-sse-stale-recovery.spec.ts --project=chromium` passed with 18 Chromium tests.
+- `npm run lint` passed.
+- Browser screenshot artifacts inspected:
+  - `.tmp/frontend-v2-ts-stream/v2-real-sse-subagent-stdout-mid-stream.png`
+  - `.tmp/frontend-v2-ts-stream/v2-real-sse-subagent-stdout-replay.png`
+
+### Reviewer
+- Mid-stream screenshot inspection confirmed the right panel shows the subagent title, prompt, `running` status, partial stdout with the streaming cursor, and no child stdout in the parent timeline.
+- Replay screenshot inspection confirmed the right panel shows `completed`, full stdout once, no stale cursor, and the parent timeline still contains only the parent prompt plus the subagent tool card.
+
 ## 2026-07-01 Skills Browser And Component Evidence Sweep
 
 ### Scope

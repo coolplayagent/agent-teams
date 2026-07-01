@@ -8227,3 +8227,25 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent matrix scan, focused V2 browser coverage, screenshot evidence, and matrix/ledger updates completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-07-01 Settings Parity Browser Gate And Proxy Semantics
+
+### Scope
+- Re-checked the active frontend rewrite goal and Settings rows before editing, then moved from symptom-level fixes to a stricter Settings parity gate.
+- Added `frontend/app/browser-tests/v2-settings-parity.spec.ts` as an independent packed-browser test for the Settings shell instead of appending more scenarios to the existing large settings-actions spec.
+- The new browser gate opens all 13 V1-aligned Settings first-level entries, verifies System-only pages remain nested under the System secondary page, and screenshots the real packed UI.
+- Added browser coverage for Notifications save behavior: rule labels render, hidden channels are preserved visibly, a rule toggle saves through `/system/configs/notifications`, and unhandled Settings routes fail the test.
+- Fixed `ProxySettingsSection` so backend `ssl_verify: null` maps to the UI's `Inherit default` option instead of incorrectly showing `Skip verification`.
+- Added browser coverage for Proxy probe and save behavior: saved passwords stay preserved, probe payloads carry `ssl_verify: null`, probe feedback renders, and Save calls both proxy save and proxy reload.
+- Rebuilt `frontend/dist/app` so the dist-served browser tests exercise the source fix.
+- Updated the closure matrix for `SET-01`, `SET-05`, and `SET-11`. This slice does not claim complete Settings PASS, formal V1 visual sign-off, release cleanup sign-off, or V2 frontend completion.
+
+### Verification
+- `npm run build` passed, including frontend typecheck, desktop build, and Vite production build.
+- `npm run test:browser -- v2-settings-parity.spec.ts --project=chromium` passed with 2 browser tests.
+- `npm run lint` passed.
+- Inspected `.tmp/frontend-v2-ts-settings-parity/v2-settings-v1-section-survey.png`; it shows the V1-aligned Settings section list and System secondary page entries without flattening.
+- Inspected `.tmp/frontend-v2-ts-settings-parity/v2-settings-notification-proxy-actions.png`; it shows Proxy with `Inherit default` selected for saved inherited SSL verification inside the fixed Settings shell.
+
+### Reviewer
+- Main-agent source fix, packed browser parity gate, screenshot inspection, frontend build/lint, and matrix/ledger updates completed for this slice. No full Settings subsystem PASS or final V2 completion is claimed.

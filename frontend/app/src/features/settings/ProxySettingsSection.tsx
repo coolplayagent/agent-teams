@@ -332,7 +332,7 @@ function serializeSslVerify(value: boolean | null | undefined): ProxySslVerifyVa
     return "true";
   }
   if (value === null || value === undefined) {
-    return "false";
+    return "";
   }
   return "false";
 }

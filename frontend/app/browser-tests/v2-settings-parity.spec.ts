@@ -1,3 +1,5 @@
+import { writeFile } from "node:fs/promises";
+
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import {
@@ -8,6 +10,7 @@ import {
   mockShellApi,
   screenshotPath,
   serveFrontendDist,
+  waitForV1Shell,
   waitForV2Shell,
   type MockApiRouteContext,
 } from "./support/frontend-app";
@@ -50,6 +53,70 @@ interface SettingsParityState {
   proxySavePayloads: Record<string, unknown>[];
   requestedPaths: string[];
 }
+
+interface NotificationRowSnapshot {
+  browserChecked: boolean;
+  browserDisabled: boolean;
+  description: string;
+  enabled: boolean;
+  hasHiddenChannels: boolean;
+  hiddenText: string[];
+  title: string;
+  toastChecked: boolean;
+  toastDisabled: boolean;
+  type: string;
+}
+
+const EXPECTED_NOTIFICATION_ROWS: NotificationRowSnapshot[] = [
+  {
+    browserChecked: true,
+    browserDisabled: false,
+    description: "When an agent asks for approval before a tool call.",
+    enabled: true,
+    hasHiddenChannels: false,
+    hiddenText: [],
+    title: "Tool approval requested",
+    toastChecked: true,
+    toastDisabled: false,
+    type: "tool_approval_requested",
+  },
+  {
+    browserChecked: false,
+    browserDisabled: false,
+    description: "When a run finishes successfully.",
+    enabled: true,
+    hasHiddenChannels: false,
+    hiddenText: [],
+    title: "Run completed",
+    toastChecked: true,
+    toastDisabled: false,
+    type: "run_completed",
+  },
+  {
+    browserChecked: true,
+    browserDisabled: false,
+    description: "When a run stops because of an error.",
+    enabled: true,
+    hasHiddenChannels: true,
+    hiddenText: [],
+    title: "Run failed",
+    toastChecked: false,
+    toastDisabled: false,
+    type: "run_failed",
+  },
+  {
+    browserChecked: false,
+    browserDisabled: true,
+    description: "When a run is stopped by user action.",
+    enabled: false,
+    hasHiddenChannels: false,
+    hiddenText: [],
+    title: "Run stopped",
+    toastChecked: false,
+    toastDisabled: true,
+    type: "run_stopped",
+  },
+];
 
 test("surveys V1 settings sections and nested system pages from the browser", async ({
   page,
@@ -108,6 +175,89 @@ test("surveys V1 settings sections and nested system pages from the browser", as
     await page.screenshot({
       path: screenshotPath("v2-settings-v1-section-survey.png", SCREENSHOT_FOLDER),
     });
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("pairs V1 General notification controls with the V2 Notifications page", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state = settingsParityState();
+  try {
+    await installShellState(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleSettingsParityApi(context, state),
+      sessionTitle: "TS notification V1 V2 pairing",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/`);
+    await waitForV1Shell(page);
+    await page.locator("#settings-btn").click();
+    await expect(page.locator("#settings-modal.settings-modal-visible"))
+      .toBeVisible();
+    await page.locator('.settings-tab[data-tab="general"]').click();
+    await expect(page.locator("#general-panel .notification-row"))
+      .toHaveCount(4);
+    await expect(page.locator("#save-general-btn")).toBeVisible();
+    await expect(page.locator("#save-notifications-btn")).toHaveCount(0);
+    const v1Rows = await extractV1NotificationRows(page);
+    expect(v1Rows).toEqual(EXPECTED_NOTIFICATION_ROWS);
+    await page
+      .locator('#general-panel .notification-row[data-notif-type="run_failed"]')
+      .scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: screenshotPath("v1-general-notifications-pairing.png", SCREENSHOT_FOLDER),
+    });
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    const settings = await openSettingsDialog(page);
+    await settings
+      .getByRole("navigation", { name: "Settings sections" })
+      .getByRole("button", { name: "Notifications" })
+      .click();
+    await expect(settings.getByRole("heading", { name: "Notifications" }))
+      .toBeVisible();
+    await expect(settings.locator(".at-notification-row")).toHaveCount(4);
+    const v2Rows = await extractV2NotificationRows(settings);
+    expect(v2Rows).toEqual(
+      EXPECTED_NOTIFICATION_ROWS.map((row) =>
+        row.type === "run_failed"
+          ? { ...row, hiddenText: ["1 hidden channel preserved."] }
+          : row,
+      ),
+    );
+    await expect(settings.getByRole("button", { name: "Reset" })).toBeVisible();
+    await expect(settings.getByRole("button", { name: "Save" })).toBeVisible();
+    await settings.getByRole("button", { name: "Save" }).scrollIntoViewIfNeeded();
+    await page.screenshot({
+      path: screenshotPath("v2-notifications-v1-pairing.png", SCREENSHOT_FOLDER),
+    });
+
+    await writeFile(
+      screenshotPath("notifications-v1-v2-dom.json", SCREENSHOT_FOLDER),
+      `${JSON.stringify(
+        {
+          v1: {
+            action: "General Save owns notification persistence",
+            rows: v1Rows,
+          },
+          v2: {
+            action: "Notifications page exposes Reset and Save",
+            rows: v2Rows,
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(page, "v1/v2 notification pairing should stay framed");
   } finally {
     await appServer.close();
   }
@@ -270,6 +420,100 @@ async function systemPageLabels(settings: Locator): Promise<string[]> {
   );
 }
 
+async function extractV1NotificationRows(page: Page): Promise<NotificationRowSnapshot[]> {
+  return page.locator("#general-panel .notification-row").evaluateAll((rows) =>
+    rows.map((row) => {
+      function normalize(text: string | null | undefined): string {
+        return (text ?? "").replace(/\s+/g, " ").trim();
+      }
+      function text(selector: string): string {
+        return normalize(row.querySelector(selector)?.textContent);
+      }
+      function inputState(selector: string): { checked: boolean; disabled: boolean } {
+        const input = row.querySelector(selector);
+        if (!(input instanceof HTMLInputElement)) {
+          return { checked: false, disabled: false };
+        }
+        return { checked: input.checked, disabled: input.disabled };
+      }
+      const enabled = inputState('input[id$="-enabled"]');
+      const browser = inputState('input[id$="-browser"]');
+      const toast = inputState('input[id$="-toast"]');
+      return {
+        browserChecked: browser.checked,
+        browserDisabled: browser.disabled,
+        description: text(".notification-row-desc"),
+        enabled: enabled.checked,
+        hasHiddenChannels: row.getAttribute("data-has-hidden-channels") === "true",
+        hiddenText: [],
+        title: text(".notification-row-title"),
+        toastChecked: toast.checked,
+        toastDisabled: toast.disabled,
+        type: row.getAttribute("data-notif-type") ?? "",
+      };
+    }),
+  );
+}
+
+async function extractV2NotificationRows(
+  settings: Locator,
+): Promise<NotificationRowSnapshot[]> {
+  return settings.locator(".at-notification-row").evaluateAll((rows) =>
+    rows.map((row) => {
+      function normalize(text: string | null | undefined): string {
+        return (text ?? "").replace(/\s+/g, " ").trim();
+      }
+      function typeFromTitle(title: string): string {
+        if (title === "Tool approval requested") {
+          return "tool_approval_requested";
+        }
+        if (title === "Run completed") {
+          return "run_completed";
+        }
+        if (title === "Run failed") {
+          return "run_failed";
+        }
+        if (title === "Run stopped") {
+          return "run_stopped";
+        }
+        return "";
+      }
+      const labels = Array.from(row.querySelectorAll(".ant-checkbox-wrapper")).map(
+        (label) => {
+          const input = label.querySelector("input");
+          return {
+            checked: input instanceof HTMLInputElement ? input.checked : false,
+            disabled: input instanceof HTMLInputElement ? input.disabled : false,
+            label: normalize(label.textContent),
+          };
+        },
+      );
+      const browser = labels.find((label) => label.label === "Browser");
+      const toast = labels.find((label) => label.label === "Toast");
+      const copyLines = Array.from(
+        row.querySelectorAll(".at-notification-copy > span"),
+      )
+        .map((item) => normalize(item.textContent))
+        .filter(Boolean);
+      const switchElement = row.querySelector('[role="switch"]');
+      const type = typeFromTitle(copyLines[0] ?? "");
+      const hiddenText = copyLines.slice(2);
+      return {
+        browserChecked: browser?.checked ?? false,
+        browserDisabled: browser?.disabled ?? false,
+        description: copyLines[1] ?? "",
+        enabled: switchElement?.getAttribute("aria-checked") === "true",
+        hasHiddenChannels: hiddenText.length > 0,
+        hiddenText,
+        title: copyLines[0] ?? "",
+        toastChecked: toast?.checked ?? false,
+        toastDisabled: toast?.disabled ?? false,
+        type,
+      };
+    }),
+  );
+}
+
 function settingsParityState(): SettingsParityState {
   return {
     failNextNotificationSave: false,
@@ -304,6 +548,10 @@ async function handleSettingsParityApi(
   }
   if (method === "GET" && path === "/system/configs/model/profiles") {
     await context.fulfillJson(modelProfiles());
+    return true;
+  }
+  if (method === "GET" && path === "/system/configs/speech") {
+    await context.fulfillJson(speechConfig());
     return true;
   }
   if (method === "GET" && path === "/system/configs/orchestration") {
@@ -472,6 +720,14 @@ function modelProfiles(): Record<string, Record<string, unknown>> {
       model: "gpt-5-mini",
       provider: "openai_compatible",
     },
+  };
+}
+
+function speechConfig(): Record<string, unknown> {
+  return {
+    language: "en-US",
+    prompt: "Use concise speech transcription.",
+    stt_profile_name: "default",
   };
 }
 

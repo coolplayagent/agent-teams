@@ -9022,3 +9022,19 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent matrix check, Notifications reset implementation, forced save-error browser coverage, screenshot inspection, and matrix/ledger update completed for this slice. This does not claim `SET-05` Verified, formal V1 visual pairing, broader Settings completion, reviewer sign-off, or final V2 frontend completion.
+
+## 2026-07-01 Notification Settings V1 Pairing Closure
+
+### Scope
+- Re-opened `SET-05` after the reset/error slice and targeted the remaining formal V1 visual pairing gap instead of starting a new Settings surface.
+- Added a packed browser comparison path that opens the V1 root shell, opens Settings, switches to V1 General, captures the embedded Notifications block, and compares it with the V2 Notifications split page.
+- The browser evidence now records the exact four notification rules, descriptions, enabled states, browser/toast channel states, disabled channel states, V1 hidden-channel preservation flag, V2 visible hidden-channel preservation text, and action ownership difference: V1 persists notifications through General Save while V2 exposes Reset plus Save on the Notifications page.
+- Updated `SET-05` from `In progress` to `Verified` and adjusted the closure snapshot from 2 verified rows to 3 verified rows.
+
+### Verification
+- `npm run lint` passed.
+- `npm run test:browser -- v2-settings-parity.spec.ts --project=chromium` passed with 3 Chromium browser tests.
+- Main-agent visual inspection reviewed `.tmp/frontend-v2-ts-settings-parity/v1-general-notifications-pairing.png`, `.tmp/frontend-v2-ts-settings-parity/v2-notifications-v1-pairing.png`, and `.tmp/frontend-v2-ts-settings-parity/notifications-v1-v2-dom.json`.
+
+### Reviewer
+- Main-agent V1/V2 browser pairing, DOM-state evidence, screenshot inspection, and matrix update completed for `SET-05`. This verifies Notifications only; it does not claim complete Settings parity, other Settings rows, reviewer-subagent sign-off for the full rewrite, or final V2 frontend completion.

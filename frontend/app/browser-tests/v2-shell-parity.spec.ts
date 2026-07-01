@@ -1,4 +1,4 @@
-import { expect, test, type Locator } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import {
   ensureScreenshotDir,
@@ -285,6 +285,110 @@ test("keeps V1 settings sections and System secondary-page grouping", async ({
   }
 });
 
+test("keeps workspace and session list interactions framed and compact", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state = sidebarInventoryState();
+  try {
+    await installShellState(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleSidebarInventoryApi(context, state),
+      sessionTitle: "TS sidebar inventory",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+
+    const agentTeamsGroup = workspaceGroup(page, "Agent Teams");
+    const desktopGroup = workspaceGroup(page, "Desktop");
+    await expect(agentTeamsGroup).toBeVisible();
+    await expect(agentTeamsGroup.getByText("C:/work/agent-teams")).toBeVisible();
+    await expect(desktopGroup).toBeVisible();
+    await expect(desktopGroup.getByText("C:/work/desktop")).toBeVisible();
+
+    const selectedRunningItem = sessionItem(page, "Active coding session");
+    await expect(selectedRunningItem).toBeVisible();
+    await expect(selectedRunningItem).toHaveClass(/is-selected/);
+    await expect(selectedRunningItem).toHaveClass(/has-run-indicator-running/);
+    await expect(selectedRunningItem.getByTitle("Running")).toBeVisible();
+    await expect(selectedRunningItem.getByText("bg 2")).toBeVisible();
+    await expect(selectedRunningItem.getByText("ap 1")).toBeVisible();
+    await expect(selectedRunningItem.getByText("q 1")).toBeVisible();
+    await expect(sessionItem(page, "Failed review session"))
+      .toHaveClass(/has-run-indicator-failed/);
+    await expect(sessionItem(page, "Stopped handoff session"))
+      .toHaveClass(/has-run-indicator-stopped/);
+    await expect(sessionItem(page, "Unread follow-up"))
+      .toHaveClass(/has-run-indicator-unread/);
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-sidebar-workspace-session-statuses.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+
+    await expect(page.getByRole("button", {
+      name: "Show more sessions in Agent Teams",
+    })).toBeVisible();
+    await expect(page.getByText("10/12")).toBeVisible();
+    await page.getByRole("button", {
+      name: "Show more sessions in Agent Teams",
+    }).click();
+    await expect(page.getByRole("button", { name: "Agent Teams filler 11" }))
+      .toBeVisible();
+    await expect(page.getByText("10/12")).toHaveCount(0);
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-sidebar-workspace-session-expanded.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+
+    await page.getByRole("button", { name: "Collapse Agent Teams" }).click();
+    await expect(page.getByRole("button", { name: "Expand Agent Teams" }))
+      .toHaveAttribute("aria-expanded", "false");
+    await expect(page.getByRole("button", { name: "Active coding session" }))
+      .toHaveCount(0);
+
+    await page.evaluate(() => {
+      window.dispatchEvent(new Event("agent-teams-focus-session-search"));
+    });
+    const sessionSearch = page.getByRole("searchbox", {
+      name: "Search sessions",
+    });
+    await expect(sessionSearch).toBeFocused();
+    await sessionSearch.fill("active");
+    await expect(page.getByRole("button", { name: "Active coding session" }))
+      .toBeVisible();
+    await expect(page.getByRole("button", { name: "Desktop draft" }))
+      .toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Collapse Agent Teams" }))
+      .toHaveAttribute("aria-expanded", "true");
+
+    await page.getByRole("button", { name: "Sort by project update" }).click();
+    await page.getByText("Sort by project creation").click();
+    await expect(page.getByRole("button", { name: "Sort by project creation" }))
+      .toBeVisible();
+    await page.mouse.click(760, 300);
+    await expect(page.locator(".ant-dropdown:visible")).toHaveCount(0);
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "workspace and session inventory should stay inside the fixed V2 shell",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.screenshot({
+      path: screenshotPath("v2-sidebar-workspace-session-inventory.png", SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
 test("manages sessions and reloads MCP config through V2 shell actions", async ({
   page,
 }) => {
@@ -467,7 +571,7 @@ test("marks unread terminal runs viewed and keeps them viewed after reload", asy
   }
 });
 
-test("keeps subagent session lists lazy on large initial sidebar load", async ({
+test("keeps subagent directories out of large initial sidebar load", async ({
   page,
 }) => {
   const appServer = await serveFrontendDist();
@@ -501,7 +605,7 @@ test("keeps subagent session lists lazy on large initial sidebar load", async ({
     await expect(selectedItem).toHaveClass(/is-selected/);
     await expect(
       selectedItem.getByRole("button", { name: "Toggle subagent sessions" }),
-    ).toBeVisible();
+    ).toHaveCount(0);
     await expect(page.locator(".at-session-subagent-list")).toHaveCount(0);
 
     await page.waitForTimeout(800);
@@ -539,6 +643,18 @@ async function openSystemPage(
   await expect(settings.getByRole("heading", { name: label })).toBeVisible();
 }
 
+function workspaceGroup(page: Page, label: string): Locator {
+  return page.locator(".at-workspace-group").filter({
+    has: page.locator(".at-workspace-group-title").filter({ hasText: label }),
+  });
+}
+
+function sessionItem(page: Page, title: string): Locator {
+  return page.locator(".at-session-item").filter({
+    has: page.getByRole("button", { name: title }),
+  });
+}
+
 async function expectSettingsDialogSettled(settings: Locator): Promise<void> {
   await expect
     .poll(() =>
@@ -568,6 +684,35 @@ async function handleParityApi(
 interface TerminalViewedState {
   terminalViewRequests: string[];
   unread: boolean;
+}
+
+interface SidebarInventoryState {
+  sessions: SidebarInventorySession[];
+  workspaces: SidebarInventoryWorkspace[];
+}
+
+interface SidebarInventoryWorkspace {
+  created_at: string;
+  display_name: string;
+  root_path: string;
+  updated_at: string;
+  workspace_id: string;
+}
+
+interface SidebarInventorySession {
+  active_run_status: string | null;
+  background_task_count?: number;
+  has_unread_terminal_run?: boolean;
+  latest_terminal_run_id?: string;
+  latest_terminal_run_status?: string;
+  latest_terminal_run_updated_at?: string;
+  message_count: number;
+  pending_tool_approval_count?: number;
+  pending_user_question_count?: number;
+  session_id: string;
+  title: string;
+  updated_at: string;
+  workspace_id: string;
 }
 
 interface ShellManagementState {
@@ -745,6 +890,172 @@ function lazyLoadSessionDetail(session: LazyLoadSession): Record<string, unknown
   return {
     can_switch_mode: true,
     created_at: session.created_at,
+    normal_model_profile: null,
+    normal_root_role_id: "MainAgent",
+    orchestration_preset_id: null,
+    session_id: session.session_id,
+    session_mode: "normal",
+    title: session.title,
+    updated_at: session.updated_at,
+    workspace_id: session.workspace_id,
+  };
+}
+
+function sidebarInventoryState(): SidebarInventoryState {
+  return {
+    sessions: sidebarInventorySessions(),
+    workspaces: [
+      {
+        created_at: "2026-01-01T00:00:00Z",
+        display_name: "Agent Teams",
+        root_path: "C:/work/agent-teams",
+        updated_at: "2026-06-25T08:59:00Z",
+        workspace_id: WORKSPACE_ID,
+      },
+      {
+        created_at: "2026-06-01T00:00:00Z",
+        display_name: "Desktop",
+        root_path: "C:/work/desktop",
+        updated_at: "2026-06-25T08:40:00Z",
+        workspace_id: "workspace-v2-desktop",
+      },
+    ],
+  };
+}
+
+function sidebarInventorySessions(): SidebarInventorySession[] {
+  const fixedSessions: SidebarInventorySession[] = [
+    {
+      active_run_status: "running",
+      background_task_count: 2,
+      message_count: 12,
+      pending_tool_approval_count: 1,
+      pending_user_question_count: 1,
+      session_id: SESSION_ID,
+      title: "Active coding session",
+      updated_at: "2026-06-25T08:59:00Z",
+      workspace_id: WORKSPACE_ID,
+    },
+    {
+      active_run_status: "failed",
+      message_count: 8,
+      session_id: "session-v2-sidebar-failed",
+      title: "Failed review session",
+      updated_at: "2026-06-25T08:58:00Z",
+      workspace_id: WORKSPACE_ID,
+    },
+    {
+      active_run_status: "stopped",
+      message_count: 7,
+      session_id: "session-v2-sidebar-stopped",
+      title: "Stopped handoff session",
+      updated_at: "2026-06-25T08:57:00Z",
+      workspace_id: WORKSPACE_ID,
+    },
+    {
+      active_run_status: null,
+      has_unread_terminal_run: true,
+      latest_terminal_run_id: "run-v2-sidebar-unread",
+      latest_terminal_run_status: "completed",
+      latest_terminal_run_updated_at: "2026-06-25T08:56:00Z",
+      message_count: 5,
+      session_id: "session-v2-sidebar-unread",
+      title: "Unread follow-up",
+      updated_at: "2026-06-25T08:56:00Z",
+      workspace_id: WORKSPACE_ID,
+    },
+  ];
+  const fillerSessions = Array.from({ length: 8 }, (_, index) => {
+    const ordinal = index + 5;
+    return {
+      active_run_status: null,
+      message_count: ordinal,
+      session_id: `session-v2-sidebar-filler-${ordinal}`,
+      title: `Agent Teams filler ${ordinal}`,
+      updated_at: `2026-06-25T08:${String(56 - ordinal).padStart(2, "0")}:00Z`,
+      workspace_id: WORKSPACE_ID,
+    };
+  });
+  return [
+    ...fixedSessions,
+    ...fillerSessions,
+    {
+      active_run_status: null,
+      message_count: 3,
+      session_id: "session-v2-desktop-draft",
+      title: "Desktop draft",
+      updated_at: "2026-06-25T08:40:00Z",
+      workspace_id: "workspace-v2-desktop",
+    },
+  ];
+}
+
+async function handleSidebarInventoryApi(
+  context: MockApiRouteContext,
+  state: SidebarInventoryState,
+): Promise<boolean> {
+  if (context.method !== "GET") {
+    return false;
+  }
+  if (context.path === "/workspaces") {
+    await context.fulfillJson(state.workspaces);
+    return true;
+  }
+  if (context.path === "/sessions/sidebar") {
+    await context.fulfillJson(state.sessions);
+    return true;
+  }
+  const workspaceSessionsMatch = context.path.match(
+    /^\/workspaces\/([^/]+)\/sessions\/sidebar$/,
+  );
+  if (workspaceSessionsMatch !== null) {
+    const workspaceId = decodeURIComponent(workspaceSessionsMatch[1] ?? "");
+    await context.fulfillJson({
+      has_more: false,
+      items: state.sessions.filter((session) => session.workspace_id === workspaceId),
+      next_cursor: null,
+    });
+    return true;
+  }
+  const sessionMatch = context.path.match(/^\/sessions\/([^/]+)(?:\/([^/]+))?$/);
+  if (sessionMatch === null) {
+    return false;
+  }
+  const sessionId = decodeURIComponent(sessionMatch[1] ?? "");
+  const leaf = sessionMatch[2];
+  const session = state.sessions.find((item) => item.session_id === sessionId);
+  if (session === undefined) {
+    return false;
+  }
+  if (leaf === undefined) {
+    await context.fulfillJson(sidebarInventorySessionDetail(session));
+    return true;
+  }
+  if (leaf === "messages" || leaf === "subagents" || leaf === "agents" || leaf === "tasks") {
+    await context.fulfillJson([]);
+    return true;
+  }
+  if (leaf === "rounds") {
+    await context.fulfillJson({ has_more: false, items: [], next_cursor: null });
+    return true;
+  }
+  if (leaf === "recovery") {
+    await context.fulfillJson(emptyRecoverySnapshot());
+    return true;
+  }
+  if (leaf === "token-usage") {
+    await context.fulfillJson({ by_role: {}, input_tokens: 0, output_tokens: 0 });
+    return true;
+  }
+  return false;
+}
+
+function sidebarInventorySessionDetail(
+  session: SidebarInventorySession,
+): Record<string, unknown> {
+  return {
+    can_switch_mode: true,
+    created_at: "2026-06-25T08:00:00Z",
     normal_model_profile: null,
     normal_root_role_id: "MainAgent",
     orchestration_preset_id: null,

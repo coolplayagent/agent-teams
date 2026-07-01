@@ -2,6 +2,21 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-02 Trigger Settings Python Harness Removal
+
+### Scope
+- Removed `tests/integration_tests/frontend/test_trigger_settings_ui.py`, the legacy fake-DOM harness for the old `frontend/dist/js/components/settings/triggerSettings.js` Gateway/trigger settings surface.
+- Added `frontend/app/src/test/TriggerSettingsSection.test.tsx` as the V2-owned proof path for the current React Gateway secondary settings page under System.
+- The TS coverage now exercises the provider landing page, Feishu and WeChat account lists, Feishu edit as a detail page rather than flattened first-level content, Feishu create/update payloads, WeChat login polling, and WeChat edit payloads.
+- While porting the assertions, checked the current V2 behavior rather than copying stale V1 strings: the page exposes credential readiness as the facts row `Credentials ready 0/1`; editing remains a secondary/detail view; and WeChat login uses the start/wait endpoint pair.
+- Did not mark Gateway/System settings as fully verified. This slice replaces one obsolete proof path and tightens `SET-14`/`CLEAN-01`; broader V1 visual pairing, loading/error states, and deep browser evidence for System secondary pages remain open.
+
+### Verification
+- `npm test -- src/test/TriggerSettingsSection.test.tsx` passed with 4 tests.
+
+### Reviewer
+- Main-agent decision: this retires one more integration frontend Python UI harness and preserves the current V2 Gateway settings behavior in TypeScript. It does not claim complete System/Gateway settings parity, complete settings verification, remaining Python harness cleanup, reviewer sign-off, or final V2 frontend completion.
+
 ## 2026-07-02 Projects Sidebar Python Harness Removal
 
 ### Scope

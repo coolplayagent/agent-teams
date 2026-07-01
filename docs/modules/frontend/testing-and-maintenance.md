@@ -71,6 +71,7 @@ cd frontend/app
 npm test -- src/test/SettingsDrawer.test.tsx
 npm test -- src/test/SettingsNavigationParity.test.ts
 npm test -- src/test/RuntimeSettingsSections.test.tsx
+npm test -- src/test/TriggerSettingsSection.test.tsx
 ```
 
 涉及 speech、composer action rail 或 session switch loading 的变更建议补充：

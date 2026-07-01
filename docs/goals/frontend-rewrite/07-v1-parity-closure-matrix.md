@@ -114,6 +114,13 @@ For every row moved to `Verified`, record:
 
 ## Verification Ledger
 
+### 2026-07-02 Trigger Settings Harness Migration
+
+- `SET-14` tightened: the System-owned Gateway secondary page now has V2-native component coverage for Feishu/WeChat provider inventory, Feishu detail-page editing, create/update payloads, WeChat login start/wait polling, and WeChat edit payloads.
+- `CLEAN-01` tightened: removed `tests/integration_tests/frontend/test_trigger_settings_ui.py` after replacing the still-current behavior with `frontend/app/src/test/TriggerSettingsSection.test.tsx`.
+- Automated evidence: `npm test -- src/test/TriggerSettingsSection.test.tsx`.
+- This does not move `SET-14` to `Verified`; formal V1 visual/DOM pairing, loading/error-state browser capture, and deeper System secondary-page browser coverage remain open.
+
 ### 2026-07-02 Projects Sidebar Harness Migration
 
 - `SESS-02` tightened: while migrating the old projects sidebar fake-DOM harness, V2 was found to be missing the V1 `Chronological sessions` sort mode.

@@ -8348,3 +8348,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent matrix scan, focused browser test strengthening, browser and component verification, screenshot inspection, and matrix/ledger updates completed for this slice. No Settings subsystem PASS or final V2 completion is claimed.
+
+## 2026-07-01 Settings Orchestration Browser Evidence Closure
+
+### Scope
+- Re-checked the frontend rewrite matrix and selected `SET-08 Orchestration` because it was still `Not checked` even though the Orchestration settings implementation already had create/default/delete paths.
+- Strengthened the packed-browser Orchestration scenario with explicit list evidence for the V1-aligned Settings entry, default preset fact, preset count fact, and list-first Orchestration page before entering a secondary detail page.
+- Added detail-page evidence and assertions for the Default preset: the Preset ID field is loaded, the Reviewer role checkbox is actually checked, and the Graph JSON field preserves the `review` node.
+- Added lower-detail screenshot evidence for prompt, graph JSON, and policy rows after setting Shipping as default. Screenshot inspection caught a transient Ant success message polluting the first screenshot, so the browser test now waits for `.ant-message-notice` to clear before capturing detail evidence.
+- Preserved the existing mutation flow coverage: set Shipping as default, delete Default with confirmation, create Analysis, verify the save payload role IDs, and keep the saved Analysis secondary detail open instead of flattening the form into the list page.
+- Updated `SET-08` from `Not checked` to `In progress`. This slice does not claim Orchestration `Verified`, complete Settings parity, formal V1 visual/DOM pairing, runtime composer sign-off, reviewer sign-off, release cleanup sign-off, or final V2 frontend completion.
+
+### Verification
+- `npm run test:browser -- v2-settings-actions.spec.ts --project=chromium -g "orchestration presets"` passed with 1 browser test.
+- `npm test -- src/test/SettingsDrawer.test.tsx -t "orchestration"` passed with 4 focused component tests; jsdom emitted the known pseudo-element `getComputedStyle` warning.
+- `npm run lint` passed.
+- Inspected `.tmp/frontend-v2-ts-settings-actions/v2-orchestration-list.png`, `.tmp/frontend-v2-ts-settings-actions/v2-orchestration-default-detail.png`, `.tmp/frontend-v2-ts-settings-actions/v2-orchestration-default-detail-policy.png`, and `.tmp/frontend-v2-ts-settings-actions/v2-orchestration-create-save.png`.
+
+### Reviewer
+- Main-agent matrix scan, focused browser test strengthening, browser and component verification, screenshot inspection, and matrix/ledger updates completed for this slice. No Settings subsystem PASS or final V2 completion is claimed.

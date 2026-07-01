@@ -541,6 +541,13 @@ test("sets defaults, deletes, and creates orchestration presets", async ({
 
     await expect(settings.getByRole("heading", { name: "Orchestration" }))
       .toBeVisible();
+    await expect(settings.locator(".at-settings-facts")).toContainText(
+      "Default preset",
+    );
+    await expect(settings.locator(".at-settings-list-row")).toHaveCount(2);
+    await page.screenshot({
+      path: screenshotPath("v2-orchestration-list.png", SCREENSHOT_FOLDER),
+    });
     const shippingRow = settings.locator(".at-settings-list-row").filter({
       hasText: "Shipping",
     });
@@ -551,11 +558,35 @@ test("sets defaults, deletes, and creates orchestration presets", async ({
         state.orchestrationSavePayloads.at(0)?.default_orchestration_preset_id,
       )
       .toBe("shipping");
+    await expect(page.locator(".ant-message-notice")).toHaveCount(0);
 
     await settings
       .getByRole("button", { name: "Default 1 roles · Review flow" })
       .click();
     await expect(settings.getByLabel("Preset ID")).toHaveValue("default");
+    await expect(
+      settings.getByRole("checkbox", { name: "reviewer" }),
+    ).toBeChecked();
+    await expect(settings.getByLabel("Graph JSON")).toHaveValue(/"review"/);
+    await page.screenshot({
+      path: screenshotPath("v2-orchestration-default-detail.png", SCREENSHOT_FOLDER),
+    });
+    await settings
+      .locator(".at-settings-section-body")
+      .evaluate((element) => {
+        element.scrollTop = element.scrollHeight;
+      });
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-orchestration-default-detail-policy.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+    await settings
+      .locator(".at-settings-section-body")
+      .evaluate((element) => {
+        element.scrollTop = 0;
+      });
     await settings.getByRole("button", { name: "Delete" }).click();
     await page.getByRole("button", { name: "OK", exact: true }).click();
     await expect
@@ -569,6 +600,10 @@ test("sets defaults, deletes, and creates orchestration presets", async ({
     ).toBe(1);
 
     await settings.getByRole("button", { name: "New orchestration" }).click();
+    await expect(settings.getByLabel("Preset ID")).toHaveValue("orchestration_2");
+    await expect(
+      settings.getByRole("checkbox", { name: "Reviewer" }),
+    ).toBeChecked();
     await settings.getByLabel("Preset ID").fill("analysis");
     await settings.getByLabel("Preset name").fill("Analysis");
     await settings.getByLabel("Description").fill("Analysis flow");
@@ -590,6 +625,7 @@ test("sets defaults, deletes, and creates orchestration presets", async ({
       page,
       "v2 orchestration settings should stay framed",
     );
+    await expect(page.locator(".ant-message-notice")).toHaveCount(0);
     await page.screenshot({
       path: screenshotPath("v2-orchestration-create-save.png", SCREENSHOT_FOLDER),
     });

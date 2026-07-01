@@ -2,6 +2,25 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-01 Board Surface Filter And Archive Coverage
+
+### Scope
+- Re-checked the closure matrix and selected `PAGE-03` because Board was still marked `Not checked` while the P1 surface group requires source groups, statuses, sync, and filters.
+- Extended the existing Board browser spec with a real `/app/` path for status-column and filter behavior: default board load, source summary count, search filtering, archived-column hiding by default, `include_archived=true` refetch, archived card rendering, and the restore affordance.
+- Kept the existing Board browser action coverage for sync, handoff preview/start, request-changes preview/start, and source edit/create/delete intact.
+- Kept `PAGE-03` at `In progress`; this slice adds browser evidence and screenshot inspection, not formal V1 visual/DOM pairing or final Board verification.
+
+### Verification
+- `npm run test:browser -- v2-board-actions.spec.ts --project=chromium` passed with 5 tests.
+- `npm run test -- src/test/BoardTodosView.test.tsx` passed with 7 tests.
+- `npm run lint` passed.
+- Browser screenshot artifacts inspected:
+  - `.tmp/frontend-v2-ts-board-actions/v2-board-filtered-review.png`
+  - `.tmp/frontend-v2-ts-board-actions/v2-board-archived-visible.png`
+
+### Reviewer
+- Main-agent browser inspection confirmed Board stays in the fixed shell, filter results remove nonmatching cards without stale content, and enabling archived expands the status columns with the expected archived item and restore action. Remaining before verification: V1 screenshot/DOM comparison, loading/error browser states, and narrow viewport density review.
+
 ## 2026-07-01 Search Surface Browser Coverage
 
 ### Scope

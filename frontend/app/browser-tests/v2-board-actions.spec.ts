@@ -31,7 +31,76 @@ interface BoardActionState {
   boardSourceUpdatePayloads: Record<string, unknown>[];
   boardSyncPayloads: Record<string, unknown>[];
   requestedPaths: string[];
+  requestedUrls: string[];
 }
+
+test("filters Board cards and reveals archived status groups", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state = boardActionState();
+  try {
+    await installShellState(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleBoardActionApi(context, state),
+      sessionTitle: "TS board filters",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    const boardView = await openBoardView(page);
+
+    await expect(boardView.getByTestId("board-todo-todo-v2-shell")).toBeVisible();
+    await expect(boardView.getByTestId("board-todo-todo-v2-review")).toBeVisible();
+    await expect(boardView.getByTestId("board-todo-todo-v2-done")).toBeVisible();
+    await expect(boardView.getByRole("heading", { exact: true, name: "Archived" }))
+      .toHaveCount(0);
+    await expect(boardView.locator(".at-board-scope")).toContainText("Showing");
+    await expect(boardView.locator(".at-board-scope")).toContainText("Sources");
+    await expect(boardView.locator(".at-board-scope")).toContainText("1");
+
+    await boardView
+      .getByRole("searchbox", { name: "Search board TODOs" })
+      .fill("review");
+    await expect(boardView.getByTestId("board-todo-todo-v2-review")).toBeVisible();
+    await expect(boardView.getByTestId("board-todo-todo-v2-shell")).toHaveCount(0);
+    await expect(boardView.getByTestId("board-todo-todo-v2-done")).toHaveCount(0);
+    await expect(
+      boardView.locator(".at-board-column.is-review .at-board-column-header"),
+    ).toContainText("1");
+    await page.screenshot({
+      path: screenshotPath("v2-board-filtered-review.png", SCREENSHOT_FOLDER),
+    });
+
+    await boardView
+      .getByRole("searchbox", { name: "Search board TODOs" })
+      .fill("");
+    await boardView.getByText("Include archived").click();
+    await expect(boardView.getByRole("heading", { exact: true, name: "Archived" }))
+      .toBeVisible();
+    await expect(boardView.getByTestId("board-todo-todo-v2-archived"))
+      .toBeVisible();
+    await expect(
+      boardView.getByTestId("board-todo-todo-v2-archived")
+        .getByRole("button", { name: "Restore" }),
+    ).toBeVisible();
+    await expect
+      .poll(() => state.requestedUrls)
+      .toContain(`/boards/todos?workspace_id=${WORKSPACE_ID}&include_archived=true`);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "v2 board filters and archived groups should stay framed",
+    );
+    await page.screenshot({
+      path: screenshotPath("v2-board-archived-visible.png", SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
 
 test("syncs the Board view through the real endpoint", async ({ page }) => {
   const appServer = await serveFrontendDist();
@@ -324,6 +393,7 @@ function boardActionState(): BoardActionState {
     boardSourceUpdatePayloads: [],
     boardSyncPayloads: [],
     requestedPaths: [],
+    requestedUrls: [],
   };
 }
 
@@ -332,10 +402,16 @@ async function handleBoardActionApi(
   state: BoardActionState,
 ): Promise<boolean> {
   state.requestedPaths.push(context.path);
+  state.requestedUrls.push(`${context.path}${context.url.search}`);
   const method = context.method;
   const path = context.path;
   if (method === "GET" && path === "/boards/todos") {
-    await context.fulfillJson(boardResponse(state));
+    await context.fulfillJson(
+      boardResponse(
+        state,
+        context.url.searchParams.get("include_archived") === "true",
+      ),
+    );
     return true;
   }
   if (method === "GET" && path === "/boards/todo-sources") {
@@ -418,7 +494,10 @@ function readJsonBody(context: MockApiRouteContext): Record<string, unknown> {
   return parsed as Record<string, unknown>;
 }
 
-function boardResponse(state: BoardActionState): Record<string, unknown> {
+function boardResponse(
+  state: BoardActionState,
+  includeArchived = false,
+): Record<string, unknown> {
   const item = state.boardHandoffStarted
     ? boardHandoffStartedItem()
     : {
@@ -441,7 +520,12 @@ function boardResponse(state: BoardActionState): Record<string, unknown> {
     ? boardRequestChangesStartedItem()
     : boardReviewItem();
   return boardResponseItems(
-    [item, reviewItem, boardDoneItem()],
+    [
+      item,
+      reviewItem,
+      boardDoneItem(),
+      ...(includeArchived ? [boardArchivedItem()] : []),
+    ],
     9,
     "2026-06-25T08:11:00Z",
   );
@@ -572,6 +656,27 @@ function boardDoneItem(): Record<string, unknown> {
     title: "Archive completed board action",
     todo_id: "todo-v2-done",
     updated_at: "2026-06-25T08:12:00Z",
+    workspace_id: WORKSPACE_ID,
+  };
+}
+
+function boardArchivedItem(): Record<string, unknown> {
+  return {
+    archived_at: "2026-06-25T08:13:00Z",
+    body: "Archived board work should stay hidden until requested.",
+    created_at: "2026-06-25T08:07:00Z",
+    issue_number: 404,
+    item_revision: 3,
+    last_status_reason: "Archived after verification",
+    repository_full_name: "openai/agent-teams",
+    run_recoverable: false,
+    source_key: "openai/agent-teams#404",
+    source_provider: "github",
+    source_type: "github_issue",
+    status: "archived",
+    title: "Archived board verification",
+    todo_id: "todo-v2-archived",
+    updated_at: "2026-06-25T08:13:00Z",
     workspace_id: WORKSPACE_ID,
   };
 }

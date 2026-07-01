@@ -340,6 +340,284 @@ describe("MessageTimeline", () => {
     await waitForSingleVisibleText(resumedText);
   });
 
+  it("drops terminal runtime prefixes once persisted assistant text covers the final answer", async () => {
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: [],
+        runs: {
+          "run-prefix": {
+            entries: [
+              {
+                eventId: 8,
+                id: "run-prefix:8:0",
+                kind: "text_delta",
+                occurredAt: "2026-06-23T00:00:00Z",
+                payload: { text: "Cra" },
+                roleId: "MainAgent",
+                runId: "run-prefix",
+                sessionId: "session-1",
+                text: "Cra",
+              },
+            ],
+            hadVisibleTextStream: true,
+            lastEventId: 9,
+            runId: "run-prefix",
+            seenEventKeys: [],
+            status: "closed",
+            terminalEventType: "run_completed",
+          },
+        },
+      },
+    });
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "Crafter 子代理已完成。",
+        message_id: "assistant-prefix-final",
+        role_id: "MainAgent",
+        run_id: "run-prefix",
+      },
+    ]);
+
+    renderTimeline();
+
+    expect(await screen.findByText("Crafter 子代理已完成。")).toBeVisible();
+    expect(screen.queryByText("Cra")).not.toBeInTheDocument();
+  });
+
+  it("renders one answer when persisted text upgrades a terminal runtime reveal", async () => {
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: [],
+        runs: {
+          "run-reveal-upgrade": {
+            entries: [
+              {
+                eventId: 8,
+                id: "run-reveal-upgrade:8:0",
+                kind: "text_delta",
+                occurredAt: "2026-06-23T00:00:00Z",
+                payload: { text: "LIVE_STRE" },
+                roleId: "MainAgent",
+                runId: "run-reveal-upgrade",
+                sessionId: "session-1",
+                text: "LIVE_STRE",
+              },
+              {
+                eventId: 9,
+                id: "run-reveal-upgrade:9:1",
+                kind: "run_completed",
+                occurredAt: "2026-06-23T00:00:01Z",
+                payload: { status: "completed" },
+                roleId: "MainAgent",
+                runId: "run-reveal-upgrade",
+                sessionId: "session-1",
+                text: "completed",
+              },
+            ],
+            hadVisibleTextStream: true,
+            lastEventId: 9,
+            runId: "run-reveal-upgrade",
+            seenEventKeys: [],
+            status: "closed",
+            terminalEventType: "run_completed",
+          },
+        },
+      },
+    });
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "LIVE_STREAM_ALPHA LIVE_STREAM_BETA LIVE_STREAM_KAPPA",
+        message_id: "assistant-reveal-upgrade-final",
+        role_id: "MainAgent",
+        run_id: "run-reveal-upgrade",
+      },
+    ]);
+
+    const { container } = renderTimeline();
+
+    expect(
+      await screen.findByText("LIVE_STREAM_ALPHA LIVE_STREAM_BETA LIVE_STREAM_KAPPA"),
+    ).toBeVisible();
+    expect(screen.queryByText("LIVE_STRE")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+    });
+  });
+
+  it("merges terminal structured output into the active runtime text reveal", async () => {
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: [],
+        runs: {
+          "run-terminal-output": {
+            entries: [
+              {
+                eventId: 8,
+                id: "run-terminal-output:8:0",
+                kind: "text_delta",
+                occurredAt: "2026-06-23T00:00:00Z",
+                payload: { text: "LIVE_STRE" },
+                roleId: "MainAgent",
+                runId: "run-terminal-output",
+                sessionId: "session-1",
+                text: "LIVE_STRE",
+              },
+              {
+                eventId: 9,
+                id: "run-terminal-output:9:1",
+                kind: "run_completed",
+                occurredAt: "2026-06-23T00:00:01Z",
+                payload: {
+                  output: [
+                    {
+                      kind: "text",
+                      text: "LIVE_STREAM_ALPHA LIVE_STREAM_BETA LIVE_STREAM_KAPPA",
+                    },
+                  ],
+                  status: "completed",
+                },
+                roleId: "MainAgent",
+                runId: "run-terminal-output",
+                sessionId: "session-1",
+                text: "completed",
+              },
+            ],
+            hadVisibleTextStream: true,
+            lastEventId: 9,
+            runId: "run-terminal-output",
+            seenEventKeys: [],
+            status: "closed",
+            terminalEventType: "run_completed",
+          },
+        },
+      },
+    });
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(
+      await screen.findByText("LIVE_STREAM_ALPHA LIVE_STREAM_BETA LIVE_STREAM_KAPPA"),
+    ).toBeVisible();
+    expect(screen.queryByText("LIVE_STRE")).not.toBeInTheDocument();
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+  });
+
+  it("consumes terminal runtime prefixes after a persisted answer row arrives", async () => {
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: [],
+        runs: {
+          "run-terminal-prefix-row": {
+            entries: [
+              {
+                eventId: 8,
+                id: "run-terminal-prefix-row:8:0",
+                kind: "text_delta",
+                occurredAt: "2026-06-23T00:00:00Z",
+                payload: { text: "LIVE_STRE" },
+                roleId: "MainAgent",
+                runId: "run-terminal-prefix-row",
+                sessionId: "session-1",
+                text: "LIVE_STRE",
+              },
+              {
+                eventId: 9,
+                id: "run-terminal-prefix-row:9:1",
+                kind: "run_completed",
+                occurredAt: "2026-06-23T00:00:01Z",
+                payload: { status: "completed" },
+                roleId: "MainAgent",
+                runId: "run-terminal-prefix-row",
+                sessionId: "session-1",
+                text: "completed",
+              },
+            ],
+            hadVisibleTextStream: false,
+            lastEventId: 9,
+            runId: "run-terminal-prefix-row",
+            seenEventKeys: [],
+            status: "closed",
+            terminalEventType: "run_completed",
+          },
+        },
+      },
+    });
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "LIVE_STREAM_ALPHA LIVE_STREAM_BETA LIVE_STREAM_KAPPA",
+        message_id: "assistant-terminal-prefix-final",
+        role_id: "MainAgent",
+        run_id: "run-terminal-prefix-row",
+      },
+    ]);
+
+    const { container } = renderTimeline();
+
+    expect(
+      await screen.findByText("LIVE_STREAM_ALPHA LIVE_STREAM_BETA LIVE_STREAM_KAPPA"),
+    ).toBeVisible();
+    expect(screen.queryByText("LIVE_STRE")).not.toBeInTheDocument();
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+  });
+
+  it("consumes repeated terminal runtime tails after the persisted answer row arrives", async () => {
+    const finalAnswer = "LIVE_STREAM_ALPHA LIVE_STREAM_BETA LIVE_STREAM_KAPPA";
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: [],
+        runs: {
+          "run-terminal-repeated-tail": {
+            entries: [
+              {
+                eventId: 8,
+                id: "run-terminal-repeated-tail:8:0",
+                kind: "text_delta",
+                occurredAt: "2026-06-23T00:00:00Z",
+                payload: { text: `${finalAnswer}LIVE_STREAM_A` },
+                roleId: "MainAgent",
+                runId: "run-terminal-repeated-tail",
+                sessionId: "session-1",
+                text: `${finalAnswer}LIVE_STREAM_A`,
+              },
+              {
+                eventId: 9,
+                id: "run-terminal-repeated-tail:9:1",
+                kind: "run_completed",
+                occurredAt: "2026-06-23T00:00:01Z",
+                payload: { status: "completed" },
+                roleId: "MainAgent",
+                runId: "run-terminal-repeated-tail",
+                sessionId: "session-1",
+                text: "completed",
+              },
+            ],
+            hadVisibleTextStream: false,
+            lastEventId: 9,
+            runId: "run-terminal-repeated-tail",
+            seenEventKeys: [],
+            status: "closed",
+            terminalEventType: "run_completed",
+          },
+        },
+      },
+    });
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: finalAnswer,
+        message_id: "assistant-terminal-repeated-tail-final",
+        role_id: "MainAgent",
+        run_id: "run-terminal-repeated-tail",
+      },
+    ]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText(finalAnswer)).toBeVisible();
+    expect(screen.queryByText(`${finalAnswer}LIVE_STREAM_A`)).not.toBeInTheDocument();
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+  });
+
   it("copies the latest non-user answer", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {
@@ -4288,6 +4566,7 @@ describe("MessageTimeline", () => {
             description: "Explore how Skills are implemented in this project",
             prompt: "Explore the project without editing files.",
             role_id: "Explorer",
+            run_id: "run-main-tool",
           },
           tool_call_id: "call-running-subagent",
           tool_name: "spawn_subagent",
@@ -4310,6 +4589,8 @@ describe("MessageTimeline", () => {
 
     fireEvent.click(title);
 
+    const openedSubagent = onSubagentOpen.mock.calls[0]?.[0];
+    expect(openedSubagent?.runId ?? "").toBe("");
     expect(onSubagentOpen).toHaveBeenCalledWith(expect.objectContaining({
       description: "Explore how Skills are implemented in this project",
       prompt: "Explore the project without editing files.",
@@ -7590,6 +7871,43 @@ describe("MessageTimeline", () => {
       ),
     ).toBeVisible();
     expect(screen.queryByText("todo updated")).not.toBeInTheDocument();
+  });
+
+  it("does not render scoped subagent runtime output in the parent session timeline", async () => {
+    setRuntimeEntries([
+      {
+        id: "subagent-run-1:1:0",
+        instanceId: "subagent-instance-1",
+        sessionId: "session-1",
+        runId: "subagent-run-1",
+        roleId: "Explorer",
+        kind: "text_delta",
+        text: "Subagent stream should stay in the side panel.",
+        payload: { text: "Subagent stream should stay in the side panel." },
+        eventId: 1,
+        occurredAt: "2026-06-23T00:00:00Z",
+      },
+    ], "open", {
+      scope: "subagent",
+      sessionId: "session-1",
+      targetRoleId: "Explorer",
+    });
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "Main timeline answer stays visible.",
+        message_id: "main-answer",
+        role_id: "MainAgent",
+        run_id: "main-run",
+      },
+    ]);
+
+    renderTimeline("session-1", { primaryRoleId: null });
+
+    expect(await screen.findByText("Main timeline answer stays visible."))
+      .toBeVisible();
+    expect(
+      screen.queryByText("Subagent stream should stay in the side panel."),
+    ).not.toBeInTheDocument();
   });
 
   it("does not treat generic tool run identifiers as subagent previews", async () => {

@@ -336,6 +336,60 @@ describe("SubagentSessionView", () => {
     expect(latestSubagentStreamHandle().close).toHaveBeenCalledTimes(1);
   });
 
+  it("marks opened subagent streams as subagent scoped before live events arrive", async () => {
+    renderSubagentSessionView();
+
+    await waitFor(() =>
+      expectSubagentSessionStreamStarted({
+        afterEventId: 0,
+        runId: "subagent_run_1",
+        sessionId: "session-parent",
+      }),
+    );
+
+    expect(
+      latestSubagentStreamOptions().initialState.runs["subagent_run_1"]?.scope,
+    ).toBe("subagent");
+    expect(
+      useRuntimeStore.getState().runtimeState.runs["subagent_run_1"]?.scope,
+    ).toBe("subagent");
+  });
+
+  it("keeps subagent scope when fresh live events arrive without scope metadata", async () => {
+    renderSubagentSessionView();
+
+    await waitFor(() => expect(openSessionSubagentRunStreamMock).toHaveBeenCalled());
+
+    pushLatestSubagentStreamState({
+      activeRunIds: ["subagent_run_1"],
+      runs: {
+        subagent_run_1: {
+          entries: [
+            runtimeMessageEntry({
+              instanceId: "",
+              runId: "subagent_run_1",
+              text: "Unscoped stream event from subagent transport",
+            }),
+          ],
+          lastEventId: 42,
+          runId: "subagent_run_1",
+          seenEventKeys: [],
+          sessionId: "session-parent",
+          status: "open",
+          targetRoleId: "explorer",
+          terminalEventType: null,
+        },
+      },
+    });
+
+    expect(
+      await screen.findByText("Unscoped stream event from subagent transport"),
+    ).toBeVisible();
+    expect(
+      useRuntimeStore.getState().runtimeState.runs["subagent_run_1"]?.scope,
+    ).toBe("subagent");
+  });
+
   it("keeps live subagent runtime rows visible while persisted history is loading", async () => {
     const loadingHistory = deferredAgentMessages();
     listAgentMessagesMock.mockReturnValueOnce(loadingHistory.promise);

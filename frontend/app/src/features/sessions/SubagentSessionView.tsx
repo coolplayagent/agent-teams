@@ -12,7 +12,12 @@ import {
 } from "../../api/contracts";
 import type { RunEventType } from "../../runtime/events";
 import { useRuntimeStore } from "../../runtime/runtimeStore";
-import type { RuntimeRunState, RuntimeState, TimelineEntry } from "../../runtime/reducers";
+import {
+  runtimeStateWithScopedRun,
+  type RuntimeRunState,
+  type RuntimeState,
+  type TimelineEntry,
+} from "../../runtime/reducers";
 import {
   openSessionSubagentRunStream,
   type RunStreamHandle,
@@ -156,7 +161,16 @@ export function SubagentSessionView({
     }
     subagentStreamRef.current?.close();
     streamedRunIdRef.current = runId;
-    const currentRuntimeState = runtimeStateRef.current;
+    const currentRuntimeState = runtimeStateWithScopedRun(
+      runtimeStateRef.current,
+      runId,
+      sessionId,
+      "subagent",
+    );
+    if (currentRuntimeState !== runtimeStateRef.current) {
+      runtimeStateRef.current = currentRuntimeState;
+      setRuntimeState(currentRuntimeState);
+    }
     const streamHandle = openSessionSubagentRunStream({
       afterEventId: currentRuntimeState.runs[runId]?.lastEventId ?? 0,
       initialState: currentRuntimeState,
@@ -195,9 +209,15 @@ export function SubagentSessionView({
         }
       },
       onState: (nextRuntimeState) => {
-        if (nextRuntimeState.runs[runId]?.status === "closed") {
+        const scopedRuntimeState = runtimeStateWithScopedRun(
+          nextRuntimeState,
+          runId,
+          sessionId,
+          "subagent",
+        );
+        if (scopedRuntimeState.runs[runId]?.status === "closed") {
           const displayRuntimeState = subagentClosedRuntimeStateForDisplay({
-            closedRuntimeState: nextRuntimeState,
+            closedRuntimeState: scopedRuntimeState,
             currentRuntimeState: runtimeStateRef.current,
             runId,
           });
@@ -205,8 +225,8 @@ export function SubagentSessionView({
           setRuntimeState(displayRuntimeState);
           return;
         }
-        runtimeStateRef.current = nextRuntimeState;
-        setRuntimeState(nextRuntimeState);
+        runtimeStateRef.current = scopedRuntimeState;
+        setRuntimeState(scopedRuntimeState);
       },
       runId,
       sessionId,

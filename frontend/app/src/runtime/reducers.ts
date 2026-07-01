@@ -30,6 +30,7 @@ export interface RuntimeRunState {
   scope?: "session" | "subagent";
   status: StreamStatus;
   lastEventId: number;
+  hadVisibleTextStream?: boolean;
   replayAfterEventId?: number;
   seenEventKeys: string[];
   terminalEventType: RunEventType | null;
@@ -51,6 +52,34 @@ export const initialRuntimeState: RuntimeState = {
   runs: {},
   activeRunIds: [],
 };
+
+export function runtimeStateWithScopedRun(
+  runtimeState: RuntimeState,
+  runId: string,
+  sessionId: string,
+  scope: NonNullable<RuntimeRunState["scope"]>,
+): RuntimeState {
+  const normalizedRunId = runId.trim();
+  if (normalizedRunId.length === 0) {
+    return runtimeState;
+  }
+  const nextRun = runtimeRunStateWithScope(
+    runtimeState.runs[normalizedRunId],
+    normalizedRunId,
+    sessionId,
+    scope,
+  );
+  if (nextRun === runtimeState.runs[normalizedRunId]) {
+    return runtimeState;
+  }
+  return {
+    ...runtimeState,
+    runs: {
+      ...runtimeState.runs,
+      [normalizedRunId]: nextRun,
+    },
+  };
+}
 
 export function reduceRunEvent(
   state: RuntimeState,
@@ -83,6 +112,8 @@ export function reduceRunEvent(
     ...runtimeMetadataFromEvent(existing, event),
     status,
     lastEventId: Math.max(existing.lastEventId, eventId),
+    hadVisibleTextStream: existing.hadVisibleTextStream === true ||
+      eventHasVisibleTextStream(event.event_type, event.payload),
     seenEventKeys: dedupeKey === null
       ? existing.seenEventKeys
       : rememberSeenEventKey(existing.seenEventKeys, dedupeKey),
@@ -170,6 +201,9 @@ function runtimeRunStateWithScope(
   return {
     entries: currentRun?.entries ?? [],
     lastEventId: currentRun?.lastEventId ?? 0,
+    ...(currentRun?.hadVisibleTextStream === true
+      ? { hadVisibleTextStream: true }
+      : {}),
     ...(currentRun?.createdAt !== undefined ? { createdAt: currentRun.createdAt } : {}),
     ...(currentRun?.promptText !== undefined ? { promptText: currentRun.promptText } : {}),
     ...(currentRun?.targetRoleId !== undefined
@@ -306,6 +340,34 @@ function createRunState(runId: string): RuntimeRunState {
     terminalEventType: null,
     entries: [],
   };
+}
+
+function eventHasVisibleTextStream(
+  eventType: RunEventType,
+  payload: JsonValue,
+): boolean {
+  if (eventType !== "text_delta" && eventType !== "output_delta") {
+    return false;
+  }
+  return visibleTextFromStreamPayload(payload).trim().length > 0;
+}
+
+function visibleTextFromStreamPayload(payload: JsonValue): string {
+  if (typeof payload === "string") {
+    return payload;
+  }
+  if (Array.isArray(payload)) {
+    return payload.map(visibleTextFromStreamPayload).join("");
+  }
+  if (typeof payload !== "object" || payload === null) {
+    return "";
+  }
+  const directText = firstPayloadString(payload, ["text", "delta", "content", "message"]);
+  if (directText !== null) {
+    return directText;
+  }
+  const output = payload.output;
+  return output === undefined ? "" : visibleTextFromStreamPayload(output);
 }
 
 function appendTimelineEntry(

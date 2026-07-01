@@ -31,7 +31,7 @@ import { roundPromptText, roundTitle } from "./roundMetadata";
 
 const TIMELINE_BOTTOM_FOLLOW_THRESHOLD_PX = 96;
 const LONG_STREAM_TEXT_THRESHOLD = 12000;
-const STREAM_TYPEWRITER_DELAY_MS = 28;
+const STREAM_TYPEWRITER_DELAY_MS = 36;
 const STREAM_TYPEWRITER_MIN_STEP = 1;
 const ROUND_RAIL_PAGE_LIMIT = 100;
 const ROUND_RAIL_MAX_PAGES = 10;
@@ -228,6 +228,10 @@ export function MessageTimeline({
     () => timelineOutputTextByRunId(persistedRows),
     [persistedRows],
   );
+  const hydratedOutputSourcesByRunId = useMemo(
+    () => timelineOutputSourcesByRunId(persistedRows),
+    [persistedRows],
+  );
   const hydratedThinkingTextByRunId = useMemo(
     () => timelineThinkingTextByRunId(persistedRows),
     [persistedRows],
@@ -247,12 +251,14 @@ export function MessageTimeline({
             primaryRoleId,
             variant,
             hydratedOutputTextByRunId,
+            hydratedOutputSourcesByRunId,
             hydratedThinkingTextByRunId,
             hydratedToolStatesByRunId,
           ),
         ),
     [
       hydratedOutputTextByRunId,
+      hydratedOutputSourcesByRunId,
       hydratedThinkingTextByRunId,
       hydratedToolStatesByRunId,
       primaryRoleId,
@@ -271,19 +277,20 @@ export function MessageTimeline({
       dropPersistedRowsCoveredByTerminalRuntime(
         persistedRows,
         runtimeRows,
-        variant,
       ),
-    [persistedRows, runtimeRows, variant],
+    [persistedRows, runtimeRows],
   );
   const timelineRowsBeforeGrouping = useMemo(
     () =>
       dropExactTextRows(
-        mergeToolRowsByCallId(
-          mergeRuntimeThinkingRowsIntoHydratedRows(
-            displayPersistedRows,
-            runtimeRows.filter(timelineRowHasRenderableContent),
+        mergeTerminalRuntimeTextRowsIntoPersistedAnswers(
+          mergeToolRowsByCallId(
+            mergeRuntimeThinkingRowsIntoHydratedRows(
+              displayPersistedRows,
+              runtimeRows.filter(timelineRowHasRenderableContent),
+            ),
+            { dedupeNonToolRows: false },
           ),
-          { dedupeNonToolRows: false },
         ),
         suppressExactText,
       ),
@@ -551,9 +558,12 @@ interface TimelineRow {
   processedGroup?: TimelineProcessedGroup;
   roundMarker: TimelineRoundMarker | null;
   runId: string | null;
+  runIdSource?: TimelineRunIdSource | null;
   source: "message" | "runtime";
   copyable: boolean;
 }
+
+type TimelineRunIdSource = "fallback" | "round" | "run_id" | "trace_id";
 
 interface TimelineProcessedGroup {
   rows: TimelineRow[];
@@ -580,6 +590,7 @@ type TimelineRenderPart =
 
 interface TimelineTextPart {
   kind: "text";
+  reveal?: boolean;
   streaming: boolean;
   text: string;
 }
@@ -1057,6 +1068,7 @@ function messageToRow(
   const role = message.role_id ?? message.role ?? "agent";
   const parts = messageParts(message, workspaceId);
   const text = rowCopyText(parts);
+  const runIdentity = messageRunIdentity(message, roundLookup, fallbackRunId);
   return {
     key: `message:${message.message_id ?? index}`,
     role,
@@ -1064,7 +1076,8 @@ function messageToRow(
     kind: "message",
     parts,
     roundMarker: null,
-    runId: messageRunId(message, roundLookup, fallbackRunId),
+    runId: runIdentity.runId,
+    runIdSource: runIdentity.source,
     source: "message",
     copyable: isAnswerRole(role) && text.trim().length > 0,
   };
@@ -1462,6 +1475,162 @@ function mergeRuntimeThinkingRowsIntoHydratedRows(
     !consumedRuntimeIndexes.has(index),
   );
   return [...nextHydratedRows, ...remainingRuntimeRows];
+}
+
+function mergeTerminalRuntimeTextRowsIntoPersistedAnswers(
+  rows: TimelineRow[],
+): TimelineRow[] {
+  const runtimeCandidates = rows
+    .map((row, index) => ({
+      index,
+      row,
+      text: normalizedTimelineText(rowCopyText(row.parts)),
+    }))
+    .filter((candidate) => terminalRuntimeTextCandidate(candidate.row, candidate.text));
+  if (runtimeCandidates.length === 0) {
+    return rows;
+  }
+
+  const consumedRuntimeIndexes = new Set<number>();
+  const mergedRows = rows.map((row) => {
+    if (!persistedAnswerRowCanHydrateRuntimeText(row)) {
+      return row;
+    }
+    const candidate = bestRuntimeTextCandidateForPersistedAnswer(
+      row,
+      runtimeCandidates,
+      consumedRuntimeIndexes,
+    );
+    if (candidate === undefined) {
+      return row;
+    }
+    consumedRuntimeIndexes.add(candidate.index);
+    return persistedAnswerRowWithRuntimeReveal(row, candidate.row);
+  });
+
+  if (consumedRuntimeIndexes.size === 0) {
+    return rows;
+  }
+  return mergedRows.filter((_, index) => !consumedRuntimeIndexes.has(index));
+}
+
+function terminalRuntimeTextCandidate(row: TimelineRow, text: string): boolean {
+  return (
+    row.source === "runtime" &&
+    isAnswerRole(row.role) &&
+    text.length > 0 &&
+    !timelineRowHasStreamingContent(row) &&
+    row.parts.length > 0 &&
+    row.parts.every((part) => part.kind === "text")
+  );
+}
+
+function persistedAnswerRowCanHydrateRuntimeText(row: TimelineRow): boolean {
+  return (
+    row.source === "message" &&
+    isAnswerRole(row.role) &&
+    normalizedTimelineText(rowCopyText(row.parts)).length > 0
+  );
+}
+
+function bestRuntimeTextCandidateForPersistedAnswer(
+  persistedRow: TimelineRow,
+  runtimeCandidates: Array<{
+    index: number;
+    row: TimelineRow;
+    text: string;
+  }>,
+  consumedRuntimeIndexes: ReadonlySet<number>,
+): {
+  index: number;
+  row: TimelineRow;
+  text: string;
+} | undefined {
+  const persistedText = normalizedTimelineText(rowCopyText(persistedRow.parts));
+  const candidates = runtimeCandidates
+    .filter((candidate) =>
+      !consumedRuntimeIndexes.has(candidate.index) &&
+      runtimeTextOverlapsPersistedAnswer(candidate.text, persistedText) &&
+      runtimeTextCandidateCanMatchPersistedAnswer(candidate.row, persistedRow, candidate.text),
+    )
+    .sort((left, right) =>
+      runtimeTextCandidateScore(right.row, persistedRow, right.text) -
+      runtimeTextCandidateScore(left.row, persistedRow, left.text),
+    );
+  return candidates.at(0);
+}
+
+function runtimeTextOverlapsPersistedAnswer(
+  runtimeText: string,
+  persistedText: string,
+): boolean {
+  if (runtimeText.length === 0 || persistedText.length === 0) {
+    return false;
+  }
+  if (persistedText.includes(runtimeText) || runtimeText.includes(persistedText)) {
+    return true;
+  }
+  if (!runtimeText.startsWith(persistedText)) {
+    return false;
+  }
+  const repeatedTail = runtimeText.slice(persistedText.length);
+  return (
+    repeatedTail.length > 0 &&
+    repeatedTail.length < persistedText.length &&
+    persistedText.startsWith(repeatedTail)
+  );
+}
+
+function runtimeTextCandidateCanMatchPersistedAnswer(
+  runtimeRow: TimelineRow,
+  persistedRow: TimelineRow,
+  runtimeText: string,
+): boolean {
+  if (timelineRowsShareRunId(runtimeRow, persistedRow)) {
+    return true;
+  }
+  return (
+    runtimeText.length >= 6 &&
+    stableTimelineRole(runtimeRow.role) === stableTimelineRole(persistedRow.role)
+  );
+}
+
+function runtimeTextCandidateScore(
+  runtimeRow: TimelineRow,
+  persistedRow: TimelineRow,
+  runtimeText: string,
+): number {
+  const runScore = timelineRowsShareRunId(runtimeRow, persistedRow) ? 100_000 : 0;
+  return runScore + runtimeText.length;
+}
+
+function timelineRowsShareRunId(left: TimelineRow, right: TimelineRow): boolean {
+  const leftRunId = left.runId?.trim() ?? "";
+  const rightRunId = right.runId?.trim() ?? "";
+  return leftRunId.length > 0 && leftRunId === rightRunId;
+}
+
+function persistedAnswerRowWithRuntimeReveal(
+  persistedRow: TimelineRow,
+  runtimeRow: TimelineRow,
+): TimelineRow {
+  const runtimeRevealed = runtimeRow.parts.some(
+    (part) => part.kind === "text" && part.reveal === true,
+  );
+  if (!runtimeRevealed) {
+    return persistedRow;
+  }
+  const parts = persistedRow.parts.map((part) =>
+    part.kind === "text"
+      ? { ...part, reveal: true, streaming: false }
+      : part,
+  );
+  return {
+    ...persistedRow,
+    key: `${persistedRow.key}:runtime-reveal:${runtimeRow.key}`,
+    parts,
+    text: rowCopyText(parts),
+  };
 }
 
 function runtimeThinkingMergeItem(
@@ -1870,11 +2039,7 @@ function timelineRowNonToolContentDedupeKey(row: TimelineRow): string | null {
 function dropPersistedRowsCoveredByTerminalRuntime(
   persistedRows: TimelineRow[],
   runtimeRows: TimelineRow[],
-  variant: "session" | "subagent-panel",
 ): TimelineRow[] {
-  if (variant !== "subagent-panel") {
-    return persistedRows;
-  }
   const terminalRuntimeTextsByRunId = new Map<string, Set<string>>();
   for (const row of runtimeRows) {
     const runId = row.runId?.trim() ?? "";
@@ -2067,6 +2232,9 @@ function runtimeEntriesToRows(
     if (entryClosesThinking(entry.kind)) {
       closeActiveThinkingForRun(entry.runId, activeThinking);
     }
+    if (mergeRuntimeCompletedOutputIntoActiveText(entry, rows, activeText)) {
+      continue;
+    }
     if (runtimeInjectionSupersedesPendingToolCalls(entry)) {
       removeSupersededPendingToolRows(rows, entry, resolvedToolCallIds);
     }
@@ -2111,6 +2279,49 @@ function runtimeRunStateClosesText(
     runState?.status === "failed" ||
     runState?.terminalEventType !== null
   );
+}
+
+function mergeRuntimeCompletedOutputIntoActiveText(
+  entry: TimelineEntry,
+  rows: TimelineRow[],
+  activeText: Map<string, RuntimeTextAccumulator>,
+): boolean {
+  if (entry.kind !== "run_completed" || !runtimeEntryHasStructuredOutput(entry)) {
+    return false;
+  }
+  const existing = activeText.get(runtimeTextGroupKey(entry));
+  if (existing === undefined) {
+    return false;
+  }
+  const outputText = runtimeCompletedOutputText(entry);
+  if (outputText.length === 0) {
+    return false;
+  }
+  const currentText = normalizedTimelineText(existing.part.text);
+  const normalizedOutputText = normalizedTimelineText(outputText);
+  if (
+    currentText.length > 0 &&
+    !normalizedOutputText.includes(currentText)
+  ) {
+    return false;
+  }
+  existing.part.text = outputText;
+  existing.row.text = outputText;
+  existing.placeholder = false;
+  closeRuntimeTextAccumulator(rows, existing);
+  activeText.delete(runtimeTextGroupKey(entry));
+  return true;
+}
+
+function runtimeCompletedOutputText(entry: TimelineEntry): string {
+  const parts = runtimeOutputParts(entry) ?? [];
+  if (parts.some((part) => part.kind !== "text")) {
+    return "";
+  }
+  return parts
+    .filter((part): part is TimelineTextPart => part.kind === "text")
+    .map((part) => part.text)
+    .join("");
 }
 
 function rememberResolvedRuntimeToolCall(
@@ -2796,6 +3007,25 @@ function timelineOutputTextByRunId(rows: TimelineRow[]): Map<string, string> {
   return textByRunId;
 }
 
+function timelineOutputSourcesByRunId(
+  rows: TimelineRow[],
+): Map<string, Set<TimelineRunIdSource>> {
+  const sourcesByRunId = new Map<string, Set<TimelineRunIdSource>>();
+  for (const row of rows) {
+    if (!isAnswerRole(row.role)) {
+      continue;
+    }
+    const runId = row.runId?.trim() ?? "";
+    if (runId.length === 0 || row.runIdSource === undefined || row.runIdSource === null) {
+      continue;
+    }
+    const sources = sourcesByRunId.get(runId) ?? new Set<TimelineRunIdSource>();
+    sources.add(row.runIdSource);
+    sourcesByRunId.set(runId, sources);
+  }
+  return sourcesByRunId;
+}
+
 type TimelineToolHydrationState = "pending" | "resolved";
 
 function timelineToolStatesByRunId(
@@ -2863,6 +3093,7 @@ function runtimeEntriesAfterHydration(
   primaryRoleId: string | null,
   variant: "session" | "subagent-panel",
   hydratedOutputTextByRunId: Map<string, string>,
+  hydratedOutputSourcesByRunId: Map<string, Set<TimelineRunIdSource>>,
   hydratedThinkingTextByRunId: Map<string, string>,
   hydratedToolStatesByRunId: Map<string, Map<string, TimelineToolHydrationState>>,
 ): TimelineEntry[] {
@@ -2875,6 +3106,7 @@ function runtimeEntriesAfterHydration(
     }),
   );
   const hydratedText = hydratedOutputTextByRunId.get(runState.runId);
+  const hydratedOutputSources = hydratedOutputSourcesByRunId.get(runState.runId);
   const hydratedThinkingText = hydratedThinkingTextByRunId.get(runState.runId);
   const hydratedToolStates =
     hydratedToolStatesByRunId.get(runState.runId) ??
@@ -2895,14 +3127,28 @@ function runtimeEntriesAfterHydration(
       if (nextEntry === null) {
         return [];
       }
-      return runtimeEntryIsCoveredByHydratedOutput(
+      const coveredByHydration = runtimeEntryIsCoveredByHydratedOutput(
         nextEntry,
         runState,
         hydratedText ?? "",
         hydratedThinkingText ?? "",
         hydratedToolStates,
-      ) &&
-        !shouldPreserveTerminalRuntimeTextEntry(nextEntry, runState, variant)
+      );
+      if (coveredByHydration) {
+        const revealEntry = terminalRuntimeHydratedRevealEntry(
+          nextEntry,
+          runState,
+          variant,
+          hydratedText ?? "",
+        );
+        return revealEntry === null ? [] : [revealEntry];
+      }
+      return terminalRuntimeTextSupersededByHydratedAnswer(
+        nextEntry,
+        runState,
+        hydratedText ?? "",
+        hydratedOutputSources,
+      )
         ? []
         : [nextEntry];
     });
@@ -2972,17 +3218,43 @@ function openRuntimeEntriesWithIdleCursor(
   return rowPipelineEntries;
 }
 
-function shouldPreserveTerminalRuntimeTextEntry(
+function terminalRuntimeHydratedRevealEntry(
   entry: TimelineEntry,
   runState: RuntimeRunState,
   variant: "session" | "subagent-panel",
+  hydratedText: string,
+): TimelineEntry | null {
+  const runtimeText = normalizedTimelineText(rowCopyText(runtimeEntryParts(entry, variant)));
+  const normalizedHydratedText = normalizedTimelineText(hydratedText);
+  if (
+    (runState.hadVisibleTextStream !== true && runState.scope !== "subagent") ||
+    runState.status !== "closed" ||
+    (entry.kind !== "text_delta" && entry.kind !== "output_delta") ||
+    runtimeText.length === 0
+  ) {
+    return null;
+  }
+  if (normalizedHydratedText.length === 0 || runtimeText === normalizedHydratedText) {
+    return entry;
+  }
+  if (!normalizedHydratedText.includes(runtimeText)) {
+    return null;
+  }
+  return runtimeTextEntryWithText(entry, hydratedText);
+}
+
+function terminalRuntimeTextSupersededByHydratedAnswer(
+  entry: TimelineEntry,
+  runState: RuntimeRunState,
+  hydratedText: string,
+  hydratedOutputSources: ReadonlySet<TimelineRunIdSource> | undefined,
 ): boolean {
   return (
-    variant === "subagent-panel" &&
-    runState.scope === "subagent" &&
     runState.status === "closed" &&
-    (entry.kind === "text_delta" || entry.kind === "output_delta") &&
-    normalizedTimelineText(rowCopyText(runtimeEntryParts(entry, variant))).length > 0
+    runState.hadVisibleTextStream !== true &&
+    hydratedText.trim().length > 0 &&
+    hydratedOutputSources?.has("trace_id") === true &&
+    (entry.kind === "text_delta" || entry.kind === "output_delta")
   );
 }
 
@@ -3036,6 +3308,20 @@ function runtimeHydrationCursorEntry(entry: TimelineEntry): TimelineEntry {
       text: "",
     },
     text: "",
+  };
+}
+
+function runtimeTextEntryWithText(entry: TimelineEntry, text: string): TimelineEntry {
+  return {
+    ...entry,
+    id: `${entry.id}:hydrated-reveal`,
+    kind: "text_delta",
+    payload: {
+      hydrated_terminal_reveal: true,
+      source_event_kind: entry.kind,
+      text,
+    },
+    text,
   };
 }
 
@@ -3163,6 +3449,9 @@ function runtimeEntryLooksLikeDetachedSubagent(
   runState: RuntimeRunState,
   primaryRoleId: string | null,
 ): boolean {
+  if (entry.kind === "subagent_session_status_changed") {
+    return false;
+  }
   if (runState.scope === "subagent") {
     return true;
   }
@@ -4052,35 +4341,44 @@ function stableTimelineRole(roleName: string): string {
   return role;
 }
 
-function messageRunId(
+function messageRunIdentity(
   message: TimelineMessage,
   roundLookup: MessageRoundLookup,
   fallbackRunId: string | null,
-): string | null {
-  const explicitRunId = (message.run_id ?? message.trace_id)?.trim();
-  if (explicitRunId !== undefined && explicitRunId.length > 0) {
-    return explicitRunId;
+): {
+  runId: string | null;
+  source: TimelineRunIdSource | null;
+} {
+  const explicitRunId = message.run_id?.trim() ?? "";
+  if (explicitRunId.length > 0) {
+    return { runId: explicitRunId, source: "run_id" };
+  }
+  const traceRunId = message.trace_id?.trim() ?? "";
+  if (traceRunId.length > 0) {
+    return { runId: traceRunId, source: "trace_id" };
   }
   const messageId = message.message_id?.trim();
   if (messageId !== undefined && messageId.length > 0) {
     const runId = roundLookup.runIdByMessageId.get(messageId);
     if (runId !== undefined) {
-      return runId;
+      return { runId, source: "round" };
     }
   }
   const createdAt = timestampMs(message.created_at);
   if (createdAt !== null) {
     const exactRunId = roundLookup.runIdByCreatedAt.get(createdAt);
     if (exactRunId !== undefined) {
-      return exactRunId;
+      return { runId: exactRunId, source: "round" };
     }
     const boundaryRunId = runIdForTimestamp(createdAt, roundLookup.boundaries);
     if (boundaryRunId !== null) {
-      return boundaryRunId;
+      return { runId: boundaryRunId, source: "round" };
     }
   }
   const normalizedFallbackRunId = fallbackRunId?.trim() ?? "";
-  return normalizedFallbackRunId.length > 0 ? normalizedFallbackRunId : null;
+  return normalizedFallbackRunId.length > 0
+    ? { runId: normalizedFallbackRunId, source: "fallback" }
+    : { runId: null, source: null };
 }
 
 function runIdForTimestamp(
@@ -4273,11 +4571,17 @@ function closeRuntimeTextAccumulator(
     return;
   }
   existing.part.streaming = false;
+  existing.part.reveal = true;
 }
 
-function timelineTextPart(text: string, streaming = false): TimelineTextPart {
+function timelineTextPart(
+  text: string,
+  streaming = false,
+  reveal = false,
+): TimelineTextPart {
   return {
     kind: "text",
+    ...(reveal ? { reveal } : {}),
     streaming,
     text,
   };
@@ -4994,8 +5298,12 @@ function MessageRowContent({
 }
 
 function MessageText({ part }: { part: TimelineTextPart }) {
-  const streamingDisplay = useStreamingDisplayText(part.text, part.streaming);
-  const visuallyStreaming = part.streaming || streamingDisplay.cursorVisible;
+  const streamingDisplay = useStreamingDisplayText(
+    part.text,
+    part.streaming,
+    part.reveal === true,
+  );
+  const visuallyStreaming = part.streaming || streamingDisplay.revealing;
   if (visuallyStreaming && part.text.length >= LONG_STREAM_TEXT_THRESHOLD) {
     return (
       <pre className="at-message-plain-stream" data-render-mode="plain-stream">
@@ -5017,17 +5325,20 @@ function MessageText({ part }: { part: TimelineTextPart }) {
 
 interface StreamingDisplayText {
   cursorVisible: boolean;
+  revealing: boolean;
   text: string;
 }
 
 function useStreamingDisplayText(
   targetText: string,
   streaming: boolean,
+  reveal: boolean,
 ): StreamingDisplayText {
   const smoothEnabled = import.meta.env.MODE !== "test";
-  const sawStreamingRef = useRef(smoothEnabled && streaming);
+  const shouldReveal = streaming || reveal;
+  const sawStreamingRef = useRef(smoothEnabled && shouldReveal);
   const [displayedText, setDisplayedText] = useState(() =>
-    smoothEnabled && streaming ? initialStreamingText(targetText) : targetText,
+    smoothEnabled && shouldReveal ? initialStreamingText(targetText) : targetText,
   );
 
   useEffect(() => {
@@ -5035,16 +5346,16 @@ function useStreamingDisplayText(
       setDisplayedText(targetText);
       return;
     }
-    if (streaming) {
+    if (shouldReveal) {
       sawStreamingRef.current = true;
     }
     setDisplayedText((current) => {
       const canContinueTerminalReveal =
-        !streaming &&
+        !shouldReveal &&
         sawStreamingRef.current &&
         targetText.startsWith(current) &&
         current.length < targetText.length;
-      if (streaming || canContinueTerminalReveal) {
+      if (shouldReveal || canContinueTerminalReveal) {
         if (current.length === 0) {
           return initialStreamingText(targetText);
         }
@@ -5056,7 +5367,7 @@ function useStreamingDisplayText(
       sawStreamingRef.current = false;
       return targetText;
     });
-  }, [smoothEnabled, streaming, targetText]);
+  }, [shouldReveal, smoothEnabled, targetText]);
 
   useEffect(() => {
     if (
@@ -5102,11 +5413,13 @@ function useStreamingDisplayText(
   if (!smoothEnabled) {
     return {
       cursorVisible: streaming,
+      revealing: streaming,
       text: targetText,
     };
   }
   return {
-    cursorVisible: revealActive,
+    cursorVisible: streaming,
+    revealing: revealActive,
     text: displayedText,
   };
 }
@@ -5127,15 +5440,13 @@ function revealNextStreamingText(current: string, target: string): string {
     return target;
   }
   let step = STREAM_TYPEWRITER_MIN_STEP;
-  if (remaining > 800) {
-    step = 12;
-  } else if (remaining > 320) {
-    step = 8;
-  } else if (remaining > 120) {
-    step = 5;
-  } else if (remaining > 48) {
+  if (remaining > 1200) {
+    step = 6;
+  } else if (remaining > 520) {
+    step = 4;
+  } else if (remaining > 220) {
     step = 3;
-  } else if (remaining > 16) {
+  } else if (remaining > 96) {
     step = 2;
   }
   return target.slice(0, Math.min(target.length, current.length + step));
@@ -6327,8 +6638,7 @@ function subagentReferenceFromValues({
     ]),
     runId: subagentStringField(candidateObjects, [
       "subagent_run_id",
-      "run_id",
-      "runId",
+      "subagentRunId",
     ]),
     runPhase: subagentStringField(candidateObjects, ["run_phase", "runPhase"]),
     runStatus: subagentStringField(candidateObjects, ["run_status", "runStatus"]),
@@ -6474,7 +6784,7 @@ function subagentBooleanField(
 function subagentReferenceFromText(text: string): TimelineSubagentReference | null {
   const runId = firstRegexGroup(
     text,
-    /(?:subagent_run_id|run_id|runId)\s*[:=]\s*["']?([A-Za-z0-9_.:-]+)/i,
+    /(?:subagent_run_id|subagentRunId)\s*[:=]\s*["']?([A-Za-z0-9_.:-]+)/i,
   );
   const instanceId = firstRegexGroup(
     text,

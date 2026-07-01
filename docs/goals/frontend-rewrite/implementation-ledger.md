@@ -8313,3 +8313,19 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent source fix, packed browser parity gate, screenshot inspection, frontend build/lint, and matrix/ledger updates completed for this slice. No full Settings subsystem PASS or final V2 completion is claimed.
+
+## 2026-07-01 Settings Model Profile Browser Evidence Closure
+
+### Scope
+- Re-checked the frontend rewrite matrix and selected `SET-06 Models` because it was still `Not checked` even though earlier recovery work had implemented the Model settings surface.
+- Ran the packed-browser Models scenarios instead of relying on source inspection. The catalog-create scenario initially failed because `Model catalog` matched both the title and the loading status, so the existing evidence was not clean.
+- Fixed the browser assertion to use exact title matching and added a missing screenshot checkpoint for the Model profile list before entering a secondary profile editor.
+- Confirmed by screenshot inspection that the Model settings entry remains part of the V1-aligned root Settings list, profile rows stay on the primary Model page, existing and created profiles open in second-level detail pages, API key values remain hidden, and catalog selection fills provider/model/base URL/context/output/image capability fields.
+- Updated `SET-06` from `Not checked` to `In progress`. This slice does not claim Model settings `Verified`, full Settings completion, formal V1 visual/DOM pairing, credential/keyring failure-state completion, reviewer sign-off, release cleanup sign-off, or final V2 frontend completion.
+
+### Verification
+- `npm run test:browser -- v2-settings-actions.spec.ts --project=chromium -g "model profile"` passed with 2 browser tests after the assertion fix.
+- Inspected `.tmp/frontend-v2-ts-settings-actions/v2-model-profile-list.png`, `.tmp/frontend-v2-ts-settings-actions/v2-model-profile-detail.png`, `.tmp/frontend-v2-ts-settings-actions/v2-model-profile-catalog-picker.png`, and `.tmp/frontend-v2-ts-settings-actions/v2-model-profile-catalog-create.png`.
+
+### Reviewer
+- Main-agent matrix scan, failing browser evidence reproduction, targeted browser assertion fix, added screenshot checkpoint, focused browser verification, screenshot inspection, and matrix/ledger updates completed for this slice. No Settings subsystem PASS or final V2 completion is claimed.

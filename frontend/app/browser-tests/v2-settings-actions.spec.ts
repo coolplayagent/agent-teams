@@ -702,6 +702,9 @@ test("tests and saves an existing model profile", async ({ page }) => {
       hasText: "vision",
     });
     await expect(visionRow).toBeVisible();
+    await page.screenshot({
+      path: screenshotPath("v2-model-profile-list.png", SCREENSHOT_FOLDER),
+    });
     await visionRow.locator(".at-model-profile-row-main").click();
 
     const profileIdInput = settings.getByLabel("Profile ID");
@@ -822,7 +825,7 @@ test("creates a model profile from the catalog", async ({ page }) => {
       settings.getByRole("button", { name: "New profile" }).click(),
     ]);
 
-    await expect(settings.getByText("Model catalog")).toBeVisible();
+    await expect(settings.getByText("Model catalog", { exact: true })).toBeVisible();
     await settings.locator(".at-model-catalog-option").filter({
       hasText: "GPT-5 Catalog",
     }).click();

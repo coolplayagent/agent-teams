@@ -2,6 +2,21 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-02 Real Backend History Audit Hardening
+
+### Scope
+- Re-audited the P0 runtime evidence quality instead of accepting the existing real-backend history browser pass as complete.
+- Tightened `v2-real-backend-history.spec.ts` so the sampled real backend main timeline and right-side subagent panel must have no empty thinking cards, no raw internal lifecycle lines such as `Run ... is running`, no standalone `Explorer`/`Crafter` role-label rows, no stale streaming cursor, and at least one real message or tool row.
+- Kept this as a verification-hardening slice, not a production behavior claim. It does not relax the remaining live real-backend orchestration/tool-heavy closure requirements.
+- Corrected the closure-order status table in the matrix so sessions/subagents, visual polish, and cleanup are tracked as `In progress`, matching the detailed matrix snapshot that has no `Not checked` rows left.
+
+### Verification
+- `npm run test:browser -- v2-real-backend-history.spec.ts --project=chromium` passed with 2 Chromium scenarios against the running local backend.
+- Main-agent visual inspection reviewed `.tmp/frontend-v2-real-backend/real-backend-subagent-history.png`, `.tmp/frontend-v2-real-backend/real-backend-subagent-panel.png`, and `.tmp/frontend-v2-real-backend/real-backend-orchestration-history.png`.
+
+### Reviewer
+- Main-agent decision: this tightens evidence for `MSG-03`, `MSG-04`, `STREAM-02`, and `SUB-01` by checking real rendered DOM invariants that directly catch the empty-thinking/internal-line/role-label leakage problems seen during review. It does not mark those rows `Verified`, and it does not claim final V2 frontend completion.
+
 ## 2026-07-02 Hooks Settings Structured Error Closure
 
 ### Scope

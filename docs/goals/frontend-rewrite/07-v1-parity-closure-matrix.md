@@ -25,7 +25,7 @@ Last audited: 2026-07-02.
 | --- | ---: | --- |
 | Verified | 3 | `SET-03`, `SET-04`, `SET-05` |
 | In progress | 41 | All remaining matrix rows |
-| Not checked | 0 | None in the detailed matrix; the closure-order bands for sessions/projects/subagents, visual polish, and cleanup still remain open because their row groups have not reached `Verified`. |
+| Not checked | 0 | None in the detailed matrix. Open closure-order bands are tracked as `In progress` until their row groups reach `Verified`. |
 
 The execution rule from here is deliberately narrow: finish rows to
 `Verified` in priority order, and do not mark a row done until V1 capture, V2
@@ -48,10 +48,10 @@ browser evidence, automated coverage, and manual visual review all agree.
 | P0 | V1 navigation inventory | Randomly adding or removing entries breaks product parity. | Sidebar and settings entries exactly match V1 unless a difference is documented and approved. | In progress |
 | P1 | Settings pages | Settings are visibly incomplete and easy to compare item by item. | Every V1 settings tab has the same reachable second-level logic, controls, loading/error/disabled states, save behavior, and tests. | In progress |
 | P1 | Composer and run controls | Run creation, stop/resume, modes, roles, model/preset controls, YOLO, Shell, thinking, and injection are core workflows. | Normal and orchestration modes behave like V1 through create, stop, resume, inject, and switch flows. | In progress |
-| P1 | Sessions, projects, and subagents | Session selection and active/background work determine most app navigation. | Project/session/subagent selection, indicators, refresh, and unavailable states match V1. | Not checked |
+| P1 | Sessions, projects, and subagents | Session selection and active/background work determine most app navigation. | Project/session/subagent selection, indicators, refresh, and unavailable states match V1. | In progress |
 | P1 | Search, board, connectors, memory, observability | These are primary V1 surfaces, not optional placeholders. | Each surface has a V1 capture, V2 implementation location, browser pass, and focused tests for real actions. | In progress |
-| P2 | Visual polish and density | Once behavior is stable, each page needs V1-quality spacing, typography, and control placement. | Desktop and narrow screenshots are reviewed page by page against V1. | Not checked |
-| P2 | Cleanup and naming | The final product cannot feel like a temporary V2 fork. | Temporary V2 names are removed or isolated to migration-only files. | Not checked |
+| P2 | Visual polish and density | Once behavior is stable, each page needs V1-quality spacing, typography, and control placement. | Desktop and narrow screenshots are reviewed page by page against V1. | In progress |
+| P2 | Cleanup and naming | The final product cannot feel like a temporary V2 fork. | Temporary V2 names are removed or isolated to migration-only files. | In progress |
 
 ## V1 Inventory And Verification Matrix
 
@@ -113,6 +113,14 @@ For every row moved to `Verified`, record:
 5. Decision: same as V1, intentionally better, or documented product change.
 
 ## Verification Ledger
+
+### 2026-07-02 Real Backend History Audit Hardening
+
+- Tightened `v2-real-backend-history.spec.ts` so real backend history is no longer accepted just because text is visible. The browser test now audits both the main timeline and the right-side subagent panel for empty thinking cards, raw internal lifecycle lines, standalone `Explorer`/`Crafter` role labels, stale streaming cursors, and actual message/tool presence.
+- Re-ran the real local backend history browser pass against the currently running app and inspected the generated screenshots: `.tmp/frontend-v2-real-backend/real-backend-subagent-history.png`, `.tmp/frontend-v2-real-backend/real-backend-subagent-panel.png`, and `.tmp/frontend-v2-real-backend/real-backend-orchestration-history.png`.
+- Corrected the closure-order status table so sessions/subagents, visual polish, and cleanup are tracked as `In progress` instead of contradicting the detailed matrix's `Not checked = 0` snapshot.
+- Evidence: `npm run test:browser -- v2-real-backend-history.spec.ts --project=chromium`.
+- This is an evidence-quality tightening slice for `MSG-03`, `MSG-04`, `STREAM-02`, and `SUB-01`. It does not claim those rows are `Verified`; live real-backend orchestration variants, final V1 visual sign-off, reviewer sign-off, and final V2 completion remain open.
 
 ### 2026-07-02 Hooks Settings Structured Error Closure
 

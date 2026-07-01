@@ -50,6 +50,15 @@ interface RealBackendSample {
   workspaceId: string;
 }
 
+interface TimelineDiagnostics {
+  emptyThinkingCount: number;
+  internalLifecycleLineCount: number;
+  messageCount: number;
+  roleOnlyLines: number;
+  streamingCursorCount: number;
+  toolCount: number;
+}
+
 test.setTimeout(60_000);
 
 test("renders real backend subagent tool history without layout leaks", async ({
@@ -86,24 +95,25 @@ test("renders real backend subagent tool history without layout leaks", async ({
     const panel = document.querySelector(".at-subagent-side-panel");
     const rect = panel?.getBoundingClientRect();
     return {
-      messageCount: panel?.querySelectorAll(".at-message").length ?? 0,
       panelWidth: rect?.width ?? 0,
       promptLength:
         document
           .querySelector(".at-subagent-session-prompt")
           ?.textContent?.trim().length ?? 0,
-      roleOnlyLines: (panel?.textContent ?? "")
-        .split("\n")
-        .filter((line) => ["Explorer", "Crafter"].includes(line.trim())).length,
-      toolCount: panel?.querySelectorAll(".at-message-tool").length ?? 0,
     };
-  });
-  expect(panelState).toMatchObject({
-    roleOnlyLines: 0,
   });
   expect(panelState.panelWidth).toBeGreaterThanOrEqual(420);
   expect(panelState.promptLength).toBeGreaterThan(20);
-  expect(panelState.messageCount + panelState.toolCount).toBeGreaterThan(0);
+
+  const panelDiagnostics = await timelineDiagnostics(page, ".at-subagent-side-panel");
+  expect(panelDiagnostics).toMatchObject({
+    emptyThinkingCount: 0,
+    internalLifecycleLineCount: 0,
+    roleOnlyLines: 0,
+    streamingCursorCount: 0,
+  });
+  expect(panelDiagnostics.messageCount + panelDiagnostics.toolCount)
+    .toBeGreaterThan(0);
 
   await page.screenshot({
     fullPage: false,
@@ -125,6 +135,15 @@ test("renders real backend orchestration history without duplicated role labels"
 
   await openRealBackendSession(page, sample);
   await expectRealBackendShell(page, sample);
+  await expandProcessedGroups(page);
+  const diagnostics = await timelineDiagnostics(page, ".at-chat-view");
+  expect(diagnostics).toMatchObject({
+    emptyThinkingCount: 0,
+    internalLifecycleLineCount: 0,
+    roleOnlyLines: 0,
+    streamingCursorCount: 0,
+  });
+  expect(diagnostics.messageCount + diagnostics.toolCount).toBeGreaterThan(0);
 });
 
 async function openRealBackendSession(
@@ -160,41 +179,49 @@ async function expectRealBackendShell(
   );
   await expectComposerControlsDoNotOverlap(page);
   await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const main = document.querySelector(".at-chat-view")?.textContent ?? "";
-        return {
-          chatViewCount: document.querySelectorAll(".at-chat-view").length,
-          emptyThinkingCount: countEmptyThinkingBlocks(),
-          roleOnlyLines: countRoleOnlyLines(main),
-          toolCount: document.querySelectorAll(".at-message-tool").length,
-        };
-
-        function countEmptyThinkingBlocks(): number {
-          return Array.from(document.querySelectorAll(".at-message-thinking")).filter(
-            (node) => {
-              const text = (node.textContent ?? "").trim();
-              return text === "思考" || text === "Thinking";
-            },
-          ).length;
-        }
-
-        function countRoleOnlyLines(text: string): number {
-          return text
-            .split("\n")
-            .filter((line) => ["Explorer", "Crafter"].includes(line.trim()))
-            .length;
-        }
-      }),
+    .poll(() => page.locator(".at-chat-view").count(),
+      { message: "real backend history should render one main chat timeline" },
     )
+    .toBe(1);
+  await expect
+    .poll(() => timelineDiagnostics(page, ".at-chat-view"))
     .toMatchObject({
-      chatViewCount: 1,
       emptyThinkingCount: 0,
+      internalLifecycleLineCount: 0,
       roleOnlyLines: 0,
+      streamingCursorCount: 0,
     });
   await page.screenshot({
     fullPage: false,
     path: screenshotPath(sample.screenshotName, SCREENSHOT_FOLDER),
+  });
+}
+
+async function timelineDiagnostics(
+  page: Page,
+  rootSelector: string,
+): Promise<TimelineDiagnostics> {
+  return page.locator(rootSelector).evaluate((root) => {
+    const text = root.textContent ?? "";
+    const internalLifecycleLinePattern =
+      /^(Run .+ is (running|awaiting_manual_action)|Model step (started|finished):|Injection (queued|applied):|tool call batch sealed|Token usage:)/i;
+    return {
+      emptyThinkingCount: Array.from(root.querySelectorAll(".at-message-thinking"))
+        .filter((node) => {
+          const bodyText = node.querySelector(".at-message-thinking-body")
+            ?.textContent?.trim() ?? "";
+          return bodyText.length === 0;
+        }).length,
+      internalLifecycleLineCount: text
+        .split("\n")
+        .filter((line) => internalLifecycleLinePattern.test(line.trim())).length,
+      messageCount: root.querySelectorAll(".at-message").length,
+      roleOnlyLines: text
+        .split("\n")
+        .filter((line) => ["Explorer", "Crafter"].includes(line.trim())).length,
+      streamingCursorCount: root.querySelectorAll(".streaming-cursor").length,
+      toolCount: root.querySelectorAll(".at-message-tool").length,
+    };
   });
 }
 

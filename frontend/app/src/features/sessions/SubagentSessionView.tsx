@@ -77,8 +77,7 @@ export function SubagentSessionView({
   );
   const subagentWaitingForOutput = subagentHasStreamingStatus(displayedSubagent);
   const subagentPromptText = displayedSubagent.promptText.trim();
-  const shouldShowLivePrompt =
-    subagentWaitingForOutput && subagentPromptText.length > 0;
+  const shouldShowSubagentPrompt = subagentPromptText.length > 0;
   const streamStatusKey = [
     displayedSubagent.status,
     displayedSubagent.runStatus,
@@ -246,7 +245,7 @@ export function SubagentSessionView({
         </div>
       </header>
       <div className="at-subagent-session-body">
-        {shouldShowLivePrompt ? (
+        {shouldShowSubagentPrompt ? (
           <div className="at-subagent-session-prompt">
             <MarkdownMessage text={subagentPromptText} />
           </div>

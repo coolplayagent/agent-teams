@@ -8503,3 +8503,26 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent code inspection, source/dist mismatch correction, focused browser sampling, screenshot inspection, stream regression browser coverage, matrix update, and ledger update completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-07-01 Completed Orchestration Subagent Replay Closure
+
+### Scope
+- Re-checked the current matrix after `SUB-01` still called out missing broader orchestration replay evidence.
+- Added a packed-browser orchestration replay case to `v2-subagent-session.spec.ts`: the parent session is `session_mode: orchestration`, the visible parent transcript has a coordinator message plus a `spawn_subagent` tool card, and the child is a completed `Crafter` subagent.
+- The new browser case first failed because completed subagent panels did not render the prompt; only running/waiting panels did. This matched the user-facing concern that prompt/process information in the right panel could disappear in replay.
+- Fixed `SubagentSessionView` so a subagent prompt is shown whenever prompt text is available, not only while the child run is live.
+- Added `SubagentSessionView.test.tsx` coverage for completed subagent replay prompts so the behavior is guarded at component level as well as packed-browser level.
+- Browser assertions now prove the completed orchestration child prompt sits above the timeline, child output stays out of `.at-chat-view`, raw standalone role labels do not pollute the panel body, and hard refresh restores the same right panel.
+- Updated `SUB-01` evidence. This slice does not claim complete subagent PASS, real-backend hard-refresh replay PASS, live orchestration stream PASS, reviewer sign-off, release cleanup sign-off, or final V2 frontend completion.
+
+### Verification
+- `npm test -- src/test/SubagentSessionView.test.tsx -t "completed subagent prompt|live subagent prompt|terminal history"` passed with 4 focused tests.
+- `npm run build` passed and regenerated `frontend/dist/app`.
+- `npm run test:browser -- v2-subagent-session.spec.ts -g "orchestration subagent panel" --project=chromium` passed after the implementation fix.
+- `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium` passed with 6 browser tests.
+- `npm test -- src/test/SubagentSessionView.test.tsx` passed with 20 tests.
+- `npm run lint` passed.
+- Inspected `.tmp/frontend-v2-ts-subagent-session/v2-subagent-orchestration-replay-panel.png`; it shows the parent coordinator timeline on the left, the `Crafter` subagent prompt and completed child output in the right panel, and no child final text leaking into the parent chat.
+
+### Reviewer
+- Main-agent gap selection, failing browser reproduction, implementation fix, component and browser regression coverage, screenshot inspection, matrix update, and ledger update completed for this slice. No subsystem PASS or final V2 completion is claimed.

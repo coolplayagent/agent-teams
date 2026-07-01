@@ -359,6 +359,87 @@ test("restores an open subagent panel after hard refresh without replay leakage"
   }
 });
 
+test("replays an orchestration subagent panel without parent leakage after refresh", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: handleOrchestrationSubagentReplayApi,
+      sessionTitle: "TS orchestration parent",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    await expect(page.getByText("Coordinator summarized the orchestration plan."))
+      .toBeVisible();
+    await expect(page.getByText("Crafter completed the right-panel replay task."))
+      .toHaveCount(0);
+
+    await openSubagentPanelFromToolCard(page, "Crafter replay review");
+    const panel = page.locator(".at-subagent-session-view");
+    await expect(page.getByRole("heading", { name: "Crafter replay review" }))
+      .toBeVisible();
+    await expect(panel.locator(".at-subagent-session-badge")).toHaveText("completed");
+    await expect(panel.locator(".at-subagent-session-prompt")).toContainText(
+      "Review the orchestration replay transcript and summarize only the child work.",
+    );
+    await expect.poll(() => subagentPromptLayout(page)).toMatchObject({
+      promptBeforeTimeline: true,
+    });
+    await expect(panel.getByText("Crafter checked the orchestration inputs."))
+      .toBeVisible();
+    await expect(panel.getByText("Crafter completed the right-panel replay task."))
+      .toBeVisible();
+    await expect(
+      panel.locator(".at-subagent-session-body").getByText("Crafter", {
+        exact: true,
+      }),
+    ).toHaveCount(0);
+    await expect(
+      page.locator(".at-chat-view")
+        .getByText("Crafter completed the right-panel replay task."),
+    ).toHaveCount(0);
+
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-subagent-orchestration-replay-panel.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+
+    await page.reload();
+    await waitForV2Shell(page);
+    await expect(page.getByRole("heading", { name: "Crafter replay review" }))
+      .toBeVisible();
+    await expect(
+      page.locator(".at-subagent-session-view")
+        .getByText("Crafter completed the right-panel replay task."),
+    ).toBeVisible();
+    await expect(
+      page.locator(".at-chat-view")
+        .getByText("Crafter completed the right-panel replay task."),
+    ).toHaveCount(0);
+    await expect(
+      page.locator(
+        '.at-chat-view .at-message-tool.is-openable-subagent[data-tool-name="spawn_subagent"]',
+      ).filter({ hasText: "Crafter replay review" }),
+    ).toHaveCount(1);
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "orchestration subagent replay should stay inside the fixed V2 shell",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+  } finally {
+    await appServer.close();
+  }
+});
+
 test("keeps send, session switch, and subagent view responsive under sidebar load", async ({
   page,
 }) => {
@@ -585,6 +666,46 @@ async function handleSubagentSessionApi(
       });
     }
     await context.fulfillJson(subagentMessages(state));
+    return true;
+  }
+  return false;
+}
+
+async function handleOrchestrationSubagentReplayApi(
+  context: MockApiRouteContext,
+): Promise<boolean> {
+  if (context.method !== "GET") {
+    return false;
+  }
+  if (context.path === "/sessions/sidebar") {
+    await context.fulfillJson([orchestrationParentSidebarRecord()]);
+    return true;
+  }
+  if (context.path === `/workspaces/${WORKSPACE_ID}/sessions/sidebar`) {
+    await context.fulfillJson({
+      has_more: false,
+      items: [orchestrationParentSidebarRecord()],
+      next_cursor: null,
+    });
+    return true;
+  }
+  if (context.path === `/sessions/${SESSION_ID}`) {
+    await context.fulfillJson(orchestrationParentSessionRecord());
+    return true;
+  }
+  if (context.path === `/sessions/${SESSION_ID}/messages`) {
+    await context.fulfillJson(orchestrationParentMessages());
+    return true;
+  }
+  if (context.path === `/sessions/${SESSION_ID}/subagents`) {
+    await context.fulfillJson([orchestrationSubagentRecord()]);
+    return true;
+  }
+  if (
+    context.path ===
+    `/sessions/${SESSION_ID}/agents/${SUBAGENT_INSTANCE_ID}/messages`
+  ) {
+    await context.fulfillJson(orchestrationSubagentMessages());
     return true;
   }
   return false;
@@ -884,6 +1005,34 @@ function controlSessionRecord(): Record<string, unknown> {
   };
 }
 
+function orchestrationParentSidebarRecord(): Record<string, unknown> {
+  return {
+    active_run_status: null,
+    created_at: "2026-06-26T12:30:00Z",
+    message_count: 2,
+    session_id: SESSION_ID,
+    subagent_count: 1,
+    title: "TS orchestration parent",
+    updated_at: "2026-06-26T12:42:00Z",
+    workspace_id: WORKSPACE_ID,
+  };
+}
+
+function orchestrationParentSessionRecord(): Record<string, unknown> {
+  return {
+    can_switch_mode: true,
+    created_at: "2026-06-26T12:30:00Z",
+    normal_model_profile: null,
+    normal_root_role_id: null,
+    orchestration_preset_id: "default",
+    session_id: SESSION_ID,
+    session_mode: "orchestration",
+    title: "TS orchestration parent",
+    updated_at: "2026-06-26T12:42:00Z",
+    workspace_id: WORKSPACE_ID,
+  };
+}
+
 function pressureSidebarRecords(
   state: SubagentPressureMockState,
 ): Array<Record<string, unknown>> {
@@ -1043,6 +1192,26 @@ function controlSessionMessages(): Record<string, unknown>[] {
   ];
 }
 
+function orchestrationParentMessages(): Record<string, unknown>[] {
+  return [
+    {
+      content: "Coordinator summarized the orchestration plan.",
+      created_at: "2026-06-26T12:30:01Z",
+      message_id: "orchestration-parent-message-1",
+      role_id: "Coordinator",
+      run_id: "run-orchestration-parent",
+    },
+    subagentToolMessage({
+      createdAt: "2026-06-26T12:30:02Z",
+      messageId: "orchestration-subagent-tool",
+      prompt:
+        "Review the orchestration replay transcript and summarize only the child work.",
+      roleId: "Crafter",
+      title: "Crafter replay review",
+    }),
+  ];
+}
+
 function subagentToolMessage({
   createdAt,
   messageId,
@@ -1134,6 +1303,23 @@ function pressureSubagentRecord(): Record<string, unknown> {
   };
 }
 
+function orchestrationSubagentRecord(): Record<string, unknown> {
+  return {
+    created_at: "2026-06-26T12:35:00Z",
+    instance_id: SUBAGENT_INSTANCE_ID,
+    last_event_id: 19,
+    role_id: "Crafter",
+    run_id: SUBAGENT_RUN_ID,
+    run_phase: "completed",
+    run_status: "completed",
+    session_id: SESSION_ID,
+    status: "completed",
+    subagent_kind: "orchestration",
+    title: "Crafter replay review",
+    updated_at: "2026-06-26T12:40:00Z",
+  };
+}
+
 function subagentMessages(state: SubagentSessionMockState): Record<string, unknown>[] {
   if (state.completed) {
     return [
@@ -1176,6 +1362,30 @@ function pressureSubagentMessages(): Array<Record<string, unknown>> {
       created_at: "2026-06-26T11:16:00Z",
       message_id: "pressure-subagent-message-1",
       role_id: "reviewer",
+      run_id: SUBAGENT_RUN_ID,
+    },
+  ];
+}
+
+function orchestrationSubagentMessages(): Array<Record<string, unknown>> {
+  return [
+    {
+      content: "Crafter checked the orchestration inputs.",
+      created_at: "2026-06-26T12:36:00Z",
+      message_id: "orchestration-subagent-message-1",
+      role_id: "Crafter",
+      run_id: SUBAGENT_RUN_ID,
+    },
+    {
+      content: [
+        "Crafter completed the right-panel replay task.",
+        "",
+        "- Parent timeline stayed clean.",
+        "- Child replay remained readable.",
+      ].join("\n"),
+      created_at: "2026-06-26T12:40:00Z",
+      message_id: "orchestration-subagent-message-2",
+      role_id: "Crafter",
       run_id: SUBAGENT_RUN_ID,
     },
   ];

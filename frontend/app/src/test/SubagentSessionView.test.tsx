@@ -203,6 +203,35 @@ describe("SubagentSessionView", () => {
     );
   });
 
+  it("keeps a completed subagent prompt visible during replay", async () => {
+    listAgentMessagesMock.mockResolvedValue([
+      {
+        content: "Completed subagent replay answer.",
+        created_at: "2026-06-23T10:08:00Z",
+        message_id: "subagent-replay-message",
+        role_id: "explorer",
+        run_id: "subagent_run_1",
+      },
+    ]);
+    const controller = createRunStreamController();
+
+    renderSubagentSessionView({
+      controller,
+      subagent: createSubagent({
+        promptText: "Summarize the completed child work.",
+        runPhase: "completed",
+        runStatus: "completed",
+        status: "completed",
+      }),
+    });
+
+    expect(await screen.findByText("Summarize the completed child work."))
+      .toBeVisible();
+    expect(await screen.findByText("Completed subagent replay answer."))
+      .toBeVisible();
+    expect(openSessionSubagentRunStreamMock).not.toHaveBeenCalled();
+  });
+
   it("replays a running subagent from the beginning when no live cursor exists", async () => {
     const controller = createRunStreamController();
 

@@ -296,6 +296,101 @@ test("copies, imports, and resets appearance themes through browser controls", a
   }
 });
 
+test("keeps appearance stable on failed import and clipboard fallback", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  try {
+    await installShellState(page);
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: {
+          writeText: async () => {
+            throw new Error("Clipboard unavailable in this browser context.");
+          },
+        },
+      });
+      document.execCommand = (commandId: string) => {
+        if (commandId !== "copy") {
+          return false;
+        }
+        const activeElement = document.activeElement;
+        if (
+          activeElement instanceof HTMLTextAreaElement ||
+          activeElement instanceof HTMLInputElement
+        ) {
+          window.localStorage.setItem(
+            "agentTeams.testAppearanceFallbackClipboard",
+            activeElement.value,
+          );
+        }
+        return true;
+      };
+    });
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      sessionTitle: "TS appearance import failure fallback",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    await page.locator(".at-topbar").getByRole("button", { name: "Settings" })
+      .click();
+
+    const settings = page.getByRole("dialog", { name: "Settings" });
+    await expect(settings).toBeVisible();
+    await settings.getByRole("button", { name: "Light" }).click();
+    await expect.poll(() => appearanceStorage(page)).toMatchObject({
+      accent: "#0969DA",
+      background: "#FFFFFF",
+      foreground: "#1F2328",
+      themePreset: "github",
+    });
+
+    await settings.getByRole("button", { name: "Copy theme" }).click();
+    await expect
+      .poll(async () => fallbackCopiedAppearanceTheme(page))
+      .toMatchObject({
+        accent: "#0969DA",
+        background: "#FFFFFF",
+        foreground: "#1F2328",
+        themePreset: "github",
+      });
+    await expect(page.getByText("Theme copied.")).toBeVisible();
+
+    const fileChooserPromise = page.waitForEvent("filechooser");
+    await settings.getByRole("button", { name: "Import" }).click();
+    const fileChooser = await fileChooserPromise;
+    await fileChooser.setFiles({
+      buffer: Buffer.from("{ invalid theme json"),
+      mimeType: "application/json",
+      name: "broken-theme.json",
+    });
+
+    await expect(page.getByText("Could not import theme.")).toBeVisible();
+    await expect.poll(() => appearanceStorage(page)).toMatchObject({
+      accent: "#0969DA",
+      background: "#FFFFFF",
+      foreground: "#1F2328",
+      themePreset: "github",
+    });
+    await expect.poll(() => appearanceFrameMetrics(page)).toMatchObject({
+      accent: "#0969DA",
+      background: "#FFFFFF",
+      foreground: "#1F2328",
+    });
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(page, "appearance failed import should stay framed");
+    await page.screenshot({
+      path: screenshotPath("v2-appearance-import-failed.png", SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
 test("keeps the workspace fixed under the narrow sidebar overlay", async ({
   page,
 }) => {
@@ -427,6 +522,18 @@ async function copiedAppearanceTheme(page: Page): Promise<AppearanceStorage> {
   return page.evaluate(() => {
     const raw =
       window.localStorage.getItem("agentTeams.testAppearanceClipboard") ?? "{}";
+    const parsed: unknown = JSON.parse(raw);
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+      ? parsed
+      : {};
+  });
+}
+
+async function fallbackCopiedAppearanceTheme(page: Page): Promise<AppearanceStorage> {
+  return page.evaluate(() => {
+    const raw =
+      window.localStorage.getItem("agentTeams.testAppearanceFallbackClipboard") ??
+      "{}";
     const parsed: unknown = JSON.parse(raw);
     return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
       ? parsed

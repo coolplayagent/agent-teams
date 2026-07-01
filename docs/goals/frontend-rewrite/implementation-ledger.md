@@ -7,14 +7,16 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 ### Scope
 - Extended `v2-appearance-layout.spec.ts` with a real browser flow for the Appearance settings actions that were still missing from `SET-02`: copy the active GitHub theme through `navigator.clipboard.writeText`, import a JSON theme through the file chooser, verify localStorage and live CSS variables update, then reset back to the default appearance state.
 - Captured the imported and reset states inside the fixed Settings shell so the evidence covers both behavior and layout framing.
+- Added failure/fallback coverage for the same controls: when `navigator.clipboard.writeText` rejects, the UI falls back through `document.execCommand("copy")`; when a malformed JSON theme is selected, the visible error renders and the existing GitHub theme storage/CSS state remains unchanged.
 
 ### Verification
 - `npm run test:browser -- v2-appearance-layout.spec.ts --project=chromium -g "copies, imports, and resets"` passed.
+- `npm run test:browser -- v2-appearance-layout.spec.ts --project=chromium -g "failed import and clipboard fallback"` passed.
 - `npm run test:browser -- v2-appearance-layout.spec.ts --project=chromium` passed.
-- Screenshots: `.tmp/frontend-v2-ts-appearance/v2-appearance-imported-theme.png`, `.tmp/frontend-v2-ts-appearance/v2-appearance-reset-default.png`.
+- Screenshots: `.tmp/frontend-v2-ts-appearance/v2-appearance-imported-theme.png`, `.tmp/frontend-v2-ts-appearance/v2-appearance-reset-default.png`, `.tmp/frontend-v2-ts-appearance/v2-appearance-import-failed.png`.
 
 ### Reviewer
-- Main-agent decision: this narrows `SET-02` by proving the import/copy/reset happy path in the packed browser UI. `SET-02` stays `In progress` until final V1 paired visual sign-off and failure/fallback states are covered.
+- Main-agent decision: this narrows `SET-02` by proving import/copy/reset happy path plus failure/fallback behavior in the packed browser UI. `SET-02` stays `In progress` until final V1 paired visual sign-off.
 
 ## 2026-07-01 Recovery Stream Python Harness Removal
 

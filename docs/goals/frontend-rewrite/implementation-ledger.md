@@ -2,6 +2,27 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-01 Search Surface Browser Coverage
+
+### Scope
+- Re-checked the closure matrix before editing and selected `PAGE-04` because Search was still marked `Not checked` even though it is a primary V1 sidebar surface.
+- Added a dedicated `/app/` Playwright path for the V2 Search surface rather than relying on component-only coverage or the shell smoke test.
+- The browser path now opens Search through the primary sidebar, searches across multiple workspaces, verifies query highlighting and empty results, selects a result with `Enter`, returns to Chat, hydrates the target session messages, updates the selected sidebar row, and checks the fixed shell plus composer controls.
+- Added focused component coverage for the Search load-error state to pair with the existing filtering, click selection, keyboard selection, and no-match state tests.
+- Kept `PAGE-04` at `In progress`; this slice covers V2 implementation and browser evidence, not formal V1 screenshot/DOM pairing or final page verification.
+
+### Verification
+- `npm run test -- src/test/SessionSearchView.test.tsx` passed with 4 tests.
+- `npm run lint` passed.
+- `npm run build` passed.
+- `npm run test:browser -- v2-search-view.spec.ts --project=chromium` passed.
+- Browser screenshot artifacts inspected:
+  - `.tmp/frontend-v2-ts-search/v2-session-search-filtered-results.png`
+  - `.tmp/frontend-v2-ts-search/v2-session-search-selected-chat.png`
+
+### Reviewer
+- Main-agent browser inspection confirmed Search remains inside the fixed shell, shows one filtered result with highlighted query terms, and opens the selected session without leaving stale content from the previous session. Remaining before verification: V1 visual/DOM pairing, loading-state screenshot coverage, and broader page-by-page review of Board, Connectors, Memory, and Observability under the same P1 group.
+
 ## 2026-06-30 Subagent Stream Scope And UUID Session Parity
 
 ### Scope

@@ -88,12 +88,20 @@ describe("SessionSearchView", () => {
 
     expect(screen.getByText("No matches")).toBeVisible();
   });
+
+  it("shows a load error state when session data fails", () => {
+    renderSearch({ hasError: true });
+
+    expect(screen.getByText("Could not load sessions")).toBeVisible();
+  });
 });
 
 function renderSearch({
+  hasError = false,
   onSessionSelected = vi.fn(),
   selectedSessionId = null,
 }: {
+  hasError?: boolean;
   onSessionSelected?: (session: SessionSidebarRecord) => void;
   selectedSessionId?: string | null;
 } = {}) {
@@ -101,6 +109,7 @@ function renderSearch({
     <ConfigProvider button={{ autoInsertSpace: false }}>
       <SessionSearchView
         onSessionSelected={onSessionSelected}
+        hasError={hasError}
         selectedSessionId={selectedSessionId}
         sessions={sessions}
         workspaces={workspaces}

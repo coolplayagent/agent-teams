@@ -390,7 +390,15 @@ For every row moved to `Verified`, record:
 - `CLEAN-01` tightened: removed `test_round_user_prompt_ui.py` and `test_css_module_splits.py`, the remaining V1/static proof paths for old round prompt/thinking strings, old `frontend/dist` CSS split files, and old round navigator/history implementation internals.
 - V2 ownership is now explicit: `ShellLayoutCss.test.ts` guards compact thinking blocks, processed folding, constrained markdown/code, streaming cursor affordances, overlaid round rail CSS, and rejects old V1/dist selectors in runtime CSS; `RoundRail.test.tsx` covers ordered/active rail behavior and clamped todo/status popovers; `MessageTimeline.test.tsx` covers round marker prompt dedupe, thinking/processed behavior, paged round hydration, and stale-session suppression; `v2-rounds.spec.ts` verifies long prompt expansion and paged round navigation in the packed browser shell.
 - Automated evidence: `npm test -- src/test/ShellLayoutCss.test.ts`, `npm test -- src/test/RoundRail.test.tsx`, `npm test -- src/test/MessageTimeline.test.tsx -t "round rail|round marker|user prompt|thinking|processed"`, `npm run test:browser -- browser-tests/v2-rounds.spec.ts -g "does not repeat|collects paged"`, `uv run --extra dev ruff check tests/unit_tests/frontend`, `npm run lint`.
-- Remaining unit-level Python frontend static harness files are now only `test_ui_style_regressions.py`; broader integration frontend harnesses still remain. This update does not mark `CLEAN-01` verified.
+- No unit-level Python frontend static harness test files remain; only non-test helper files are left under `tests/unit_tests/frontend`. Broader integration frontend harnesses still remain. This update does not mark `CLEAN-01` verified.
+
+### 2026-07-01 Visual Style Regression Harness Closure
+
+- `CLEAN-01` tightened: removed `test_ui_style_regressions.py`, the final unit-level Python UI harness test file, after migrating its useful visual regression checks to V2-native TypeScript coverage.
+- V2 ownership is now explicit: `VisualStyleRegressions.test.ts` scans the current React/CSS surface for Connectors, Observability, Settings shared list/form/empty primitives, chart color ownership, and high-risk decorative patterns. `ShellLayoutCss.test.ts` remains the focused fixed-shell/layout owner.
+- The migration exposed and fixed real V2 CSS gaps instead of merely deleting the harness: `.at-settings-form-card` and `.at-settings-list` now declare `background: var(--at-surface)`, `.at-settings-list-row` declares a transparent row background, `.at-settings-empty` is a lighter dashed surface, and `.at-settings-native-select` has `min-width: 0`.
+- Automated evidence: `npm test -- src/test/VisualStyleRegressions.test.ts src/test/ShellLayoutCss.test.ts`, `uv run --extra dev ruff check tests/unit_tests/frontend`, `npm run lint`, `npm run build`, `npm run test:browser -- v2-settings-parity.spec.ts --project=chromium`.
+- Remaining cleanup still includes the broader integration frontend Python UI harness inventory, promoted-route naming, migration-only test/file naming, and reviewer sign-off.
 
 ## Immediate P0 Batch
 

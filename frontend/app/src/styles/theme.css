@@ -6029,6 +6029,7 @@ body {
   padding: 14px;
   border: 1px solid var(--at-border);
   border-radius: 8px;
+  background: var(--at-surface);
 }
 
 .at-settings-form-card .ant-form-item {
@@ -6585,6 +6586,7 @@ body {
 
 .at-settings-native-select {
   width: 100%;
+  min-width: 0;
   min-height: 32px;
   padding: 4px 10px;
   border: 1px solid var(--at-border);
@@ -6841,6 +6843,7 @@ body {
   border: 1px solid var(--at-border);
   border-radius: 8px;
   overflow: hidden;
+  background: var(--at-surface);
 }
 
 .at-settings-list-row {
@@ -6851,6 +6854,7 @@ body {
   min-height: 50px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--at-border);
+  background: transparent;
 }
 
 .at-settings-list-row:last-child {
@@ -7279,8 +7283,9 @@ body {
 
 .at-settings-empty {
   padding: 14px 12px;
-  border: 1px solid var(--at-border);
+  border: 1px dashed var(--at-border);
   border-radius: 8px;
+  background: var(--at-surface);
   color: var(--at-text-muted);
   font-size: 13px;
 }

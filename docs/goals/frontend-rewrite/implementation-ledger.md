@@ -8985,3 +8985,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent V1 harness audit, V2 feedback helper implementation, Composer voice-error dedupe wiring, focused TS coverage, old harness removal, and matrix/ledger update completed for this slice. This does not claim real microphone/provider sign-off, full Settings visual pairing, remaining Python harness retirement, reviewer sign-off, or final V2 frontend completion.
+
+## 2026-07-01 Visual Style Regression Harness Retirement Slice
+
+### Scope
+- Re-checked the last unit-level Python UI harness, `tests/unit_tests/frontend/test_ui_style_regressions.py`, before deleting it. Its useful assertions were visual/style constraints around Connectors, Observability, Settings shared primitives, chart color ownership, and vertical scroll behavior.
+- Added `frontend/app/src/test/VisualStyleRegressions.test.ts` as the V2-native owner. The test scans current React sources and `src/styles/theme.css` instead of old `frontend/dist/css` and `frontend/dist/js` files.
+- Migrated the old broad checks into current V2 terms: Connectors and Observability use `--at-*` theme variables and avoid decorative gradients/blur; Observability trend bars derive color from CSS variables; Settings pages use shared list/form/empty primitives; and Settings scroll/select primitives stay bounded.
+- Fixed real V2 CSS gaps found during migration: Settings form cards and lists now declare `background: var(--at-surface)`, list rows explicitly stay transparent, empty states use a lighter dashed surface, and native settings selects include `min-width: 0`.
+- Removed `test_ui_style_regressions.py`, leaving no unit-level Python frontend UI harness test files. Broader integration-level Python frontend harnesses still remain.
+
+### Verification
+- `npm test -- src/test/VisualStyleRegressions.test.ts src/test/ShellLayoutCss.test.ts` passed with 26 tests across 2 files.
+- `uv run --extra dev ruff check tests/unit_tests/frontend` passed.
+- `npm run lint` passed.
+- `npm run build` passed and regenerated the V2 dist app assets.
+- `npm run test:browser -- v2-settings-parity.spec.ts --project=chromium` passed with 2 Chromium browser tests covering the V1 settings section list, system secondary-page containment, and real Notifications/Proxy control interactions.
+
+### Reviewer
+- Main-agent V1 harness audit, V2 TS visual regression coverage, focused CSS fixes, old unit harness removal, and matrix/ledger update completed for this slice. This does not claim broader integration harness retirement, formal V1 visual sign-off, reviewer sign-off, or final V2 frontend completion.

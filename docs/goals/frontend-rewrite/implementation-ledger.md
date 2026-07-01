@@ -2,6 +2,27 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-02 Plugin Settings Harness Retirement
+
+### Scope
+- Re-audited `tests/integration_tests/frontend/test_plugins_settings_ui.py` after the first plugin coverage expansion and closed the remaining V1-harness-derived plugin settings gaps that were still actionable in V2.
+- Tightened the Plugins settings empty marketplace behavior: loading an empty or unsupported-only marketplace now renders an explicit empty-state detail instead of adding a search UI, and the Add Plugin submit action is disabled when there is no supported marketplace entry to install.
+- Tightened marketplace version labels so entries without a semantic `latest_version` still expose useful source details from `ref` or `sha`.
+- Tightened typed plugin configuration handling: `json` fields now use a multiline control and round-trip JSON strings through the same parsed payload path as object and array config fields.
+- Extended `SettingsDrawer.test.tsx` to cover empty/no-search marketplace state, install pending state, unsupported marketplace blocking, semantic version-detail fallback, and JSON plugin config round-tripping.
+- Removed `tests/integration_tests/frontend/test_plugins_settings_ui.py` after replacing its remaining current behavior with V2 TypeScript and packed-browser coverage.
+- Did not claim full System settings completion, formal V1 visual pairing for every System secondary page, in-app browser sign-off, or final V2 frontend completion.
+
+### Verification
+- `npm test -- src/test/SettingsDrawer.test.tsx -t "plugins|plugin user_config|marketplace|json plugin config"` passed with 12 matching tests.
+- `uv run --extra dev ruff check tests/integration_tests/frontend` passed.
+- `npm run lint` passed.
+- `npm run build` passed and regenerated the packed `frontend/dist/app` bundle.
+- `npm run test:browser -- v2-settings-actions.spec.ts -g "manages Plugins" --project=chromium` passed; screenshots were generated at `.tmp/frontend-v2-ts-settings-actions/v2-plugin-actions.png` and `.tmp/frontend-v2-ts-settings-actions/v2-plugin-marketplace-actions.png`.
+
+### Reviewer
+- Main-agent decision: this retires the old plugin UI harness and tightens `SET-14`/`CLEAN-01`, but does not mark full System settings parity or the whole V2 frontend goal complete.
+
 ## 2026-07-02 Plugin Settings V1 Harness Coverage Expansion
 
 ### Scope

@@ -1948,6 +1948,21 @@ describe("SettingsDrawer", () => {
     );
   });
 
+  it("renders plugin empty state without adding a search UI", async () => {
+    getPluginsConfigMock.mockResolvedValueOnce({ diagnostics: [], plugins: [] });
+    getPluginsRuntimeMock.mockResolvedValueOnce({ diagnostics: [], plugins: [] });
+    renderDrawer();
+
+    fireEvent.click((await screen.findAllByRole("button", { name: "System" }))[0] as HTMLElement);
+    fireEvent.click((await screen.findByText("Plugins")).closest("button") as HTMLElement);
+
+    expect(await screen.findByText("No plugins configured.")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Add Plugin" })).toBeVisible();
+    expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(/plugin/i)).not.toBeInTheDocument();
+    expect(document.querySelector(".at-plugin-list-row")).toBeNull();
+  });
+
   it("installs a plugin from the System Plugins secondary page", async () => {
     renderDrawer();
 
@@ -1974,6 +1989,32 @@ describe("SettingsDrawer", () => {
         source_ref: "v1.2.0",
       }),
     );
+  });
+
+  it("shows a pending state while plugin install is running", async () => {
+    let resolveInstall: (
+      value: Awaited<ReturnType<typeof installPlugin>>,
+    ) => void = () => undefined;
+    installPluginMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveInstall = resolve;
+        }),
+    );
+    renderDrawer();
+
+    fireEvent.click((await screen.findAllByRole("button", { name: "System" }))[0] as HTMLElement);
+    fireEvent.click((await screen.findByText("Plugins")).closest("button") as HTMLElement);
+    fireEvent.click(await screen.findByRole("button", { name: "Add Plugin" }));
+    fireEvent.change(await screen.findByLabelText("Source"), {
+      target: { value: "C:/plugins/local-quality" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add Plugin" }));
+
+    await waitFor(() => expect(installPluginMock).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("button", { name: "Add Plugin" })).toBeDisabled();
+    resolveInstall({ diagnostics: [], plugins: [] });
+    await waitFor(() => expect(screen.getByText("workspace-tools")).toBeVisible());
   });
 
   it("keeps marketplace install fields scoped to marketplace mode", async () => {
@@ -2051,6 +2092,93 @@ describe("SettingsDrawer", () => {
         source: "market-quality",
         source_kind: "marketplace",
         version: null,
+      }),
+    );
+  });
+
+  it("blocks unsupported marketplace entries after loading them", async () => {
+    loadPluginMarketplaceMock.mockResolvedValueOnce({
+      plugins: [
+        {
+          latest: "2.0.0",
+          name: "unsupported-quality",
+          versions: [
+            {
+              source: { kind: "unsupported", value: "@example/plugin" },
+              unsupported_reason: "npm packages are not supported",
+              version: "2.0.0",
+            },
+          ],
+        },
+      ],
+    });
+    renderDrawer();
+
+    fireEvent.click((await screen.findAllByRole("button", { name: "System" }))[0] as HTMLElement);
+    fireEvent.click((await screen.findByText("Plugins")).closest("button") as HTMLElement);
+    fireEvent.click(await screen.findByRole("button", { name: "Add Plugin" }));
+    fireEvent.mouseDown(await screen.findByRole("combobox", { name: "Source type" }));
+    fireEvent.click(await screen.findByText("Marketplace"));
+    fireEvent.mouseDown(await screen.findByRole("combobox", { name: "Marketplace provider" }));
+    await clickAntdSelectOption("claude");
+    fireEvent.click(screen.getByRole("button", { name: "Load marketplace" }));
+
+    expect(await screen.findByText(/No supported marketplace versions/)).toBeVisible();
+    expect(screen.getByText(/npm packages are not supported/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Add Plugin" })).toBeDisabled();
+    expect(screen.queryByText("unsupported-quality 2.0.0")).not.toBeInTheDocument();
+    expect(installPluginMock).not.toHaveBeenCalled();
+  });
+
+  it("uses semantic version details when marketplace entries have no latest version", async () => {
+    loadPluginMarketplaceMock.mockResolvedValueOnce({
+      plugins: [
+        {
+          name: "market-beta",
+          versions: [
+            {
+              source: {
+                kind: "http_archive",
+                sha: "sha-alpha-beta",
+                value: "https://repo/beta.zip",
+              },
+              version: "0.1.0",
+            },
+          ],
+        },
+      ],
+    });
+    renderDrawer();
+
+    fireEvent.click((await screen.findAllByRole("button", { name: "System" }))[0] as HTMLElement);
+    fireEvent.click((await screen.findByText("Plugins")).closest("button") as HTMLElement);
+    fireEvent.click(await screen.findByRole("button", { name: "Add Plugin" }));
+    fireEvent.mouseDown(await screen.findByRole("combobox", { name: "Source type" }));
+    fireEvent.click(await screen.findByText("Marketplace"));
+    fireEvent.change(await screen.findByLabelText("Marketplace"), {
+      target: { value: "C:/plugins/marketplace.json" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Load marketplace" }));
+
+    expect(await screen.findByText("market-beta")).toBeVisible();
+    expect(await screen.findByText("0.1.0 sha-alpha-beta")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Add Plugin" }));
+
+    await waitFor(() =>
+      expect(installPluginMock).toHaveBeenCalledWith({
+        allow_community_plugins: false,
+        allow_executes_code: false,
+        allow_missing_digest: false,
+        allow_unclean_scan: false,
+        enabled: true,
+        marketplace: "C:/plugins/marketplace.json",
+        marketplace_provider: "local_json",
+        marketplace_ref: "",
+        marketplace_source: "",
+        scope: "user",
+        source: "market-beta",
+        source_kind: "marketplace",
+        version: "0.1.0",
       }),
     );
   });
@@ -2376,6 +2504,53 @@ describe("SettingsDrawer", () => {
         user_config: {
           endpoint: "https://docs.changed",
           payload: { mode: "loose" },
+        },
+      }),
+    );
+  });
+
+  it("round-trips json plugin config strings", async () => {
+    getPluginsConfigMock.mockResolvedValueOnce({
+      diagnostics: [],
+      plugins: [
+        {
+          description: "JSON config",
+          enabled: true,
+          manifest: {
+            user_config: {
+              payload: {
+                title: "Payload",
+                type: "json",
+              },
+            },
+          },
+          name: "json-config",
+          scope: "user",
+          user_config: {
+            payload: "token",
+          },
+          valid: true,
+          version: "1.0.0",
+        },
+      ],
+    });
+    renderDrawer();
+
+    fireEvent.click((await screen.findAllByRole("button", { name: "System" }))[0] as HTMLElement);
+    fireEvent.click((await screen.findByText("Plugins")).closest("button") as HTMLElement);
+    const jsonRow = (await screen.findByText("json-config")).closest(
+      ".at-plugin-list-row",
+    ) as HTMLElement;
+    fireEvent.click(within(jsonRow).getByRole("button", { name: "Configure" }));
+
+    expect(await screen.findByLabelText("Payload")).toHaveValue("\"token\"");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(configurePluginMock).toHaveBeenCalledWith("json-config", {
+        scope: "user",
+        user_config: {
+          payload: "token",
         },
       }),
     );

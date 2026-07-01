@@ -114,6 +114,13 @@ For every row moved to `Verified`, record:
 
 ## Verification Ledger
 
+### 2026-07-02 Plugin Settings Harness Retirement
+
+- `SET-14` tightened: Plugins settings now covers the remaining old plugin harness behavior for marketplace empty/no-search state, install pending state, unsupported marketplace blocking, semantic version-detail fallback from `ref`/`sha`, JSON config round-tripping, direct-compatible ClawHub filtering, provider defaults, and install/update/configure payload boundaries.
+- `CLEAN-01` tightened: removed `tests/integration_tests/frontend/test_plugins_settings_ui.py` after replacing its current behavior with V2 TypeScript and packed-browser coverage.
+- Evidence: `npm test -- src/test/SettingsDrawer.test.tsx -t "plugins|plugin user_config|marketplace|json plugin config"`, `uv run --extra dev ruff check tests/integration_tests/frontend`, `npm run lint`, `npm run build`, and `npm run test:browser -- v2-settings-actions.spec.ts -g "manages Plugins" --project=chromium`; screenshots `.tmp/frontend-v2-ts-settings-actions/v2-plugin-actions.png` and `.tmp/frontend-v2-ts-settings-actions/v2-plugin-marketplace-actions.png`.
+- This does not move `SET-14` to `Verified`; full System settings parity still needs formal V1 visual/DOM pairing, loading/error-state browser capture, deeper secondary-page browser evidence, and reviewer sign-off.
+
 ### 2026-07-02 Plugin Settings V1 Harness Coverage Expansion
 
 - `SET-14` tightened: Plugins settings now filters ClawHub marketplace installs to direct-compatible supported entries, preserves Claude and ClawHub provider defaults through load/install/update payloads, matches ClawHub updates by marketplace source value, rejects fractional integer config values instead of truncating them, omits blank optional new config fields, and still allows explicit clearing of existing optional fields.

@@ -432,6 +432,11 @@ function PluginInstallView({
   );
   const marketplaceVersionOptions =
     marketplaceVersionSelectOptions(selectedMarketplaceEntry);
+  const marketplaceLoadedWithoutEntries =
+    sourceKind === "marketplace" &&
+    marketplaceIndex !== null &&
+    marketplaceEntries.length === 0;
+  const marketplaceUnsupportedDetail = marketplaceUnsupportedReason(marketplaceIndex);
   const installMutation = useMutation({
     mutationFn: (values: PluginInstallFormValues) =>
       installPlugin(buildPluginInstallRequest(values)),
@@ -598,6 +603,16 @@ function PluginInstallView({
                 {t("settingsPluginsLoadMarketplace")}
               </Button>
             </div>
+            {marketplaceLoadedWithoutEntries ? (
+              <div className="at-settings-empty">
+                {[
+                  t("settingsPluginsMarketplaceEmpty"),
+                  marketplaceUnsupportedDetail,
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+              </div>
+            ) : null}
             <Form.Item
               label={t("settingsPluginsAllowCommunity")}
               name="allow_community_plugins"
@@ -630,6 +645,7 @@ function PluginInstallView({
         ) : null}
         <div className="at-settings-section-actions">
           <Button
+            disabled={marketplaceLoadedWithoutEntries}
             htmlType="submit"
             loading={installMutation.isPending}
             type="primary"
@@ -860,7 +876,12 @@ function pluginConfigControl(
   fieldType: string,
   field: PluginUserConfigField,
 ): ReactNode {
-  if (fieldType === "text" || fieldType === "object" || fieldType === "array") {
+  if (
+    fieldType === "text" ||
+    fieldType === "object" ||
+    fieldType === "array" ||
+    fieldType === "json"
+  ) {
     return <Input.TextArea rows={fieldType === "text" ? 3 : 6} spellCheck={false} />;
   }
   if (fieldType === "number" || fieldType === "integer") {
@@ -1976,9 +1997,31 @@ function marketplaceEntryLabel(entry: PluginMarketplaceEntry): string {
   return entry.latest ? `${entry.name} ${entry.latest}` : entry.name;
 }
 
+function marketplaceUnsupportedReason(
+  index: PluginMarketplaceIndex | null,
+): string {
+  for (const entry of index?.plugins ?? []) {
+    const versionReason = entry.versions
+      ?.map((version) => version.unsupported_reason?.trim() ?? "")
+      .find(Boolean);
+    if (versionReason) {
+      return versionReason;
+    }
+    if (
+      entry.compatibility !== undefined &&
+      entry.compatibility !== "direct" &&
+      entry.compatibility_reason
+    ) {
+      return entry.compatibility_reason.trim();
+    }
+  }
+  return "";
+}
+
 function marketplaceVersionLabel(version: PluginMarketplaceVersion): string {
-  const sourceRef = version.source?.ref?.trim();
-  return sourceRef ? `${version.version} ${sourceRef}` : version.version;
+  const sourceDetail =
+    version.source?.ref?.trim() || version.source?.sha?.trim() || "";
+  return sourceDetail ? `${version.version} ${sourceDetail}` : version.version;
 }
 
 function pluginConfigFields(
@@ -2011,7 +2054,7 @@ function pluginConfigInitialValue(
   if (fieldType === "number" || fieldType === "integer") {
     return typeof effectiveValue === "number" ? effectiveValue : String(effectiveValue);
   }
-  if (fieldType === "object" || fieldType === "array") {
+  if (fieldType === "object" || fieldType === "array" || fieldType === "json") {
     return effectiveValue === "" ? "" : JSON.stringify(effectiveValue, null, 2);
   }
   return typeof effectiveValue === "string"
@@ -2075,7 +2118,7 @@ function parsePluginConfigValue(
     }
     return numberValue;
   }
-  if (fieldType === "object" || fieldType === "array") {
+  if (fieldType === "object" || fieldType === "array" || fieldType === "json") {
     const trimmed = textValue.trim();
     if (trimmed.length === 0) {
       return "";

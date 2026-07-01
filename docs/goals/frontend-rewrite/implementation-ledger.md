@@ -2,6 +2,23 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-01 Board TODO Python Harness Removal
+
+### Scope
+- Removed `tests/unit_tests/frontend/test_board_todo_phase_one_ui.py`, a legacy V1/static harness that scanned old `frontend/dist` Board TODO JavaScript and CSS implementation strings.
+- Mapped its V2-relevant behavior to current React/Playwright ownership: `BoardTodosView.test.tsx` covers status columns, search without refetching, sync replacement, source settings edit/create, handoff preview/start payloads, request-changes preview/start payloads, mark-done, and archive confirmation; `v2-board-actions.spec.ts` covers the packed `/app/` Board surface for search, archived groups, sync, handoff, request changes, source edit/create/delete, endpoint payloads, and fixed-shell framing screenshots.
+- Left V1-only implementation-string assertions behind with the removed harness, including old `todoHandoff.js` composer class names, source-group display-mode internals, progressive-render helper checks, and V1 CSS module class names. Those do not prove the current React V2 Board UI.
+
+### Verification
+- `npm test -- src/test/BoardTodosView.test.tsx` passed.
+- `npm run test:browser -- browser-tests/v2-board-actions.spec.ts --project=chromium` passed.
+- `uv run --extra dev ruff check tests/unit_tests/frontend` passed.
+- `rg -n "test_board_todo_phase_one_ui|frontend/dist/js/components/boards/todoBoard.js|frontend/dist/js/components/boards/todoHandoff.js|board-todo-start-composer" tests/unit_tests/frontend frontend/app/src frontend/app/browser-tests` returned no matches, confirming the removed V1 proof path is not referenced by current V2 tests.
+- `git diff --check` passed.
+
+### Reviewer
+- Main-agent decision: this retires the Board TODO V1/static proof path and tightens `CLEAN-01`. `PAGE-03` remains `In progress` because formal V1 screenshot/DOM pairing, loading/error browser captures, and narrow-density review are still open.
+
 ## 2026-07-01 Message Export Python Harness Removal
 
 ### Scope

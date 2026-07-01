@@ -2,6 +2,26 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-02 Hooks Settings Delete Autosave Baseline
+
+### Scope
+- Continued replacing behavior from `tests/integration_tests/frontend/test_hooks_settings_ui.py`, this time covering the saved-group delete path rather than adding another cosmetic Hooks adjustment.
+- Restored the V1-backed behavior that deleting an already-saved hook group immediately persists the remaining saved configuration.
+- Added a separate delete autosave mutation so delete success updates the saved baseline without discarding unrelated in-flight form drafts or showing an extra manual-save success toast.
+- Preserved local-only behavior for unsaved new hook groups: deleting a new draft only removes it from the editor and does not call the save endpoint.
+- Added TS coverage for deleting the last saved group into `{ hooks: {} }`, deleting a saved group while an unrelated sibling draft remains visible, and deleting an unsaved new group without autosaving.
+- Kept `tests/integration_tests/frontend/test_hooks_settings_ui.py` in place. Queued manual-save-after-delete, stale reload reconciliation, delete failure result mapping, structured backend error localization, and final V1 visual pairing remain open.
+
+### Verification
+- `npm test -- src/test/HooksSettingsSection.test.tsx` passed with 8 tests.
+- `npm test -- src/test/SettingsDrawer.test.tsx -t "hooks"` passed with 1 selected test.
+- `npm run test:browser -- v2-settings-actions.spec.ts -g "validates and saves Hooks"` passed with 1 packed-browser test.
+- `npm run lint` passed.
+- `npm run build` passed and regenerated the packed `frontend/dist/app` bundle.
+
+### Reviewer
+- Main-agent decision: this tightens `SET-14` by moving another current V1 Hooks behavior into the React editor and tests, but does not retire the old hooks Python harness yet.
+
 ## 2026-07-02 Hooks Settings Local Required-Field Validation
 
 ### Scope

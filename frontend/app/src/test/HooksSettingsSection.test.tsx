@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -215,12 +216,115 @@ describe("HooksSettingsSection", () => {
     );
     expect(saveHooksConfigMock).not.toHaveBeenCalled();
   });
+
+  it("autosaves an empty config after deleting the last saved hook group", async () => {
+    renderSection();
+
+    await confirmDeleteForCard("Write guard");
+
+    await waitFor(() =>
+      expect(saveHooksConfigMock).toHaveBeenCalledWith({ hooks: {} }),
+    );
+    expect(antdMocks.message.success).not.toHaveBeenCalledWith("Hooks saved.");
+    expect(await screen.findByText("No hooks configured.")).toBeVisible();
+  });
+
+  it("discards unsaved new hook groups without autosaving", async () => {
+    getHooksConfigMock.mockResolvedValue({ hooks: {} });
+    renderSection();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Add hook" }));
+    await confirmDeleteForCard("Tool policy guard");
+
+    expect(saveHooksConfigMock).not.toHaveBeenCalled();
+    expect(await screen.findByText("No hooks configured.")).toBeVisible();
+  });
+
+  it("autosaves delete from the saved baseline without persisting sibling drafts", async () => {
+    getHooksConfigMock.mockResolvedValue({
+      hooks: {
+        PreToolUse: [
+          {
+            hooks: [
+              {
+                command: "python hooks/write.py",
+                name: "lint changed files",
+                type: "command",
+              },
+            ],
+            matcher: "Write",
+            name: "Write guard",
+          },
+          {
+            hooks: [
+              {
+                command: "python hooks/shell.py",
+                name: "check shell",
+                type: "command",
+              },
+            ],
+            matcher: "Bash",
+            name: "Shell guard",
+          },
+        ],
+      },
+    });
+    renderSection();
+
+    await editCard("Shell guard");
+    fireEvent.change(screen.getAllByLabelText("Hook name")[0] as HTMLElement, {
+      target: { value: "Draft shell guard" },
+    });
+    await confirmDeleteForCard("Write guard");
+
+    await waitFor(() =>
+      expect(saveHooksConfigMock).toHaveBeenCalledWith({
+        hooks: {
+          PreToolUse: [
+            {
+              hooks: [
+                {
+                  command: "python hooks/shell.py",
+                  name: "check shell",
+                  on_error: "ignore",
+                  type: "command",
+                },
+              ],
+              matcher: "Bash",
+              name: "Shell guard",
+            },
+          ],
+        },
+      }),
+    );
+    expect(screen.getByDisplayValue("Draft shell guard")).toBeVisible();
+  });
 });
 
 async function chooseSelectOption(label: string, optionText: string) {
   fireEvent.mouseDown(await screen.findByRole("combobox", { name: label }));
   const matches = await screen.findAllByText(optionText);
   fireEvent.click(matches[matches.length - 1] as HTMLElement);
+}
+
+async function editCard(cardName: string) {
+  const card = await findHookCard(cardName);
+  fireEvent.click(within(card).getByRole("button", { name: "Edit" }));
+}
+
+async function confirmDeleteForCard(cardName: string) {
+  const card = await findHookCard(cardName);
+  fireEvent.click(within(card).getByRole("button", { name: "Delete" }));
+  fireEvent.click(await screen.findByRole("button", { name: "OK" }));
+}
+
+async function findHookCard(cardName: string): Promise<HTMLElement> {
+  const text = await screen.findByText(cardName);
+  const card = text.closest(".at-hooks-config-card");
+  if (card === null) {
+    throw new Error(`Hook card not found: ${cardName}`);
+  }
+  return card as HTMLElement;
 }
 
 function renderSection() {

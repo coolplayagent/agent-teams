@@ -114,6 +114,12 @@ For every row moved to `Verified`, record:
 
 ## Verification Ledger
 
+### 2026-07-02 Hooks Settings Delete Autosave Baseline
+
+- `SET-14` tightened: deleting a saved Hooks group now immediately persists the remaining saved configuration, deleting the last saved group sends `{ hooks: {} }`, and deleting an unsaved new group stays local. The delete autosave path uses the saved baseline so unrelated in-flight sibling drafts are not persisted accidentally.
+- `CLEAN-01` unchanged for the legacy hooks harness: `tests/integration_tests/frontend/test_hooks_settings_ui.py` remains because queued manual-save-after-delete, stale reload reconciliation, delete failure result mapping, structured backend error localization, and final V1 visual pairing are still not fully replaced.
+- Evidence: `npm test -- src/test/HooksSettingsSection.test.tsx`, `npm test -- src/test/SettingsDrawer.test.tsx -t "hooks"`, `npm run test:browser -- v2-settings-actions.spec.ts -g "validates and saves Hooks"`, `npm run lint`, `npm run build`.
+
 ### 2026-07-02 Hooks Settings Local Required-Field Validation
 
 - `SET-14` tightened: Hooks agent and prompt handlers now fail locally when prompt text is missing, before validate/save requests reach the backend. The behavior is covered by TS component tests for both Validate and Save paths.

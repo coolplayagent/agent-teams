@@ -225,6 +225,7 @@ export function HooksSettingsSection() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const nextIdRef = useRef(1);
+  const savedGroupsRef = useRef<HookGroupDraft[]>([]);
   const [groups, setGroups] = useState<HookGroupDraft[]>([]);
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const hooksQuery = useQuery({
@@ -244,7 +245,9 @@ export function HooksSettingsSection() {
 
   useEffect(() => {
     if (hooksQuery.data !== undefined) {
-      setGroups(deserializeHooksConfig(hooksQuery.data));
+      const loadedGroups = deserializeHooksConfig(hooksQuery.data);
+      savedGroupsRef.current = loadedGroups;
+      setGroups(loadedGroups);
       setEditingGroupId(null);
     }
   }, [hooksQuery.data]);
@@ -261,10 +264,22 @@ export function HooksSettingsSection() {
   const saveMutation = useMutation({
     mutationFn: () => saveHooksConfig(serializeHooksConfig(groups, t)),
     onSuccess: (config) => {
-      setGroups(deserializeHooksConfig(config));
+      const savedGroups = deserializeHooksConfig(config);
+      savedGroupsRef.current = savedGroups;
+      setGroups(savedGroups);
       setEditingGroupId(null);
       void message.success(t("settingsHooksSaved"));
       void queryClient.invalidateQueries({ queryKey: ["settings", "hooks"] });
+    },
+    onError: (mutationError) => {
+      void message.error(hooksMutationError(mutationError, t));
+    },
+  });
+  const deleteAutosaveMutation = useMutation({
+    mutationFn: (nextSavedGroups: HookGroupDraft[]) =>
+      saveHooksConfig(serializeHooksConfig(nextSavedGroups, t)),
+    onSuccess: (config) => {
+      savedGroupsRef.current = deserializeHooksConfig(config);
     },
     onError: (mutationError) => {
       void message.error(hooksMutationError(mutationError, t));
@@ -320,9 +335,14 @@ export function HooksSettingsSection() {
   }
 
   function removeGroup(groupId: string) {
+    const removedGroup = groups.find((group) => group.id === groupId);
     setGroups((current) => current.filter((group) => group.id !== groupId));
     if (editingGroupId === groupId) {
       setEditingGroupId(null);
+    }
+    if (removedGroup !== undefined && !removedGroup.isNew) {
+      const nextSavedGroups = savedGroupsRef.current.filter((group) => group.id !== groupId);
+      deleteAutosaveMutation.mutate(nextSavedGroups);
     }
   }
 

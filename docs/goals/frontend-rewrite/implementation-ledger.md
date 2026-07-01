@@ -2,6 +2,29 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-01 Round Prompt And CSS Module Python Harness Removal
+
+### Scope
+- Removed `tests/unit_tests/frontend/test_round_user_prompt_ui.py`, a legacy V1/static harness that scanned old `frontend/dist/js/components/rounds/timeline.js`, message-renderer helpers, i18n strings, and CSS for round prompt and thinking-block implementation details.
+- Removed `tests/unit_tests/frontend/test_css_module_splits.py`, a legacy V1/static harness that validated old `frontend/dist/css/components/*` split-file boundaries, old round navigator/detail CSS, and old `frontend/dist/js/components/rounds/timeline.js` history-load internals.
+- Confirmed the V2 behavior ownership before deletion: `MessageTimeline.test.tsx` covers persisted user prompt dedupe, localized user prompt dedupe, runtime-only round markers, long and one-line prompt expansion without repeated header text, raw prompt body retention, thinking accumulation into one markdown block, persisted thinking blocks, live/hydrated thinking dedupe, and empty thinking suppression; `RoundMarker.test.tsx` covers no prompt repetition after expansion; browser coverage in `v2-rounds.spec.ts`, `v2-complex-replay.spec.ts`, and `v2-thinking-lifecycle.spec.ts` covers the same product-visible replay/refresh cases.
+- Confirmed the V2 round/CSS ownership before deleting the split-file harness: `ShellLayoutCss.test.ts` covers the fixed shell, message column width, processed group folding, compact tool rows, constrained markdown/code, streaming cursor affordance, compact thinking blocks, subagent panel lock, and overlaid round rail CSS; `RoundRail.test.tsx` covers ordered/active rail behavior, todo/status detail popovers, focus/hover retention, and clamped positioning; `MessageTimeline.test.tsx` covers collected paged round history, stale hydration suppression, refresh replacement, and round markers; `v2-rounds.spec.ts` covers packed-browser round rail, long prompt expansion, paged history navigation, and no old round-nav DOM.
+- Added a V2 CSS guard in `ShellLayoutCss.test.ts` for compact thinking block structure: shared surface color, rounded collapsed container, compact summary padding/type, chevron rotation, compact body padding, and thinking markdown line-height. The same file now also prevents old V1/dist selectors such as `.thinking-block`, `.user-prompt-block`, `.round-nav-*`, `.round-history-load-more`, `.round-todo-card`, and `.session-round-section` from re-entering the V2 runtime CSS.
+- Left stale V1 implementation-string assertions behind with the removed harnesses, including old `roundIntentOpenState` map internals, V1 copy-button placement class names, old `user-prompt-block` CSS, old round navigator implementation strings, and old message-renderer helper function names. Those are no longer the V2 proof path.
+
+### Verification
+- `npm test -- src/test/ShellLayoutCss.test.ts` passed with 21 tests.
+- `npm test -- src/test/RoundRail.test.tsx` passed with 5 tests.
+- `npm test -- src/test/MessageTimeline.test.tsx -t "round rail|round marker|user prompt|thinking|processed"` passed with 33 matching tests.
+- `npm run test:browser -- browser-tests/v2-rounds.spec.ts -g "does not repeat|collects paged"` passed with 2 Chromium tests.
+- `uv run --extra dev ruff check tests/unit_tests/frontend` passed.
+- `npm run lint` passed.
+- `rg -n "test_round_user_prompt_ui|test_css_module_splits|roundIntentOpenState|frontend/dist/js/components/rounds/timeline.js" tests/unit_tests/frontend frontend/app/src frontend/app/browser-tests` returned no references to the removed V1 proof paths or old round internals. Old class names intentionally remain only as negative assertions in `ShellLayoutCss.test.ts`, not in runtime CSS.
+- `git diff --check` passed.
+
+### Reviewer
+- Main-agent decision: this retires the round prompt/thinking and old CSS split V1/static proof paths and tightens `CLEAN-01`, while reinforcing `MSG-01`, `MSG-03`, `MSG-05`, and round rail automated evidence. It does not claim full message/replay parity, final browser visual sign-off, or final V2 completion.
+
 ## 2026-07-01 Workspace Prompt Python Harness Removal
 
 ### Scope

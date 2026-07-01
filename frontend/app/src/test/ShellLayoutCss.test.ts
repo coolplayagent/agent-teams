@@ -206,6 +206,33 @@ describe("shell layout CSS", () => {
     );
   });
 
+  it("keeps thinking blocks compact and collapsible in the message timeline", () => {
+    const thinkingBlock = cssBlock(".at-message-thinking");
+    expect(thinkingBlock).toContain("border-radius: 6px;");
+    expect(thinkingBlock).toContain("background: var(--at-surface-muted);");
+    expect(thinkingBlock).toContain("overflow: hidden;");
+
+    const thinkingSummary = cssBlock(".at-message-thinking-summary");
+    expect(thinkingSummary).toContain("display: flex;");
+    expect(thinkingSummary).toContain("align-items: center;");
+    expect(thinkingSummary).toContain("padding: 6px 10px;");
+    expect(thinkingSummary).toContain("font-size: 12px;");
+    expect(thinkingSummary).toContain("font-weight: 600;");
+
+    expect(themeCss).toMatch(
+      /\.at-message-thinking-summary::before\s*{[\s\S]*?content:\s*">";[\s\S]*?font-family:\s*var\(--at-font-mono\);[\s\S]*?transition:\s*transform 0\.16s ease;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-message-thinking\[open\] \.at-message-thinking-summary::before\s*{[\s\S]*?transform:\s*rotate\(90deg\);/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-message-thinking-body\s*{[\s\S]*?padding:\s*0 10px 8px;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-message-thinking-body \.at-message-markdown\s*{[\s\S]*?line-height:\s*1\.48;/,
+    );
+  });
+
   it("keeps collapsed tool records compact in the message timeline", () => {
     expect(themeCss).toMatch(
       /\.at-message\.is-tool-only\s*{[\s\S]*?padding-top:\s*2px;[\s\S]*?padding-bottom:\s*2px;/,
@@ -241,6 +268,18 @@ describe("shell layout CSS", () => {
     expect(themeCss).toMatch(
       /\.at-message-plain-stream\s*{[\s\S]*?overflow-wrap:\s*anywhere;[\s\S]*?white-space:\s*pre-wrap;/,
     );
+  });
+
+  it("keeps legacy dist message and round selectors out of the V2 CSS surface", () => {
+    expect(themeCss).not.toContain(".thinking-block");
+    expect(themeCss).not.toContain(".user-prompt-block");
+    expect(themeCss).not.toContain(".round-detail-header");
+    expect(themeCss).not.toContain(".round-detail-topline");
+    expect(themeCss).not.toContain(".round-detail-badges");
+    expect(themeCss).not.toContain(".round-history-load-more");
+    expect(themeCss).not.toContain(".round-nav-");
+    expect(themeCss).not.toContain(".round-todo-card");
+    expect(themeCss).not.toContain(".session-round-section");
   });
 
   it("keeps recovery prompts near the composer instead of above the timeline", () => {

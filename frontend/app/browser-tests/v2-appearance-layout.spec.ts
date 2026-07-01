@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import {
   ensureScreenshotDir,
@@ -12,6 +12,37 @@ import {
 } from "./support/frontend-app";
 
 const SCREENSHOT_FOLDER = "frontend-v2-ts-appearance";
+const APPEARANCE_PRESETS = [
+  "GitHub",
+  "Codex",
+  "Notion",
+  "One",
+  "Proof",
+  "Raycast",
+  "Rose Pine",
+  "Solarized",
+  "Vercel",
+  "VS Code Plus",
+  "Xcode",
+  "Tokyo Night",
+] as const;
+const APPEARANCE_ROW_LABELS = [
+  "Accent",
+  "Background",
+  "Foreground",
+  "UI font",
+  "Code font",
+  "Translucent sidebar",
+  "Contrast",
+  "Use pointer cursor",
+  "Reduce motion",
+  "UI font size",
+  "Code font size",
+  "Line height",
+  "Message spacing",
+  "Diff markers",
+  "Show diagnostic information",
+] as const;
 
 test("applies a dark appearance preset while keeping settings framed", async ({
   page,
@@ -73,6 +104,81 @@ test("applies a dark appearance preset while keeping settings framed", async ({
     await page.mouse.move(320, 120);
     await page.screenshot({
       path: screenshotPath("v2-appearance-dark-rose-pine.png", SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("captures the light appearance controls and preset menu", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  try {
+    await installShellState(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      sessionTitle: "TS light appearance controls",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    await page.locator(".at-topbar").getByRole("button", { name: "Settings" })
+      .click();
+
+    const settings = page.getByRole("dialog", { name: "Settings" });
+    await expect(settings).toBeVisible();
+    await expect(settings.getByRole("heading", { name: "Appearance" }))
+      .toBeVisible();
+
+    const lightTheme = settings.getByRole("button", { name: "Light" });
+    await lightTheme.click();
+    await expect(lightTheme).toHaveAttribute("aria-pressed", "true");
+    const presetButton = settings.getByRole("button", { name: "Theme preset" });
+    await expect(presetButton).toContainText("GitHub");
+    await expect(settings.getByText("Light theme")).toBeVisible();
+    await expect
+      .poll(async () => appearanceRowLabels(settings))
+      .toEqual([...APPEARANCE_ROW_LABELS]);
+
+    await expect.poll(() => appearanceStorage(page)).toMatchObject({
+      accent: "#0969DA",
+      background: "#FFFFFF",
+      foreground: "#1F2328",
+      themePreset: "github",
+    });
+    await expect.poll(() => appearanceFrameMetrics(page)).toMatchObject({
+      accent: "#0969DA",
+      background: "#FFFFFF",
+      bodyOverflow: "hidden",
+      documentScrollHeight: 720,
+      foreground: "#1F2328",
+      rootTheme: "light",
+      settingsBodyOverflowY: "auto",
+    });
+    await expectNoDocumentScroll(page, "light appearance settings should stay framed");
+    await page.screenshot({
+      path: screenshotPath("v2-appearance-light-github.png", SCREENSHOT_FOLDER),
+    });
+
+    await presetButton.click();
+    const listbox = settings.getByRole("listbox");
+    await expect(listbox).toBeVisible();
+    await expect
+      .poll(async () => presetOptionLabels(listbox))
+      .toEqual([...APPEARANCE_PRESETS]);
+    await expect.poll(() => appearanceMenuMetrics(page)).toMatchObject({
+      optionCount: APPEARANCE_PRESETS.length,
+      rowCount: APPEARANCE_ROW_LABELS.length,
+    });
+    const menuMetrics = await appearanceMenuMetrics(page);
+    expect(menuMetrics.menuRight).toBeLessThanOrEqual(menuMetrics.dialogRight);
+    expect(menuMetrics.menuBottom).toBeLessThanOrEqual(menuMetrics.dialogBottom);
+    await expectNoDocumentScroll(page, "appearance preset menu should not move the document");
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await page.screenshot({
+      path: screenshotPath("v2-appearance-light-preset-menu.png", SCREENSHOT_FOLDER),
     });
   } finally {
     await appServer.close();
@@ -151,6 +257,15 @@ interface AppearanceFrameMetrics {
   settingsBodyScrollHeight: number;
 }
 
+interface AppearanceMenuMetrics {
+  dialogBottom: number;
+  dialogRight: number;
+  menuBottom: number;
+  menuRight: number;
+  optionCount: number;
+  rowCount: number;
+}
+
 interface ShellFrameMetrics {
   bodyOverflow: string;
   documentClientHeight: number;
@@ -169,6 +284,24 @@ interface AppearanceStorage {
   themePreset?: string;
 }
 
+async function appearanceRowLabels(settings: Locator): Promise<string[]> {
+  return settings.locator(".at-appearance-table-row").evaluateAll((rows) =>
+    rows.map((row) =>
+      row.querySelector(".at-appearance-row-copy .ant-typography")
+        ?.textContent?.trim() ?? "",
+    ),
+  );
+}
+
+async function presetOptionLabels(listbox: Locator): Promise<string[]> {
+  return listbox.getByRole("option").evaluateAll((options) =>
+    options.map((option) =>
+      option.querySelector(".at-appearance-preset-option > span:last-child")
+        ?.textContent?.trim() ?? "",
+    ),
+  );
+}
+
 async function appearanceStorage(page: Page): Promise<AppearanceStorage> {
   return page.evaluate(() => {
     const raw = window.localStorage.getItem("agent_teams_appearance") ?? "{}";
@@ -176,6 +309,31 @@ async function appearanceStorage(page: Page): Promise<AppearanceStorage> {
     return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
       ? parsed
       : {};
+  });
+}
+
+async function appearanceMenuMetrics(page: Page): Promise<AppearanceMenuMetrics> {
+  return page.evaluate(() => {
+    const dialog = document.querySelector(".at-settings-drawer");
+    const menu = document.querySelector(".at-appearance-preset-menu");
+    const rows = document.querySelectorAll(".at-appearance-table-row");
+    const options = document.querySelectorAll(".at-appearance-preset-menu-option");
+    if (!(dialog instanceof HTMLElement)) {
+      throw new Error("Settings dialog is missing.");
+    }
+    if (!(menu instanceof HTMLElement)) {
+      throw new Error("Appearance preset menu is missing.");
+    }
+    const dialogRect = dialog.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    return {
+      dialogBottom: Math.round(dialogRect.bottom),
+      dialogRight: Math.round(dialogRect.right),
+      menuBottom: Math.round(menuRect.bottom),
+      menuRight: Math.round(menuRect.right),
+      optionCount: options.length,
+      rowCount: rows.length,
+    };
   });
 }
 

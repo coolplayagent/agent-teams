@@ -2,6 +2,27 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-01 Appearance Page Browser Evidence
+
+### Scope
+- Re-checked `SET-02` after comparing the current page shape against the user-provided Appearance references.
+- Added packed `/app/` browser coverage for the light theme appearance page, including the full V1-target control inventory, GitHub preset application, root CSS variable updates, fixed settings shell framing, and the preset dropdown open state.
+- Fixed the preset dropdown so it scrolls inside the settings drawer instead of extending past the drawer bottom on a 1280x720 desktop viewport.
+- Kept `SET-02` at `In progress`; this round adds real browser evidence and fixes the menu overflow, but does not replace final V1 paired visual sign-off or browser coverage for import/copy/reset file and clipboard flows.
+
+### Verification
+- `npm run build` passed.
+- `npm run test:browser -- v2-appearance-layout.spec.ts --project=chromium` passed with 3 Chromium tests.
+- `npm test -- src/test/SettingsDrawer.test.tsx -t "appearance"` passed with 3 focused tests. Vitest emitted the existing jsdom pseudo-element `getComputedStyle` warnings.
+- `npm test -- src/test/ShellLayoutCss.test.ts -t "appearance"` passed with 1 focused test.
+- Browser screenshot artifacts inspected:
+  - `.tmp/frontend-v2-ts-appearance/v2-appearance-light-github.png`
+  - `.tmp/frontend-v2-ts-appearance/v2-appearance-light-preset-menu.png`
+  - `.tmp/frontend-v2-ts-appearance/v2-appearance-dark-rose-pine.png`
+
+### Reviewer
+- Main-agent screenshot inspection confirmed the Appearance page keeps the three theme previews, diff preview, table-form controls, and preset menu inside the settings drawer. The menu now fits within the drawer and scrolls internally instead of running below the viewport.
+
 ## 2026-07-01 Real SSE Subagent Stdout Cadence
 
 ### Scope

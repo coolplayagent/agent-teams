@@ -6163,7 +6163,7 @@ body {
   display: grid;
   gap: 2px;
   width: 236px;
-  max-height: 240px;
+  max-height: min(240px, 30vh);
   overflow: auto;
   padding: 6px;
   border: 1px solid var(--at-border);

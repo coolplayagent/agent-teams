@@ -2,12 +2,14 @@ import type { JsonValue } from "./contracts";
 import { logError } from "../runtime/frontendLogger";
 
 export class ApiError extends Error {
+  readonly detail: string;
   readonly status: number;
   readonly payload: JsonValue | null;
 
   constructor(message: string, status: number, payload: JsonValue | null) {
     super(message);
     this.name = "ApiError";
+    this.detail = message;
     this.status = status;
     this.payload = payload;
   }
@@ -92,11 +94,52 @@ async function readJson(response: Response): Promise<JsonValue | null> {
 function errorMessage(payload: JsonValue | null, fallback: string): string {
   if (payload !== null && typeof payload === "object" && !Array.isArray(payload)) {
     const detail = payload.detail;
-    if (typeof detail === "string" && detail.trim()) {
-      return detail;
+    const detailMessage = formatErrorDetail(detail);
+    if (detailMessage !== null) {
+      return detailMessage;
     }
   }
   return fallback || "Request failed";
+}
+
+function formatErrorDetail(detail: JsonValue | undefined): string | null {
+  if (typeof detail === "string" && detail.trim().length > 0) {
+    return detail;
+  }
+  if (!Array.isArray(detail)) {
+    return null;
+  }
+  const formatted = detail
+    .map((entry) => formatStructuredDetailEntry(entry))
+    .filter((entry) => entry.length > 0);
+  return formatted.length > 0 ? formatted.join("\n") : null;
+}
+
+function formatStructuredDetailEntry(entry: JsonValue): string {
+  if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+    return "";
+  }
+  const location = formatLocation(entry.loc);
+  const message = typeof entry.msg === "string" ? entry.msg.trim() : "";
+  if (location.length > 0 && message.length > 0) {
+    return `${location}: ${message}`;
+  }
+  return message || location;
+}
+
+function formatLocation(value: JsonValue | undefined): string {
+  if (!Array.isArray(value)) {
+    return "";
+  }
+  return value
+    .map((item) => {
+      if (typeof item === "string" || typeof item === "number") {
+        return String(item);
+      }
+      return "";
+    })
+    .filter((item) => item.length > 0)
+    .join(".");
 }
 
 function emitBackendStatusHint(status: "offline" | "online"): void {

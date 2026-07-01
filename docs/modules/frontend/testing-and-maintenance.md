@@ -46,6 +46,7 @@
 
 ```powershell
 cd frontend/app
+npm test -- src/test/apiFacadeParity.test.ts
 npm test -- src/test/apiHttp.test.ts
 npm test -- src/test/apiClient.test.ts
 npm test -- src/test/frontendLogger.test.ts

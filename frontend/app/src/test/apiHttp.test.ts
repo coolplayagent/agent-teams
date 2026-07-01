@@ -93,6 +93,35 @@ describe("api http request helper", () => {
     hints.dispose();
   });
 
+  it("formats structured validation detail arrays into readable ApiError text", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          detail: [
+            {
+              loc: ["hooks", "PreToolUse", 0, "hooks", 0, "command"],
+              msg: "Field required",
+            },
+          ],
+        }),
+        {
+          headers: { "Content-Type": "application/json" },
+          status: 400,
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      requestJson("/system/configs/hooks:validate", { method: "POST" }),
+    ).rejects.toMatchObject({
+      detail: "hooks.PreToolUse.0.hooks.0.command: Field required",
+      message: "hooks.PreToolUse.0.hooks.0.command: Field required",
+      name: "ApiError",
+      status: 400,
+    } satisfies Partial<ApiError>);
+  });
+
   it("does not log or emit backend hints for AbortError", async () => {
     const hints = collectBackendStatusHints();
     const fetchMock = vi.fn().mockRejectedValue(new DOMException("aborted", "AbortError"));

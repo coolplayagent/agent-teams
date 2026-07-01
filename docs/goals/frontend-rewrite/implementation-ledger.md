@@ -2,6 +2,22 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-02 API Facade Python Harness Removal
+
+### Scope
+- Removed `tests/integration_tests/frontend/test_api_facade_ui.py`, a legacy harness that imported old `frontend/dist/js/core/api.js`, `sessions.js`, `workspaces.js`, `roles.js`, `triggers.js`, `modelProfiles.js`, and `request.js` modules through temporary fake browser runners.
+- Added `frontend/app/src/test/apiFacadeParity.test.ts` to keep the remaining V2-relevant facade force-refresh behavior explicit: sidebar sessions, subagents, rounds, recovery, and token usage helpers preserve backend `force_refresh=true` query parameters.
+- Extended `frontend/app/src/test/apiHttp.test.ts` and `frontend/app/src/api/http.ts` so structured backend validation detail arrays are formatted as readable `ApiError.message` and `ApiError.detail` text.
+- Confirmed the rest of the old facade endpoint coverage is already in `frontend/app/src/test/apiClient.test.ts`: session update/terminal-view/delete, subagents, workspace tree/diff/open/update with mounts, SSH profiles, model catalog/probe/save/delete/reload, roles, orchestration, triggers/gateways, UI language, runtime tools, and connector endpoints.
+- Did not restore old V1 `requestJsonManaged()` invalidation assertions. V2 server snapshot cache ownership remains TanStack Query, not the retired hand-managed facade cache.
+
+### Verification
+- `npm test -- src/test/apiHttp.test.ts src/test/apiFacadeParity.test.ts` passed with 6 tests.
+- `npm test -- src/test/apiClient.test.ts` passed with 35 tests.
+
+### Reviewer
+- Main-agent decision: this retires another integration frontend Python UI harness and tightens `CLEAN-01` while preserving the V2 API facade contract in TypeScript. It does not claim remaining settings/project/model harness cleanup, reviewer sign-off, or final V2 frontend completion.
+
 ## 2026-07-02 API Request Python Harness Removal
 
 ### Scope

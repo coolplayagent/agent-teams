@@ -114,6 +114,16 @@ For every row moved to `Verified`, record:
 
 ## Verification Ledger
 
+### 2026-07-02 API Facade Harness Migration
+
+- `CLEAN-01` tightened: removed `tests/integration_tests/frontend/test_api_facade_ui.py`, the old Python integration harness that imported V1 `frontend/dist/js/core/api*.js` modules through temporary fake browser runners.
+- V2 ownership is now explicit for facade force-refresh behavior: `apiFacadeParity.test.ts` covers sidebar sessions, subagents, rounds, recovery, and token usage helpers preserving backend `force_refresh=true` query parameters.
+- `apiHttp.test.ts` now also covers structured backend validation detail arrays, and `http.ts` formats them into readable `ApiError.message` and `ApiError.detail` strings.
+- Existing `apiClient.test.ts` owns the current typed facade endpoint assertions for sessions, workspaces, SSH profiles, model catalog/profile/probe, roles, orchestration, triggers/gateways, UI language, runtime tools, and connectors.
+- The V1-only `requestJsonManaged()` invalidation assertions were not restored because V2 snapshot cache ownership is TanStack Query.
+- Automated evidence: `npm test -- src/test/apiHttp.test.ts src/test/apiFacadeParity.test.ts`, `npm test -- src/test/apiClient.test.ts`.
+- Remaining before cleanup verification: settings/project/model Python harness migration decisions, broader `tests/integration_tests/frontend/*.py` retirement, promoted-route naming decision, migration-only file/test naming decision, and reviewer sign-off.
+
 ### 2026-07-02 API Request Harness Migration
 
 - `CLEAN-01` tightened: removed `tests/integration_tests/frontend/test_api_request_ui.py`, the old Python integration harness that executed V1 `frontend/dist/js/core/api/request.js` and connector facade modules in a fake Node/browser environment.

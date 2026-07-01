@@ -41,6 +41,7 @@ const SECONDARY_SYSTEM_PAGES = [
 ] as const;
 
 interface SettingsParityState {
+  failNextNotificationSave: boolean;
   notificationConfig: Record<string, Record<string, unknown>>;
   notificationSavePayloads: Record<string, unknown>[];
   proxyConfig: Record<string, unknown>;
@@ -142,7 +143,33 @@ test("saves Notifications and Proxy settings through real V2 controls", async ({
       hasText: "Run failed",
     });
     await expect(failedRow.getByText("1 hidden channel preserved.")).toBeVisible();
-    await failedRow.getByRole("switch", { name: "Enabled" }).click();
+    const failedSwitch = failedRow.getByRole("switch", { name: "Enabled" });
+    await failedSwitch.click();
+    await expect(failedSwitch).not.toBeChecked();
+    await settings.getByRole("button", { name: "Reset" }).click();
+    await expect(failedSwitch).toBeChecked();
+    expect(state.notificationSavePayloads).toHaveLength(0);
+
+    await failedSwitch.click();
+    state.failNextNotificationSave = true;
+    await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.request().method() === "PUT" &&
+          response.url().endsWith("/api/system/configs/notifications") &&
+          response.status() === 500,
+      ),
+      settings.getByRole("button", { name: "Save" }).click(),
+    ]);
+    await expect(page.getByText("Notification save failed for parity."))
+      .toBeVisible();
+    await expect(failedSwitch).not.toBeChecked();
+    expect(state.notificationSavePayloads).toHaveLength(1);
+    expect(state.notificationConfig.run_failed?.enabled).toBe(true);
+    await page.screenshot({
+      path: screenshotPath("v2-settings-notifications-reset-error.png", SCREENSHOT_FOLDER),
+    });
+
     await Promise.all([
       page.waitForResponse(
         (response) =>
@@ -152,13 +179,22 @@ test("saves Notifications and Proxy settings through real V2 controls", async ({
       ),
       settings.getByRole("button", { name: "Save" }).click(),
     ]);
-    expect(state.notificationSavePayloads).toHaveLength(1);
-    expect(state.notificationSavePayloads[0]).toMatchObject({
+    expect(state.notificationSavePayloads).toHaveLength(2);
+    expect(state.notificationSavePayloads[1]).toMatchObject({
       config: {
         run_failed: {
           enabled: false,
         },
       },
+    });
+    await expect(page.getByText("Notification settings saved.")).toBeVisible();
+    await page.getByText("Notification save failed for parity.").waitFor({
+      state: "hidden",
+      timeout: 6000,
+    });
+    await page.getByText("Notification settings saved.").waitFor({
+      state: "hidden",
+      timeout: 6000,
     });
 
     await sections.getByRole("button", { name: "Proxy" }).click();
@@ -194,6 +230,12 @@ test("saves Notifications and Proxy settings through real V2 controls", async ({
       ssl_verify: null,
     });
     expect(state.proxyReloadCount).toBe(1);
+    await expect(page.getByText("Proxy settings saved and reloaded."))
+      .toBeVisible();
+    await page.getByText("Proxy settings saved and reloaded.").waitFor({
+      state: "hidden",
+      timeout: 6000,
+    });
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await expectNoDocumentScroll(page, "v2 notification and proxy settings should stay framed");
     await page.screenshot({
@@ -230,6 +272,7 @@ async function systemPageLabels(settings: Locator): Promise<string[]> {
 
 function settingsParityState(): SettingsParityState {
   return {
+    failNextNotificationSave: false,
     notificationConfig: notificationConfig(),
     notificationSavePayloads: [],
     proxyConfig: proxyConfig(),
@@ -329,6 +372,11 @@ async function handleSettingsParityApi(
   if (method === "PUT" && path === "/system/configs/notifications") {
     const payload = readJsonBody(context);
     state.notificationSavePayloads.push(payload);
+    if (state.failNextNotificationSave) {
+      state.failNextNotificationSave = false;
+      await context.fulfillJson({ detail: "Notification save failed for parity." }, 500);
+      return true;
+    }
     const config = payload.config;
     if (isRecordOfRecords(config)) {
       state.notificationConfig = config;

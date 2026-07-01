@@ -9004,3 +9004,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent V1 harness audit, V2 TS visual regression coverage, focused CSS fixes, old unit harness removal, and matrix/ledger update completed for this slice. This does not claim broader integration harness retirement, formal V1 visual sign-off, reviewer sign-off, or final V2 frontend completion.
+
+## 2026-07-01 Notification Settings Reset/Error Slice
+
+### Scope
+- Re-checked `SET-05` in the parity matrix before editing instead of following an ad-hoc prompt thread. The open gap was Notifications reset/error-state coverage, while V1 visual pairing remains separate.
+- Added a real Notifications page reset action that restores the form to the currently loaded backend configuration without changing the V1-aligned Settings navigation or flattening any secondary settings pages.
+- Extended the packed `/app/` Settings parity browser scenario so Notifications now proves hidden channels remain visible, unsaved edits can be reset without a PUT request, a forced 500 save response shows the backend error while preserving the local edit and stored backend state, and the next save persists through `/system/configs/notifications`.
+- Tightened settings parity screenshots by capturing the Notifications reset/error state separately and waiting for transient toasts to clear before the final Proxy screenshot.
+
+### Verification
+- `npm run lint` passed.
+- `npm test -- src/test/SettingsNavigationParity.test.ts` passed with 2 tests.
+- `npm run build` passed and regenerated the packed `frontend/dist/app` bundle.
+- `npm run test:browser -- v2-settings-parity.spec.ts --project=chromium` passed with both Chromium browser tests.
+- Main-agent visual inspection reviewed `.tmp/frontend-v2-ts-settings-parity/v2-settings-notifications-reset-error.png` and `.tmp/frontend-v2-ts-settings-parity/v2-settings-notification-proxy-actions.png`; the Notifications screenshot shows the fixed Settings shell, preserved hidden-channel text, reset/save controls, and the failed local edit state, while the final Proxy screenshot has no toast overlay.
+
+### Reviewer
+- Main-agent matrix check, Notifications reset implementation, forced save-error browser coverage, screenshot inspection, and matrix/ledger update completed for this slice. This does not claim `SET-05` Verified, formal V1 visual pairing, broader Settings completion, reviewer sign-off, or final V2 frontend completion.

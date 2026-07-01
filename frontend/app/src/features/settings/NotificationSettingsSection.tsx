@@ -69,6 +69,13 @@ export function NotificationSettingsSection() {
     saveMutation.mutate(mergeNotificationForm(notificationQuery.data, values));
   }
 
+  function resetForm() {
+    if (notificationQuery.data === undefined) {
+      return;
+    }
+    form.setFieldsValue(toNotificationFormValues(notificationQuery.data));
+  }
+
   return (
     <SettingsSection title={t("settingsNotifications")}>
       <SettingsQueryState
@@ -95,9 +102,14 @@ export function NotificationSettingsSection() {
               />
             ))}
           </div>
-          <Button htmlType="submit" loading={saveMutation.isPending} type="primary">
-            {t("settingsSave")}
-          </Button>
+          <div className="at-settings-section-actions">
+            <Button disabled={saveMutation.isPending} onClick={resetForm}>
+              {t("settingsReset")}
+            </Button>
+            <Button htmlType="submit" loading={saveMutation.isPending} type="primary">
+              {t("settingsSave")}
+            </Button>
+          </div>
         </Form>
       ) : null}
     </SettingsSection>

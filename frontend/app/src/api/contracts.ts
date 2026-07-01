@@ -2802,6 +2802,111 @@ export interface MemoryIndexRebuildResult {
   skipped_count: number;
 }
 
+export type MemorySkillDraftScopeKind = "workspace" | "cross_workspace";
+export type MemorySkillDraftKind = "skill" | "sop_skill";
+export type MemorySkillDraftGenerationKind =
+  | "auto"
+  | "skill"
+  | "sop_skill";
+export type MemorySkillDraftStatus =
+  | "applied"
+  | "applying"
+  | "draft"
+  | "rejected"
+  | "validated";
+export type MemorySkillDraftValidationSeverity = "error" | "warning";
+
+export interface MemorySkillDraftFile {
+  content: string;
+  encoding: "utf-8" | "base64";
+  path: string;
+}
+
+export interface MemorySkillDraftValidationMessage {
+  code: string;
+  message: string;
+  path: string;
+  severity: MemorySkillDraftValidationSeverity;
+}
+
+export interface MemorySkillDraft {
+  applied_at?: string | null;
+  applied_ref?: string | null;
+  applied_skill_id?: string | null;
+  created_at: string;
+  description: string;
+  draft_kind: MemorySkillDraftKind;
+  files: MemorySkillDraftFile[];
+  generation_error: string;
+  id: string;
+  instructions: string;
+  runtime_name: string;
+  scope_kind: MemorySkillDraftScopeKind;
+  source_memory_ids: string[];
+  status: MemorySkillDraftStatus;
+  updated_at: string;
+  validated_at?: string | null;
+  validation_messages: MemorySkillDraftValidationMessage[];
+  workspace_id?: string | null;
+  workspace_ids: string[];
+}
+
+export interface MemorySkillDraftSummary {
+  applied_ref?: string | null;
+  created_at: string;
+  description: string;
+  draft_kind: MemorySkillDraftKind;
+  id: string;
+  runtime_name: string;
+  scope_kind: MemorySkillDraftScopeKind;
+  source_memory_count: number;
+  status: MemorySkillDraftStatus;
+  updated_at: string;
+  validation_error_count: number;
+  validation_warning_count: number;
+  workspace_id?: string | null;
+  workspace_ids: string[];
+}
+
+export interface GenerateMemorySkillDraftsRequest {
+  draft_kind?: MemorySkillDraftGenerationKind;
+  limit?: number;
+  max_drafts?: number;
+  min_confidence?: number;
+  scope_kind?: MemorySkillDraftScopeKind;
+  source_memory_ids?: string[];
+  text_query?: string;
+  workspace_id?: string | null;
+  workspace_ids?: string[];
+}
+
+export interface MemorySkillDraftGenerationResult {
+  error_message: string;
+  items: MemorySkillDraftSummary[];
+  source_memory_count: number;
+}
+
+export interface MemorySkillDraftQueryResult {
+  items: MemorySkillDraftSummary[];
+  limit: number;
+  offset: number;
+  total_count: number;
+}
+
+export interface UpdateMemorySkillDraftRequest {
+  description?: string;
+  files?: MemorySkillDraftFile[];
+  instructions?: string;
+  runtime_name?: string;
+  status?: MemorySkillDraftStatus;
+}
+
+export interface MemorySkillDraftApplyResult {
+  draft: MemorySkillDraft;
+  ref: string;
+  skill_id: string;
+}
+
 export interface ObservabilityOverview {
   updated_at?: string;
   scope?: string;

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  applyMemorySkillDraft,
   archiveBoardTodo,
   browseClawHubSkillMarket,
   addRuntimeToolsSystemPath,
@@ -31,6 +32,7 @@ import {
   enableAutomationProject,
   enablePlugin,
   fetchXiaolubanGatewayImForwardingCommand,
+  generateMemorySkillDrafts,
   getAgentRuntime,
   getAgentRuntimeRegistry,
   getAgentRuntimes,
@@ -47,6 +49,7 @@ import {
   listFeishuGatewayAccounts,
   listWeChatGatewayAccounts,
   getMemory,
+  getMemorySkillDraft,
   getModelCatalog,
   getPluginsConfig,
   getRoleConfig,
@@ -71,6 +74,7 @@ import {
   listRuntimeTools,
   listAgentMessages,
   listMemories,
+  listMemorySkillDrafts,
   listSshProfiles,
   listSessionSubagents,
   listXiaolubanGatewayAccounts,
@@ -138,11 +142,13 @@ import {
   updateSession,
   updateBoardTodoSource,
   updateFeishuGatewayAccount,
+  updateMemorySkillDraft,
   updateWeChatGatewayAccount,
   updateXiaolubanGatewayAccount,
   updateXiaolubanGatewayImConfig,
   updatePlugin,
   updateWorkspace,
+  validateMemorySkillDraft,
   validateHooksConfig,
   validateRoleConfig,
   waitWeChatGatewayLogin,
@@ -1597,6 +1603,168 @@ describe("api client", () => {
       "/api/memories/rebuild-index",
       expect.objectContaining({
         body: JSON.stringify({ workspace_id: "workspace-1" }),
+        headers: expect.any(Headers),
+        method: "POST",
+      }),
+    );
+  });
+
+  it("uses the memory skill draft endpoints", async () => {
+    const draftSummary = {
+      applied_ref: null,
+      created_at: "2026-06-24T00:15:00Z",
+      description: "Turn frame memories into a skill.",
+      draft_kind: "skill",
+      id: "draft-1",
+      runtime_name: "workspace-frame",
+      scope_kind: "workspace",
+      source_memory_count: 2,
+      status: "draft",
+      updated_at: "2026-06-24T00:20:00Z",
+      validation_error_count: 0,
+      validation_warning_count: 1,
+      workspace_id: "workspace-1",
+      workspace_ids: ["workspace-1"],
+    };
+    const draft = {
+      ...draftSummary,
+      applied_at: null,
+      applied_skill_id: null,
+      files: [{ content: "# Skill", encoding: "utf-8", path: "SKILL.md" }],
+      generation_error: "",
+      instructions: "Keep workspace pages fixed-height.",
+      source_memory_ids: ["memory-1", "memory-2"],
+      validated_at: null,
+      validation_messages: [],
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            items: [draftSummary],
+            limit: 20,
+            offset: 0,
+            total_count: 1,
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            error_message: "",
+            items: [draftSummary],
+            source_memory_count: 2,
+          }),
+          { status: 201 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify(draft), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(draft), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ...draft,
+            status: "validated",
+            validated_at: "2026-06-24T00:25:00Z",
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            draft: {
+              ...draft,
+              applied_ref: "app:workspace-frame",
+              status: "applied",
+            },
+            ref: "app:workspace-frame",
+            skill_id: "workspace-frame",
+          }),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      listMemorySkillDrafts({
+        draftKind: "skill",
+        scopeKind: "workspace",
+        status: "draft",
+        textQuery: "frame",
+        workspaceId: "workspace-1",
+      }),
+    ).resolves.toMatchObject({
+      items: [expect.objectContaining({ id: "draft-1" })],
+    });
+    await expect(
+      generateMemorySkillDrafts({
+        draft_kind: "auto",
+        scope_kind: "workspace",
+        text_query: "frame",
+        workspace_id: "workspace-1",
+      }),
+    ).resolves.toMatchObject({ source_memory_count: 2 });
+    await expect(getMemorySkillDraft("draft-1")).resolves.toMatchObject({
+      id: "draft-1",
+    });
+    await expect(
+      updateMemorySkillDraft("draft-1", { runtime_name: "workspace-frame-v2" }),
+    ).resolves.toMatchObject({ id: "draft-1" });
+    await expect(validateMemorySkillDraft("draft-1")).resolves.toMatchObject({
+      status: "validated",
+    });
+    await expect(applyMemorySkillDraft("draft-1")).resolves.toMatchObject({
+      ref: "app:workspace-frame",
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/memories/skill-drafts?scope_kind=workspace&workspace_id=workspace-1&status=draft&draft_kind=skill&text_query=frame&limit=20&offset=0",
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/memories/skill-drafts:generate",
+      expect.objectContaining({
+        body: JSON.stringify({
+          draft_kind: "auto",
+          scope_kind: "workspace",
+          text_query: "frame",
+          workspace_id: "workspace-1",
+        }),
+        headers: expect.any(Headers),
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/memories/skill-drafts/draft-1",
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/memories/skill-drafts/draft-1",
+      expect.objectContaining({
+        body: JSON.stringify({ runtime_name: "workspace-frame-v2" }),
+        headers: expect.any(Headers),
+        method: "PUT",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      "/api/memories/skill-drafts/draft-1:validate",
+      expect.objectContaining({
+        headers: expect.any(Headers),
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      6,
+      "/api/memories/skill-drafts/draft-1:apply",
+      expect.objectContaining({
         headers: expect.any(Headers),
         method: "POST",
       }),

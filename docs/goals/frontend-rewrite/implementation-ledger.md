@@ -8929,3 +8929,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent live orchestration fixture design, failed-test diagnosis, browser coverage, screenshot inspection, matrix update, and ledger update completed for this slice. This does not claim real-backend stdout cadence PASS, real-backend orchestration/SSE cadence PASS, reviewer sign-off, or final V2 frontend completion.
+
+## 2026-07-01 Memory Architecture And Skill Drafts V2 Slice
+
+### Scope
+- Re-checked the active frontend rewrite goal, the remaining old unit-level frontend harness inventory, and the V1 Memory harness before editing instead of deleting the file blindly.
+- Found a real V2 gap: the React Memory page only exposed entries/search/detail/rebuild, while the old V1 harness and memory architecture docs expected an Architecture view plus the memory Skill Drafts workflow.
+- Added typed frontend contracts and client functions for the existing global memory skill-draft API surface: list, generate, get, update, validate, and apply.
+- Extended `MemoryView` with page-local tabs for Entries, Architecture, and Skill Drafts. The Skill Drafts tab now lists drafts, selects a detail by default, edits runtime name/description/instructions, validates, rejects through status update, and applies drafts through the backend endpoint.
+- Retired `tests/unit_tests/frontend/test_memory_view_ui.py` only after moving its useful assertions to V2-native TS tests instead of the old `frontend/dist` string scan.
+
+### Verification
+- `npm test -- src/test/apiClient.test.ts -t "memory"` passed with the existing memory endpoint test and the new memory skill-draft endpoint test.
+- `npm test -- src/test/MemoryView.test.tsx` passed with 8 tests covering entry detail lifecycle fields, explicit `status: null` search payloads, tab-switch search preservation, Architecture tab rendering, Skill Drafts generate/save/validate/reject/apply calls, Chinese `记忆` copy, and the renamed architecture doc path.
+- `npm run test:browser -- v2-memory-view.spec.ts --project=chromium` passed with 2 packed `/app/` browser scenarios. The new scenario opens the Architecture and Skill Drafts secondary tabs, verifies Skill Draft list/detail rendering, and checks the list/generate/save/validate/apply request chain and payloads.
+- Main-agent visual inspection reviewed `.tmp/frontend-v2-ts-memory/v2-memory-architecture.png`, `.tmp/frontend-v2-ts-memory/v2-memory-skill-drafts.png`, and `.tmp/frontend-v2-ts-memory/v2-memory-skill-drafts-applied.png`. The initial Skill Drafts screenshot was adjusted after inspection so the field labels and values are visible instead of capturing the editor after Playwright had scrolled it to the lower action area.
+
+### Reviewer
+- Main-agent V1 harness audit, real V2 Memory surface implementation, typed API coverage, component coverage, packed browser coverage for the new Memory secondary tabs, screenshot inspection, old unit harness retirement, and matrix/ledger update completed for this slice. This does not claim Memory `Verified`, formal V1 screenshot pairing, new secondary-tab browser error/loading coverage, broad integration harness retirement, reviewer sign-off, or final V2 frontend completion.

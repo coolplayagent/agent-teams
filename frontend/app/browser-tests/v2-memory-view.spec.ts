@@ -1,5 +1,10 @@
 import { expect, test } from "@playwright/test";
 
+import type {
+  MemorySkillDraft,
+  MemorySkillDraftStatus,
+  MemorySkillDraftSummary,
+} from "../src/api/contracts";
 import {
   ensureScreenshotDir,
   expectNoDocumentScroll,
@@ -135,10 +140,129 @@ test("filters, searches, selects, and rebuilds the Memory surface", async ({
   }
 });
 
+test("opens Memory architecture and skill draft secondary pages", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state = memoryViewState();
+  try {
+    await installShellState(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleMemoryApi(context, state),
+      sessionTitle: "TS memory secondary pages",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    await page
+      .getByRole("navigation", { name: "Primary navigation" })
+      .getByRole("button", { name: "Memory" })
+      .click();
+
+    const memoryView = page.getByTestId("memory-view");
+    await expect(memoryView).toBeVisible();
+    await memoryView.getByText("Architecture", { exact: true }).click();
+    await expect(page.getByTestId("memory-architecture-map")).toBeVisible();
+    await expect(memoryView.getByText("Lifecycle")).toBeVisible();
+    await expect(memoryView.getByText("Working memory")).toHaveCount(2);
+    await expect(memoryView.getByText("Skill draft flow")).toBeVisible();
+    await page.screenshot({
+      path: screenshotPath("v2-memory-architecture.png", SCREENSHOT_FOLDER),
+    });
+
+    await memoryView.getByText("Skill Drafts", { exact: true }).click();
+    await expect(page.getByTestId("memory-skill-drafts")).toBeVisible();
+    await expect(page.getByTestId("memory-draft-row-draft-1")).toBeVisible();
+    await expect(page.getByTestId("memory-draft-editor")).toContainText(
+      "workspace-frame",
+    );
+    await expect(page.getByTestId("memory-draft-editor")).toContainText(
+      "Add one usage example before applying.",
+    );
+    await expect(page.getByTestId("memory-draft-editor")).toContainText("SKILL.md");
+    await page.screenshot({
+      path: screenshotPath("v2-memory-skill-drafts.png", SCREENSHOT_FOLDER),
+    });
+    await expect
+      .poll(() => state.skillDraftListRequests)
+      .toContain(
+        `/memories/skill-drafts?scope_kind=workspace&workspace_id=${WORKSPACE_ID}&limit=30&offset=0`,
+      );
+
+    await memoryView
+      .getByRole("searchbox", { name: "Search skill drafts" })
+      .fill("frame");
+    await expect
+      .poll(() => state.skillDraftListRequests)
+      .toContain(
+        `/memories/skill-drafts?scope_kind=workspace&workspace_id=${WORKSPACE_ID}&text_query=frame&limit=30&offset=0`,
+      );
+
+    await memoryView.getByRole("button", { name: "Generate" }).click();
+    await expect
+      .poll(() =>
+        state.skillDraftGeneratePayloads.some(
+          (payload) =>
+            payload.draft_kind === "auto" &&
+            payload.scope_kind === "workspace" &&
+            payload.text_query === "frame" &&
+            payload.workspace_id === WORKSPACE_ID,
+        ),
+      )
+      .toBe(true);
+
+    await page.getByLabel("Runtime name").fill("workspace-frame-v2");
+    await memoryView.getByRole("button", { name: "Save" }).click();
+    await expect
+      .poll(() =>
+        state.skillDraftUpdatePayloads.some(
+          (payload) => payload.runtime_name === "workspace-frame-v2",
+        ),
+      )
+      .toBe(true);
+
+    await memoryView.getByRole("button", { name: "Validate" }).click();
+    await expect
+      .poll(() => state.skillDraftValidateCalls.includes("draft-1"))
+      .toBe(true);
+    await expect(page.getByTestId("memory-draft-editor")).toContainText("Validated");
+
+    await memoryView.getByRole("button", { name: "Apply" }).click();
+    await expect
+      .poll(() => state.skillDraftApplyCalls.includes("draft-1"))
+      .toBe(true);
+    await expect(
+      memoryView.getByText("Applied skill draft: app:workspace-frame-v2"),
+    ).toBeVisible();
+    await page.getByTestId("memory-draft-editor").evaluate((element) => {
+      element.scrollTop = 0;
+    });
+    await page.screenshot({
+      path: screenshotPath("v2-memory-skill-drafts-applied.png", SCREENSHOT_FOLDER),
+    });
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "v2 memory architecture and skill drafts should stay in the fixed shell",
+    );
+  } finally {
+    await appServer.close();
+  }
+});
+
 interface MemoryViewState {
+  draft: MemorySkillDraft;
   listRequests: string[];
   rebuildPayloads: Record<string, unknown>[];
   searchPayloads: Record<string, unknown>[];
+  skillDraftApplyCalls: string[];
+  skillDraftGeneratePayloads: Record<string, unknown>[];
+  skillDraftListRequests: string[];
+  skillDraftUpdatePayloads: Record<string, unknown>[];
+  skillDraftValidateCalls: string[];
 }
 
 interface MemorySummary {
@@ -179,9 +303,15 @@ interface MemoryEntry extends MemorySummary {
 
 function memoryViewState(): MemoryViewState {
   return {
+    draft: memorySkillDraft(),
     listRequests: [],
     rebuildPayloads: [],
     searchPayloads: [],
+    skillDraftApplyCalls: [],
+    skillDraftGeneratePayloads: [],
+    skillDraftListRequests: [],
+    skillDraftUpdatePayloads: [],
+    skillDraftValidateCalls: [],
   };
 }
 
@@ -189,6 +319,85 @@ async function handleMemoryApi(
   context: MockApiRouteContext,
   state: MemoryViewState,
 ): Promise<boolean> {
+  if (context.method === "GET" && context.path === "/memories/skill-drafts") {
+    const requestKey = `${context.path}${context.url.search}`;
+    state.skillDraftListRequests.push(requestKey);
+    await context.fulfillJson({
+      items: [memorySkillDraftSummary(state.draft)],
+      limit: Number(context.url.searchParams.get("limit") ?? 30),
+      offset: Number(context.url.searchParams.get("offset") ?? 0),
+      total_count: 1,
+    });
+    return true;
+  }
+  if (
+    context.method === "POST"
+    && context.path === "/memories/skill-drafts:generate"
+  ) {
+    state.skillDraftGeneratePayloads.push(
+      readRecordPayload(context.route.request().postData()),
+    );
+    await context.fulfillJson({
+      error_message: "",
+      items: [memorySkillDraftSummary(state.draft)],
+      source_memory_count: state.draft.source_memory_ids.length,
+    });
+    return true;
+  }
+  if (
+    context.method === "GET"
+    && context.path.startsWith("/memories/skill-drafts/")
+    && !context.path.includes(":")
+  ) {
+    await context.fulfillJson(state.draft);
+    return true;
+  }
+  if (
+    context.method === "PUT"
+    && context.path.startsWith("/memories/skill-drafts/")
+  ) {
+    const payload = readRecordPayload(context.route.request().postData());
+    state.skillDraftUpdatePayloads.push(payload);
+    state.draft = updateMemorySkillDraftRecord(state.draft, payload);
+    await context.fulfillJson(state.draft);
+    return true;
+  }
+  if (
+    context.method === "POST"
+    && context.path.endsWith(":validate")
+    && context.path.startsWith("/memories/skill-drafts/")
+  ) {
+    state.skillDraftValidateCalls.push(skillDraftIdFromPath(context.path));
+    state.draft = {
+      ...state.draft,
+      status: "validated",
+      updated_at: "2026-06-25T09:10:00Z",
+      validated_at: "2026-06-25T09:10:00Z",
+    };
+    await context.fulfillJson(state.draft);
+    return true;
+  }
+  if (
+    context.method === "POST"
+    && context.path.endsWith(":apply")
+    && context.path.startsWith("/memories/skill-drafts/")
+  ) {
+    state.skillDraftApplyCalls.push(skillDraftIdFromPath(context.path));
+    state.draft = {
+      ...state.draft,
+      applied_at: "2026-06-25T09:12:00Z",
+      applied_ref: `app:${state.draft.runtime_name}`,
+      applied_skill_id: state.draft.runtime_name,
+      status: "applied",
+      updated_at: "2026-06-25T09:12:00Z",
+    };
+    await context.fulfillJson({
+      draft: state.draft,
+      ref: state.draft.applied_ref,
+      skill_id: state.draft.applied_skill_id,
+    });
+    return true;
+  }
   if (context.method === "GET" && context.path === "/memories") {
     const requestKey = `${context.path}${context.url.search}`;
     state.listRequests.push(requestKey);
@@ -251,6 +460,105 @@ function memorySearchResponse(payload: Record<string, unknown>): Record<string, 
     ],
     total_count: 1,
   };
+}
+
+function memorySkillDraft(): MemorySkillDraft {
+  return {
+    applied_at: null,
+    applied_ref: null,
+    applied_skill_id: null,
+    created_at: "2026-06-25T08:45:00Z",
+    description: "Turn stable workspace-frame memories into a reusable skill.",
+    draft_kind: "skill",
+    files: [
+      {
+        content: "# Workspace frame skill",
+        encoding: "utf-8",
+        path: "SKILL.md",
+      },
+    ],
+    generation_error: "",
+    id: "draft-1",
+    instructions: "Keep workspace pages fixed-height and locally scrollable.",
+    runtime_name: "workspace-frame",
+    scope_kind: "workspace",
+    source_memory_ids: ["memory-shell-frame", "memory-search-hit"],
+    status: "draft",
+    updated_at: "2026-06-25T08:50:00Z",
+    validated_at: null,
+    validation_messages: [
+      {
+        code: "missing-example",
+        message: "Add one usage example before applying.",
+        path: "SKILL.md",
+        severity: "warning",
+      },
+    ],
+    workspace_id: WORKSPACE_ID,
+    workspace_ids: [WORKSPACE_ID],
+  };
+}
+
+function memorySkillDraftSummary(
+  draft: MemorySkillDraft,
+): MemorySkillDraftSummary {
+  return {
+    applied_ref: draft.applied_ref,
+    created_at: draft.created_at,
+    description: draft.description,
+    draft_kind: draft.draft_kind,
+    id: draft.id,
+    runtime_name: draft.runtime_name,
+    scope_kind: draft.scope_kind,
+    source_memory_count: draft.source_memory_ids.length,
+    status: draft.status,
+    updated_at: draft.updated_at,
+    validation_error_count: draft.validation_messages.filter(
+      (message) => message.severity === "error",
+    ).length,
+    validation_warning_count: draft.validation_messages.filter(
+      (message) => message.severity === "warning",
+    ).length,
+    workspace_id: draft.workspace_id,
+    workspace_ids: draft.workspace_ids,
+  };
+}
+
+function updateMemorySkillDraftRecord(
+  draft: MemorySkillDraft,
+  payload: Record<string, unknown>,
+): MemorySkillDraft {
+  return {
+    ...draft,
+    description:
+      typeof payload.description === "string" ? payload.description : draft.description,
+    instructions:
+      typeof payload.instructions === "string" ? payload.instructions : draft.instructions,
+    runtime_name:
+      typeof payload.runtime_name === "string" ? payload.runtime_name : draft.runtime_name,
+    status: isMemorySkillDraftStatus(payload.status)
+      ? payload.status
+      : draft.status,
+    updated_at: "2026-06-25T09:00:00Z",
+  };
+}
+
+function isMemorySkillDraftStatus(
+  value: unknown,
+): value is MemorySkillDraftStatus {
+  return (
+    value === "applied" ||
+    value === "applying" ||
+    value === "draft" ||
+    value === "rejected" ||
+    value === "validated"
+  );
+}
+
+function skillDraftIdFromPath(path: string): string {
+  return decodeURIComponent(
+    path.replace("/memories/skill-drafts/", "").split(":")[0] ?? "",
+  );
 }
 
 function memoryEntry(memoryId: string): MemoryEntry {

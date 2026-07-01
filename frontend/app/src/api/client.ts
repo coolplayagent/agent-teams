@@ -75,7 +75,17 @@ import type {
   MemoryQueryResult,
   MemoryScope,
   MemorySearchResult,
+  MemorySkillDraft,
+  MemorySkillDraftApplyResult,
+  MemorySkillDraftGenerationKind,
+  MemorySkillDraftGenerationResult,
+  MemorySkillDraftKind,
+  MemorySkillDraftQueryResult,
+  MemorySkillDraftScopeKind,
+  MemorySkillDraftStatus,
   MemoryTier,
+  GenerateMemorySkillDraftsRequest,
+  UpdateMemorySkillDraftRequest,
   McpServerAddRequest,
   McpServerAddResult,
   McpServerConfigResult,
@@ -1429,6 +1439,93 @@ export function rebuildMemoryIndex(
     method: "POST",
     body,
   });
+}
+
+export interface ListMemorySkillDraftsOptions {
+  draftKind?: MemorySkillDraftKind | "all";
+  limit?: number;
+  offset?: number;
+  scopeKind?: MemorySkillDraftScopeKind | "all";
+  status?: MemorySkillDraftStatus | "all";
+  textQuery?: string;
+  workspaceId?: string | null;
+}
+
+export function listMemorySkillDrafts(
+  options: ListMemorySkillDraftsOptions = {},
+): Promise<MemorySkillDraftQueryResult> {
+  const params = new URLSearchParams();
+  if (options.scopeKind !== undefined && options.scopeKind !== "all") {
+    appendQueryParam(params, "scope_kind", options.scopeKind);
+  }
+  appendQueryParam(params, "workspace_id", options.workspaceId);
+  if (options.status !== undefined && options.status !== "all") {
+    appendQueryParam(params, "status", options.status);
+  }
+  if (options.draftKind !== undefined && options.draftKind !== "all") {
+    appendQueryParam(params, "draft_kind", options.draftKind);
+  }
+  appendQueryParam(params, "text_query", options.textQuery);
+  params.set("limit", String(options.limit ?? 20));
+  params.set("offset", String(options.offset ?? 0));
+  return requestJson<MemorySkillDraftQueryResult>(
+    `/memories/skill-drafts?${params.toString()}`,
+  );
+}
+
+export function generateMemorySkillDrafts(
+  request: GenerateMemorySkillDraftsRequest,
+): Promise<MemorySkillDraftGenerationResult> {
+  return requestJson<MemorySkillDraftGenerationResult>(
+    "/memories/skill-drafts:generate",
+    {
+      method: "POST",
+      body: JSON.stringify(request),
+    },
+  );
+}
+
+export function getMemorySkillDraft(
+  draftId: string,
+): Promise<MemorySkillDraft> {
+  return requestJson<MemorySkillDraft>(
+    `/memories/skill-drafts/${encodeURIComponent(draftId)}`,
+  );
+}
+
+export function updateMemorySkillDraft(
+  draftId: string,
+  request: UpdateMemorySkillDraftRequest,
+): Promise<MemorySkillDraft> {
+  return requestJson<MemorySkillDraft>(
+    `/memories/skill-drafts/${encodeURIComponent(draftId)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(request),
+    },
+  );
+}
+
+export function validateMemorySkillDraft(
+  draftId: string,
+): Promise<MemorySkillDraft> {
+  return requestJson<MemorySkillDraft>(
+    `/memories/skill-drafts/${encodeURIComponent(draftId)}:validate`,
+    {
+      method: "POST",
+    },
+  );
+}
+
+export function applyMemorySkillDraft(
+  draftId: string,
+): Promise<MemorySkillDraftApplyResult> {
+  return requestJson<MemorySkillDraftApplyResult>(
+    `/memories/skill-drafts/${encodeURIComponent(draftId)}:apply`,
+    {
+      method: "POST",
+    },
+  );
 }
 
 export function saveNotificationConfig(

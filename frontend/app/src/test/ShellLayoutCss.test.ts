@@ -5,6 +5,16 @@ import { describe, expect, it } from "vitest";
 
 const themeCss = readFileSync("src/styles/theme.css", "utf8");
 
+function cssBlock(selector: string): string {
+  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = new RegExp(`^${escapedSelector}\\s*{`, "m").exec(themeCss);
+  const start = match?.index ?? -1;
+  expect(start).toBeGreaterThanOrEqual(0);
+  const end = themeCss.indexOf("\n}", start);
+  expect(end).toBeGreaterThan(start);
+  return themeCss.slice(start, end);
+}
+
 describe("shell layout CSS", () => {
   it("keeps the chat shell locked to one page with independent scroll regions", () => {
     expect(themeCss).toMatch(
@@ -72,6 +82,27 @@ describe("shell layout CSS", () => {
   });
 
   it("keeps settings navigation and content scrolling independently", () => {
+    const settingsCenter = cssBlock(".at-settings-center");
+    expect(settingsCenter).toContain("display: grid;");
+    expect(settingsCenter).toContain("grid-template-columns: 190px minmax(0, 1fr);");
+    expect(settingsCenter).toContain("height: 100%;");
+    expect(settingsCenter).toContain("min-height: 0;");
+    expect(settingsCenter).toContain("background: var(--at-surface);");
+
+    const settingsNav = cssBlock(".at-settings-nav");
+    expect(settingsNav).toContain("min-height: 0;");
+    expect(settingsNav).toContain("overflow: auto;");
+    expect(settingsNav).toContain("border-right: 1px solid var(--at-border);");
+    expect(settingsNav).toContain("background: var(--at-sidebar);");
+
+    const settingsNavItem = cssBlock(".at-settings-nav-item");
+    expect(settingsNavItem).toContain("border: 0;");
+    expect(settingsNavItem).toContain("border-radius: 6px;");
+    expect(settingsNavItem).toContain("background: transparent;");
+
+    expect(themeCss).toMatch(
+      /\.at-settings-nav-item:hover,[\s\S]*?\.at-settings-nav-item:focus-visible,[\s\S]*?\.at-settings-nav-item\.is-active\s*{[\s\S]*?background:\s*var\(--at-surface-muted\);[\s\S]*?outline:\s*none;/,
+    );
     expect(themeCss).toMatch(
       /\.at-settings-drawer \.ant-drawer-body\s*{[\s\S]*?overflow:\s*hidden;/,
     );
@@ -87,6 +118,10 @@ describe("shell layout CSS", () => {
     expect(themeCss).toMatch(
       /\.at-settings-section-body\s*{[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*auto;/,
     );
+
+    const settingsSectionBody = cssBlock(".at-settings-section-body");
+    expect(settingsSectionBody).not.toContain("border-top:");
+    expect(themeCss).not.toContain(".settings-actions-bar");
   });
 
   it("keeps the workspace project view inside independent workbench scroll regions", () => {

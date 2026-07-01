@@ -8526,3 +8526,21 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent gap selection, failing browser reproduction, implementation fix, component and browser regression coverage, screenshot inspection, matrix update, and ledger update completed for this slice. No subsystem PASS or final V2 completion is claimed.
+
+## 2026-07-01 Settings Shell CSS TS Migration
+
+### Scope
+- Re-checked the closure matrix and remaining old frontend Python UI harness inventory before editing.
+- Selected a bounded cleanup slice: five Settings shell CSS assertions in `tests/integration_tests/frontend/test_settings_shell_ui.py` still inspected legacy `frontend/dist` CSS for layout, hover/active tab chrome, footer action ownership, and duplicate divider behavior.
+- Migrated the V2-equivalent checks into `ShellLayoutCss.test.ts`: the test now asserts the actual V2 Settings drawer grid, independent Settings nav/content scroll regions, normal hover/active nav feedback, absence of the legacy global `.settings-actions-bar`, and no top divider on `.at-settings-section-body`.
+- Removed the corresponding Python static CSS tests and the now-unused `load_components_css` import from `test_settings_shell_ui.py`.
+- Kept `CLEAN-01` at `In progress`; this is a cleanup/test-migration slice, not full Settings parity, not full old-harness retirement, and not final V2 completion.
+
+### Verification
+- `npm test -- src/test/ShellLayoutCss.test.ts -t "settings navigation"` initially failed because the helper matched the translucent-sidebar override instead of the base Settings nav rule.
+- Tightened the helper to match line-start complete selectors, then `npm test -- src/test/ShellLayoutCss.test.ts -t "settings navigation"` passed.
+- `npm test -- src/test/ShellLayoutCss.test.ts` passed with 19 tests.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_settings_shell_ui.py` passed.
+
+### Reviewer
+- Main-agent matrix scan, scoped Python-to-TS UI harness migration, failed-test reproduction, helper fix, focused verification, and matrix update completed for this slice. No Settings subsystem PASS, cleanup PASS, reviewer sign-off, or final V2 completion is claimed.

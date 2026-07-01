@@ -8,9 +8,6 @@ from pathlib import Path
 import subprocess
 from typing import cast
 
-from .css_helpers import load_components_css
-
-
 def test_settings_modal_uses_flat_content_stacks_and_switches_tabs(
     tmp_path: Path,
 ) -> None:
@@ -504,83 +501,6 @@ def test_general_notifications_preserve_hidden_channels_without_forcing_toast() 
     assert "rowEl.dataset.hasHiddenChannels" in notifications
     assert "if (canSaveNotificationConfig())" in settings
     assert "getLoadedNotificationConfig()" in settings
-
-
-def test_settings_content_stack_does_not_draw_duplicate_top_divider() -> None:
-    components_css = load_components_css()
-    start = components_css.index(".settings-content-stack {")
-    end = components_css.index(".settings-model-stack {", start)
-    stack_rule = components_css[start:end]
-
-    assert ".settings-content-stack {" in stack_rule
-    assert "border-top: 1px solid var(--settings-divider);" not in stack_rule
-
-
-def test_settings_active_tab_uses_surface_background_and_primary_accent() -> None:
-    components_css = load_components_css()
-
-    active_start = components_css.index(".settings-tab.active {")
-    active_end = components_css.index(".settings-tab-label {", active_start)
-    active_rule = components_css[active_start:active_end]
-
-    assert "background: var(--settings-surface-bg);" in active_rule
-    assert "border-left-color: var(--primary);" in active_rule
-    assert "box-shadow: inset 0 0 0 1px var(--settings-border-soft);" in active_rule
-
-
-def test_settings_hover_tab_keeps_visible_feedback() -> None:
-    components_css = load_components_css()
-
-    hover_start = components_css.index(".settings-tab:hover {")
-    hover_end = components_css.index(".settings-tab.active {", hover_start)
-    hover_rule = components_css[hover_start:hover_end]
-
-    assert "background: var(--settings-row-hover-bg);" in hover_rule
-    assert "border-left-color: var(--settings-border-default);" in hover_rule
-    assert "box-shadow: inset 0 0 0 1px var(--settings-border-soft);" in hover_rule
-
-
-def test_settings_layout_uses_scrolling_body_with_footer_actions() -> None:
-    components_css = load_components_css()
-
-    assert ".settings-main {" in components_css
-    assert "overflow: hidden;" in components_css
-    assert ".settings-modal-content {" in components_css
-    assert "width: min(1240px, 96vw);" in components_css
-    assert "height: min(90vh, 960px);" in components_css
-    assert "min-height: 760px;" in components_css
-    assert ".settings-body {" in components_css
-    assert "overflow-y: auto;" in components_css
-    assert ".settings-actions-bar {" in components_css
-    assert ".settings-panel {" in components_css
-    assert "height: 100%;" in components_css
-    assert ".settings-action {" in components_css
-    assert ".settings-panel-actions-group {" in components_css
-    assert ".settings-panel-actions-group-end {" in components_css
-    assert ".settings-sidebar::-webkit-scrollbar {" in components_css
-    assert ".settings-body::-webkit-scrollbar {" in components_css
-    assert ".profiles-list::-webkit-scrollbar {" in components_css
-
-
-def test_settings_action_bar_css_hides_inactive_tab_owned_actions() -> None:
-    components_css = load_components_css()
-
-    assert (
-        '.settings-actions-bar[data-active-tab="model"] '
-        '[data-settings-action-tab]:not([data-settings-action-tab="model"])'
-        in components_css
-    )
-    assert (
-        '.settings-actions-bar[data-active-tab="roles"] '
-        '[data-settings-action-tab]:not([data-settings-action-tab="roles"])'
-        in components_css
-    )
-    assert (
-        '.settings-actions-bar[data-active-tab="plugins"] '
-        '[data-settings-action-tab]:not([data-settings-action-tab="plugins"])'
-        in components_css
-    )
-    assert "display: none !important;" in components_css
 
 
 def test_model_profile_editor_labels_max_output_tokens_and_uses_short_footer_labels(

@@ -288,6 +288,31 @@ describe("MessageTimeline", () => {
     expect(await screen.findByText("Closed runtime answer")).toBeVisible();
   });
 
+  it("keeps closed runtime output visible when persisted assistant text is stale", async () => {
+    setRuntimeEntries([
+      runtimeTextDeltaEntry({
+        eventId: 2,
+        id: "run-output:2:0",
+        text: "Fresh runtime answer after terminal event",
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "Older persisted answer for the same run",
+        message_id: "assistant-run-output-stale",
+        role_id: "MainAgent",
+        run_id: "run-output",
+      },
+    ]);
+
+    renderTimeline();
+
+    expect(await screen.findByText("Older persisted answer for the same run"))
+      .toBeVisible();
+    expect(await screen.findByText("Fresh runtime answer after terminal event"))
+      .toBeVisible();
+  });
+
   it("hides closed runtime output once persisted assistant text covers it", async () => {
     const resumedText = "Resumed output after the hydrated cursor.";
     setRuntimeEntries([
@@ -3582,6 +3607,14 @@ describe("MessageTimeline", () => {
     setRuntimeStateFromEvents([
       relayRunEvent({
         event_id: 1,
+        event_type: "run_started",
+        role_id: "MainAgent",
+        run_id: "parent_run_1",
+        trace_id: "parent_run_1",
+        payload_json: JSON.stringify({ phase: "streaming" }),
+      }),
+      relayRunEvent({
+        event_id: 2,
         event_type: "tool_call",
         instance_id: "main-instance",
         role_id: "MainAgent",
@@ -3598,7 +3631,7 @@ describe("MessageTimeline", () => {
         }),
       }),
       relayRunEvent({
-        event_id: 2,
+        event_id: 3,
         event_type: "thinking_delta",
         role_id: "Explorer",
         run_id: "parent_run_1",
@@ -3612,7 +3645,7 @@ describe("MessageTimeline", () => {
         }),
       }),
       relayRunEvent({
-        event_id: 3,
+        event_id: 4,
         event_type: "text_delta",
         role_id: "Explorer",
         run_id: "parent_run_1",
@@ -3624,7 +3657,7 @@ describe("MessageTimeline", () => {
         }),
       }),
       relayRunEvent({
-        event_id: 4,
+        event_id: 5,
         event_type: "tool_call",
         role_id: "Explorer",
         run_id: "parent_run_1",
@@ -3638,12 +3671,34 @@ describe("MessageTimeline", () => {
           tool_name: "read",
         }),
       }),
+      relayRunEvent({
+        event_id: 6,
+        event_type: "text_delta",
+        role_id: "",
+        run_id: "parent_run_1",
+        trace_id: "parent_run_1",
+        payload_json: JSON.stringify({
+          text: "Parent follow-up after child markers should remain visible.",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 7,
+        event_type: "run_completed",
+        role_id: "MainAgent",
+        run_id: "parent_run_1",
+        trace_id: "parent_run_1",
+        payload_json: JSON.stringify({ status: "completed" }),
+      }),
     ]);
     listSessionMessagesMock.mockResolvedValue([]);
 
     const { container } = renderTimeline("session-1");
 
-    expect(await screen.findByText("Starting subagent")).toBeVisible();
+    expect(
+      await screen.findByText(
+        "Parent follow-up after child markers should remain visible.",
+      ),
+    ).toBeVisible();
     expect(
       screen.queryByText("Parent-run child thought should stay out of the main transcript."),
     ).not.toBeInTheDocument();

@@ -3122,7 +3122,7 @@ function runtimeRunStateBelongsToMainTimeline(
   runState: RuntimeRunState,
   primaryRoleId: string | null,
 ): boolean {
-  if (runtimeRunStateLooksLikeDetachedSubagent(runState, primaryRoleId)) {
+  if (runtimeRunStateIdentityLooksLikeDetachedSubagent(runState, primaryRoleId)) {
     return false;
   }
   const normalizedPrimaryRole = stableTimelineRole(primaryRoleId ?? "");
@@ -3135,6 +3135,26 @@ function runtimeRunStateBelongsToMainTimeline(
   }
   return runState.entries.some(
     (entry) => stableTimelineRole(entry.roleId) === normalizedPrimaryRole,
+  );
+}
+
+function runtimeRunStateIdentityLooksLikeDetachedSubagent(
+  runState: RuntimeRunState,
+  primaryRoleId: string | null,
+): boolean {
+  if (runState.scope === "subagent") {
+    return true;
+  }
+  const identifiers = [
+    runState.runId,
+    runState.targetRoleId ?? "",
+  ].join(" ").toLowerCase();
+  if (identifiers.includes("subagent")) {
+    return true;
+  }
+  return (
+    timelineRoleCanBeDetachedAgent(runState.targetRoleId ?? "", primaryRoleId) &&
+    timelineIdentifiersIncludeGeneratedReference([runState.runId])
   );
 }
 
@@ -3177,36 +3197,6 @@ function runtimeEntryLooksLikeDetachedSubagent(
   ]);
 }
 
-function runtimeRunStateLooksLikeDetachedSubagent(
-  runState: RuntimeRunState,
-  primaryRoleId: string | null,
-): boolean {
-  if (runState.scope === "subagent") {
-    return true;
-  }
-  const identifiers = [
-    runState.runId,
-    runState.targetRoleId ?? "",
-    ...runState.entries.flatMap((entry) => [
-      entry.instanceId ?? "",
-      entry.roleId,
-      entry.runId,
-    ]),
-  ].join(" ").toLowerCase();
-  if (identifiers.includes("subagent")) {
-    return true;
-  }
-  if (
-    timelineRoleCanBeDetachedAgent(runState.targetRoleId ?? "", primaryRoleId) &&
-    timelineIdentifiersIncludeGeneratedReference([runState.runId])
-  ) {
-    return true;
-  }
-  return runState.entries.some((entry) =>
-    runtimeEntryLooksLikeDetachedSubagent(entry, runState, primaryRoleId),
-  );
-}
-
 function runtimeEntryIsCoveredByHydratedOutput(
   entry: TimelineEntry,
   runState: RuntimeRunState,
@@ -3228,14 +3218,7 @@ function runtimeEntryIsCoveredByHydratedOutput(
   }
   if (entry.kind === "text_delta" || entry.kind === "output_delta") {
     const entryTexts = runtimeHydrationComparisonTexts(entry);
-    if (entryTexts.some((entryText) => hydratedText.includes(entryText))) {
-      return true;
-    }
-    if (runState.scope === "subagent") {
-      return false;
-    }
-    const replayAfterEventId = runState.replayAfterEventId ?? 0;
-    return !(replayAfterEventId > 0 && entry.eventId > replayAfterEventId);
+    return entryTexts.some((entryText) => hydratedText.includes(entryText));
   }
   return (
     entry.kind === "run_started" ||

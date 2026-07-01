@@ -8404,3 +8404,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent matrix scan, missing Settings-page browser coverage identification, focused browser test addition, browser and component verification, screenshot inspection, and matrix/ledger updates completed for this slice. No Settings subsystem PASS or final V2 completion is claimed.
+
+## 2026-07-01 Settings Remote Workspace Browser Evidence Closure
+
+### Scope
+- Re-checked the frontend rewrite matrix and selected `SET-12 Remote workspace` because it was still `Not checked` even though previous slices had migrated SSH profile logic and added create/delete browser scenarios.
+- Re-ran the packed-browser Remote workspace scenarios and the full `WorkspaceSettingsSection` component suite rather than relying on old ledger claims.
+- Screenshot inspection caught two evidence-quality issues: the create/delete screenshots were polluted by transient success toasts, and the initial full-page editor screenshot made the modal fields hard to read.
+- Tightened the browser test to wait for `.ant-message-notice` to clear before the final create/delete screenshots and changed the editor checkpoint to screenshot the `New SSH profile` dialog itself.
+- Confirmed by screenshot inspection that Settings keeps the V1-aligned first-level section list, Remote workspace remains a first-level Settings page, the SSH editor exposes the expected connection and credential fields, created profiles render list/detail/auth summaries, and delete confirmation leaves a clean empty state after success.
+- Updated `SET-12` from `Not checked` to `In progress`. This slice does not claim Remote workspace `Verified`, complete Settings parity, formal V1 visual/DOM pairing, project-open runtime sign-off, reviewer sign-off, release cleanup sign-off, or final V2 frontend completion.
+
+### Verification
+- `npm run test:browser -- v2-settings-actions.spec.ts --project=chromium -g "remote workspace"` passed with 2 browser tests after the screenshot-evidence fixes.
+- `npm test -- src/test/WorkspaceSettingsSection.test.tsx` passed with 4 focused component tests; jsdom emitted the known pseudo-element `getComputedStyle` warning.
+- `npm test -- src/test/SettingsDrawer.test.tsx -t "remote workspace|Remote workspace"` passed with 1 focused Settings integration test; jsdom emitted the known pseudo-element `getComputedStyle` warning.
+- `npm run lint` passed.
+- Inspected `.tmp/frontend-v2-ts-settings-actions/v2-remote-workspace-editor.png`, `.tmp/frontend-v2-ts-settings-actions/v2-remote-workspace-create.png`, and `.tmp/frontend-v2-ts-settings-actions/v2-remote-workspace-delete.png`.
+
+### Reviewer
+- Main-agent matrix scan, focused browser evidence rerun, screenshot-quality fixes, browser and component verification, screenshot inspection, and matrix/ledger updates completed for this slice. No Settings subsystem PASS or final V2 completion is claimed.

@@ -1337,6 +1337,9 @@ test("creates remote workspace SSH profiles from settings", async ({
     ]) {
       await expect(editor.getByLabel(label, { exact: true })).toBeVisible();
     }
+    await editor.screenshot({
+      path: screenshotPath("v2-remote-workspace-editor.png", SCREENSHOT_FOLDER),
+    });
 
     await editor.getByLabel("Profile ID", { exact: true }).fill("staging");
     await editor.getByLabel("Host", { exact: true }).fill("staging.example.com");
@@ -1396,6 +1399,7 @@ test("creates remote workspace SSH profiles from settings", async ({
       page,
       "v2 remote workspace SSH create should stay framed",
     );
+    await expect(page.locator(".ant-message-notice")).toHaveCount(0);
     await page.screenshot({
       path: screenshotPath("v2-remote-workspace-create.png", SCREENSHOT_FOLDER),
     });
@@ -1470,6 +1474,7 @@ test("requires confirmation before deleting remote workspace SSH profiles", asyn
       page,
       "v2 remote workspace settings should stay framed",
     );
+    await expect(page.locator(".ant-message-notice")).toHaveCount(0);
     await page.screenshot({
       path: screenshotPath("v2-remote-workspace-delete.png", SCREENSHOT_FOLDER),
     });

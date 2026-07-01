@@ -3154,17 +3154,23 @@ function runtimeEntryLooksLikeDetachedSubagent(
   if (identifiers.includes("subagent")) {
     return true;
   }
-  const instanceId = (entry.instanceId ?? "").trim();
-  if (instanceId.length === 0) {
-    return false;
-  }
-  if (!timelineIdentifierLooksGeneratedAgentInstance(instanceId)) {
-    return false;
-  }
   const roleId = entry.roleId.trim().length > 0
     ? entry.roleId
     : (runState.targetRoleId ?? "");
-  return timelineRoleCanBeDetachedAgent(roleId, primaryRoleId);
+  if (!timelineRoleCanBeDetachedAgent(roleId, primaryRoleId)) {
+    return false;
+  }
+  const instanceId = (entry.instanceId ?? "").trim();
+  if (
+    instanceId.length > 0 &&
+    timelineIdentifierLooksGeneratedAgentInstance(instanceId)
+  ) {
+    return true;
+  }
+  return timelineIdentifiersIncludeGeneratedReference([
+    entry.runId,
+    runState.runId,
+  ]);
 }
 
 function runtimeRunStateLooksLikeDetachedSubagent(
@@ -3184,6 +3190,12 @@ function runtimeRunStateLooksLikeDetachedSubagent(
     ]),
   ].join(" ").toLowerCase();
   if (identifiers.includes("subagent")) {
+    return true;
+  }
+  if (
+    timelineRoleCanBeDetachedAgent(runState.targetRoleId ?? "", primaryRoleId) &&
+    timelineIdentifiersIncludeGeneratedReference([runState.runId])
+  ) {
     return true;
   }
   return runState.entries.some((entry) =>
@@ -3649,10 +3661,16 @@ function timelineMessageLooksDetachedSubagent(
     return false;
   }
   const instanceId = (message.instance_id?.trim() ?? "");
-  return (
+  if (
     instanceId.length > 0 &&
     timelineIdentifierLooksGeneratedAgentInstance(instanceId)
-  );
+  ) {
+    return true;
+  }
+  return timelineIdentifiersIncludeGeneratedReference([
+    message.run_id ?? "",
+    message.trace_id ?? "",
+  ]);
 }
 
 function timelineMessageHasSubagentToolPart(message: TimelineMessage): boolean {
@@ -3683,6 +3701,10 @@ function timelineRoleCanBeDetachedAgent(
 function timelineIdentifierLooksGeneratedAgentInstance(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
     .test(value.trim());
+}
+
+function timelineIdentifiersIncludeGeneratedReference(values: string[]): boolean {
+  return values.some((value) => timelineIdentifierLooksGeneratedAgentInstance(value));
 }
 
 function mergeTimelineMessages(

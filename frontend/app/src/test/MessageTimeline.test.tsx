@@ -3760,6 +3760,78 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText("Explorer")).not.toBeInTheDocument();
   });
 
+  it("keeps UUID subagent stream rows out when instance metadata is missing", async () => {
+    const subagentRunId = "6d91a928-cb28-4ce2-b9ff-31ec19a15f63";
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "tool_call",
+        instance_id: "main-instance",
+        role_id: "MainAgent",
+        run_id: "parent_run_1",
+        trace_id: "parent_run_1",
+        payload_json: JSON.stringify({
+          args: {
+            description: "Explore skill implementation",
+            prompt: "Read the project and report back.",
+            role_id: "Explorer",
+          },
+          tool_call_id: "call-spawn-explorer",
+          tool_name: "spawn_subagent",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "text_delta",
+        role_id: "Explorer",
+        run_id: subagentRunId,
+        trace_id: subagentRunId,
+        payload_json: JSON.stringify({
+          text: "Child UUID output without instance id should stay in the subagent panel.",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 3,
+        event_type: "tool_call",
+        role_id: "Explorer",
+        run_id: subagentRunId,
+        trace_id: subagentRunId,
+        payload_json: JSON.stringify({
+          args: { path: "src/relay_teams/skills/skill_registry.py" },
+          tool_call_id: "call-child-read",
+          tool_name: "read",
+        }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const mainTimeline = renderTimeline("session-1");
+
+    expect(await screen.findByText("Starting subagent")).toBeVisible();
+    expect(
+      screen.queryByText(
+        "Child UUID output without instance id should stay in the subagent panel.",
+      ),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Tool call: read")).not.toBeInTheDocument();
+    expect(mainTimeline.container.querySelector('[data-role-id="Explorer"]')).toBeNull();
+
+    mainTimeline.unmount();
+
+    const subagentTimeline = renderTimeline("session-1", {
+      runtimeRunId: subagentRunId,
+      variant: "subagent-panel",
+    });
+
+    expect(
+      await screen.findByText(
+        "Child UUID output without instance id should stay in the subagent panel.",
+      ),
+    ).toBeVisible();
+    expect(await screen.findByText("Tool call: read")).toBeVisible();
+    expect(subagentTimeline.container.querySelector(".at-message-role")).toBeNull();
+  });
+
   it("renders selected subagent stream without repeated role labels", async () => {
     setRuntimeStateFromEvents([
       relayRunEvent({
@@ -4191,6 +4263,42 @@ describe("MessageTimeline", () => {
     expect(await screen.findByText("Skill 系统的实现总结如下")).toBeVisible();
     expect(
       screen.queryByText("Now let me read all the core source files concurrently."),
+    ).not.toBeInTheDocument();
+    expect(container.querySelector('[data-role-id="Explorer"]')).toBeNull();
+  });
+
+  it("keeps UUID subagent replay messages out when instance metadata is missing", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "Child replay without instance id should stay out of the main transcript.",
+        created_at: "2026-06-23T10:00:00Z",
+        message_id: "explorer-message-without-instance",
+        role_id: "Explorer",
+        run_id: "6d91a928-cb28-4ce2-b9ff-31ec19a15f63",
+      },
+      {
+        content: "Parent summary should remain visible.",
+        created_at: "2026-06-23T10:03:00Z",
+        instance_id: "main-instance",
+        message_id: "parent-message-without-instance",
+        role_id: "MainAgent",
+        run_id: "parent_run_1",
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline("session-1");
+
+    expect(await screen.findByText("Parent summary should remain visible."))
+      .toBeVisible();
+    expect(
+      screen.queryByText(
+        "Child replay without instance id should stay out of the main transcript.",
+      ),
     ).not.toBeInTheDocument();
     expect(container.querySelector('[data-role-id="Explorer"]')).toBeNull();
   });

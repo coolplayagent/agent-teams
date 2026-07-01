@@ -201,7 +201,7 @@ test("does not repeat the round prompt title after expanding the marker", async 
     await summary.click();
 
     await expect(marker).toHaveAttribute("data-open", "true");
-    await expect(summary).toHaveText(/收起|Collapse/);
+    await expect(summary).toHaveText(/^(收起|Collapse)$/);
     await expect(summary).not.toContainText(LONG_PROMPT_TEXT);
     await expect(summary).not.toContainText(LONG_PROMPT_PREFIX);
     await expect(summary.locator(".at-round-marker-title")).toHaveCount(0);

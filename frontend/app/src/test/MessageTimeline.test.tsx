@@ -1522,6 +1522,7 @@ describe("MessageTimeline", () => {
     expect(marker).toHaveAttribute("data-open", "true");
     expect(marker?.querySelector(".at-round-marker-intent-action"))
       .toHaveTextContent(/^Collapse$/);
+    expect(summary).toHaveTextContent(/^Collapse$/);
     expect(summary).not.toHaveTextContent(prompt);
     expect(summary?.querySelector(".at-round-marker-title")).toBeNull();
     expect(marker?.querySelector(".at-round-marker-intent-body")).toHaveTextContent(prompt);

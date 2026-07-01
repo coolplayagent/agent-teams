@@ -316,6 +316,14 @@ For every row moved to `Verified`, record:
 - Browser evidence: `.tmp/frontend-v2-ts-subagent-session/v2-subagent-terminal-typewriter-catchup-mid.png`, `.tmp/frontend-v2-ts-subagent-session/v2-subagent-terminal-typewriter-catchup-final.png`.
 - Remaining before verification: real-backend stdout cadence, hard-refresh during the visual catch-up window, and live orchestration child output cadence.
 
+### 2026-07-01 Subagent Catch-Up Refresh Recovery
+
+- `MSG-02`/`STREAM-02` tightened: a hard refresh during the terminal visual catch-up window now has packed-browser evidence. The restored panel reconnects to `/subagents/events`, accepts replayed child events, resumes the typewriter reveal from the restored event text, and settles with no stale cursor.
+- `SUB-01` tightened: the restored subagent panel keeps the prompt/header context, keeps replayed child output out of `.at-chat-view`, and does not duplicate the replayed child output after delayed final history is released.
+- Automated evidence: `npm run build`, `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium -g "refresh during terminal catch-up"`.
+- Browser evidence: `.tmp/frontend-v2-ts-subagent-session/v2-subagent-refresh-catchup-restored-mid.png`, `.tmp/frontend-v2-ts-subagent-session/v2-subagent-refresh-catchup-restored-final.png`.
+- Remaining before verification: real-backend stdout cadence and live orchestration child output cadence.
+
 ### 2026-07-01 Timeline Background Notification And Prompt Expansion
 
 - `STREAM-01` tightened: managed background task completion notifications are hidden from the user-visible transcript even when replayed from persisted `message.parts[*].part_kind="user-prompt"` payloads.

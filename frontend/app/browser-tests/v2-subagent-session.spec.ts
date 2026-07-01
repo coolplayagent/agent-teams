@@ -379,6 +379,142 @@ test("continues typewriter reveal after terminal close before history refill", a
   }
 });
 
+test("recovers a subagent stream after refresh during terminal catch-up", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state: SubagentSessionMockState = {
+    completed: false,
+    delayFinalMessages: false,
+    releaseFinalMessages: [],
+    messageRequestCount: 0,
+  };
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await installMockEventSource(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleSubagentSessionApi(context, state),
+      sessionTitle: "TS parent session",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    await openSubagentPanelFromToolCard(page, "Explorer review");
+    const terminalText = Array.from(
+      { length: 32 },
+      (_, index) => `REFRESH_STREAM_${index}`,
+    ).join(" ");
+    await waitForEventSourceUrl(
+      page,
+      new RegExp(
+        `/api/sessions/${SESSION_ID}/subagents/events\\?after_event_id=0$`,
+      ),
+    );
+    await waitForEventSourceOpenCount(page, 1);
+
+    await dispatchSubagentRunEvent(page, {
+      eventId: 42,
+      payload: { text: terminalText },
+      relayEventType: "text_delta",
+      type: "message.text.delta",
+    });
+    const initialPanel = page.locator(".at-subagent-session-view");
+    await expect(
+      initialPanel.locator(".at-message-streaming-text"),
+    ).toBeVisible();
+
+    state.completed = true;
+    state.delayFinalMessages = true;
+    await dispatchSubagentRunEvent(page, {
+      eventId: 43,
+      payload: { status: "completed" },
+      relayEventType: "run_completed",
+      type: "run.completed",
+    });
+    await waitForEventSourceOpenCount(page, 0);
+    await expect.poll(() => state.messageRequestCount).toBeGreaterThanOrEqual(2);
+    await expect(initialPanel.locator(".at-message-streaming-text"))
+      .toBeVisible();
+
+    await page.reload();
+    await waitForV2Shell(page);
+    const restoredPanel = page.locator(".at-subagent-session-view");
+    await expect(page.getByRole("heading", { name: "Explorer review" }))
+      .toBeVisible();
+    await expect(restoredPanel.locator(".at-subagent-session-prompt"))
+      .toContainText(SUBAGENT_PROMPT);
+    await waitForEventSourceUrl(
+      page,
+      new RegExp(
+        `/api/sessions/${SESSION_ID}/subagents/events\\?after_event_id=0$`,
+      ),
+    );
+    await waitForEventSourceOpenCount(page, 1);
+
+    await dispatchSubagentRunEvent(page, {
+      eventId: 42,
+      payload: { text: terminalText },
+      relayEventType: "text_delta",
+      type: "message.text.delta",
+    });
+    const restoredRow = restoredPanel
+      .locator(`.at-timeline-row[data-run-id="${SUBAGENT_RUN_ID}"]`)
+      .filter({ hasText: "REFRESH_STREAM" });
+    const restoredDisplay = restoredRow.locator(".at-message-streaming-text");
+    await expect(restoredDisplay).toBeVisible();
+    const restoredSamples = await sampleTextLengths(restoredDisplay, 4, 70);
+    expect(restoredSamples[0] ?? terminalText.length).toBeLessThan(
+      terminalText.length,
+    );
+    expect(Math.max(...restoredSamples)).toBeLessThan(terminalText.length);
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-subagent-refresh-catchup-restored-mid.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+
+    await dispatchSubagentRunEvent(page, {
+      eventId: 43,
+      payload: { status: "completed" },
+      relayEventType: "run_completed",
+      type: "run.completed",
+    });
+    await waitForEventSourceOpenCount(page, 0);
+    await expect(restoredRow).toContainText(terminalText);
+    await expect(restoredPanel.locator(".streaming-cursor")).toHaveCount(0);
+    await expect(
+      page.locator(".at-chat-view").getByText("REFRESH_STREAM_"),
+    ).toHaveCount(0);
+
+    releaseFinalSubagentMessages(state);
+    await expect(restoredPanel.getByText("Final persisted subagent answer"))
+      .toBeVisible();
+    await expect(
+      restoredPanel
+        .locator(`.at-timeline-row[data-run-id="${SUBAGENT_RUN_ID}"]`)
+        .filter({ hasText: "REFRESH_STREAM_" }),
+    ).toHaveCount(1);
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-subagent-refresh-catchup-restored-final.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "subagent refresh catch-up should stay inside the fixed V2 shell",
+    );
+  } finally {
+    releaseFinalSubagentMessages(state);
+    await appServer.close();
+  }
+});
+
 test("streams top-level subagent output deltas inside the right panel", async ({
   page,
 }) => {

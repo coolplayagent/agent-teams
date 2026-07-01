@@ -8680,3 +8680,20 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent implementation audit, display-state fix, App-level browser coverage, screenshot inspection, dist rebuild, matrix update, and focused verification completed for this slice. This does not claim real-backend stdout cadence PASS, hard-refresh during the catch-up window PASS, live orchestration child cadence PASS, reviewer sign-off, or final V2 frontend completion.
+
+## 2026-07-01 Subagent Catch-Up Refresh Recovery Evidence Slice
+
+### Scope
+- Closed the specific verification gap left by the previous slice: hard refresh while a terminal subagent output row is still visually catching up.
+- Added a packed-browser scenario that streams a large child output into the right subagent panel, completes the child run while final message history is delayed, reloads the app during the catch-up window, receives replayed child events from the restored `/subagents/events` connection, and verifies the typewriter reveal resumes in the restored right panel.
+- The scenario also verifies the restored prompt/header context, parent timeline isolation, single child-output row after delayed final history release, and no stale cursor after the replayed terminal state settles.
+- No production code change was required for this slice; it converts an explicit unknown in the matrix into browser evidence.
+
+### Verification
+- `npm run build` passed and kept the packaged V2 frontend bundle current.
+- `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium -g "refresh during terminal catch-up"` passed.
+- Inspected `.tmp/frontend-v2-ts-subagent-session/v2-subagent-refresh-catchup-restored-mid.png`; it shows the restored subagent panel with the prompt/header intact, replayed child output partially revealed, cursor at the next character position, and no child output in the parent timeline.
+- Inspected `.tmp/frontend-v2-ts-subagent-session/v2-subagent-refresh-catchup-restored-final.png`; it shows delayed final history released, one replayed child-output row, and no stale cursor.
+
+### Reviewer
+- Main-agent scenario design, browser coverage, screenshot inspection, matrix update, and ledger update completed for this slice. This does not claim real-backend stdout cadence PASS, live orchestration child cadence PASS, reviewer sign-off, or final V2 frontend completion.

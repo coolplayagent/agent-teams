@@ -2,6 +2,25 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-01 Subagent Stream State And Replay Isolation Fix
+
+### Scope
+- Fixed a live subagent terminal-state gap in `SubagentSessionView`: a closed stream state now updates the shared runtime store immediately instead of only mutating a ref and waiting for terminal history refresh. This keeps the right panel responsive when the stream closes before persisted messages catch up.
+- Tightened main-session replay isolation in `MessageTimeline`: persisted messages that look like detached subagent output are filtered from the parent timeline even when their saved `run_id` reuses the parent run. This targets the observed Explorer/subagent content leaking above the main conversation.
+- Removed blank work rows from the timeline render pipeline by requiring individual parts to have renderable content. Empty persisted thinking parts no longer leave blank cards or virtual-list height artifacts.
+
+### Verification
+- `npm test -- src/test/SubagentSessionView.test.tsx` passed with 22 tests.
+- `npm test -- src/test/MessageTimeline.test.tsx` passed with 153 tests.
+- `npm test -- src/test/runtimeReducers.test.ts src/test/streamClient.test.ts` passed with 49 tests.
+- `npm run test:browser -- browser-tests/v2-subagent-session.spec.ts --project=chromium` passed with 10 Chromium tests.
+- `npm run test:browser -- browser-tests/v2-real-sse-stale-recovery.spec.ts --project=chromium` passed with 18 Chromium tests.
+- `npm run lint` passed.
+- `git diff --check` passed.
+
+### Reviewer
+- Main-agent decision: this closes the specific regression cluster around closed subagent stream repaint, persisted subagent replay leakage, and empty thinking rows. `MSG-02`, `MSG-03`, `STREAM-02`, and `SUB-01` remain `In progress` until paired V1/browser sign-off and broader real-backend orchestration coverage are complete.
+
 ## 2026-07-01 Appearance Import Copy Reset Browser Evidence
 
 ### Scope

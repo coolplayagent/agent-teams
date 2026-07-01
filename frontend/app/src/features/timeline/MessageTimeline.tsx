@@ -3556,7 +3556,7 @@ function roundMessages(round: SessionRound): SessionRoundMessage[] {
 
 function messagesVisibleInTimelineScope(
   messages: TimelineMessage[],
-  rounds: SessionRound[],
+  _rounds: SessionRound[],
   runtimeRunId: string | null,
   fallbackRunId: string | null,
   primaryRoleId: string | null,
@@ -3567,19 +3567,9 @@ function messagesVisibleInTimelineScope(
   if (!timelineScopeIsMainSession(runtimeRunId, fallbackRunId)) {
     return transcriptMessages;
   }
-  const mainRunIds = new Set(
-    rounds
-      .map((round) => round.run_id.trim())
-      .filter((runId) => runId.length > 0),
+  return transcriptMessages.filter(
+    (message) => !timelineMessageLooksDetachedSubagent(message, primaryRoleId),
   );
-  return transcriptMessages.filter((message) => {
-    const runId = explicitTimelineMessageRunId(message);
-    return (
-      runId.length === 0 ||
-      mainRunIds.has(runId) ||
-      !timelineMessageLooksDetachedSubagent(message, primaryRoleId)
-    );
-  });
 }
 
 function timelineMessageIsInternalBackgroundTaskNotification(
@@ -5940,9 +5930,25 @@ function timelineRowHasRenderableContent(row: TimelineRow): boolean {
   return (
     row.processedGroup !== undefined ||
     row.roundMarker !== null ||
-    row.parts.length > 0 ||
+    row.parts.some(timelinePartHasRenderableContent) ||
     row.text.trim().length > 0
   );
+}
+
+function timelinePartHasRenderableContent(part: TimelineRenderPart): boolean {
+  if (part.kind === "text") {
+    return part.streaming || part.text.trim().length > 0;
+  }
+  if (part.kind === "thinking") {
+    return part.text.trim().length > 0;
+  }
+  if (part.kind === "tool") {
+    return part.toolName.trim().length > 0 ||
+      part.body.trim().length > 0 ||
+      part.action.trim().length > 0 ||
+      part.mediaParts.length > 0;
+  }
+  return part.url.trim().length > 0 || part.name.trim().length > 0;
 }
 
 function timelineRowHasStreamingContent(row: TimelineRow): boolean {

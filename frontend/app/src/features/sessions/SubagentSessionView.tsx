@@ -196,11 +196,13 @@ export function SubagentSessionView({
       },
       onState: (nextRuntimeState) => {
         if (nextRuntimeState.runs[runId]?.status === "closed") {
-          runtimeStateRef.current = subagentClosedRuntimeStateForDisplay({
+          const displayRuntimeState = subagentClosedRuntimeStateForDisplay({
             closedRuntimeState: nextRuntimeState,
             currentRuntimeState: runtimeStateRef.current,
             runId,
           });
+          runtimeStateRef.current = displayRuntimeState;
+          setRuntimeState(displayRuntimeState);
           return;
         }
         runtimeStateRef.current = nextRuntimeState;

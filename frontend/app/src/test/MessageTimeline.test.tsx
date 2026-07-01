@@ -3521,6 +3521,73 @@ describe("MessageTimeline", () => {
     expect(container.querySelector('[data-role-id="Explorer"]')).toBeNull();
   });
 
+  it("keeps persisted subagent messages out even when they reuse the parent run id", async () => {
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          created_at: "2026-06-23T10:00:00Z",
+          primary_role_id: "MainAgent",
+          run_id: "parent_run_1",
+          run_status: "completed",
+          run_user_message: "Explore the project",
+        },
+      ],
+      next_cursor: null,
+    });
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "Main answer should remain visible.",
+        message_id: "main-answer",
+        role_id: "MainAgent",
+        run_id: "parent_run_1",
+      },
+      {
+        content: "Explorer subagent replay should stay out of the main transcript.",
+        instance_id: "87f9f69e-8622-4d46-958f-aa0d7d283095",
+        message_id: "subagent-replay-leak",
+        role_id: "Explorer",
+        run_id: "parent_run_1",
+      },
+    ]);
+
+    const { container } = renderTimeline("session-1", {
+      primaryRoleId: "MainAgent",
+    });
+
+    expect(await screen.findByText("Main answer should remain visible."))
+      .toBeVisible();
+    expect(
+      screen.queryByText("Explorer subagent replay should stay out of the main transcript."),
+    ).not.toBeInTheDocument();
+    expect(container.querySelector('[data-role-id="Explorer"]')).toBeNull();
+  });
+
+  it("drops empty persisted thinking rows instead of leaving blank work cards", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message: {
+          parts: [
+            {
+              kind: "thinking",
+              part_index: 0,
+              text: "",
+            },
+          ],
+        },
+        message_id: "empty-thinking",
+        role_id: "MainAgent",
+        run_id: "run-output",
+      },
+    ]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("No messages yet")).toBeVisible();
+    expect(container.querySelector(".at-message-thinking")).toBeNull();
+    expect(container.querySelector("article.at-message")).toBeNull();
+  });
+
   it("keeps scoped subagent runs out even when events carry the primary role", async () => {
     setRuntimeEntries(
       [

@@ -515,6 +515,30 @@ describe("SubagentSessionView", () => {
     expect(await screen.findByText("Final subagent answer")).toBeVisible();
   });
 
+  it("renders closed stream state immediately before terminal history refresh runs", async () => {
+    listAgentMessagesMock.mockResolvedValue([]);
+    renderSubagentSessionView();
+
+    await waitFor(() => expect(openSessionSubagentRunStreamMock).toHaveBeenCalled());
+
+    pushLatestSubagentStreamState(
+      closedRuntimeState("subagent_run_1", [
+        runtimeTextDeltaEntry({
+          instanceId: "subagent-instance-1",
+          runId: "subagent_run_1",
+          text: "Closed stream output should render before history refresh.",
+        }),
+      ]),
+    );
+
+    expect(
+      await screen.findByText("Closed stream output should render before history refresh."),
+    ).toBeVisible();
+    expect(await screen.findByText("completed")).toBeVisible();
+    expect(screen.queryByText("running")).not.toBeInTheDocument();
+    expect(listAgentMessagesMock).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps streamed text visible when terminal refresh still has older history", async () => {
     setRuntimeEntries([
       runtimeTextDeltaEntry({
@@ -813,6 +837,10 @@ function closeLatestSubagentStream(runtimeState: RuntimeState): void {
     throw new Error("Subagent stream did not register an onClosed callback.");
   }
   onClosed(runtimeState);
+}
+
+function pushLatestSubagentStreamState(runtimeState: RuntimeState): void {
+  latestSubagentStreamOptions().onState(runtimeState);
 }
 
 function latestSubagentStreamHandle(): ReturnType<

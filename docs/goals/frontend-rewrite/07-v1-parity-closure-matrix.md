@@ -114,6 +114,14 @@ For every row moved to `Verified`, record:
 
 ## Verification Ledger
 
+### 2026-07-01 Subagent Stream State And Replay Isolation Fix
+
+- `SUB-01` tightened: the right subagent panel now applies a closed stream runtime state immediately during `onState`, so terminal text/status can repaint before persisted history refresh finishes.
+- `SUB-01`/`STREAM-02` tightened: parent timelines now filter detached persisted subagent messages even when the saved message incorrectly reuses the parent `run_id`, preventing child replay content from appearing above the main conversation.
+- `MSG-03` tightened: empty persisted thinking parts are no longer considered renderable rows, removing blank thinking cards and virtual-list space with no content.
+- Automated evidence: `npm test -- src/test/SubagentSessionView.test.tsx`, `npm test -- src/test/MessageTimeline.test.tsx`, `npm test -- src/test/runtimeReducers.test.ts src/test/streamClient.test.ts`, `npm run test:browser -- browser-tests/v2-subagent-session.spec.ts --project=chromium`, `npm run test:browser -- browser-tests/v2-real-sse-stale-recovery.spec.ts --project=chromium`, `npm run lint`, `git diff --check`.
+- Remaining before verification: formal V1 paired screenshots, real production-backend orchestration sampling, and final no-duplicate/no-missing/no-out-of-order review across normal and orchestration modes.
+
 ### 2026-07-01 Tool Lifecycle Refresh Result Evidence
 
 - `MSG-04` tightened with a browser fixture for the actual live tool lifecycle: running tool call, hard refresh while the call is pending, reconnect from `after_event_id=2`, runtime result event, completed single-card state, terminal replay, `Processed` expansion, and opened tool body containing both result and call args.

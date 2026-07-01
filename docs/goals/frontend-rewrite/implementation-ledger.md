@@ -8969,3 +8969,19 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent V1 harness audit, actual V2 parity gap fix, focused timeline action coverage, packed browser voice capture coverage, and matrix/ledger update completed for this slice. This does not claim full speech cleanup, real microphone/provider sign-off, toast-dedupe migration, formal V1 visual pairing, reviewer sign-off, or final V2 frontend completion.
+
+## 2026-07-01 Speech Toast Dedupe Harness Retirement Slice
+
+### Scope
+- Re-checked `tests/unit_tests/frontend/test_speech_ui.py` after the prior speech/action slice. The remaining useful unmigrated assertion was the V1 feedback helper's `dedupeKey` behavior for repeated voice-input errors.
+- Added a V2-native `feedbackMessages` helper that supports keyed toast dedupe with a bounded window while leaving unkeyed messages untouched.
+- Routed Composer voice-input errors through the helper with a text-specific voice error key, so repeated identical stream failures keep the inline composer status visible without stacking duplicate AntD toast notices.
+- Added focused TS coverage for the helper's same-key suppression, independent keys, and unkeyed behavior. Added Composer coverage that triggers two WebSocket voice errors and verifies one toast notice plus the persistent composer status.
+- Removed the old `test_speech_ui.py` static `frontend/dist` harness after mapping its remaining speech inputs, Speech settings, model STT capability, message read-aloud, and toast-dedupe checks to V2 TS/browser coverage.
+
+### Verification
+- `npm test -- src/test/feedbackMessages.test.ts` passed with 3 tests.
+- `npm test -- src/test/Composer.test.tsx -t "dedupes repeated voice input error|voice input|transcription|speech"` passed with 8 focused tests.
+
+### Reviewer
+- Main-agent V1 harness audit, V2 feedback helper implementation, Composer voice-error dedupe wiring, focused TS coverage, old harness removal, and matrix/ledger update completed for this slice. This does not claim real microphone/provider sign-off, full Settings visual pairing, remaining Python harness retirement, reviewer sign-off, or final V2 frontend completion.

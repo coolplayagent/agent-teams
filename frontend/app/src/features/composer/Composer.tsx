@@ -36,6 +36,7 @@ import {
   updateSessionTopology,
   updateSessionNormalModelProfile,
 } from "../../api/client";
+import { showFeedbackMessage } from "../../components/feedbackMessages";
 import type {
   InjectionDeliveryMode,
   ModelProfilesPayload,
@@ -720,7 +721,9 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     disabled: busy || sessionId === null,
     onError: (errorMessage) => {
       setComposerStatus(errorMessage);
-      void message.error(errorMessage);
+      showFeedbackMessage(message, "error", errorMessage, {
+        dedupeKey: `voice-input-error:${errorMessage}`,
+      });
     },
     onTextChange: setDraft,
   });

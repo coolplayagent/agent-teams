@@ -23,6 +23,7 @@ import {
   createSpeechSttWebSocketUrl,
   fetchSpeechConfig,
 } from "../api/speech";
+import { resetFeedbackMessageDedupeForTests } from "../components/feedbackMessages";
 import { Composer } from "../features/composer/Composer";
 import type {
   RecoverySnapshot,
@@ -150,6 +151,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   restoreVoiceRuntime();
+  resetFeedbackMessageDedupeForTests();
   vi.clearAllMocks();
   localStorage.clear();
   useUiStore.setState({ language: "en" });
@@ -2932,6 +2934,45 @@ describe("Composer", () => {
     expect(prompt).toHaveValue("Manual edit");
   });
 
+  it("dedupes repeated voice input error toasts while keeping the composer status", async () => {
+    fetchSpeechConfigMock.mockResolvedValue({
+      configured: true,
+      stt_profile_name: "stt",
+    });
+    const voiceRuntime = installVoiceRuntime();
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+
+    renderComposer();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Voice input" }));
+    await waitFor(() => expect(voiceRuntime.sockets).toHaveLength(1));
+    const firstSocket = voiceRuntime.sockets[0];
+    firstSocket.open();
+    firstSocket.error();
+    await waitFor(() =>
+      expect(document.querySelector(".at-composer-status"))
+        .toHaveTextContent("Voice input stream failed."),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Voice input" })).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Voice input" }));
+    await waitFor(() => expect(voiceRuntime.sockets).toHaveLength(2));
+    const secondSocket = voiceRuntime.sockets[1];
+    secondSocket.open();
+    secondSocket.error();
+
+    expect(document.querySelector(".at-composer-status"))
+      .toHaveTextContent("Voice input stream failed.");
+    await waitFor(() =>
+      expect(document.querySelectorAll(".ant-message-notice-content"))
+        .toHaveLength(1),
+    );
+  });
+
   it("drops pre-ready voice audio when the server sample rate changes", async () => {
     fetchSpeechConfigMock.mockResolvedValue({
       configured: true,
@@ -3252,6 +3293,10 @@ class MockVoiceWebSocket extends EventTarget {
     this.dispatchEvent(
       new MessageEvent("message", { data: JSON.stringify(payload) }),
     );
+  }
+
+  error() {
+    this.dispatchEvent(new Event("error"));
   }
 
   open() {

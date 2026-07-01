@@ -99,7 +99,7 @@ test("creates a run from the V2 composer and renders live stream output", async 
     });
 
     await expect(page.getByText("TS browser stream chunk one.")).toBeVisible();
-    await expect(page.getByText("Run started: status running")).toBeVisible();
+    await expect(page.getByText("Run started: status running")).toHaveCount(0);
 
     await dispatchRunEvent(page, {
       eventId: 3,
@@ -110,7 +110,8 @@ test("creates a run from the V2 composer and renders live stream output", async 
 
     await expect(
       page.getByText("Run completed: status completed · stream finished"),
-    ).toBeVisible();
+    ).toHaveCount(0);
+    await expect(page.getByText("TS browser stream chunk one.")).toBeVisible();
     await expect(page.getByRole("button", { name: "Stop" })).toBeHidden();
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await expectNoDocumentScroll(page, "v2 stream shell should stay fixed-height");

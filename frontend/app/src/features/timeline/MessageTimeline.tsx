@@ -263,23 +263,32 @@ export function MessageTimeline({
     () => runtimeEntriesToRows(runtimeEntries, runtimeState.runs, variant),
     [runtimeEntries, runtimeState.runs, variant],
   );
+  const timelineRowsBeforeGrouping = useMemo(
+    () =>
+      mergeRuntimeThinkingRowsIntoHydratedRows(
+        persistedRows,
+        runtimeRows.filter(timelineRowHasRenderableContent),
+      ),
+    [persistedRows, runtimeRows],
+  );
   const rows = useMemo(
     () =>
       collapseProcessedRows(
-        insertRoundMarkerRowsIfEnabled([
-          ...persistedRows,
-          ...runtimeRows.filter(timelineRowHasRenderableContent),
-        ], displayRounds, expandedHistorySegmentIds, roundChromeEnabled),
+        insertRoundMarkerRowsIfEnabled(
+          timelineRowsBeforeGrouping,
+          displayRounds,
+          expandedHistorySegmentIds,
+          roundChromeEnabled,
+        ),
         displayRounds,
         runtimeState.runs,
       ),
     [
       displayRounds,
       expandedHistorySegmentIds,
-      persistedRows,
       roundChromeEnabled,
-      runtimeRows,
       runtimeState.runs,
+      timelineRowsBeforeGrouping,
     ],
   );
   const streamOpenForSession = useMemo(
@@ -1341,6 +1350,157 @@ function rowWithParts(
       text.trim().length > 0 &&
       parts.every((part) => part.kind === "text"),
   };
+}
+
+function mergeRuntimeThinkingRowsIntoHydratedRows(
+  hydratedRows: TimelineRow[],
+  runtimeRows: TimelineRow[],
+): TimelineRow[] {
+  const runtimeThinkingRows = runtimeRows
+    .map((row, index) => ({ index, row, thinking: singleThinkingPart(row) }))
+    .filter((item): item is {
+      index: number;
+      row: TimelineRow;
+      thinking: TimelineThinkingPart;
+    } => item.thinking !== null && item.row.runId !== null);
+  if (runtimeThinkingRows.length === 0) {
+    return [...hydratedRows, ...runtimeRows];
+  }
+
+  const consumedRuntimeIndexes = new Set<number>();
+  const nextHydratedRows = hydratedRows.map((row) => {
+    const runId = row.runId?.trim() ?? "";
+    if (!row.parts.some((part) => part.kind === "thinking")) {
+      return row;
+    }
+    let changed = false;
+    const rowThinkingPartCount = row.parts.filter((part) => part.kind === "thinking")
+      .length;
+    const nextParts = row.parts.map((part) => {
+      if (part.kind !== "thinking") {
+        return part;
+      }
+      const runtimeItem = runtimeThinkingMergeItem(
+        runtimeThinkingRows,
+        consumedRuntimeIndexes,
+        runId,
+        part.partIndex,
+        rowThinkingPartCount,
+      );
+      if (runtimeItem === undefined) {
+        return part;
+      }
+      consumedRuntimeIndexes.add(runtimeItem.index);
+      const text = joinHydratedThinkingText(
+        part.text,
+        runtimeItem.thinking.text,
+      );
+      changed = true;
+      return {
+        ...part,
+        streaming: runtimeItem.thinking.streaming,
+        text,
+      };
+    });
+    return changed
+      ? {
+          ...row,
+          key: `${row.key}:runtime-thinking`,
+          parts: nextParts,
+          text: rowCopyText(nextParts),
+        }
+      : row;
+  });
+
+  const remainingRuntimeRows = runtimeRows.filter((_, index) =>
+    !consumedRuntimeIndexes.has(index),
+  );
+  return [...nextHydratedRows, ...remainingRuntimeRows];
+}
+
+function runtimeThinkingMergeItem(
+  runtimeThinkingRows: Array<{
+    index: number;
+    row: TimelineRow;
+    thinking: TimelineThinkingPart;
+  }>,
+  consumedRuntimeIndexes: ReadonlySet<number>,
+  runId: string,
+  partIndex: string,
+  rowThinkingPartCount: number,
+): {
+  index: number;
+  row: TimelineRow;
+  thinking: TimelineThinkingPart;
+} | undefined {
+  const candidates = runtimeThinkingRows.filter((item) =>
+    !consumedRuntimeIndexes.has(item.index),
+  );
+  const exactMatch = candidates.find((item) =>
+    item.row.runId === runId && item.thinking.partIndex === partIndex,
+  );
+  if (exactMatch !== undefined) {
+    return exactMatch;
+  }
+  const runMatches = candidates.filter((item) => item.row.runId === runId);
+  if (runId.length > 0 && rowThinkingPartCount === 1 && runMatches.length === 1) {
+    return runMatches[0];
+  }
+  if (runId.length === 0 && rowThinkingPartCount === 1 && candidates.length === 1) {
+    return candidates[0];
+  }
+  return undefined;
+}
+
+function singleThinkingPart(row: TimelineRow): TimelineThinkingPart | null {
+  if (row.source !== "runtime") {
+    return null;
+  }
+  const thinkingParts = row.parts.filter(
+    (part): part is TimelineThinkingPart => part.kind === "thinking",
+  );
+  if (thinkingParts.length !== 1) {
+    return null;
+  }
+  const hasOtherVisibleParts = row.parts.some((part) =>
+    part.kind !== "thinking" && timelinePartVisibleText(part).trim().length > 0,
+  );
+  if (hasOtherVisibleParts) {
+    return null;
+  }
+  const part = thinkingParts[0];
+  if (part.text.trim().length === 0) {
+    return null;
+  }
+  return part;
+}
+
+function timelinePartVisibleText(part: TimelineRenderPart): string {
+  if (part.kind === "text" || part.kind === "thinking") {
+    return part.text;
+  }
+  if (part.kind === "tool") {
+    return [part.toolName, part.body].join(" ");
+  }
+  return [part.name, part.url].join(" ");
+}
+
+function joinHydratedThinkingText(hydratedText: string, runtimeText: string): string {
+  const base = hydratedText.trimEnd();
+  const continuation = runtimeText.trimStart();
+  if (base.length === 0) {
+    return runtimeText;
+  }
+  if (continuation.length === 0) {
+    return hydratedText;
+  }
+  if (continuation.startsWith(base)) {
+    return runtimeText;
+  }
+  if (base.includes(continuation)) {
+    return hydratedText;
+  }
+  return `${base} ${continuation}`;
 }
 
 function processedGroupRow(rows: TimelineRow[], runId: string): TimelineRow {
@@ -2916,6 +3076,12 @@ function runtimeEntryIsCoveredByHydratedOutput(
   if (runtimeEntryIsCoveredByHydratedThinking(entry, hydratedThinkingText)) {
     return true;
   }
+  if (entry.kind === "run_completed" && runtimeEntryHasStructuredOutput(entry)) {
+    const outputText = normalizedTimelineText(
+      rowCopyText(runtimeOutputParts(entry) ?? []),
+    );
+    return outputText.length > 0 && hydratedText.includes(outputText);
+  }
   if (entry.kind === "text_delta" || entry.kind === "output_delta") {
     const entryTexts = runtimeHydrationComparisonTexts(entry);
     if (entryTexts.some((entryText) => hydratedText.includes(entryText))) {
@@ -2930,7 +3096,7 @@ function runtimeEntryIsCoveredByHydratedOutput(
   return (
     entry.kind === "run_started" ||
     entry.kind === "run_resumed" ||
-    entry.kind === "run_completed"
+    (entry.kind === "run_completed" && !runtimeEntryHasStructuredOutput(entry))
   );
 }
 
@@ -3079,6 +3245,9 @@ function thinkingDeltaTextKey(payload: Record<string, JsonValue>): string {
 }
 
 function runtimeEntryShouldRenderChatContent(entry: TimelineEntry): boolean {
+  if (entry.kind === "run_completed" && runtimeEntryHasStructuredOutput(entry)) {
+    return true;
+  }
   return (
     !HIDDEN_RUNTIME_CHAT_EVENT_KINDS.has(entry.kind) &&
     !runtimeEntryIsInternalStatusNoise(entry)
@@ -4496,7 +4665,7 @@ function runtimeContentValueText(value: JsonValue | undefined): string {
 }
 
 function runtimeOutputParts(entry: TimelineEntry): TimelineRenderPart[] | null {
-  if (entry.kind !== "output_delta") {
+  if (entry.kind !== "output_delta" && entry.kind !== "run_completed") {
     return null;
   }
   const payload = jsonObject(entry.payload);
@@ -4511,6 +4680,11 @@ function runtimeOutputParts(entry: TimelineEntry): TimelineRenderPart[] | null {
     const renderPart = outputDeltaRenderPart(part);
     return renderPart === null ? [] : [renderPart];
   });
+}
+
+function runtimeEntryHasStructuredOutput(entry: TimelineEntry): boolean {
+  const parts = runtimeOutputParts(entry);
+  return parts !== null && parts.length > 0;
 }
 
 function outputDeltaRenderPart(part: JsonValue): TimelineRenderPart | null {

@@ -6052,15 +6052,13 @@ describe("MessageTimeline", () => {
       runtimeRunId: "run-thinking-prefix",
     });
 
-    expect(await screen.findByText(prefix)).toBeInTheDocument();
-    expect(await screen.findByText(suffix)).toBeVisible();
-    expect(
-      textOccurrenceCount(container.textContent ?? "", prefix),
-    ).toBe(1);
-    expect(
-      textOccurrenceCount(container.textContent ?? "", suffix),
-    ).toBe(1);
-    expect(container.querySelectorAll(".at-message-thinking")).toHaveLength(2);
+    await waitFor(() => {
+      expect(textOccurrenceCount(container.textContent ?? "", prefix)).toBe(1);
+      expect(textOccurrenceCount(container.textContent ?? "", suffix)).toBe(1);
+    });
+    const thinkingBlocks = container.querySelectorAll(".at-message-thinking");
+    expect(thinkingBlocks).toHaveLength(1);
+    expect(thinkingBlocks[0]).toHaveAttribute("data-streaming", "true");
   });
 
   it("keeps live thinking open when part index is missing", async () => {

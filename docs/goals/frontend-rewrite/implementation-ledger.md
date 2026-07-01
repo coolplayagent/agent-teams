@@ -2,6 +2,23 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-01 Workspace Prompt Python Harness Removal
+
+### Scope
+- Removed `tests/unit_tests/frontend/test_workspace_prompt_ui.py`, a legacy V1/static harness that scanned broad `frontend/dist` HTML, JavaScript, and CSS implementation strings for shell, prompt, token, theme, right-rail, markdown, and settings wiring.
+- Added `frontend/app/src/test/WorkspacePromptParity.test.ts` as the V2-owned replacement guard. It checks the current React source and shared CSS for retired V1 shell placeholders, retired right-rail/drawer IDs, current topbar ordering, current composer mode/role/model/thinking/Shell/YOLO controls, token usage context labels, markdown/highlight ownership, empty-thinking suppression, streaming cursor primitives, and the fixed viewport shell contract.
+- Left stale V1 implementation-string assertions behind with the removed harness, including old `frontend/dist/js/app/prompt.js`, old `frontend/dist/js/components/rounds/*.js`, old navbar/right-rail persistence internals, and V1-only module import names. Those do not prove the current React V2 shell.
+
+### Verification
+- `npm test -- src/test/WorkspacePromptParity.test.ts` passed after first exposing two bad test assumptions: the topbar order check had to be scoped to the topbar JSX block, and the Shell checkbox assertion had to use the actual V2 keys `composerShellSafetyPolicy` and `composerShellSafetyShort`.
+- `uv run --extra dev ruff check tests/unit_tests/frontend` passed.
+- `rg -n "test_workspace_prompt_ui|frontend/dist/js/app/prompt.js|workspace_prompt" tests/unit_tests/frontend frontend/app/src frontend/app/browser-tests` returned no references to the removed harness or old dist proof path.
+- `rg -n "execution-mode-select|right-rail-resizer" frontend/app/src frontend/app/browser-tests -g "!**/WorkspacePromptParity.test.ts"` returned no retired V1 shell identifiers outside the new guard that intentionally lists them as forbidden tokens.
+- `git diff --check` passed.
+
+### Reviewer
+- Main-agent decision: this retires the broad workspace prompt V1/static proof path and tightens `CLEAN-01`. It does not claim complete shell parity, complete streaming/replay parity, final visual sign-off, or final V2 completion because remaining Python UI harnesses and matrix rows still need closure.
+
 ## 2026-07-01 Board TODO Python Harness Removal
 
 ### Scope

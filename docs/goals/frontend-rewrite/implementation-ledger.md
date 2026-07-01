@@ -8697,3 +8697,20 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent scenario design, browser coverage, screenshot inspection, matrix update, and ledger update completed for this slice. This does not claim real-backend stdout cadence PASS, live orchestration child cadence PASS, reviewer sign-off, or final V2 frontend completion.
+
+## 2026-07-01 Live Orchestration Subagent Stream Cadence Slice
+
+### Scope
+- Closed the packed-browser evidence gap for live orchestration child output. The new scenario uses an orchestration parent session, a `subagent_kind="orchestration"` Crafter child record, and live `/subagents/events` updates instead of reusing the normal subagent path or the completed replay fixture.
+- The test verifies typewriter cadence for a large `message.text.delta`, top-level `message.output.delta` tail merging into the same child row, terminal close before final history release, prompt/header retention, body role-label suppression, parent timeline isolation, and no stale cursor after final history settles.
+- The first run caught a test-quality issue: the terminal assertion was still pinned to `.is-streaming`, even though terminal rows correctly drop that class after the cursor is gone. The assertion now checks the unique terminal row by run id and content.
+- No production code change was required for this slice; it converts the live orchestration child cadence item from unverified to packed-browser evidence.
+
+### Verification
+- `npm run build` passed.
+- `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium -g "live orchestration subagent"` passed after tightening the terminal assertion.
+- Inspected `.tmp/frontend-v2-ts-subagent-session/v2-subagent-orchestration-live-stream-mid.png`; it shows the orchestration composer state, running right-side Crafter panel, child output in the panel, and no child output in the parent timeline.
+- Inspected `.tmp/frontend-v2-ts-subagent-session/v2-subagent-orchestration-live-stream-final.png`; it shows the completed right-side panel, final child answer, one child output row, and no stale cursor.
+
+### Reviewer
+- Main-agent live orchestration fixture design, failed-test diagnosis, browser coverage, screenshot inspection, matrix update, and ledger update completed for this slice. This does not claim real-backend stdout cadence PASS, real-backend orchestration/SSE cadence PASS, reviewer sign-off, or final V2 frontend completion.

@@ -26,6 +26,8 @@ const PRESSURE_NEW_SESSION_ID = "session-v2-pressure-new";
 const PRESSURE_RUN_ID = "run-v2-pressure-send";
 const SCREENSHOT_FOLDER = "frontend-v2-ts-subagent-session";
 const SUBAGENT_PROMPT = "Inspect the project and report the subagent stream checkpoints.";
+const ORCHESTRATION_LIVE_PROMPT =
+  "Stream orchestration child work into the right panel only.";
 
 interface SubagentSessionMockState {
   completed: boolean;
@@ -751,6 +753,144 @@ test("replays an orchestration subagent panel without parent leakage after refre
   }
 });
 
+test("streams a live orchestration subagent with right-panel cadence", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state: SubagentSessionMockState = {
+    completed: false,
+    delayFinalMessages: false,
+    releaseFinalMessages: [],
+    messageRequestCount: 0,
+  };
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await installMockEventSource(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleOrchestrationSubagentLiveApi(
+        context,
+        state,
+      ),
+      sessionTitle: "TS orchestration parent",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    await expect(page.getByText("Coordinator is waiting for live orchestration child output."))
+      .toBeVisible();
+
+    await openSubagentPanelFromToolCard(page, "Crafter live stream review");
+    const panel = page.locator(".at-subagent-session-view");
+    await expect(page.getByRole("heading", { name: "Crafter live stream review" }))
+      .toBeVisible();
+    await expect(panel.locator(".at-subagent-session-badge")).toHaveText("running");
+    await expect(panel.locator(".at-subagent-session-prompt"))
+      .toContainText(ORCHESTRATION_LIVE_PROMPT);
+    await waitForEventSourceUrl(
+      page,
+      new RegExp(
+        `/api/sessions/${SESSION_ID}/subagents/events\\?after_event_id=0$`,
+      ),
+    );
+    await waitForEventSourceOpenCount(page, 1);
+
+    const firstStreamText = Array.from(
+      { length: 28 },
+      (_, index) => `ORCH_LIVE_${index}`,
+    ).join(" ");
+    await dispatchSubagentRunEvent(page, {
+      eventId: 42,
+      payload: { text: firstStreamText },
+      relayEventType: "text_delta",
+      roleId: "Crafter",
+      type: "message.text.delta",
+    });
+    const liveRow = panel
+      .locator(`.at-timeline-row.is-streaming[data-run-id="${SUBAGENT_RUN_ID}"]`);
+    const liveText = liveRow.locator(".at-message-streaming-text");
+    await expect(liveRow).toHaveCount(1);
+    await expect(liveText).toBeVisible();
+    await expect(
+      panel.locator(".at-subagent-session-body").getByText("Crafter", {
+        exact: true,
+      }),
+    ).toHaveCount(0);
+    const revealSamples = await sampleTextLengths(liveText, 5, 70);
+    expect(revealSamples[0] ?? firstStreamText.length).toBeLessThan(
+      firstStreamText.length,
+    );
+    expect(Math.max(...revealSamples)).toBeLessThan(firstStreamText.length);
+    expect(new Set(revealSamples).size).toBeGreaterThanOrEqual(3);
+    await expect(
+      page.locator(".at-chat-view").getByText("ORCH_LIVE_"),
+    ).toHaveCount(0);
+
+    await dispatchSubagentRunEvent(page, {
+      eventId: 43,
+      payload: { delta: " ORCH_LIVE_TAIL" },
+      relayEventType: "output_delta",
+      roleId: "Crafter",
+      type: "message.output.delta",
+    });
+    await expect(liveRow).toContainText(`${firstStreamText} ORCH_LIVE_TAIL`);
+    await expect(
+      panel.locator(`.at-timeline-row[data-run-id="${SUBAGENT_RUN_ID}"]`)
+        .filter({ hasText: "ORCH_LIVE_" }),
+    ).toHaveCount(1);
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-subagent-orchestration-live-stream-mid.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+
+    state.completed = true;
+    state.delayFinalMessages = true;
+    await dispatchSubagentRunEvent(page, {
+      eventId: 44,
+      payload: { status: "completed" },
+      relayEventType: "run_completed",
+      roleId: "Crafter",
+      type: "run.completed",
+    });
+    await waitForEventSourceOpenCount(page, 0);
+    await expect.poll(() => state.messageRequestCount).toBeGreaterThanOrEqual(2);
+    const terminalRow = panel
+      .locator(`.at-timeline-row[data-run-id="${SUBAGENT_RUN_ID}"]`)
+      .filter({ hasText: "ORCH_LIVE_" });
+    await expect(terminalRow).toHaveCount(1);
+    await expect(terminalRow).toContainText(`${firstStreamText} ORCH_LIVE_TAIL`);
+    await expect(panel.getByText("Final orchestration child answer"))
+      .toHaveCount(0);
+
+    releaseFinalSubagentMessages(state);
+    await expect(panel.locator(".at-subagent-session-badge")).toHaveText("completed");
+    await expect(panel.getByText("Final orchestration child answer")).toBeVisible();
+    await expect(panel.locator(".streaming-cursor")).toHaveCount(0);
+    await expect(
+      page.locator(".at-chat-view").getByText("Final orchestration child answer"),
+    ).toHaveCount(0);
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-subagent-orchestration-live-stream-final.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "live orchestration subagent stream should stay inside the fixed V2 shell",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+  } finally {
+    releaseFinalSubagentMessages(state);
+    await appServer.close();
+  }
+});
+
 test("keeps send, session switch, and subagent view responsive under sidebar load", async ({
   page,
 }) => {
@@ -1017,6 +1157,53 @@ async function handleOrchestrationSubagentReplayApi(
     `/sessions/${SESSION_ID}/agents/${SUBAGENT_INSTANCE_ID}/messages`
   ) {
     await context.fulfillJson(orchestrationSubagentMessages());
+    return true;
+  }
+  return false;
+}
+
+async function handleOrchestrationSubagentLiveApi(
+  context: MockApiRouteContext,
+  state: SubagentSessionMockState,
+): Promise<boolean> {
+  if (context.method !== "GET") {
+    return false;
+  }
+  if (context.path === "/sessions/sidebar") {
+    await context.fulfillJson([orchestrationParentSidebarRecord()]);
+    return true;
+  }
+  if (context.path === `/workspaces/${WORKSPACE_ID}/sessions/sidebar`) {
+    await context.fulfillJson({
+      has_more: false,
+      items: [orchestrationParentSidebarRecord()],
+      next_cursor: null,
+    });
+    return true;
+  }
+  if (context.path === `/sessions/${SESSION_ID}`) {
+    await context.fulfillJson(orchestrationParentSessionRecord());
+    return true;
+  }
+  if (context.path === `/sessions/${SESSION_ID}/messages`) {
+    await context.fulfillJson(orchestrationLiveParentMessages());
+    return true;
+  }
+  if (context.path === `/sessions/${SESSION_ID}/subagents`) {
+    await context.fulfillJson([orchestrationLiveSubagentRecord(state)]);
+    return true;
+  }
+  if (
+    context.path ===
+    `/sessions/${SESSION_ID}/agents/${SUBAGENT_INSTANCE_ID}/messages`
+  ) {
+    state.messageRequestCount += 1;
+    if (state.completed && state.delayFinalMessages) {
+      await new Promise<void>((resolve) => {
+        state.releaseFinalMessages.push(resolve);
+      });
+    }
+    await context.fulfillJson(orchestrationLiveSubagentMessages(state));
     return true;
   }
   return false;
@@ -1523,6 +1710,25 @@ function orchestrationParentMessages(): Record<string, unknown>[] {
   ];
 }
 
+function orchestrationLiveParentMessages(): Record<string, unknown>[] {
+  return [
+    {
+      content: "Coordinator is waiting for live orchestration child output.",
+      created_at: "2026-06-26T12:31:01Z",
+      message_id: "orchestration-live-parent-message-1",
+      role_id: "Coordinator",
+      run_id: "run-orchestration-live-parent",
+    },
+    subagentToolMessage({
+      createdAt: "2026-06-26T12:31:02Z",
+      messageId: "orchestration-live-subagent-tool",
+      prompt: ORCHESTRATION_LIVE_PROMPT,
+      roleId: "Crafter",
+      title: "Crafter live stream review",
+    }),
+  ];
+}
+
 function subagentToolMessage({
   createdAt,
   messageId,
@@ -1631,6 +1837,27 @@ function orchestrationSubagentRecord(): Record<string, unknown> {
   };
 }
 
+function orchestrationLiveSubagentRecord(
+  state: SubagentSessionMockState,
+): Record<string, unknown> {
+  return {
+    created_at: "2026-06-26T12:31:05Z",
+    instance_id: SUBAGENT_INSTANCE_ID,
+    last_event_id: state.completed ? 44 : 41,
+    role_id: "Crafter",
+    run_id: SUBAGENT_RUN_ID,
+    run_phase: state.completed ? "completed" : "running",
+    run_status: state.completed ? "completed" : "running",
+    session_id: SESSION_ID,
+    status: state.completed ? "completed" : "running",
+    subagent_kind: "orchestration",
+    title: "Crafter live stream review",
+    updated_at: state.completed
+      ? "2026-06-26T12:34:00Z"
+      : "2026-06-26T12:32:00Z",
+  };
+}
+
 function subagentMessages(state: SubagentSessionMockState): Record<string, unknown>[] {
   if (state.completed) {
     return [
@@ -1649,6 +1876,31 @@ function subagentMessages(state: SubagentSessionMockState): Record<string, unkno
       created_at: "2026-06-26T09:06:00Z",
       message_id: "subagent-checkpoint-message",
       role_id: "explorer",
+      run_id: SUBAGENT_RUN_ID,
+    },
+  ];
+}
+
+function orchestrationLiveSubagentMessages(
+  state: SubagentSessionMockState,
+): Record<string, unknown>[] {
+  if (state.completed) {
+    return [
+      {
+        content: "Final orchestration child answer",
+        created_at: "2026-06-26T12:34:00Z",
+        message_id: "orchestration-live-subagent-final",
+        role_id: "Crafter",
+        run_id: SUBAGENT_RUN_ID,
+      },
+    ];
+  }
+  return [
+    {
+      content: "Crafter live orchestration checkpoint",
+      created_at: "2026-06-26T12:32:00Z",
+      message_id: "orchestration-live-subagent-checkpoint",
+      role_id: "Crafter",
       run_id: SUBAGENT_RUN_ID,
     },
   ];
@@ -1717,6 +1969,7 @@ interface BrowserSubagentRunEvent {
   eventId: number;
   payload: Record<string, unknown>;
   relayEventType: string;
+  roleId?: string;
   type: string;
 }
 
@@ -1770,7 +2023,7 @@ async function dispatchSubagentRunEvent(
       occurred_at: `2026-06-26T09:07:${String(event.eventId).padStart(2, "0")}Z`,
       payload: event.payload,
       relay_event_type: event.relayEventType,
-      role_id: "explorer",
+      role_id: event.roleId ?? "explorer",
       run_id: SUBAGENT_RUN_ID,
       session_id: SESSION_ID,
       trace_id: "trace-ts-subagent-session",

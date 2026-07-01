@@ -4909,6 +4909,81 @@ describe("MessageTimeline", () => {
     expect(container.querySelector('[data-role-id="Explorer"]')).toBeNull();
   });
 
+  it("keeps unmarked child-role runtime rows out after a subagent tool reference", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "tool_result",
+        instance_id: "main-instance",
+        payload_json: JSON.stringify({
+          result: {
+            subagent_instance_id: "22cd6473-7579-438e-90df-d8177cc31e93",
+            subagent_role_id: "Explorer",
+            subagent_run_id: "87f9f69e-8622-4d46-958f-aa0d7d283095",
+            title: "Explore skill implementation",
+          },
+          tool_call_id: "call-subagent",
+          tool_name: "spawn_subagent",
+        }),
+        role_id: "MainAgent",
+        run_id: "run-main-tool",
+        trace_id: "run-main-tool",
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "text_delta",
+        payload_json: JSON.stringify({
+          text: "Now let me read all the core source files concurrently.",
+        }),
+        role_id: "Explorer",
+        run_id: "run-main-tool",
+        trace_id: "run-main-tool",
+      }),
+      relayRunEvent({
+        event_id: 3,
+        event_type: "tool_call",
+        payload_json: JSON.stringify({
+          args: { path: "src/relay_teams/skills/__init__.py" },
+          tool_call_id: "call-child-read",
+          tool_name: "read",
+        }),
+        role_id: "Explorer",
+        run_id: "run-main-tool",
+        trace_id: "run-main-tool",
+      }),
+      relayRunEvent({
+        event_id: 4,
+        event_type: "text_delta",
+        payload_json: JSON.stringify({
+          text: "Parent summary should remain visible.",
+        }),
+        role_id: "MainAgent",
+        run_id: "run-main-tool",
+        trace_id: "run-main-tool",
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline("session-1", {
+      primaryRoleId: null,
+    });
+
+    expect(await screen.findByText("Subagent started")).toBeVisible();
+    expect(await screen.findByText("Parent summary should remain visible."))
+      .toBeVisible();
+    expect(
+      screen.queryByText("Now let me read all the core source files concurrently."),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("src/relay_teams/skills/__init__.py"))
+      .not.toBeInTheDocument();
+    expect(container.querySelector('[data-role-id="Explorer"]')).toBeNull();
+  });
+
   it("keeps subagent round messages injected from replay out of the main timeline", async () => {
     listSessionMessagesMock.mockResolvedValue([]);
     listSessionRoundsMock.mockResolvedValue({

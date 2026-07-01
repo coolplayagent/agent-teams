@@ -2,6 +2,26 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-02 Subagent Stream Isolation And Catch-Up Closure
+
+### Scope
+- Re-audited the open P0 runtime rows instead of chasing a single screenshot complaint: `MSG-02`, `STREAM-02`, and `SUB-01` still needed tighter evidence for live child streams, terminal catch-up, refresh recovery, and session-switch isolation.
+- Fixed a real parent-run leak window where a `spawn_subagent` result could identify an `Explorer` child, but later child-role runtime rows in the same parent run had no explicit subagent payload markers. The main timeline now uses the earlier subagent tool reference to filter later child-role text/tool rows even while primary-role metadata is still unavailable.
+- Kept the parent `Subagent started` tool card visible and openable while filtering the child process rows out of `.at-chat-view`.
+- Changed terminal visual catch-up so an already-streaming text row does not freeze or take more than the browser expectation window to reveal after the EventSource closes and before persisted history refill arrives. Open live streams still reveal gradually; closed catch-up streams accelerate to settle and remove the cursor.
+- Closed stale right-panel behavior on session switches: switching to another session clears the active subagent side panel, while clicking a subagent tool card in the current session still opens immediately before backend IDs or session detail finish hydrating.
+- Updated AppShell coverage to make that session-switch rule explicit: right panels are not silently restored across session switches; the user reopens them from the tool card.
+
+### Verification
+- `npm test -- src/test/MessageTimeline.test.tsx -t "unmarked child-role|subagent runtime|thinking|streaming cursor|top-level output_delta"` passed with 26 focused tests.
+- `npm test -- src/test/MessageTimeline.test.tsx` passed with 168 tests.
+- `npm test -- src/test/AppShell.test.tsx` passed with 39 tests.
+- `npm run build` passed and regenerated the packed `frontend/dist/app` bundle.
+- `npm run test:browser -- browser-tests/v2-subagent-session.spec.ts --project=chromium` passed with all 11 Chromium scenarios, including parent-run child-marker isolation, right-panel incremental subagent deltas, terminal catch-up after close, hard-refresh during catch-up, live orchestration child stream, send/session-switch pressure, and parent hydration race.
+
+### Reviewer
+- Main-agent decision: this is a concrete P0 runtime closure slice for subagent stream isolation and catch-up behavior. It does not mark `MSG-02`, `STREAM-02`, or `SUB-01` as `Verified`; live real-backend orchestration/tool-heavy variants, final V1 visual pairing, and broader rewrite sign-off remain open.
+
 ## 2026-07-02 Hooks Settings Handler Field Preservation
 
 ### Scope

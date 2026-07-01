@@ -137,6 +137,7 @@ export function AppShell() {
   const themeMode = useUiStore((state) => state.themeMode);
   const language = useUiStore((state) => state.language);
   const selectedSessionId = useUiStore((state) => state.selectedSessionId);
+  const previousSelectedSessionIdRef = useRef(selectedSessionId);
   const selectedWorkspaceId = useUiStore((state) => state.selectedWorkspaceId);
   const setSidebarCollapsed = useUiStore((state) => state.setSidebarCollapsed);
   const setSidebarWidth = useUiStore((state) => state.setSidebarWidth);
@@ -144,7 +145,7 @@ export function AppShell() {
   const setSelectedWorkspaceId = useUiStore((state) => state.setSelectedWorkspaceId);
   const setThemeMode = useUiStore((state) => state.setThemeMode);
   const setLanguage = useUiStore((state) => state.setLanguage);
-  const visibleActiveSubagent =
+  const activeSubagentForSelectedSession =
     activeView === "chat" &&
     activeSubagent !== null &&
     selectedSessionId === activeSubagent.sessionId
@@ -176,7 +177,7 @@ export function AppShell() {
       if (shouldClearForegroundStream) {
         runStreamController.clearRunStream();
       }
-      const leavingSubagentView = visibleActiveSubagent !== null;
+      const leavingSubagentView = activeSubagentForSelectedSession !== null;
       setSettingsOpen(false);
       if (nextView === "chat" && (activeView !== "chat" || leavingSubagentView)) {
         setChatContentLoadingKey((currentKey) => currentKey + 1);
@@ -188,7 +189,7 @@ export function AppShell() {
       navigateShellView,
       runStreamController,
       selectedSessionId,
-      visibleActiveSubagent,
+      activeSubagentForSelectedSession,
     ],
   );
   const handleTimelineSubagentOpen = useCallback(
@@ -325,6 +326,15 @@ export function AppShell() {
       ) ?? null,
     [selectedSessionId, sidebarSessionsQuery.data],
   );
+  const visibleActiveSubagent = activeSubagentForSelectedSession;
+
+  useEffect(() => {
+    const previousSessionId = previousSelectedSessionIdRef.current;
+    previousSelectedSessionIdRef.current = selectedSessionId;
+    if (previousSessionId !== selectedSessionId) {
+      setActiveSubagent(null);
+    }
+  }, [selectedSessionId]);
 
   useEffect(() => {
     const savedLanguage = uiLanguageQuery.data?.language;

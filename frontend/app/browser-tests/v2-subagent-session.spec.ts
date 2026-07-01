@@ -34,6 +34,8 @@ const PARENT_MARKER_VISIBLE_TEXT = "PARENT_MARKER_VISIBLE_STREAM";
 const PARENT_MARKER_CHILD_TEXT = "LEAK_PARENT_RUN_CHILD_TEXT";
 const PARENT_MARKER_CHILD_THINKING = "LEAK_PARENT_RUN_CHILD_THINKING";
 const PARENT_MARKER_CHILD_TOOL_PATH = "LEAK_PARENT_RUN_CHILD_TOOL.md";
+const PARENT_MARKER_ROLE_ONLY_CHILD_TEXT = "LEAK_PARENT_RUN_ROLE_ONLY_CHILD_TEXT";
+const PARENT_MARKER_ROLE_ONLY_TOOL_PATH = "LEAK_PARENT_RUN_ROLE_ONLY_TOOL.md";
 
 interface SubagentSessionMockState {
   completed: boolean;
@@ -214,6 +216,40 @@ test("keeps subagent-marked parent-run stream rows out of the main timeline", as
     await dispatchParentMarkerRunEvent(page, {
       eventId: 2,
       payload: {
+        result: {
+          subagent_instance_id: SUBAGENT_INSTANCE_ID,
+          subagent_role_id: "Explorer",
+          subagent_run_id: SUBAGENT_RUN_ID,
+          title: "Explorer role-only stream review",
+        },
+        tool_call_id: "call-v2-parent-marker-runtime-subagent",
+        tool_name: "spawn_subagent",
+      },
+      relayEventType: "tool_result",
+      roleId: "MainAgent",
+      type: "tool_result.completed",
+    });
+    await dispatchParentMarkerRunEvent(page, {
+      eventId: 3,
+      payload: { text: PARENT_MARKER_ROLE_ONLY_CHILD_TEXT },
+      relayEventType: "text_delta",
+      roleId: "Explorer",
+      type: "message.text.delta",
+    });
+    await dispatchParentMarkerRunEvent(page, {
+      eventId: 4,
+      payload: {
+        args: { path: PARENT_MARKER_ROLE_ONLY_TOOL_PATH },
+        tool_call_id: "call-v2-parent-marker-role-only-read",
+        tool_name: "read",
+      },
+      relayEventType: "tool_call",
+      roleId: "Explorer",
+      type: "tool_call.started",
+    });
+    await dispatchParentMarkerRunEvent(page, {
+      eventId: 5,
+      payload: {
         subagent_instance_id: SUBAGENT_INSTANCE_ID,
         subagent_role_id: "Explorer",
         subagent_run_id: SUBAGENT_RUN_ID,
@@ -224,7 +260,7 @@ test("keeps subagent-marked parent-run stream rows out of the main timeline", as
       type: "message.thinking.delta",
     });
     await dispatchParentMarkerRunEvent(page, {
-      eventId: 3,
+      eventId: 6,
       payload: {
         kind: "subagent",
         run_id: SUBAGENT_RUN_ID,
@@ -235,7 +271,7 @@ test("keeps subagent-marked parent-run stream rows out of the main timeline", as
       type: "message.text.delta",
     });
     await dispatchParentMarkerRunEvent(page, {
-      eventId: 4,
+      eventId: 7,
       payload: {
         args: { path: PARENT_MARKER_CHILD_TOOL_PATH },
         subagent_instance_id: SUBAGENT_INSTANCE_ID,
@@ -249,7 +285,7 @@ test("keeps subagent-marked parent-run stream rows out of the main timeline", as
       type: "tool_call.started",
     });
     await dispatchParentMarkerRunEvent(page, {
-      eventId: 5,
+      eventId: 8,
       payload: { text: PARENT_MARKER_VISIBLE_TEXT },
       relayEventType: "text_delta",
       roleId: "MainAgent",
@@ -259,7 +295,7 @@ test("keeps subagent-marked parent-run stream rows out of the main timeline", as
     const mainTimeline = page.locator(".at-chat-view");
     await expect(mainTimeline.getByText(PARENT_MARKER_VISIBLE_TEXT)).toBeVisible();
     await dispatchParentMarkerRunEvent(page, {
-      eventId: 6,
+      eventId: 9,
       payload: { status: "completed" },
       relayEventType: "run_completed",
       roleId: "MainAgent",
@@ -269,6 +305,10 @@ test("keeps subagent-marked parent-run stream rows out of the main timeline", as
     await expect(mainTimeline.getByText(PARENT_MARKER_VISIBLE_TEXT)).toBeVisible();
     await expect(mainTimeline.locator(".streaming-cursor")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Stop" })).toBeHidden();
+    await expect(mainTimeline.getByText(PARENT_MARKER_ROLE_ONLY_CHILD_TEXT))
+      .toHaveCount(0);
+    await expect(mainTimeline.getByText(PARENT_MARKER_ROLE_ONLY_TOOL_PATH))
+      .toHaveCount(0);
     await expect(mainTimeline.getByText(PARENT_MARKER_CHILD_THINKING)).toHaveCount(0);
     await expect(mainTimeline.getByText(PARENT_MARKER_CHILD_TEXT)).toHaveCount(0);
     await expect(mainTimeline.getByText(PARENT_MARKER_CHILD_TOOL_PATH)).toHaveCount(0);

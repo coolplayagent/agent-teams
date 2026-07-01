@@ -33,6 +33,7 @@ const TIMELINE_BOTTOM_FOLLOW_THRESHOLD_PX = 96;
 const LONG_STREAM_TEXT_THRESHOLD = 12000;
 const STREAM_TYPEWRITER_DELAY_MS = 36;
 const STREAM_TYPEWRITER_MIN_STEP = 1;
+const STREAM_TYPEWRITER_CATCHUP_MIN_STEP = 8;
 const ROUND_RAIL_PAGE_LIMIT = 100;
 const ROUND_RAIL_MAX_PAGES = 10;
 const TOOL_RESULT_MAX_LINES = 200;
@@ -3572,6 +3573,15 @@ function runtimeEntryLooksLikeDetachedSubagent(
   if (!timelineRoleCanBeDetachedAgent(roleId, primaryRoleId)) {
     return false;
   }
+  if (
+    runtimeRunStateReferencesDetachedSubagentRole(
+      runState,
+      roleId,
+      primaryRoleId,
+    )
+  ) {
+    return true;
+  }
   const instanceId = (entry.instanceId ?? "").trim();
   if (
     instanceId.length > 0 &&
@@ -3583,6 +3593,42 @@ function runtimeEntryLooksLikeDetachedSubagent(
     entry.runId,
     runState.runId,
   ]);
+}
+
+function runtimeRunStateReferencesDetachedSubagentRole(
+  runState: RuntimeRunState,
+  roleId: string,
+  primaryRoleId: string | null,
+): boolean {
+  const normalizedRole = stableTimelineRole(roleId);
+  if (normalizedRole.length === 0) {
+    return false;
+  }
+  const normalizedPrimaryRole = stableTimelineRole(primaryRoleId ?? "");
+  if (
+    normalizedPrimaryRole.length > 0 &&
+    normalizedPrimaryRole === normalizedRole
+  ) {
+    return false;
+  }
+  return runState.entries.some(
+    (entry) =>
+      runtimeEntrySubagentReferenceRole(entry) === normalizedRole,
+  );
+}
+
+function runtimeEntrySubagentReferenceRole(entry: TimelineEntry): string {
+  const payload = jsonObject(entry.payload);
+  if (payload === null || payloadHasParseError(payload)) {
+    return "";
+  }
+  const toolName = objectString(payload, "tool_name") || entry.text;
+  const reference = subagentReferenceFromValues({
+    callId: runtimeEntryToolCallId(entry),
+    payload: entry.payload,
+    toolName,
+  });
+  return stableTimelineRole(reference?.roleId ?? "");
 }
 
 function runtimeEntryIsCoveredByHydratedOutput(
@@ -5504,7 +5550,9 @@ function useStreamingDisplayText(
       return;
     }
     const timer = window.setTimeout(() => {
-      setDisplayedText((current) => revealNextStreamingText(current, targetText));
+      setDisplayedText((current) =>
+        revealNextStreamingText(current, targetText, !streaming),
+      );
     }, STREAM_TYPEWRITER_DELAY_MS);
     return () => window.clearTimeout(timer);
   }, [displayedText, revealActive, streaming, targetText]);
@@ -5530,7 +5578,11 @@ function initialStreamingText(text: string): string {
   return text.slice(0, STREAM_TYPEWRITER_MIN_STEP);
 }
 
-function revealNextStreamingText(current: string, target: string): string {
+function revealNextStreamingText(
+  current: string,
+  target: string,
+  terminalCatchUp = false,
+): string {
   if (!target.startsWith(current)) {
     return initialStreamingText(target);
   }
@@ -5538,8 +5590,20 @@ function revealNextStreamingText(current: string, target: string): string {
   if (remaining <= 0) {
     return target;
   }
-  let step = STREAM_TYPEWRITER_MIN_STEP;
-  if (remaining > 1200) {
+  let step = terminalCatchUp
+    ? STREAM_TYPEWRITER_CATCHUP_MIN_STEP
+    : STREAM_TYPEWRITER_MIN_STEP;
+  if (terminalCatchUp) {
+    if (remaining > 1200) {
+      step = 48;
+    } else if (remaining > 520) {
+      step = 32;
+    } else if (remaining > 220) {
+      step = 20;
+    } else if (remaining > 96) {
+      step = 12;
+    }
+  } else if (remaining > 1200) {
     step = 6;
   } else if (remaining > 520) {
     step = 4;

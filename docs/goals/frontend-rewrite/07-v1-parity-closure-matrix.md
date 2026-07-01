@@ -488,6 +488,15 @@ For every row moved to `Verified`, record:
 - Browser evidence: `.tmp/frontend-v2-ts-subagent-session/v2-subagent-orchestration-live-stream-mid.png`, `.tmp/frontend-v2-ts-subagent-session/v2-subagent-orchestration-live-stream-final.png`.
 - Real HTTP SSE stdout cadence is now covered; remaining before verification: production-backend orchestration/SSE cadence and final V1 visual sign-off.
 
+### 2026-07-02 Subagent Stream Isolation And Catch-Up
+
+- `STREAM-02`/`SUB-01` tightened: parent run streams now filter later child-role runtime rows when an earlier `spawn_subagent` tool result in the same run identified that child role, even if those later child text/tool rows omit explicit subagent markers and `normal_root_role_id` is still unavailable.
+- `MSG-02` tightened: terminal visual catch-up now accelerates after EventSource close so the already-streaming row settles before delayed persisted history arrives, while open streams still reveal gradually enough to avoid whole-chunk jumps.
+- `SUB-01` tightened: switching sessions clears the active right-side subagent panel instead of restoring stale child context onto the newly selected parent; clicking the current session's subagent tool card still opens the panel immediately before backend IDs/session detail finish hydrating.
+- Packed-browser evidence now covers the full subagent panel suite in one run: parent-run child-marker isolation, incremental right-panel child stream, terminal catch-up, refresh during catch-up, live orchestration child stream, send/session-switch pressure, and parent hydration race.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx`, `npm test -- src/test/AppShell.test.tsx`, `npm run build`, `npm run test:browser -- browser-tests/v2-subagent-session.spec.ts --project=chromium`.
+- Remaining before verification: broader live production-backend orchestration/tool-heavy variants, formal V1/V2 visual pairing, and final P0 runtime sign-off.
+
 ### 2026-07-01 Real SSE Subagent Stdout Cadence
 
 - `MSG-02` tightened: a real HTTP `text/event-stream` browser scenario now sends delayed subagent stdout writes and samples increasing visible text lengths before the final output is fully revealed.

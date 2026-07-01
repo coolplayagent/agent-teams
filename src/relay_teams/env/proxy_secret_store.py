@@ -70,13 +70,16 @@ class ProxySecretStore:
         normalized = _normalize_secret(legacy_value)
         if normalized is None:
             return None
-        migrated = self._secret_store.migrate_legacy_secret(
-            config_dir,
-            namespace=_NAMESPACE,
-            owner_id=_OWNER_ID,
-            field_name=_FIELD_NAME,
-            value=normalized,
-        )
+        try:
+            migrated = self._secret_store.migrate_legacy_secret(
+                config_dir,
+                namespace=_NAMESPACE,
+                owner_id=_OWNER_ID,
+                field_name=_FIELD_NAME,
+                value=normalized,
+            )
+        except (OSError, RuntimeError):
+            return normalized
         if migrated:
             try:
                 keyring.delete_password(_LEGACY_KEYRING_SERVICE_NAME, account_name)

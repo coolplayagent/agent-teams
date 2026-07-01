@@ -185,15 +185,20 @@ class EncryptionService:
             return self._get_uuid_mac_address()
         ignored_prefixes = ("lo", "veth", "docker", "br-", "virbr", "tun", "tap")
         try:
-            interfaces = tuple(network_dir.iterdir())
+            interfaces = tuple(
+                sorted(
+                    network_dir.iterdir(),
+                    key=lambda candidate_path: candidate_path.name.lower(),
+                )
+            )
         except OSError:
             return self._get_uuid_mac_address()
-        for interface_path in interfaces:
-            interface_name = interface_path.name.lower()
+        for interface in interfaces:
+            interface_name = interface.name.lower()
             if interface_name.startswith(ignored_prefixes):
                 continue
             try:
-                candidate = (interface_path / "address").read_text(encoding="utf-8")
+                candidate = (interface / "address").read_text(encoding="utf-8")
             except OSError:
                 continue
             normalized = self._normalize_mac(candidate)
@@ -311,18 +316,34 @@ class EncryptionService:
         normalized = value.strip().lower()
         if len(normalized) < 8:
             return False
+        words_normalized = re.sub(r"[^a-z0-9]+", " ", normalized).strip()
         compact = re.sub(r"[^0-9a-f]", "", normalized)
         invalid_values = {
             "",
             "0" * len(compact),
             "f" * len(compact),
             "default",
+            "default string",
+            "not applicable",
+            "not available",
+            "not specified",
             "unknown",
             "none",
             "null",
+            "uninitialized",
             "to be filled by o.e.m.",
+            "to be filled by o e m",
         }
-        return normalized not in invalid_values and compact not in invalid_values
+        invalid_fragments = (
+            "system serial",
+            "to be filled",
+        )
+        return (
+            normalized not in invalid_values
+            and words_normalized not in invalid_values
+            and compact not in invalid_values
+            and not any(fragment in words_normalized for fragment in invalid_fragments)
+        )
 
     @staticmethod
     def _normalize_mac(value: str) -> str | None:

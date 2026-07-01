@@ -888,6 +888,9 @@ class SessionRunService:
         async with self._run_creation_lock:
             session_id = await self._ensure_session_async(intent.session_id)
             intent.session_id = session_id
+            normal_model_profile_override_provided = bool(
+                str(intent.normal_model_profile or "").strip()
+            )
             intent = await self._prepare_intent_async(intent)
             self._run_control_manager.assert_session_allows_main_input(session_id)
             _ = await self._session_repo.mark_started_async(session_id)
@@ -921,6 +924,8 @@ class SessionRunService:
                         pending.shell_safety_policy_enabled = (
                             intent.shell_safety_policy_enabled
                         )
+                    if normal_model_profile_override_provided:
+                        pending.normal_model_profile = intent.normal_model_profile
                     run_intent_repo = self._run_intent_repo
                     if run_intent_repo is not None:
                         await run_intent_repo.upsert_async(
@@ -941,6 +946,10 @@ class SessionRunService:
                             payload={"mode": "pending_merge"},
                         )
                     return active_run_id, session_id
+                if normal_model_profile_override_provided:
+                    raise RuntimeError(
+                        f"Run {active_run_id} is active and cannot accept a normal model profile override"
+                    )
                 if (
                     active_run_id in self._running_run_ids
                     or self._injection_manager.is_active(active_run_id)

@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 from json import dumps, loads
 from pathlib import Path
+from uuid import uuid4
 
 from pydantic import JsonValue
 
@@ -27,6 +28,8 @@ _KEYRING_SERVICE_NAME = "agent-teams"
 _SECRETS_FILE_NAME = "secrets.json"
 _MODEL_PROFILE_SECRET_NAMESPACE = "model_profile"
 _PROXY_CONFIG_SECRET_NAMESPACE = "proxy_config"
+_KEYRING_PREFLIGHT_NAMESPACE = "__relay_teams_secret_store_preflight__"
+_KEYRING_PREFLIGHT_VALUE = "relay-teams-secret-store-preflight"
 _ENCRYPTED_MODEL_PASSWORD_FIELDS = frozenset({"maas_password", "codeagent_password"})
 _ENCRYPTED_PROXY_CONFIG_FIELDS = frozenset({"password"})
 LOGGER = logging.getLogger("relay_teams.backend.secrets.secret_store")
@@ -82,19 +85,24 @@ class AppSecretStore:
                 coordinate=coordinate,
             )
             return
-        self._save_index(
-            config_dir,
-            _upsert_entry(
-                index,
-                SecretIndexEntry(
-                    namespace=entry.namespace,
-                    owner_id=entry.owner_id,
-                    field_name=entry.field_name,
-                    storage="file",
-                    value=next_value,
-                ),
+        next_index = _upsert_entry(
+            index,
+            SecretIndexEntry(
+                namespace=entry.namespace,
+                owner_id=entry.owner_id,
+                field_name=entry.field_name,
+                storage="file",
+                value=next_value,
             ),
         )
+        try:
+            self._save_index(config_dir, next_index)
+        except Exception:
+            _log_secret_encryption_failure(
+                event="secret_store.file_secret_migration_save_failed",
+                message="Failed to save re-encrypted legacy file-backed secret",
+                coordinate=coordinate,
+            )
 
     def set_secret(
         self,
@@ -158,6 +166,29 @@ class AppSecretStore:
             ),
         )
         self._save_index(config_dir, index)
+
+    def preflight_secret_storage(
+        self,
+        config_dir: Path,
+        *,
+        namespace: str,
+        owner_id: str,
+        field_name: str,
+        value: str | None,
+    ) -> None:
+        if value is None:
+            return
+        coordinate = _normalize_coordinate(
+            namespace=namespace,
+            owner_id=owner_id,
+            field_name=field_name,
+        )
+        if self.has_usable_keyring_backend() and self._try_preflight_keyring_storage(
+            config_dir,
+            coordinate,
+        ):
+            return
+        _ = _file_secret_value_for_storage(coordinate, value)
 
     def delete_secret(
         self,
@@ -389,11 +420,11 @@ class AppSecretStore:
             return SecretIndexDocument()
         try:
             payload = loads(secrets_file.read_text(encoding="utf-8"))
-        except Exception:
+        except (OSError, UnicodeDecodeError, ValueError):
             return SecretIndexDocument()
         try:
             return SecretIndexDocument.model_validate(payload)
-        except Exception:
+        except (TypeError, ValueError):
             return SecretIndexDocument()
 
     def _save_index(self, config_dir: Path, index: SecretIndexDocument) -> None:
@@ -481,6 +512,25 @@ class AppSecretStore:
                 payload=payload,
             )
             return False
+        return True
+
+    def _try_preflight_keyring_storage(
+        self,
+        config_dir: Path,
+        coordinate: SecretCoordinate,
+    ) -> bool:
+        preflight_coordinate = SecretCoordinate(
+            namespace=_KEYRING_PREFLIGHT_NAMESPACE,
+            owner_id=f"{coordinate.namespace}.{coordinate.owner_id}.{uuid4().hex}",
+            field_name=coordinate.field_name,
+        )
+        if not self._try_set_in_keyring(
+            config_dir,
+            preflight_coordinate,
+            _KEYRING_PREFLIGHT_VALUE,
+        ):
+            return False
+        self._delete_from_keyring(config_dir, preflight_coordinate)
         return True
 
     def _delete_from_keyring(

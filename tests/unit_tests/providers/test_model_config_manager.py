@@ -35,11 +35,82 @@ from relay_teams.providers.w3_auth_source import (
     W3_SECRET_OWNER_ID,
 )
 from relay_teams.secrets import AppSecretStore
+import relay_teams.secrets.secret_store as secret_store_module
+from relay_teams.secrets.encryption_service import SecretEncryptionError
+from relay_teams.secrets.secret_models import SecretCoordinate
 
 
 class _FileOnlySecretStore(AppSecretStore):
     def has_usable_keyring_backend(self) -> bool:
         return False
+
+
+class _FlakyKeyringSecretStore(AppSecretStore):
+    def has_usable_keyring_backend(self) -> bool:
+        return True
+
+    def _set_in_keyring(
+        self,
+        config_dir: Path,
+        coordinate: SecretCoordinate,
+        value: str,
+    ) -> None:
+        _ = (config_dir, coordinate, value)
+        raise RuntimeError("simulated keyring failure")
+
+
+class _MemoryKeyringSecretStore(AppSecretStore):
+    def __init__(self) -> None:
+        self.values: dict[tuple[str, str, str], str] = {}
+
+    def has_usable_keyring_backend(self) -> bool:
+        return True
+
+    def _get_from_keyring(
+        self,
+        config_dir: Path,
+        coordinate: SecretCoordinate,
+    ) -> str | None:
+        _ = config_dir
+        return self.values.get(_coordinate_key(coordinate))
+
+    def _set_in_keyring(
+        self,
+        config_dir: Path,
+        coordinate: SecretCoordinate,
+        value: str,
+    ) -> None:
+        _ = config_dir
+        self.values[_coordinate_key(coordinate)] = value
+
+    def _delete_from_keyring(
+        self,
+        config_dir: Path,
+        coordinate: SecretCoordinate,
+    ) -> None:
+        _ = config_dir
+        self.values.pop(_coordinate_key(coordinate), None)
+
+
+class _FailingEncryptionService:
+    _delegate = secret_store_module.get_encryption_service()
+
+    @property
+    def needs_migration(self) -> bool:
+        return self._delegate.needs_migration
+
+    def encrypt(self, plaintext: str) -> str:
+        raise SecretEncryptionError("boom")
+
+    def decrypt(self, ciphertext: str) -> str:
+        return self._delegate.decrypt(ciphertext)
+
+    def is_encrypted(self, data: str) -> bool:
+        return self._delegate.is_encrypted(data)
+
+
+def _coordinate_key(coordinate: SecretCoordinate) -> tuple[str, str, str]:
+    return (coordinate.namespace, coordinate.owner_id, coordinate.field_name)
 
 
 def _save_w3_credentials(
@@ -799,6 +870,191 @@ def test_save_model_profile_stores_maas_password_in_secret_store(
     )
 
 
+def test_save_model_profile_does_not_write_model_when_password_encryption_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        secret_store_module,
+        "get_encryption_service",
+        _FailingEncryptionService,
+    )
+    manager = ModelConfigManager(
+        config_dir=tmp_path,
+        secret_store=_FileOnlySecretStore(),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Failed to encrypt file-backed secret before storage.",
+    ):
+        manager.save_model_profile(
+            "maas-profile",
+            {
+                "provider": "maas",
+                "model": "maas-chat",
+                "base_url": DEFAULT_MAAS_BASE_URL,
+                "maas_auth": {
+                    "username": "relay-user",
+                    "password": "relay-password",
+                },
+            },
+        )
+
+    assert not (tmp_path / "model.json").exists()
+    assert not (tmp_path / "secrets.json").exists()
+
+
+def test_save_model_profile_preflights_keyring_fallback_before_model_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        secret_store_module,
+        "get_encryption_service",
+        _FailingEncryptionService,
+    )
+    manager = ModelConfigManager(
+        config_dir=tmp_path,
+        secret_store=_FlakyKeyringSecretStore(),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Failed to encrypt file-backed secret before storage.",
+    ):
+        manager.save_model_profile(
+            "maas-profile",
+            {
+                "provider": "maas",
+                "model": "maas-chat",
+                "base_url": DEFAULT_MAAS_BASE_URL,
+                "maas_auth": {
+                    "username": "relay-user",
+                    "password": "relay-password",
+                },
+            },
+        )
+
+    assert not (tmp_path / "model.json").exists()
+    assert not (tmp_path / "secrets.json").exists()
+
+
+def test_save_model_profile_uses_available_keyring_without_file_preflight(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        secret_store_module,
+        "get_encryption_service",
+        _FailingEncryptionService,
+    )
+    secret_store = _MemoryKeyringSecretStore()
+    manager = ModelConfigManager(
+        config_dir=tmp_path,
+        secret_store=secret_store,
+    )
+
+    manager.save_model_profile(
+        "maas-profile",
+        {
+            "provider": "maas",
+            "model": "maas-chat",
+            "base_url": DEFAULT_MAAS_BASE_URL,
+            "maas_auth": {
+                "username": "relay-user",
+                "password": "relay-password",
+            },
+        },
+    )
+
+    assert (tmp_path / "model.json").exists()
+    assert (
+        secret_store.get_secret(
+            tmp_path,
+            namespace="model_profile",
+            owner_id="maas-profile",
+            field_name=maas_password_secret_field_name(),
+        )
+        == "relay-password"
+    )
+    assert secret_store.values == {
+        (
+            "model_profile",
+            "maas-profile",
+            maas_password_secret_field_name(),
+        ): "relay-password"
+    }
+
+
+def test_save_model_profile_preflights_preserved_maas_password_on_rename(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    secret_store = _FileOnlySecretStore()
+    manager = ModelConfigManager(
+        config_dir=tmp_path,
+        secret_store=secret_store,
+    )
+    manager.save_model_profile(
+        "source-profile",
+        {
+            "provider": "maas",
+            "model": "maas-chat",
+            "base_url": DEFAULT_MAAS_BASE_URL,
+            "maas_auth": {
+                "username": "relay-user",
+                "password": "relay-password",
+            },
+        },
+    )
+    model_file = tmp_path / "model.json"
+    original_model = model_file.read_text(encoding="utf-8")
+    monkeypatch.setattr(
+        secret_store_module,
+        "get_encryption_service",
+        _FailingEncryptionService,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Failed to encrypt file-backed secret before storage.",
+    ):
+        manager.save_model_profile(
+            "target-profile",
+            {
+                "provider": "maas",
+                "model": "maas-chat-v2",
+                "base_url": DEFAULT_MAAS_BASE_URL,
+                "maas_auth": {
+                    "username": "relay-user",
+                    "password": MASKED_MODEL_PASSWORD,
+                },
+            },
+            source_name="source-profile",
+        )
+
+    assert model_file.read_text(encoding="utf-8") == original_model
+    assert (
+        secret_store.get_secret(
+            tmp_path,
+            namespace="model_profile",
+            owner_id="source-profile",
+            field_name=maas_password_secret_field_name(),
+        )
+        == "relay-password"
+    )
+    assert (
+        secret_store.get_secret(
+            tmp_path,
+            namespace="model_profile",
+            owner_id="target-profile",
+            field_name=maas_password_secret_field_name(),
+        )
+        is None
+    )
+
+
 def test_save_maas_profile_can_use_w3_auth_source_without_profile_password(
     tmp_path: Path,
 ) -> None:
@@ -1145,6 +1401,115 @@ def test_save_model_config_migrates_inline_maas_password_into_secret_store(
         field_name=maas_password_secret_field_name(),
         plaintext="inline-password",
     )
+
+
+def test_save_model_config_keeps_model_file_when_password_encryption_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_payload = {
+        "existing-profile": {
+            "provider": "openai-compatible",
+            "model": "gpt-4.1-mini",
+        }
+    }
+    (tmp_path / "model.json").write_text(
+        json.dumps(original_payload, indent=2),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        secret_store_module,
+        "get_encryption_service",
+        _FailingEncryptionService,
+    )
+    manager = ModelConfigManager(
+        config_dir=tmp_path,
+        secret_store=_FileOnlySecretStore(),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Failed to encrypt file-backed secret before storage.",
+    ):
+        manager.save_model_config(
+            {
+                "maas-profile": {
+                    "provider": "maas",
+                    "model": "maas-chat",
+                    "base_url": DEFAULT_MAAS_BASE_URL,
+                    "maas_auth": {
+                        "username": "relay-user",
+                        "password": "relay-password",
+                    },
+                }
+            }
+        )
+
+    assert json.loads((tmp_path / "model.json").read_text(encoding="utf-8")) == (
+        original_payload
+    )
+    assert not (tmp_path / "secrets.json").exists()
+
+
+def test_save_model_config_preflights_passwords_before_consuming_oauth_session(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clear_codeagent_oauth_session_store()
+    session = create_codeagent_oauth_session(
+        base_url="https://codeagent.example/codeAgentPro",
+        client_id="codeagent-client",
+        scope="SCOPE",
+        scope_resource="devuc",
+    )
+    save_codeagent_oauth_tokens(
+        state=session.state,
+        token_result=CodeAgentOAuthTokenResult(
+            access_token="codeagent-access-token",
+            refresh_token="codeagent-refresh-token",
+            expires_at=datetime.now(UTC) + timedelta(hours=1),
+        ),
+    )
+    monkeypatch.setattr(
+        secret_store_module,
+        "get_encryption_service",
+        _FailingEncryptionService,
+    )
+    manager = ModelConfigManager(
+        config_dir=tmp_path,
+        secret_store=_FileOnlySecretStore(),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Failed to encrypt file-backed secret before storage.",
+    ):
+        manager.save_model_config(
+            {
+                "codeagent-profile": {
+                    "provider": "codeagent",
+                    "model": "codeagent-chat",
+                    "base_url": DEFAULT_CODEAGENT_BASE_URL,
+                    "codeagent_auth": {
+                        "oauth_session_id": session.auth_session_id,
+                    },
+                },
+                "maas-profile": {
+                    "provider": "maas",
+                    "model": "maas-chat",
+                    "base_url": DEFAULT_MAAS_BASE_URL,
+                    "maas_auth": {
+                        "username": "relay-user",
+                        "password": "relay-password",
+                    },
+                },
+            }
+        )
+
+    assert get_codeagent_oauth_tokens(session.auth_session_id) is not None
+    assert not (tmp_path / "model.json").exists()
+    assert not (tmp_path / "secrets.json").exists()
+    clear_codeagent_oauth_session_store()
 
 
 def test_save_model_profile_rejects_first_maas_password_when_masked(
@@ -2141,6 +2506,76 @@ def test_save_model_profile_preserves_existing_codeagent_password_when_masked(
             field_name=codeagent_password_secret_field_name(),
         )
         == "relay-password"
+    )
+
+
+def test_save_model_profile_preflights_preserved_codeagent_password_on_rename(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    secret_store = _FileOnlySecretStore()
+    manager = ModelConfigManager(
+        config_dir=tmp_path,
+        secret_store=secret_store,
+    )
+    manager.save_model_profile(
+        "source-profile",
+        {
+            "provider": "codeagent",
+            "model": "codeagent-chat",
+            "base_url": DEFAULT_CODEAGENT_BASE_URL,
+            "codeagent_auth": {
+                "auth_method": "password",
+                "username": "relay-user",
+                "password": "relay-password",
+            },
+        },
+    )
+    model_file = tmp_path / "model.json"
+    original_model = model_file.read_text(encoding="utf-8")
+    monkeypatch.setattr(
+        secret_store_module,
+        "get_encryption_service",
+        _FailingEncryptionService,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Failed to encrypt file-backed secret before storage.",
+    ):
+        manager.save_model_profile(
+            "target-profile",
+            {
+                "provider": "codeagent",
+                "model": "codeagent-chat-v2",
+                "base_url": DEFAULT_CODEAGENT_BASE_URL,
+                "codeagent_auth": {
+                    "auth_method": "password",
+                    "username": "relay-user",
+                    "password": MASKED_MODEL_PASSWORD,
+                },
+            },
+            source_name="source-profile",
+        )
+
+    assert model_file.read_text(encoding="utf-8") == original_model
+    assert (
+        secret_store.get_secret(
+            tmp_path,
+            namespace="model_profile",
+            owner_id="source-profile",
+            field_name=codeagent_password_secret_field_name(),
+        )
+        == "relay-password"
+    )
+    assert (
+        secret_store.get_secret(
+            tmp_path,
+            namespace="model_profile",
+            owner_id="target-profile",
+            field_name=codeagent_password_secret_field_name(),
+        )
+        is None
     )
 
 

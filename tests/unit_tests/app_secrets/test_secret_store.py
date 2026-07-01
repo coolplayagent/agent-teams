@@ -19,6 +19,7 @@ from relay_teams.secrets import (
     SecretIndexEntry,
 )
 import relay_teams.secrets.secret_store as secret_store_module
+from relay_teams.secrets.encryption_service import SecretEncryptionError
 from relay_teams.secrets.secret_models import SecretCoordinate
 
 
@@ -31,6 +32,21 @@ _PROXY_CONFIG_PASSWORD_FIELD = "password"
 class _FileOnlySecretStore(AppSecretStore):
     def has_usable_keyring_backend(self) -> bool:
         return False
+
+
+class _FailingMigrationSaveSecretStore(_FileOnlySecretStore):
+    def __init__(self) -> None:
+        self.fail_saves = False
+
+    def _save_index(self, config_dir: Path, index: SecretIndexDocument) -> None:
+        if self.fail_saves:
+            raise OSError("read-only secrets index")
+        super()._save_index(config_dir, index)
+
+
+class _FailingEncryptionService:
+    def encrypt(self, plaintext: str) -> str:
+        raise SecretEncryptionError("boom")
 
 
 def _secret_entries(config_dir: Path) -> list[dict[str, JsonValue]]:
@@ -104,6 +120,14 @@ class _MemoryKeyringSecretStore(AppSecretStore):
     ) -> None:
         _ = config_dir
         self.values[_coordinate_key(coordinate)] = value
+
+    def _delete_from_keyring(
+        self,
+        config_dir: Path,
+        coordinate: SecretCoordinate,
+    ) -> None:
+        _ = config_dir
+        self.values.pop(_coordinate_key(coordinate), None)
 
 
 def _coordinate_key(coordinate: SecretCoordinate) -> tuple[str, str, str]:
@@ -265,6 +289,80 @@ def test_model_password_keyring_failure_file_fallback_is_encrypted(
     assert "relay-password" not in value
 
 
+def test_preflight_secret_storage_uses_available_keyring_before_file_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = _MemoryKeyringSecretStore()
+    monkeypatch.setattr(
+        secret_store_module,
+        "get_encryption_service",
+        _FailingEncryptionService,
+    )
+
+    store.preflight_secret_storage(
+        tmp_path,
+        namespace=_MODEL_PROFILE_SECRET_NAMESPACE,
+        owner_id="default",
+        field_name=maas_password_secret_field_name(),
+        value="relay-password",
+    )
+
+    assert store.values == {}
+    assert not (tmp_path / "secrets.json").exists()
+
+
+def test_preflight_secret_storage_does_not_touch_similar_keyring_owner(
+    tmp_path: Path,
+) -> None:
+    store = _MemoryKeyringSecretStore()
+    existing_coordinate = SecretCoordinate(
+        namespace=_MODEL_PROFILE_SECRET_NAMESPACE,
+        owner_id="default.__preflight__",
+        field_name=maas_password_secret_field_name(),
+    )
+    store.values[_coordinate_key(existing_coordinate)] = "existing-password"
+
+    store.preflight_secret_storage(
+        tmp_path,
+        namespace=_MODEL_PROFILE_SECRET_NAMESPACE,
+        owner_id="default",
+        field_name=maas_password_secret_field_name(),
+        value="relay-password",
+    )
+
+    assert store.values == {
+        _coordinate_key(existing_coordinate): "existing-password",
+    }
+    assert not (tmp_path / "secrets.json").exists()
+
+
+def test_preflight_secret_storage_checks_failed_keyring_file_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = _FlakyKeyringSecretStore()
+    monkeypatch.setattr(
+        secret_store_module,
+        "get_encryption_service",
+        _FailingEncryptionService,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Failed to encrypt file-backed secret before storage.",
+    ):
+        store.preflight_secret_storage(
+            tmp_path,
+            namespace=_MODEL_PROFILE_SECRET_NAMESPACE,
+            owner_id="default",
+            field_name=maas_password_secret_field_name(),
+            value="relay-password",
+        )
+
+    assert not (tmp_path / "secrets.json").exists()
+
+
 def test_legacy_plaintext_model_password_file_secret_is_readable(
     tmp_path: Path,
 ) -> None:
@@ -389,6 +487,59 @@ def test_legacy_encrypted_model_password_is_reencrypted_after_read(
         == "legacy-password"
     )
     assert service.needs_migration is False
+
+
+def test_legacy_encrypted_model_password_read_survives_migration_save_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    store = _FailingMigrationSaveSecretStore()
+    service = EncryptionService()
+    current_features = "current-machine-id"
+    legacy_features = "legacy-machine-id|old-host|Linux-6.1"
+    monkeypatch.setattr(service, "collect_machine_features", lambda: current_features)
+    monkeypatch.setattr(
+        service,
+        "_get_legacy_machine_features",
+        lambda: (legacy_features,),
+    )
+    monkeypatch.setattr(
+        secret_store_module,
+        "get_encryption_service",
+        lambda: service,
+    )
+    legacy_token = Fernet(service.derive_key_from_features(legacy_features)).encrypt(
+        b"legacy-password"
+    )
+    legacy_value = f"{service.ENCRYPTION_PREFIX}{legacy_token.decode('utf-8')}"
+    store._save_index(
+        tmp_path,
+        SecretIndexDocument(
+            entries=(
+                SecretIndexEntry(
+                    namespace=_MODEL_PROFILE_SECRET_NAMESPACE,
+                    owner_id="legacy",
+                    field_name=maas_password_secret_field_name(),
+                    storage="file",
+                    value=legacy_value,
+                ),
+            )
+        ),
+    )
+    store.fail_saves = True
+
+    with caplog.at_level(logging.WARNING):
+        value = store.get_secret(
+            tmp_path,
+            namespace=_MODEL_PROFILE_SECRET_NAMESPACE,
+            owner_id="legacy",
+            field_name=maas_password_secret_field_name(),
+        )
+
+    assert value == "legacy-password"
+    assert _secret_entries(tmp_path)[0]["value"] == legacy_value
+    assert "Failed to save re-encrypted legacy file-backed secret" in caplog.text
 
 
 def test_corrupt_encrypted_model_password_returns_none_and_logs(

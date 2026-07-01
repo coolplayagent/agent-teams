@@ -225,6 +225,40 @@ def test_linux_mac_address_skips_ignored_interfaces(
     assert service._get_linux_mac_address() == "001122334455"
 
 
+def test_linux_mac_address_uses_stable_interface_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = EncryptionService()
+
+    class FakeInterface:
+        def __init__(self, name: str, address: str) -> None:
+            self.name = name
+            self.address = address
+
+        def __truediv__(self, child: str) -> "FakeInterface":
+            assert child == "address"
+            return self
+
+        def read_text(self, *, encoding: str | None = None) -> str:
+            assert encoding == "utf-8"
+            return self.address
+
+    class FakeNetworkDir:
+        def exists(self) -> bool:
+            return True
+
+        def iterdir(self) -> tuple[FakeInterface, FakeInterface]:
+            return (
+                FakeInterface("zeth0", "66:55:44:33:22:11"),
+                FakeInterface("aeth0", "00:11:22:33:44:55"),
+            )
+
+    monkeypatch.setattr(encryption_module, "Path", lambda value: FakeNetworkDir())
+    monkeypatch.setattr(service, "_get_uuid_mac_address", lambda: "fallback")
+
+    assert service._get_linux_mac_address() == "001122334455"
+
+
 def test_windows_mac_address_uses_getmac_then_wmic_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -321,6 +355,21 @@ def test_legacy_machine_features_and_helpers(
     monkeypatch.setattr(service, "_get_machine_id", raise_machine_feature_error)
     monkeypatch.setattr(service, "_get_mac_fallback", lambda: None)
     assert service._get_legacy_machine_features() == ()
+
+
+@pytest.mark.parametrize(
+    "candidate",
+    (
+        "Default string",
+        "Not Specified",
+        "not-specified",
+        "uninitialized",
+        "System Serial Number",
+        "To Be Filled By O.E.M.",
+    ),
+)
+def test_is_valid_id_rejects_common_placeholder_ids(candidate: str) -> None:
+    assert EncryptionService._is_valid_id(candidate) is False
 
 
 def test_run_text_command_handles_success_and_subprocess_errors(

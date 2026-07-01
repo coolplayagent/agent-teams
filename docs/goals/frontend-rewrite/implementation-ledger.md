@@ -2,6 +2,26 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-01 Connectors Surface Browser Coverage
+
+### Scope
+- Re-checked the closure matrix and selected `PAGE-05` because Connectors was still marked `Not checked` while it is a primary V1 surface.
+- Added a dedicated `/app/` Playwright path for the V2 Connectors surface: sidebar navigation, connector list/detail rendering, status summary counts, search filtering, status filtering, connection test action, probe result alert, and same-page runtime CLI tool cards.
+- Covered the V1-aligned decision that the internal `relay-knowledge` connector is hidden from the connector list while its runtime CLI card remains visible.
+- Kept `PAGE-05` at `In progress`; this slice adds V2 browser evidence and screenshot inspection, not final V1 visual/DOM pairing or release verification.
+
+### Verification
+- `npm run test:browser -- v2-connectors-view.spec.ts --project=chromium` passed.
+- `npm run test -- src/test/ConnectorsView.test.tsx` passed with 8 tests.
+- `npm run lint` passed.
+- Browser screenshot artifacts inspected:
+  - `.tmp/frontend-v2-ts-connectors/v2-connectors-search-w3.png`
+  - `.tmp/frontend-v2-ts-connectors/v2-connectors-error-filter.png`
+  - `.tmp/frontend-v2-ts-connectors/v2-connectors-probe-result.png`
+
+### Reviewer
+- Main-agent browser inspection confirmed the connector surface stays in the fixed shell, filters do not leave stale cards, the selected detail tracks the visible list, connector probe results render in place, and runtime CLI cards remain available below connector details. Remaining before verification: V1 screenshot/DOM comparison, connector loading/error browser states, and narrow viewport density review.
+
 ## 2026-07-01 Board Surface Filter And Archive Coverage
 
 ### Scope

@@ -18,6 +18,7 @@ import type {
   RoleConfigOptions,
   RoleOption,
 } from "../../api/contracts";
+import { ApiError } from "../../api/http";
 import { useTranslations, type Translate } from "../../i18n";
 import { SettingsQueryState, SettingsSection } from "./SettingsShared";
 
@@ -220,6 +221,26 @@ interface HookHandlerDraft {
   url: string;
 }
 
+type HookMutationAction = "delete" | "save" | "validate";
+
+interface DeleteAutosaveRequest {
+  nextSavedGroups: HookGroupDraft[];
+  removedGroup: HookGroupDraft;
+  removedIndex: number;
+}
+
+interface HookErrorLocation {
+  eventName: string | null;
+  fieldName: string | null;
+  groupIndex: number | null;
+  handlerIndex: number | null;
+}
+
+interface HookErrorReason {
+  includeLocation: boolean;
+  text: string;
+}
+
 export function HooksSettingsSection() {
   const t = useTranslations();
   const { message } = App.useApp();
@@ -258,7 +279,7 @@ export function HooksSettingsSection() {
       void message.success(t("settingsHooksValidated"));
     },
     onError: (mutationError) => {
-      void message.error(hooksMutationError(mutationError, t));
+      void message.error(hooksMutationError(mutationError, "validate", t));
     },
   });
   const saveMutation = useMutation({
@@ -272,17 +293,28 @@ export function HooksSettingsSection() {
       void queryClient.invalidateQueries({ queryKey: ["settings", "hooks"] });
     },
     onError: (mutationError) => {
-      void message.error(hooksMutationError(mutationError, t));
+      void message.error(hooksMutationError(mutationError, "save", t));
     },
   });
   const deleteAutosaveMutation = useMutation({
-    mutationFn: (nextSavedGroups: HookGroupDraft[]) =>
+    mutationFn: ({ nextSavedGroups }: DeleteAutosaveRequest) =>
       saveHooksConfig(serializeHooksConfig(nextSavedGroups, t)),
     onSuccess: (config) => {
       savedGroupsRef.current = deserializeHooksConfig(config);
     },
-    onError: (mutationError) => {
-      void message.error(hooksMutationError(mutationError, t));
+    onError: (mutationError, request) => {
+      setGroups((current) => {
+        if (current.some((group) => group.id === request.removedGroup.id)) {
+          return current;
+        }
+        const insertAt = Math.min(request.removedIndex, current.length);
+        return [
+          ...current.slice(0, insertAt),
+          request.removedGroup,
+          ...current.slice(insertAt),
+        ];
+      });
+      void message.error(hooksMutationError(mutationError, "delete", t));
     },
   });
 
@@ -335,14 +367,15 @@ export function HooksSettingsSection() {
   }
 
   function removeGroup(groupId: string) {
-    const removedGroup = groups.find((group) => group.id === groupId);
+    const removedIndex = groups.findIndex((group) => group.id === groupId);
+    const removedGroup = removedIndex >= 0 ? groups[removedIndex] : undefined;
     setGroups((current) => current.filter((group) => group.id !== groupId));
     if (editingGroupId === groupId) {
       setEditingGroupId(null);
     }
     if (removedGroup !== undefined && !removedGroup.isNew) {
       const nextSavedGroups = savedGroupsRef.current.filter((group) => group.id !== groupId);
-      deleteAutosaveMutation.mutate(nextSavedGroups);
+      deleteAutosaveMutation.mutate({ nextSavedGroups, removedGroup, removedIndex });
     }
   }
 
@@ -1173,8 +1206,210 @@ function hookDetail(hook: LoadedHookRecord): string {
     .join(" · ");
 }
 
-function hooksMutationError(error: unknown, t: Translate): string {
-  return error instanceof Error ? error.message : t("settingsHooksActionFailed");
+function hooksMutationError(error: unknown, action: HookMutationAction, t: Translate): string {
+  const detail = hookErrorDetail(error);
+  const normalizedDetail = formatHookErrorDetail(detail, t);
+  const fallbackMessage = error instanceof Error ? error.message.trim() : "";
+  const reason =
+    normalizedDetail ?? humanizeHookBackendMessage(fallbackMessage, null, t).text;
+  const safeReason = reason.trim() !== "" ? reason : t("settingsHooksActionFailed");
+  if (action === "validate") {
+    return t("settingsHooksValidateFailedDetail", { error: safeReason });
+  }
+  if (action === "save") {
+    return t("settingsHooksSaveFailedDetail", { error: safeReason });
+  }
+  return t("settingsHooksDeleteFailedDetail", { error: safeReason });
+}
+
+function hookErrorDetail(error: unknown): JsonValue | undefined {
+  if (error instanceof ApiError) {
+    const payload = asJsonRecord(error.payload ?? undefined);
+    if (payload?.detail !== undefined) {
+      return payload.detail;
+    }
+  }
+  if (error !== null && typeof error === "object" && "detail" in error) {
+    const detail = (error as { readonly detail?: unknown }).detail;
+    if (isJsonValue(detail)) {
+      return detail;
+    }
+  }
+  return undefined;
+}
+
+function formatHookErrorDetail(detail: JsonValue | undefined, t: Translate): string | null {
+  if (typeof detail === "string") {
+    return formatHookErrorText(detail, t);
+  }
+  if (!Array.isArray(detail)) {
+    return null;
+  }
+  const formatted = detail
+    .map((entry) => formatStructuredHookError(entry, t))
+    .filter((entry) => entry !== null);
+  return formatted.length > 0 ? formatted.join("\n") : null;
+}
+
+function formatStructuredHookError(entry: JsonValue, t: Translate): string | null {
+  const record = asJsonRecord(entry);
+  if (record === null) {
+    return null;
+  }
+  const location = hookErrorLocation(record.loc);
+  const fieldLabel = hookFieldLabel(location.fieldName, t);
+  const message = typeof record.msg === "string" ? record.msg : "";
+  const reason = humanizeHookBackendMessage(message, fieldLabel, t);
+  const locationText = reason.includeLocation ? hookLocationText(location, t) : "";
+  if (locationText !== "" && reason.text !== "") {
+    return `${locationText}: ${reason.text}`;
+  }
+  return reason.text !== "" ? reason.text : locationText || null;
+}
+
+function formatHookErrorText(message: string, t: Translate): string | null {
+  const trimmed = message.trim();
+  if (trimmed === "") {
+    return null;
+  }
+  const splitIndex = trimmed.indexOf(":");
+  if (!trimmed.startsWith("hooks.") || splitIndex < 0) {
+    return humanizeHookBackendMessage(trimmed, null, t).text;
+  }
+  const location = hookErrorLocation(
+    trimmed
+      .slice(0, splitIndex)
+      .split(".")
+      .map((part) => {
+        const numeric = Number(part);
+        return Number.isInteger(numeric) ? numeric : part;
+      }),
+  );
+  const fieldLabel = hookFieldLabel(location.fieldName, t);
+  const reason = humanizeHookBackendMessage(trimmed.slice(splitIndex + 1), fieldLabel, t);
+  if (!reason.includeLocation) {
+    return reason.text;
+  }
+  const locationText = hookLocationText(location, t);
+  if (locationText !== "" && reason.text !== "") {
+    return `${locationText}: ${reason.text}`;
+  }
+  return reason.text || locationText || null;
+}
+
+function humanizeHookBackendMessage(
+  message: string,
+  fieldLabel: string | null,
+  t: Translate,
+): HookErrorReason {
+  const cleaned = message.trim().replace(/^Value error,\s*/i, "");
+  const lower = cleaned.toLowerCase();
+  const roleId = trailingValue(cleaned);
+  if (lower.includes("unknown agent hook role_id")) {
+    return {
+      includeLocation: false,
+      text: t("settingsHooksUnknownAgentRole", { roleId: roleId ?? "" }),
+    };
+  }
+  if (lower.includes("must reference a subagent role")) {
+    return {
+      includeLocation: false,
+      text: t("settingsHooksAgentRoleMustBeSubagent", { roleId: roleId ?? "" }),
+    };
+  }
+  if (lower.includes("agent hook role_id is required")) {
+    return {
+      includeLocation: true,
+      text: t("settingsHooksRequiredField", { field: t("settingsHooksAgentRole") }),
+    };
+  }
+  if (lower.includes("agent hook requires prompt")) {
+    return {
+      includeLocation: true,
+      text: t("settingsHooksRequiredField", { field: t("settingsHooksPrompt") }),
+    };
+  }
+  if (lower.includes("http hook requires url")) {
+    return {
+      includeLocation: true,
+      text: t("settingsHooksRequiredField", { field: t("settingsHooksUrl") }),
+    };
+  }
+  if (lower === "field required" || lower.includes("field required")) {
+    return {
+      includeLocation: true,
+      text:
+        fieldLabel !== null
+          ? t("settingsHooksRequiredField", { field: fieldLabel })
+          : t("settingsHooksFieldRequired"),
+    };
+  }
+  return { includeLocation: true, text: cleaned };
+}
+
+function hookErrorLocation(value: JsonValue | undefined): HookErrorLocation {
+  const parts = Array.isArray(value) ? value : [];
+  let eventName: string | null = null;
+  let fieldName: string | null = null;
+  let groupIndex: number | null = null;
+  let handlerIndex: number | null = null;
+  if (parts[0] === "hooks" && typeof parts[1] === "string") {
+    eventName = parts[1];
+    if (typeof parts[2] === "number") {
+      groupIndex = parts[2] + 1;
+    }
+    if (parts[3] === "hooks" && typeof parts[4] === "number") {
+      handlerIndex = parts[4] + 1;
+      if (typeof parts[5] === "string") {
+        fieldName = parts[5];
+      }
+    } else if (typeof parts[3] === "string") {
+      fieldName = parts[3];
+    }
+  }
+  return { eventName, fieldName, groupIndex, handlerIndex };
+}
+
+function hookLocationText(location: HookErrorLocation, t: Translate): string {
+  if (location.eventName === null) {
+    return "";
+  }
+  if (location.groupIndex !== null && location.handlerIndex !== null) {
+    return t("settingsHooksErrorHandlerLocation", {
+      event: location.eventName,
+      group: String(location.groupIndex),
+      handler: String(location.handlerIndex),
+    });
+  }
+  if (location.groupIndex !== null) {
+    return t("settingsHooksErrorGroupLocation", {
+      event: location.eventName,
+      group: String(location.groupIndex),
+    });
+  }
+  return location.eventName;
+}
+
+function hookFieldLabel(fieldName: string | null, t: Translate): string | null {
+  if (fieldName === null) {
+    return null;
+  }
+  const labels: Record<string, string> = {
+    command: t("settingsHooksCommand"),
+    matcher: t("settingsHooksMatcher"),
+    prompt: t("settingsHooksPrompt"),
+    role_id: t("settingsHooksAgentRole"),
+    url: t("settingsHooksUrl"),
+  };
+  return labels[fieldName] ?? fieldName;
+}
+
+function trailingValue(message: string): string | null {
+  const index = message.lastIndexOf(":");
+  if (index < 0 || index === message.length - 1) {
+    return null;
+  }
+  return message.slice(index + 1).trim();
 }
 
 function matcherPlaceholder(eventName: string): string {

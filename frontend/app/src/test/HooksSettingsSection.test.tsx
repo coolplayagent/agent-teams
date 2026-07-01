@@ -17,7 +17,7 @@ import {
   saveHooksConfig,
   validateHooksConfig,
 } from "../api/client";
-import type { HooksConfigPayload, RoleConfigOptions } from "../api/contracts";
+import type { HooksConfigPayload, JsonValue, RoleConfigOptions } from "../api/contracts";
 import { HooksSettingsSection } from "../features/settings/HooksSettingsSection";
 
 const antdMocks = vi.hoisted(() => ({
@@ -188,7 +188,9 @@ describe("HooksSettingsSection", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Validate" }));
 
     await waitFor(() =>
-      expect(antdMocks.message.error).toHaveBeenCalledWith("Prompt is required."),
+      expect(antdMocks.message.error).toHaveBeenCalledWith(
+        "Failed to validate hooks config: Prompt is required.",
+      ),
     );
     expect(validateHooksConfigMock).not.toHaveBeenCalled();
   });
@@ -212,9 +214,74 @@ describe("HooksSettingsSection", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Save" }));
 
     await waitFor(() =>
-      expect(antdMocks.message.error).toHaveBeenCalledWith("Prompt is required."),
+      expect(antdMocks.message.error).toHaveBeenCalledWith(
+        "Failed to save hooks config: Prompt is required.",
+      ),
     );
     expect(saveHooksConfigMock).not.toHaveBeenCalled();
+  });
+
+  it("maps structured backend validation details to hook locations and field labels", async () => {
+    validateHooksConfigMock.mockRejectedValueOnce(
+      hookBackendError("validation failed", [
+        {
+          loc: ["hooks", "PreToolUse", 0, "hooks", 0, "command"],
+          msg: "Field required",
+        },
+      ]),
+    );
+    renderSection();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Validate" }));
+
+    await waitFor(() =>
+      expect(antdMocks.message.error).toHaveBeenCalledWith(
+        "Failed to validate hooks config: PreToolUse hook 1, handler 1: Command is required.",
+      ),
+    );
+  });
+
+  it("maps flattened agent hook backend details before showing validate and save errors", async () => {
+    validateHooksConfigMock.mockRejectedValueOnce(
+      hookBackendError(
+        "generic failure",
+        "hooks.Stop.0.hooks.0.role_id: Value error, Agent hook role_id must reference a subagent role: MainAgent",
+      ),
+    );
+    saveHooksConfigMock.mockRejectedValueOnce(
+      hookBackendError(
+        "generic failure",
+        "hooks.Stop.0.hooks.0.role_id: Value error, Unknown agent hook role_id: MissingReviewer",
+      ),
+    );
+    getHooksConfigMock.mockResolvedValue({
+      hooks: {
+        Stop: [
+          {
+            hooks: [
+              {
+                prompt: "review the answer",
+                role_id: "reviewer",
+                type: "agent",
+              },
+            ],
+          },
+        ],
+      },
+    });
+    renderSection();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Validate" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(antdMocks.message.error).toHaveBeenCalledWith(
+        'Failed to validate hooks config: Agent role "MainAgent" cannot run as a subagent.',
+      ),
+    );
+    expect(antdMocks.message.error).toHaveBeenCalledWith(
+      'Failed to save hooks config: Agent role "MissingReviewer" does not exist.',
+    );
   });
 
   it("autosaves an empty config after deleting the last saved hook group", async () => {
@@ -298,6 +365,20 @@ describe("HooksSettingsSection", () => {
       }),
     );
     expect(screen.getByDisplayValue("Draft shell guard")).toBeVisible();
+  });
+
+  it("restores a deleted hook group and shows a delete-specific error when autosave fails", async () => {
+    saveHooksConfigMock.mockRejectedValueOnce(new Error("write denied"));
+    renderSection();
+
+    await confirmDeleteForCard("Write guard");
+
+    await waitFor(() =>
+      expect(antdMocks.message.error).toHaveBeenCalledWith(
+        "Failed to delete hook: write denied",
+      ),
+    );
+    expect(await screen.findByText("Write guard")).toBeVisible();
   });
 
   it("edits handler status messages and preserves prompt model extras on save", async () => {
@@ -431,6 +512,12 @@ function renderSection() {
       </ConfigProvider>
     </QueryClientProvider>,
   );
+}
+
+function hookBackendError(message: string, detail: JsonValue): Error {
+  const error = new Error(message) as Error & { detail: JsonValue };
+  error.detail = detail;
+  return error;
 }
 
 function hooksConfig(): HooksConfigPayload {

@@ -2,6 +2,28 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-02 Hooks Settings Structured Error Closure
+
+### Scope
+- Re-audited the remaining Hooks settings harness instead of treating the structured editor as complete.
+- Replaced the raw `error.message` path in the React Hooks page with a Hook-aware error normalizer for validate, save, and delete autosave failures. Structured Pydantic-style `detail.loc` errors now render with hook location and localized field names, and flattened agent-role backend errors are converted into user-facing role messages instead of leaking `Value error`, `role_id`, or backend phrasing.
+- Made saved-group delete autosave failure user-safe: the toast now says delete failed, and the optimistically removed saved group is restored if the backend rejects the delete save.
+- Added V2 component coverage for local required-field prefixing, structured backend validation details, flattened agent-role validate/save failures, and delete failure restoration.
+- Extended the packed browser Hooks secondary-page test to simulate a structured backend validation failure from `/system/configs/hooks:validate`, proving the user sees `PreToolUse hook 1, handler 1: Command is required.` from the real System -> Hooks page instead of raw JSON/backend text.
+- Removed the migrated V1/dist fake-DOM harness scenarios from `tests/integration_tests/frontend/test_hooks_settings_ui.py`: delete failure dialog, structured validate/save details, Chinese required-field/localization cases, and flattened agent-role/prompt backend errors.
+- Kept the remaining Hooks Python harness in place for HTTP field coverage, stale reload reconciliation, and final V1 visual pairing.
+
+### Verification
+- `npm test -- src/test/HooksSettingsSection.test.tsx` passed with 12 tests.
+- `npm test -- src/test/SettingsDrawer.test.tsx -t "hooks"` passed with 1 selected test.
+- `uv run --extra dev ruff check tests\integration_tests\frontend\test_hooks_settings_ui.py` passed.
+- `npm run test:browser -- v2-settings-actions.spec.ts -g "validates and saves Hooks" --project=chromium` passed with the new structured-error browser assertion.
+- `npm run lint` passed.
+- `npm run build` passed and regenerated the packed `frontend/dist/app` bundle.
+
+### Reviewer
+- Main-agent decision: this closes the Hooks structured backend error/delete failure slice for `SET-14` and tightens `CLEAN-01` by retiring another group of old V1 UI harness scenarios. It does not verify all Settings, retire the whole Hooks harness, or complete V2 frontend.
+
 ## 2026-07-02 Subagent Stream Isolation And Catch-Up Closure
 
 ### Scope

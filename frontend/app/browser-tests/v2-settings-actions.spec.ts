@@ -39,6 +39,7 @@ interface SettingsActionState {
     system: Record<string, unknown>[];
   };
   failNextWebSave: boolean;
+  failNextHooksValidateDetail: Record<string, unknown>[] | null;
   hooksConfig: Record<string, unknown>;
   hooksSavePayloads: Record<string, unknown>[];
   hooksValidatePayloads: Record<string, unknown>[];
@@ -382,6 +383,19 @@ test("validates and saves Hooks from the System secondary settings page", async 
     await expect(savedCommand).toHaveValue(
       "python hooks/session_start.py",
     );
+    state.failNextHooksValidateDetail = [
+      {
+        loc: ["hooks", "PreToolUse", 0, "hooks", 0, "command"],
+        msg: "Field required",
+      },
+    ];
+    await savedCommand.fill("");
+    await settings.getByRole("button", { name: "Validate" }).click();
+    await expect(
+      page.getByText(
+        "Failed to validate hooks config: PreToolUse hook 1, handler 1: Command is required.",
+      ),
+    ).toBeVisible();
     await savedCommand.scrollIntoViewIfNeeded();
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await expectNoDocumentScroll(page, "v2 hooks settings should stay framed");
@@ -1726,6 +1740,7 @@ function settingsActionState(): SettingsActionState {
     environmentDeleteRequests: [],
     environmentSavePayloads: [],
     environmentVariables: environmentVariables(),
+    failNextHooksValidateDetail: null,
     failNextWebSave: false,
     hooksConfig: hooksConfig(),
     hooksSavePayloads: [],
@@ -2067,6 +2082,11 @@ async function handleSettingsActionApi(
   if (method === "POST" && path === "/system/configs/hooks:validate") {
     const payload = readJsonBody(context);
     state.hooksValidatePayloads.push(payload);
+    if (state.failNextHooksValidateDetail !== null) {
+      await context.fulfillJson({ detail: state.failNextHooksValidateDetail }, 422);
+      state.failNextHooksValidateDetail = null;
+      return true;
+    }
     await context.fulfillJson({ status: "ok" });
     return true;
   }

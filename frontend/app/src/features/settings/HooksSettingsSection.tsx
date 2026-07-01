@@ -1069,7 +1069,10 @@ function serializeHookHandler(
     return record;
   }
   if (type === "prompt") {
-    setOptionalString(record, "prompt", handler.prompt);
+    if (handler.prompt.trim() === "") {
+      throw new Error(t("settingsHooksPromptRequired"));
+    }
+    record.prompt = handler.prompt.trim();
     return record;
   }
   if (type === "agent") {
@@ -1077,7 +1080,10 @@ function serializeHookHandler(
       throw new Error(t("settingsHooksAgentRoleRequired"));
     }
     record.role_id = handler.roleId.trim();
-    setOptionalString(record, "prompt", handler.prompt);
+    if (handler.prompt.trim() === "") {
+      throw new Error(t("settingsHooksPromptRequired"));
+    }
+    record.prompt = handler.prompt.trim();
     return record;
   }
   setOptionalString(record, "command", handler.command);

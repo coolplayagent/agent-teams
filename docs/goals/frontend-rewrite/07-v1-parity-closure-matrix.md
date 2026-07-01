@@ -114,6 +114,12 @@ For every row moved to `Verified`, record:
 
 ## Verification Ledger
 
+### 2026-07-02 Hooks Settings Local Required-Field Validation
+
+- `SET-14` tightened: Hooks agent and prompt handlers now fail locally when prompt text is missing, before validate/save requests reach the backend. The behavior is covered by TS component tests for both Validate and Save paths.
+- `CLEAN-01` unchanged for the legacy hooks harness: `tests/integration_tests/frontend/test_hooks_settings_ui.py` remains because delete autosave ordering, stale reload reconciliation, structured backend error mapping, browser error-state evidence, and final V1 visual pairing are still not fully replaced.
+- Evidence: `npm test -- src/test/HooksSettingsSection.test.tsx`, `npm test -- src/test/SettingsDrawer.test.tsx -t "hooks"`, `npm run test:browser -- v2-settings-actions.spec.ts -g "validates and saves Hooks"`, `npm run lint`, `npm run build`.
+
 ### 2026-07-02 Hooks Settings Structured Editor First Pass
 
 - `SET-14` tightened: Hooks settings is no longer a raw JSON textarea in V2. The System secondary page now renders structured hook group and handler cards, supports add/edit/delete controls, validates and saves serialized payloads, keeps runtime diagnostics, and has packed-browser evidence for editing and saving a command handler.

@@ -2,6 +2,25 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-02 Hooks Settings Local Required-Field Validation
+
+### Scope
+- Continued the audit of `tests/integration_tests/frontend/test_hooks_settings_ui.py` after the structured-editor first pass instead of treating Hooks as done.
+- Migrated the old harness requirement that agent and prompt handlers must fail locally when their prompt text is missing, before validate/save requests reach the backend.
+- Added `settingsHooksPromptRequired` English and Chinese copy and wired the serializer so Validate and Save share the same required-field behavior.
+- Extended `HooksSettingsSection.test.tsx` to prove missing agent/prompt handler prompts show the local error and do not call `validateHooksConfig` or `saveHooksConfig`.
+- Kept `tests/integration_tests/frontend/test_hooks_settings_ui.py` in place. Delete autosave ordering, stale reload reconciliation, structured backend error mapping, browser error-state evidence, and final V1 visual pairing still need more closure.
+
+### Verification
+- `npm test -- src/test/HooksSettingsSection.test.tsx` passed with 5 tests.
+- `npm test -- src/test/SettingsDrawer.test.tsx -t "hooks"` passed with 1 selected test.
+- `npm run test:browser -- v2-settings-actions.spec.ts -g "validates and saves Hooks"` passed with 1 packed-browser test.
+- `npm run lint` passed.
+- `npm run build` passed and regenerated the packed `frontend/dist/app` bundle.
+
+### Reviewer
+- Main-agent decision: this tightens `SET-14` and chips away at the old hooks harness, but `CLEAN-01` is unchanged because the hooks harness is still not fully replaced.
+
 ## 2026-07-02 Hooks Settings Structured Editor First Pass
 
 ### Scope

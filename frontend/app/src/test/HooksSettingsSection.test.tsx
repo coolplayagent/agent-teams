@@ -166,6 +166,55 @@ describe("HooksSettingsSection", () => {
       }),
     );
   });
+
+  it("blocks agent handlers without prompts before API validation", async () => {
+    getHooksConfigMock.mockResolvedValue({
+      hooks: {
+        Stop: [
+          {
+            hooks: [
+              {
+                role_id: "reviewer",
+                type: "agent",
+              },
+            ],
+          },
+        ],
+      },
+    });
+    renderSection();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Validate" }));
+
+    await waitFor(() =>
+      expect(antdMocks.message.error).toHaveBeenCalledWith("Prompt is required."),
+    );
+    expect(validateHooksConfigMock).not.toHaveBeenCalled();
+  });
+
+  it("blocks prompt handlers without prompts before API save", async () => {
+    getHooksConfigMock.mockResolvedValue({
+      hooks: {
+        Stop: [
+          {
+            hooks: [
+              {
+                type: "prompt",
+              },
+            ],
+          },
+        ],
+      },
+    });
+    renderSection();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(antdMocks.message.error).toHaveBeenCalledWith("Prompt is required."),
+    );
+    expect(saveHooksConfigMock).not.toHaveBeenCalled();
+  });
 });
 
 async function chooseSelectOption(label: string, optionText: string) {

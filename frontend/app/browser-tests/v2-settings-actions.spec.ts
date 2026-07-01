@@ -453,8 +453,35 @@ test("validates, deletes, and creates role configs from settings", async ({
     const reviewerRow = settings.locator(".at-settings-list-button").filter({
       hasText: "Reviewer",
     });
+    await expect(reviewerRow).toBeVisible();
+    await page.screenshot({
+      path: screenshotPath("v2-roles-list.png", SCREENSHOT_FOLDER),
+    });
     await reviewerRow.click();
     await expect(settings.getByLabel("Role ID")).toHaveValue("reviewer");
+    await expect(settings.locator(".at-role-config-properties"))
+      .toContainText("Tools");
+    await expect(settings.locator(".at-role-config-properties"))
+      .toContainText("1");
+    await expect(settings.locator(".at-role-config-properties"))
+      .toContainText("Servers");
+    await expect(settings.locator(".at-role-config-properties"))
+      .toContainText("filesystem");
+    await expect(settings.locator(".at-role-config-properties"))
+      .toContainText("Skills");
+    await expect(settings.locator(".at-role-config-properties"))
+      .toContainText("review");
+    await page.screenshot({
+      path: screenshotPath("v2-roles-reviewer-detail.png", SCREENSHOT_FOLDER),
+    });
+    await settings
+      .locator(".at-settings-section-body")
+      .evaluate((element) => {
+        element.scrollTop = element.scrollHeight;
+      });
+    await page.screenshot({
+      path: screenshotPath("v2-roles-reviewer-detail-fields.png", SCREENSHOT_FOLDER),
+    });
 
     await settings.getByRole("button", { name: "Validate" }).click();
     await expect
@@ -481,6 +508,7 @@ test("validates, deletes, and creates role configs from settings", async ({
     await expect(settings.getByLabel("Role ID")).toHaveValue("analyst");
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await expectNoDocumentScroll(page, "v2 role settings should stay framed");
+    await expect(page.locator(".ant-message-notice")).toHaveCount(0);
     await page.screenshot({
       path: screenshotPath("v2-roles-create-save.png", SCREENSHOT_FOLDER),
     });

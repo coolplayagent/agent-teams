@@ -8329,3 +8329,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent matrix scan, failing browser evidence reproduction, targeted browser assertion fix, added screenshot checkpoint, focused browser verification, screenshot inspection, and matrix/ledger updates completed for this slice. No Settings subsystem PASS or final V2 completion is claimed.
+
+## 2026-07-01 Settings Roles Browser Evidence Closure
+
+### Scope
+- Re-checked the frontend rewrite matrix and selected `SET-07 Roles` because it was still `Not checked` even though the Settings page already contained role list/detail/create/delete code paths.
+- Strengthened the packed-browser Roles scenario with evidence that the root Settings list remains V1-aligned, the Roles page stays a list-first page, and Reviewer opens in a secondary detail view rather than flattening the form into the top-level Settings page.
+- Added screenshot checkpoints for the role list, Reviewer detail top, Reviewer detail lower fields, and clean Analyst saved detail after transient Ant messages disappear.
+- Added browser assertions that the Reviewer detail preserves the tools count, MCP server list, and skill list from the backend document while still supporting validate, delete, and create/save workflows.
+- Re-ran the Agent Runtime browser scenario because it covers the related Roles behavior for runtime-bound roles: creating a runtime under System, binding a new role to it, previewing a prompt, validating and saving the bound-agent payload, then deleting the role.
+- Updated `SET-07` from `Not checked` to `In progress`. This slice does not claim Roles `Verified`, full Settings completion, formal V1 visual/DOM pairing, validation-error coverage, reviewer sign-off, release cleanup sign-off, or final V2 frontend completion.
+
+### Verification
+- `npm run test:browser -- v2-settings-actions.spec.ts --project=chromium -g "role configs"` passed with 1 browser test.
+- `npm run test:browser -- v2-settings-actions.spec.ts --project=chromium -g "Agent Runtime configs"` passed with 1 browser test.
+- `npm test -- src/test/SettingsDrawer.test.tsx -t "role configs|role detail"` passed with 2 focused tests; jsdom emitted the known pseudo-element `getComputedStyle` warning.
+- Inspected `.tmp/frontend-v2-ts-settings-actions/v2-roles-list.png`, `.tmp/frontend-v2-ts-settings-actions/v2-roles-reviewer-detail.png`, `.tmp/frontend-v2-ts-settings-actions/v2-roles-reviewer-detail-fields.png`, and `.tmp/frontend-v2-ts-settings-actions/v2-roles-create-save.png`.
+
+### Reviewer
+- Main-agent matrix scan, focused browser test strengthening, browser and component verification, screenshot inspection, and matrix/ledger updates completed for this slice. No Settings subsystem PASS or final V2 completion is claimed.

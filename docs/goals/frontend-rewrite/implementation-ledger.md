@@ -2,6 +2,21 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-01 Image Preview Python Harness Removal
+
+### Scope
+- Re-checked the frontend rewrite goal's TS browser migration requirement and selected the remaining `tests/unit_tests/frontend/test_image_preview_ui.py` harness because it only asserted old `frontend/dist/js` and static CSS strings.
+- Removed that Python UI harness after verifying V2 image preview behavior is owned by React/Playwright evidence: persisted `media_ref` image rendering, visible inline image/caption, Ant Image preview overlay open/close, fixed shell framing, and component coverage for persisted/runtime/workspace/non-image media references.
+- Kept `MSG-06` and cleanup work open; this removes one stale V1/static proof path, not the broader media/V1 visual sign-off or all remaining Python UI harnesses.
+
+### Verification
+- `npm run test:browser -- v2-image-preview.spec.ts --project=chromium` passed.
+- `npm test -- src/test/MessageTimeline.test.tsx -t "image media references|workspace image previews|media_ref previews|non-image media references|runtime output_delta media_ref"` passed with focused media preview coverage.
+- `rg -n "test_image_preview_ui|imagePreview.js|initializeImagePreview" tests frontend/app/src frontend/app/browser-tests` returned no remaining references to the removed legacy harness or old V1 image-preview bootstrap.
+
+### Reviewer
+- Main-agent inspection confirmed the removed Python file targeted old `frontend/dist/js/components/imagePreview.js` and old layout/component CSS, while the TS browser test exercises the current built `/app/` V2 timeline and actual preview overlay.
+
 ## 2026-07-01 Appearance Page Browser Evidence
 
 ### Scope

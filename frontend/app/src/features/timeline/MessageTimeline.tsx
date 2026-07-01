@@ -229,8 +229,8 @@ export function MessageTimeline({
     () => timelineThinkingTextByRunId(persistedRows),
     [persistedRows],
   );
-  const hydratedToolKeysByRunId = useMemo(
-    () => timelineToolKeysByRunId(persistedRows),
+  const hydratedToolStatesByRunId = useMemo(
+    () => timelineToolStatesByRunId(persistedRows),
     [persistedRows],
   );
   const runtimeEntries = useMemo(
@@ -245,13 +245,13 @@ export function MessageTimeline({
             variant,
             hydratedOutputTextByRunId,
             hydratedThinkingTextByRunId,
-            hydratedToolKeysByRunId,
+            hydratedToolStatesByRunId,
           ),
         ),
     [
       hydratedOutputTextByRunId,
       hydratedThinkingTextByRunId,
-      hydratedToolKeysByRunId,
+      hydratedToolStatesByRunId,
       primaryRoleId,
       runtimeRunId,
       runtimeState.runs,
@@ -265,9 +265,12 @@ export function MessageTimeline({
   );
   const timelineRowsBeforeGrouping = useMemo(
     () =>
-      mergeRuntimeThinkingRowsIntoHydratedRows(
-        persistedRows,
-        runtimeRows.filter(timelineRowHasRenderableContent),
+      mergeToolRowsByCallId(
+        mergeRuntimeThinkingRowsIntoHydratedRows(
+          persistedRows,
+          runtimeRows.filter(timelineRowHasRenderableContent),
+        ),
+        { dedupeNonToolRows: false },
       ),
     [persistedRows, runtimeRows],
   );
@@ -1690,7 +1693,11 @@ function historyDividerRow(
   };
 }
 
-function mergeToolRowsByCallId(rows: TimelineRow[]): TimelineRow[] {
+function mergeToolRowsByCallId(
+  rows: TimelineRow[],
+  options: { dedupeNonToolRows?: boolean } = {},
+): TimelineRow[] {
+  const dedupeNonToolRows = options.dedupeNonToolRows ?? true;
   const mergedRows: TimelineRow[] = [];
   const toolRowsByKey = new Map<string, { row: TimelineRow; tool: TimelineToolPart }>();
   for (const originalRow of rows) {
@@ -1734,7 +1741,9 @@ function mergeToolRowsByCallId(rows: TimelineRow[]): TimelineRow[] {
       toolRowsByKey.set(key, { row: nextRow, tool });
     }
   }
-  return dropDuplicateRowsAfterToolMerge(mergedRows);
+  return dedupeNonToolRows
+    ? dropDuplicateRowsAfterToolMerge(mergedRows)
+    : mergedRows;
 }
 
 function mergeToolPartsWithinRow(row: TimelineRow): TimelineRow {
@@ -2699,8 +2708,15 @@ function timelineOutputTextByRunId(rows: TimelineRow[]): Map<string, string> {
   return textByRunId;
 }
 
-function timelineToolKeysByRunId(rows: TimelineRow[]): Map<string, Set<string>> {
-  const toolKeysByRunId = new Map<string, Set<string>>();
+type TimelineToolHydrationState = "pending" | "resolved";
+
+function timelineToolStatesByRunId(
+  rows: TimelineRow[],
+): Map<string, Map<string, TimelineToolHydrationState>> {
+  const toolStatesByRunId = new Map<
+    string,
+    Map<string, TimelineToolHydrationState>
+  >();
   for (const row of rows) {
     const runId = row.runId?.trim() ?? "";
     if (runId.length === 0) {
@@ -2710,12 +2726,20 @@ function timelineToolKeysByRunId(rows: TimelineRow[]): Map<string, Set<string>> 
       if (part.kind !== "tool" || part.callId.trim().length === 0) {
         continue;
       }
-      const toolKeys = toolKeysByRunId.get(runId) ?? new Set<string>();
-      toolKeys.add(timelineToolHydrationKey(part.callId));
-      toolKeysByRunId.set(runId, toolKeys);
+      const toolStates =
+        toolStatesByRunId.get(runId) ??
+        new Map<string, TimelineToolHydrationState>();
+      const key = timelineToolHydrationKey(part.callId);
+      const nextState = part.phase === "call" ? "pending" : "resolved";
+      const existingState = toolStates.get(key);
+      toolStates.set(
+        key,
+        existingState === "resolved" ? existingState : nextState,
+      );
+      toolStatesByRunId.set(runId, toolStates);
     }
   }
-  return toolKeysByRunId;
+  return toolStatesByRunId;
 }
 
 function timelineThinkingTextByRunId(rows: TimelineRow[]): Map<string, string> {
@@ -2752,7 +2776,7 @@ function runtimeEntriesAfterHydration(
   variant: "session" | "subagent-panel",
   hydratedOutputTextByRunId: Map<string, string>,
   hydratedThinkingTextByRunId: Map<string, string>,
-  hydratedToolKeysByRunId: Map<string, Set<string>>,
+  hydratedToolStatesByRunId: Map<string, Map<string, TimelineToolHydrationState>>,
 ): TimelineEntry[] {
   const scopedEntries = runState.entries.filter((entry) =>
     runtimeEntryMatchesScope(entry, runState, {
@@ -2764,11 +2788,13 @@ function runtimeEntriesAfterHydration(
   );
   const hydratedText = hydratedOutputTextByRunId.get(runState.runId);
   const hydratedThinkingText = hydratedThinkingTextByRunId.get(runState.runId);
-  const hydratedToolKeys = hydratedToolKeysByRunId.get(runState.runId) ?? new Set<string>();
+  const hydratedToolStates =
+    hydratedToolStatesByRunId.get(runState.runId) ??
+    new Map<string, TimelineToolHydrationState>();
   if (
     hydratedText === undefined &&
     hydratedThinkingText === undefined &&
-    hydratedToolKeys.size === 0
+    hydratedToolStates.size === 0
   ) {
     return openRuntimeEntriesWithIdleCursor(runState, scopedEntries, variant);
   }
@@ -2786,7 +2812,7 @@ function runtimeEntriesAfterHydration(
         runState,
         hydratedText ?? "",
         hydratedThinkingText ?? "",
-        hydratedToolKeys,
+        hydratedToolStates,
       )
         ? []
         : [nextEntry];
@@ -2796,7 +2822,7 @@ function runtimeEntriesAfterHydration(
   const safeHydratedText = hydratedText ?? "";
   let suppressCoveredText = true;
   for (const entry of scopedEntries) {
-    if (runtimeEntryIsCoveredByHydratedTool(entry, hydratedToolKeys)) {
+    if (runtimeEntryIsCoveredByHydratedTool(entry, hydratedToolStates)) {
       continue;
     }
     const nextEntry = runtimeEntryAfterThinkingHydration(
@@ -3068,9 +3094,9 @@ function runtimeEntryIsCoveredByHydratedOutput(
   runState: RuntimeRunState,
   hydratedText: string,
   hydratedThinkingText: string,
-  hydratedToolKeys: Set<string>,
+  hydratedToolStates: ReadonlyMap<string, TimelineToolHydrationState>,
 ): boolean {
-  if (runtimeEntryIsCoveredByHydratedTool(entry, hydratedToolKeys)) {
+  if (runtimeEntryIsCoveredByHydratedTool(entry, hydratedToolStates)) {
     return true;
   }
   if (runtimeEntryIsCoveredByHydratedThinking(entry, hydratedThinkingText)) {
@@ -3289,10 +3315,20 @@ function runtimeHiddenEntryClosesText(entry: TimelineEntry): boolean {
 
 function runtimeEntryIsCoveredByHydratedTool(
   entry: TimelineEntry,
-  hydratedToolKeys: Set<string>,
+  hydratedToolStates: ReadonlyMap<string, TimelineToolHydrationState>,
 ): boolean {
   const runtimeToolKey = runtimeToolHydrationKey(entry);
-  return runtimeToolKey !== null && hydratedToolKeys.has(runtimeToolKey);
+  if (runtimeToolKey === null) {
+    return false;
+  }
+  const hydratedState = hydratedToolStates.get(runtimeToolKey);
+  if (hydratedState === undefined) {
+    return false;
+  }
+  if (entry.kind === "tool_call") {
+    return true;
+  }
+  return hydratedState === "resolved";
 }
 
 function runtimeToolHydrationKey(entry: TimelineEntry): string | null {

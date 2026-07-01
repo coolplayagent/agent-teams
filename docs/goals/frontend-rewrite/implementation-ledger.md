@@ -2,6 +2,27 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-01 Skills Browser And Component Evidence Sweep
+
+### Scope
+- Re-checked the closure matrix and selected `PAGE-02` because Skills was still `Not checked` while it is a primary V1 surface.
+- Added a dedicated packed `/app/` browser spec for the Skills surface: primary-nav entry, ClawHub market browse/search, market detail drawer, install payload, installed-skill list, installed detail drawer, user-skill uninstall confirmation, skills reload, and ClawHub token probe/save.
+- Inspected generated screenshots for market, installed detail, and ClawHub settings. The installed detail evidence now captures the actual `Skill detail` drawer instead of a full-page frame that missed the drawer.
+- Stabilized the existing saved-token ClawHub settings component test with a scoped 10 second timeout after confirming the behavior passes under a longer single-test run; the full suite now passes without broadening global timeout.
+- Kept `PAGE-02` at `In progress`; this round adds V2 browser/component evidence, not final V1 screenshot/DOM pairing, loading/error browser states, market install/probe failure states, pagination beyond one page, or narrow-density sign-off.
+
+### Verification
+- `npm run test:browser -- v2-skills-view.spec.ts --project=chromium` passed with 1 Chromium test.
+- `npm test -- src/test/SkillsView.test.tsx` passed with 8 tests. Vitest emitted the existing jsdom pseudo-element `getComputedStyle` environment warnings.
+- `npm run lint` passed.
+- Browser screenshot artifacts inspected:
+  - `.tmp/frontend-v2-ts-skills/v2-skills-market.png`
+  - `.tmp/frontend-v2-ts-skills/v2-skills-installed-detail.png`
+  - `.tmp/frontend-v2-ts-skills/v2-skills-clawhub-settings.png`
+
+### Reviewer
+- Main-agent screenshot inspection confirmed the Skills page remains inside the fixed shell, market and installed cards are readable, the installed detail drawer shows manifest and file metadata, and ClawHub settings probe/save controls render inside the right drawer. Remaining before verification: V1 screenshot/DOM comparison, loading/error browser states, failure-state coverage for install/probe, multi-page market pagination, and compact-width density review.
+
 ## 2026-07-01 Automation Browser And Component Evidence Sweep
 
 ### Scope

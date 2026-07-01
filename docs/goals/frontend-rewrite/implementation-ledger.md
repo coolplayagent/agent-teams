@@ -2,6 +2,19 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-01 P0 Subagent And Real-SSE Browser Rerun
+
+### Scope
+- Re-ran the current P0 browser coverage for subagent streaming, right-panel replay parity, stale recovery, real SSE failure/stopped handling, injection, recovery resume, multiplexed background streams, and parent timeline isolation.
+- This was a verification rerun only. No source status moved to `Verified` because the closure matrix still requires V1/manual visual sign-off and broader production-backend variants.
+
+### Verification
+- `npm run test:browser -- v2-subagent-session.spec.ts v2-real-sse-stale-recovery.spec.ts --project=chromium` passed: 28 tests, 28 passed, about 1.2 minutes.
+- Covered named browser scenarios include live orchestration subagent cadence, hard-refresh restored subagent panel, terminal catch-up replay, real SSE recovery checkpoint replay, stale reconnect suppression, real SSE background-subagent isolation, and real SSE subagent stdout through the right panel with replay parity.
+
+### Reviewer
+- Main-agent decision: the automated P0 subagent/real-SSE suite is currently green, but `SUB-01`, `STREAM-02`, and related runtime rows remain `In progress` until paired V1/manual browser evidence is complete.
+
 ## 2026-07-01 Closure Snapshot Audit
 
 ### Scope

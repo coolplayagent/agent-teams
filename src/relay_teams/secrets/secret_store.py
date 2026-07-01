@@ -26,7 +26,9 @@ from relay_teams.secrets.secret_models import (
 _KEYRING_SERVICE_NAME = "agent-teams"
 _SECRETS_FILE_NAME = "secrets.json"
 _MODEL_PROFILE_SECRET_NAMESPACE = "model_profile"
+_PROXY_CONFIG_SECRET_NAMESPACE = "proxy_config"
 _ENCRYPTED_MODEL_PASSWORD_FIELDS = frozenset({"maas_password", "codeagent_password"})
+_ENCRYPTED_PROXY_CONFIG_FIELDS = frozenset({"password"})
 LOGGER = logging.getLogger("relay_teams.backend.secrets.secret_store")
 
 
@@ -562,9 +564,11 @@ def _drop_entry(
 
 
 def _requires_file_encryption(coordinate: SecretCoordinate) -> bool:
+    if coordinate.namespace == _MODEL_PROFILE_SECRET_NAMESPACE:
+        return coordinate.field_name in _ENCRYPTED_MODEL_PASSWORD_FIELDS
     return (
-        coordinate.namespace == _MODEL_PROFILE_SECRET_NAMESPACE
-        and coordinate.field_name in _ENCRYPTED_MODEL_PASSWORD_FIELDS
+        coordinate.namespace == _PROXY_CONFIG_SECRET_NAMESPACE
+        and coordinate.field_name in _ENCRYPTED_PROXY_CONFIG_FIELDS
     )
 
 

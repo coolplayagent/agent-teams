@@ -23,6 +23,9 @@ from relay_teams.secrets.secret_models import SecretCoordinate
 
 
 _MODEL_PROFILE_SECRET_NAMESPACE = "model_profile"
+_PROXY_CONFIG_SECRET_NAMESPACE = "proxy_config"
+_PROXY_CONFIG_OWNER_ID = "default"
+_PROXY_CONFIG_PASSWORD_FIELD = "password"
 
 
 class _FileOnlySecretStore(AppSecretStore):
@@ -107,36 +110,38 @@ def _coordinate_key(coordinate: SecretCoordinate) -> tuple[str, str, str]:
     return (coordinate.namespace, coordinate.owner_id, coordinate.field_name)
 
 
-def test_set_secret_falls_back_to_shared_secrets_file(tmp_path: Path) -> None:
+def test_proxy_password_file_fallback_is_encrypted(tmp_path: Path) -> None:
     store = _FileOnlySecretStore()
 
     store.set_secret(
         tmp_path,
-        namespace="proxy_config",
-        owner_id="default",
-        field_name="password",
+        namespace=_PROXY_CONFIG_SECRET_NAMESPACE,
+        owner_id=_PROXY_CONFIG_OWNER_ID,
+        field_name=_PROXY_CONFIG_PASSWORD_FIELD,
         value="secret",
     )
 
     assert (
         store.get_secret(
             tmp_path,
-            namespace="proxy_config",
-            owner_id="default",
-            field_name="password",
+            namespace=_PROXY_CONFIG_SECRET_NAMESPACE,
+            owner_id=_PROXY_CONFIG_OWNER_ID,
+            field_name=_PROXY_CONFIG_PASSWORD_FIELD,
         )
         == "secret"
     )
-    payload = loads((tmp_path / "secrets.json").read_text(encoding="utf-8"))
-    assert payload["entries"] == [
-        {
-            "namespace": "proxy_config",
-            "owner_id": "default",
-            "field_name": "password",
-            "storage": "file",
-            "value": "secret",
-        }
-    ]
+    entries = _secret_entries(tmp_path)
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry["namespace"] == _PROXY_CONFIG_SECRET_NAMESPACE
+    assert entry["owner_id"] == _PROXY_CONFIG_OWNER_ID
+    assert entry["field_name"] == _PROXY_CONFIG_PASSWORD_FIELD
+    assert entry["storage"] == "file"
+    value = entry["value"]
+    assert isinstance(value, str)
+    assert value.startswith("ENC:")
+    assert value != "secret"
+    assert "secret" not in value
 
 
 @pytest.mark.parametrize(
@@ -419,36 +424,64 @@ def test_corrupt_encrypted_model_password_returns_none_and_logs(
     assert "not-valid" not in caplog.text
 
 
-def test_set_secret_falls_back_to_file_when_keyring_write_fails(tmp_path: Path) -> None:
+def test_proxy_password_keyring_failure_file_fallback_is_encrypted(
+    tmp_path: Path,
+) -> None:
     store = _FlakyKeyringSecretStore()
 
     store.set_secret(
         tmp_path,
-        namespace="proxy_config",
-        owner_id="default",
-        field_name="password",
+        namespace=_PROXY_CONFIG_SECRET_NAMESPACE,
+        owner_id=_PROXY_CONFIG_OWNER_ID,
+        field_name=_PROXY_CONFIG_PASSWORD_FIELD,
         value="secret",
     )
 
     assert (
         store.get_secret(
             tmp_path,
-            namespace="proxy_config",
-            owner_id="default",
-            field_name="password",
+            namespace=_PROXY_CONFIG_SECRET_NAMESPACE,
+            owner_id=_PROXY_CONFIG_OWNER_ID,
+            field_name=_PROXY_CONFIG_PASSWORD_FIELD,
         )
         == "secret"
     )
-    payload = loads((tmp_path / "secrets.json").read_text(encoding="utf-8"))
-    assert payload["entries"] == [
-        {
-            "namespace": "proxy_config",
-            "owner_id": "default",
-            "field_name": "password",
-            "storage": "file",
-            "value": "secret",
-        }
-    ]
+    entries = _secret_entries(tmp_path)
+    assert len(entries) == 1
+    value = entries[0]["value"]
+    assert isinstance(value, str)
+    assert value.startswith("ENC:")
+    assert "secret" not in value
+
+
+def test_legacy_plaintext_proxy_password_file_secret_is_readable(
+    tmp_path: Path,
+) -> None:
+    store = _FileOnlySecretStore()
+    store._save_index(
+        tmp_path,
+        SecretIndexDocument(
+            entries=(
+                SecretIndexEntry(
+                    namespace=_PROXY_CONFIG_SECRET_NAMESPACE,
+                    owner_id=_PROXY_CONFIG_OWNER_ID,
+                    field_name=_PROXY_CONFIG_PASSWORD_FIELD,
+                    storage="file",
+                    value="legacy-proxy-password",
+                ),
+            )
+        ),
+    )
+
+    assert (
+        store.get_secret(
+            tmp_path,
+            namespace=_PROXY_CONFIG_SECRET_NAMESPACE,
+            owner_id=_PROXY_CONFIG_OWNER_ID,
+            field_name=_PROXY_CONFIG_PASSWORD_FIELD,
+        )
+        == "legacy-proxy-password"
+    )
 
 
 def test_rename_owner_moves_file_backed_secrets(tmp_path: Path) -> None:

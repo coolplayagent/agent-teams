@@ -390,7 +390,7 @@ Blank values remove the corresponding proxy key.
 `proxy_username` and `proxy_password` are optional shared credentials.
 `ssl_verify` controls the default TLS certificate verification policy for Agent Teams outbound HTTP clients.
 When omitted or `null`, the backend removes `SSL_VERIFY` from `.env` and falls back to skipping certificate verification by default.
-On save, proxy passwords are persisted through the unified secret store. When a usable system keyring backend exists, the secret store uses keyring; otherwise it falls back to `secrets.json` in the resolved config dir, by default `~/.relay-teams/secrets.json`.
+On save, proxy passwords are persisted through the unified secret store. When a usable system keyring backend exists, the secret store uses keyring; otherwise it falls back to `secrets.json` in the resolved config dir, by default `~/.relay-teams/secrets.json`, and stores the proxy password as a local-machine-bound `ENC:` encrypted value. Existing plaintext file-backed proxy passwords remain readable for compatibility.
 The `.env` file stores proxy URLs without the password portion.
 Runtime loading still supports manual `.env` proxy URLs that already contain embedded passwords.
 `no_proxy` accepts both comma-separated and semicolon-separated entries. Wildcard host patterns such as `127.*`, `192.168.*`, and the special token `<local>` are supported.

@@ -1043,7 +1043,7 @@ test("matches Web settings declared defaults and persisted language", async ({
       ),
       page
         .locator(".at-topbar")
-        .getByRole("button", { name: "中文" })
+        .getByRole("button", { name: "中文", exact: true })
         .evaluate((button) => (button as HTMLElement).click()),
     ]);
     expect(state.uiLanguageSavePayloads.at(-1)).toEqual({ language: "en-US" });
@@ -1069,7 +1069,7 @@ test("matches Web settings declared defaults and persisted language", async ({
       ),
       page
         .locator(".at-topbar")
-        .getByRole("button", { name: "EN" })
+        .getByRole("button", { name: "EN", exact: true })
         .evaluate((button) => (button as HTMLElement).click()),
     ]);
     expect(state.uiLanguageSavePayloads.at(-1)).toEqual({ language: "zh-CN" });
@@ -1180,9 +1180,13 @@ test("saves Web settings and shows save errors", async ({ page }) => {
     expect(state.webConfig.searxng_instance_url).toBe(
       "https://search.changed.example/",
     );
-    await expect(
-      settings.getByRole("alert").getByText("Web settings save failed in browser test."),
-    ).toBeVisible();
+    const inlineSaveError = settings.locator(".ant-alert-error").filter({
+      hasText: "Web settings save failed in browser test.",
+    });
+    await expect(inlineSaveError).toBeVisible();
+    await expect(page.locator(".ant-message-notice")).toHaveCount(0);
+    await inlineSaveError.scrollIntoViewIfNeeded();
+    await expect(inlineSaveError).toBeInViewport();
     await page.screenshot({
       path: screenshotPath("v2-web-settings-error.png", SCREENSHOT_FOLDER),
     });

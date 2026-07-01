@@ -8367,3 +8367,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent matrix scan, focused browser test strengthening, browser and component verification, screenshot inspection, and matrix/ledger updates completed for this slice. No Settings subsystem PASS or final V2 completion is claimed.
+
+## 2026-07-01 Settings Web Browser Evidence Closure
+
+### Scope
+- Re-checked the frontend rewrite matrix and selected `SET-09 Web` because it was still `Not checked` even though prior Web settings migrations had added source and test coverage.
+- Re-ran the packed-browser Web settings scenarios instead of copying old ledger claims. The defaults/language scenario initially failed because the `EN` language button selector also matched the topbar `Backend connected` health button, so the existing evidence was stale.
+- Fixed the browser selectors to require exact language-button names for both Chinese and English toggles.
+- Re-ran the browser scenarios and inspected the screenshots. The first regenerated error screenshot still hid the inline Web error alert above the viewport while old success toasts were visible, so the browser test now waits for transient messages to clear, scrolls the inline `.ant-alert-error` into view, and asserts it is in the viewport before capturing evidence.
+- Confirmed by screenshot inspection that Settings keeps the V1-aligned first-level section list, Web remains a first-level Settings page, saved Exa API keys stay masked, SearXNG fallback controls are visible/restored as expected, built-in instances render, and the error state is durable inside the Web form.
+- Updated `SET-09` from `Not checked` to `In progress`. This slice does not claim Web `Verified`, complete Settings parity, formal V1 visual/DOM pairing, provider/search runtime sign-off, reviewer sign-off, release cleanup sign-off, or final V2 frontend completion.
+
+### Verification
+- `npm run test:browser -- v2-settings-actions.spec.ts --project=chromium -g "Web settings"` passed with 2 browser tests after the selector and screenshot-evidence fixes.
+- `npm test -- src/test/SettingsDrawer.test.tsx -t "Web settings|web settings"` passed with 4 focused component tests; jsdom emitted the known pseudo-element `getComputedStyle` warning.
+- `npm run lint` passed.
+- Inspected `.tmp/frontend-v2-ts-settings-actions/v2-web-settings-defaults-language.png` and `.tmp/frontend-v2-ts-settings-actions/v2-web-settings-error.png`.
+
+### Reviewer
+- Main-agent matrix scan, stale browser failure reproduction, focused browser test fixes, browser and component verification, screenshot inspection, and matrix/ledger updates completed for this slice. No Settings subsystem PASS or final V2 completion is claimed.

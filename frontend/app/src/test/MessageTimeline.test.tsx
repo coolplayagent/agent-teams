@@ -3578,6 +3578,82 @@ describe("MessageTimeline", () => {
     expect(container.querySelector('[data-role-id="Explorer"]')).toBeNull();
   });
 
+  it("keeps subagent-marked parent-run stream rows out while primary role metadata is loading", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "tool_call",
+        instance_id: "main-instance",
+        role_id: "MainAgent",
+        run_id: "parent_run_1",
+        trace_id: "parent_run_1",
+        payload_json: JSON.stringify({
+          args: {
+            description: "Explore skill implementation",
+            prompt: "Read the project and report back.",
+            role_id: "Explorer",
+          },
+          tool_call_id: "call-spawn-explorer",
+          tool_name: "spawn_subagent",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "thinking_delta",
+        role_id: "Explorer",
+        run_id: "parent_run_1",
+        trace_id: "parent_run_1",
+        payload_json: JSON.stringify({
+          part_index: 0,
+          subagent_instance_id: "explorer-worker",
+          subagent_role_id: "Explorer",
+          subagent_run_id: "subagent_run_1",
+          text: "Parent-run child thought should stay out of the main transcript.",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 3,
+        event_type: "text_delta",
+        role_id: "Explorer",
+        run_id: "parent_run_1",
+        trace_id: "parent_run_1",
+        payload_json: JSON.stringify({
+          kind: "subagent",
+          run_id: "subagent_run_1",
+          text: "Parent-run child output should stay out of the main transcript.",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 4,
+        event_type: "tool_call",
+        role_id: "Explorer",
+        run_id: "parent_run_1",
+        trace_id: "parent_run_1",
+        payload_json: JSON.stringify({
+          args: { path: "src/relay_teams/skills/skill_registry.py" },
+          subagent_instance_id: "explorer-worker",
+          subagent_role_id: "Explorer",
+          subagent_run_id: "subagent_run_1",
+          tool_call_id: "call-child-read",
+          tool_name: "read",
+        }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline("session-1");
+
+    expect(await screen.findByText("Starting subagent")).toBeVisible();
+    expect(
+      screen.queryByText("Parent-run child thought should stay out of the main transcript."),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Parent-run child output should stay out of the main transcript."),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Tool call: read")).not.toBeInTheDocument();
+    expect(container.querySelector('[data-role-id="Explorer"]')).toBeNull();
+  });
+
   it("keeps persisted subagent messages out even when they reuse the parent run id", async () => {
     listSessionRoundsMock.mockResolvedValue({
       has_more: false,

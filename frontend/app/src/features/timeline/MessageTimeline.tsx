@@ -37,6 +37,7 @@ const ROUND_RAIL_PAGE_LIMIT = 100;
 const ROUND_RAIL_MAX_PAGES = 10;
 const TOOL_RESULT_MAX_LINES = 200;
 const TOOL_RESULT_MAX_CHARS = 12000;
+const TIMELINE_SUBAGENT_MARKER_MAX_DEPTH = 8;
 const IMAGE_PATH_PATTERN = /\.(?:avif|bmp|gif|jpe?g|png|webp)$/i;
 const THINKING_DELTA_TEXT_KEYS = [
   "text",
@@ -3145,6 +3146,9 @@ function runtimeEntryLooksLikeDetachedSubagent(
   if (runState.scope === "subagent") {
     return true;
   }
+  if (runtimeEntryHasDetachedSubagentPayload(entry)) {
+    return true;
+  }
   const identifiers = [
     entry.instanceId ?? "",
     entry.runId,
@@ -3648,6 +3652,9 @@ function timelineMessageLooksDetachedSubagent(
   if (timelineMessageHasSubagentToolPart(message)) {
     return false;
   }
+  if (timelineMessageHasDetachedSubagentPayload(message)) {
+    return true;
+  }
   const identifiers = [
     message.instance_id ?? "",
     message.run_id ?? "",
@@ -3684,6 +3691,85 @@ function timelineMessageHasSubagentToolPart(message: TimelineMessage): boolean {
       toolActionCategory(toolName) === "subagent"
     );
   });
+}
+
+function runtimeEntryHasDetachedSubagentPayload(entry: TimelineEntry): boolean {
+  if (runtimeEntryIsSubagentToolLifecycle(entry)) {
+    return false;
+  }
+  return jsonValueHasDetachedSubagentMarker(entry.payload, 0);
+}
+
+function runtimeEntryIsSubagentToolLifecycle(entry: TimelineEntry): boolean {
+  if (
+    entry.kind !== "tool_call" &&
+    entry.kind !== "tool_input_validation_failed" &&
+    entry.kind !== "tool_result"
+  ) {
+    return false;
+  }
+  const payload = jsonObject(entry.payload);
+  if (payload === null || payloadHasParseError(payload)) {
+    return false;
+  }
+  const toolName = objectString(payload, "tool_name") || entry.text;
+  return toolActionCategory(toolName) === "subagent";
+}
+
+function timelineMessageHasDetachedSubagentPayload(message: TimelineMessage): boolean {
+  return jsonValueHasDetachedSubagentMarker(jsonCompatibleValue(message), 0);
+}
+
+function jsonValueHasDetachedSubagentMarker(
+  value: JsonValue,
+  depth: number,
+): boolean {
+  if (depth > TIMELINE_SUBAGENT_MARKER_MAX_DEPTH) {
+    return false;
+  }
+  if (Array.isArray(value)) {
+    return value.some((item) =>
+      jsonValueHasDetachedSubagentMarker(item, depth + 1),
+    );
+  }
+  const object = jsonObject(value);
+  if (object === null) {
+    return false;
+  }
+  if (jsonObjectHasDetachedSubagentMarker(object)) {
+    return true;
+  }
+  return Object.values(object).some((child) =>
+    jsonValueHasDetachedSubagentMarker(child, depth + 1),
+  );
+}
+
+function jsonObjectHasDetachedSubagentMarker(
+  object: Record<string, JsonValue>,
+): boolean {
+  if (
+    objectString(object, "subagent_instance_id").length > 0 ||
+    objectString(object, "subagentInstanceId").length > 0 ||
+    objectString(object, "subagent_run_id").length > 0 ||
+    objectString(object, "subagentRunId").length > 0 ||
+    objectString(object, "subagent_role_id").length > 0 ||
+    objectString(object, "subagentRoleId").length > 0 ||
+    objectString(object, "subagent_kind").length > 0 ||
+    objectString(object, "subagentKind").length > 0
+  ) {
+    return true;
+  }
+  const kind = objectString(object, "kind").toLowerCase();
+  const mode = objectString(object, "mode").toLowerCase();
+  return (
+    (kind === "subagent" || mode === "subagent") &&
+    (
+      objectString(object, "run_id").length > 0 ||
+      objectString(object, "runId").length > 0 ||
+      objectString(object, "instance_id").length > 0 ||
+      objectString(object, "instanceId").length > 0
+    )
+  );
 }
 
 function timelineRoleCanBeDetachedAgent(

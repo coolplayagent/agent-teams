@@ -371,6 +371,14 @@ For every row moved to `Verified`, record:
 - Browser evidence: `.tmp/frontend-v2-ts-stream/v2-real-sse-subagent-stdout-mid-stream.png`, `.tmp/frontend-v2-ts-stream/v2-real-sse-subagent-stdout-replay.png`.
 - Remaining before verification: broader production-backend orchestration/tool-heavy variants and final V1 visual sign-off.
 
+### 2026-07-01 Parent-Run Subagent Marker Isolation
+
+- `STREAM-02`/`SUB-01` tightened: parent run streams that temporarily carry child-role events are now filtered when the payload explicitly identifies a subagent run, instance, role, or `kind/mode: subagent`, even while `normal_root_role_id` is still loading.
+- The user-facing `spawn_subagent` lifecycle card is preserved so the main timeline still has the "Subagent started" affordance that opens the right-side panel; only child process rows are filtered from the parent transcript.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx -t "subagent-marked parent-run"`, `npm test -- src/test/MessageTimeline.test.tsx -t "subagent|Subagent"`, `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium`, `npm run test:browser -- v2-real-sse-stale-recovery.spec.ts --project=chromium -g "subagent stdout"`, `npm run lint`, `npm run build`.
+- Browser evidence reviewed: `.tmp/frontend-v2-ts-stream/v2-real-sse-subagent-stdout-mid-stream.png`, `.tmp/frontend-v2-ts-stream/v2-real-sse-subagent-stdout-replay.png`, `.tmp/frontend-v2-ts-subagent-session/v2-subagent-orchestration-live-stream-mid.png`, `.tmp/frontend-v2-ts-subagent-session/v2-subagent-orchestration-live-stream-final.png`.
+- Remaining before verification: real production-backend tool-heavy/orchestration sessions still need manual V1/V2 sign-off, but this closes the primary-role-loading leak window observed during switch/refresh.
+
 ### 2026-07-01 Timeline Background Notification And Prompt Expansion
 
 - `STREAM-01` tightened: managed background task completion notifications are hidden from the user-visible transcript even when replayed from persisted `message.parts[*].part_kind="user-prompt"` payloads.

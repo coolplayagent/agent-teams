@@ -1906,7 +1906,16 @@ function marketplaceEntriesForInstall(
   index: PluginMarketplaceIndex | null,
 ): PluginMarketplaceEntry[] {
   return (index?.plugins ?? []).filter(
-    (entry) => supportedMarketplaceVersions(entry).length > 0,
+    (entry) =>
+      marketplaceEntryCanInstall(entry) &&
+      supportedMarketplaceVersions(entry).length > 0,
+  );
+}
+
+function marketplaceEntryCanInstall(entry: PluginMarketplaceEntry): boolean {
+  return (
+    entry.compatibility === undefined ||
+    entry.compatibility === "direct"
   );
 }
 
@@ -2025,9 +2034,20 @@ function buildPluginConfigPayload(
     ) {
       continue;
     }
+    if (
+      field.required !== true &&
+      plugin.user_config?.[key] === undefined &&
+      pluginConfigValueIsBlank(values[key])
+    ) {
+      continue;
+    }
     payload[key] = parsePluginConfigValue(key, field, values[key], t);
   }
   return payload;
+}
+
+function pluginConfigValueIsBlank(value: PluginConfigFormValue): boolean {
+  return typeof value === "string" ? value.trim().length === 0 : value === undefined;
 }
 
 function parsePluginConfigValue(
@@ -2050,7 +2070,10 @@ function parsePluginConfigValue(
     if (!Number.isFinite(numberValue)) {
       throw new Error(t("settingsPluginsInvalidNumber", { name: key }));
     }
-    return fieldType === "integer" ? Math.trunc(numberValue) : numberValue;
+    if (fieldType === "integer" && !Number.isInteger(numberValue)) {
+      throw new Error(t("settingsPluginsInvalidNumber", { name: key }));
+    }
+    return numberValue;
   }
   if (fieldType === "object" || fieldType === "array") {
     const trimmed = textValue.trim();

@@ -2,6 +2,23 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-02 Plugin Settings V1 Harness Coverage Expansion
+
+### Scope
+- Re-audited `tests/integration_tests/frontend/test_plugins_settings_ui.py` instead of deleting it after the first marketplace pass.
+- Tightened the V2 Plugins settings install path for marketplace providers: ClawHub marketplace install now filters out `partial`, `unknown`, and unsupported marketplace entries while keeping direct compatible entries, and provider defaults keep ClawHub's missing-digest allowance in both load and install payloads.
+- Tightened plugin `user_config` submission: optional blank fields with no existing saved value are omitted, existing optional fields can still be explicitly cleared, and integer fields now reject fractional values instead of silently truncating them.
+- Extended `SettingsDrawer.test.tsx` with V1-harness-derived coverage for local install scoping, Claude marketplace defaults/install payload, ClawHub direct-compatible filtering/install payload, ClawHub marketplace update matching by source value, unsupported update-version filtering, and typed configuration payload boundaries.
+- Kept `tests/integration_tests/frontend/test_plugins_settings_ui.py` in place. Pending/loading states, empty-list behavior, remaining typed config edge cases, browser visual evidence, and broader System settings closure still need a separate retirement pass.
+
+### Verification
+- `npm test -- src/test/SettingsDrawer.test.tsx -t "plugins|plugin user_config"` passed with 7 matching tests.
+- `npm run lint` passed.
+- `npm run build` passed and regenerated the packed `frontend/dist/app` bundle.
+
+### Reviewer
+- Main-agent decision: this is real `SET-14` progress from a V1 harness audit, but it does not claim Plugins/System settings parity, browser visual sign-off, old harness retirement, or final V2 frontend completion.
+
 ## 2026-07-02 Plugin Settings Marketplace Selection And Update
 
 ### Scope

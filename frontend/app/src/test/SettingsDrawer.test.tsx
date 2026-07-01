@@ -1976,6 +1976,33 @@ describe("SettingsDrawer", () => {
     );
   });
 
+  it("keeps marketplace install fields scoped to marketplace mode", async () => {
+    renderDrawer();
+
+    fireEvent.click((await screen.findAllByRole("button", { name: "System" }))[0] as HTMLElement);
+    fireEvent.click((await screen.findByText("Plugins")).closest("button") as HTMLElement);
+    fireEvent.click(await screen.findByRole("button", { name: "Add Plugin" }));
+
+    expect(await screen.findByLabelText("Source")).toBeVisible();
+    expect(screen.queryByLabelText("Marketplace")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Marketplace provider")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Load marketplace" })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Source"), {
+      target: { value: "C:/plugins/local-quality" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add Plugin" }));
+
+    await waitFor(() =>
+      expect(installPluginMock).toHaveBeenCalledWith({
+        enabled: true,
+        scope: "user",
+        source: "C:/plugins/local-quality",
+        source_kind: "local",
+      }),
+    );
+  });
+
   it("loads marketplace plugins before installing the selected version", async () => {
     renderDrawer();
 
@@ -2028,6 +2055,189 @@ describe("SettingsDrawer", () => {
     );
   });
 
+  it("loads Claude marketplace plugins with provider defaults", async () => {
+    loadPluginMarketplaceMock.mockResolvedValueOnce({
+      plugins: [
+        {
+          latest: "0.3.0",
+          name: "claude-memory",
+          versions: [
+            {
+              source: {
+                kind: "git",
+                ref: "v0.3.0",
+                value: "https://github.com/anthropics/claude-memory",
+              },
+              version: "0.3.0",
+            },
+          ],
+        },
+      ],
+    });
+    renderDrawer();
+
+    fireEvent.click((await screen.findAllByRole("button", { name: "System" }))[0] as HTMLElement);
+    fireEvent.click((await screen.findByText("Plugins")).closest("button") as HTMLElement);
+    fireEvent.click(await screen.findByRole("button", { name: "Add Plugin" }));
+
+    fireEvent.mouseDown(await screen.findByRole("combobox", { name: "Source type" }));
+    fireEvent.click(await screen.findByText("Marketplace"));
+    fireEvent.mouseDown(await screen.findByRole("combobox", { name: "Marketplace provider" }));
+    await clickAntdSelectOption("claude");
+    await waitFor(() =>
+      expect(screen.getByLabelText("Marketplace")).toHaveValue(
+        "claude-plugins-official",
+      ),
+    );
+    expect(screen.getByLabelText("Marketplace source")).toHaveValue(
+      "anthropics/claude-plugins-official",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Load marketplace" }));
+
+    await waitFor(() =>
+      expect(loadPluginMarketplaceMock).toHaveBeenCalledWith({
+        allow_community_plugins: false,
+        allow_executes_code: false,
+        allow_missing_digest: false,
+        allow_unclean_scan: false,
+        fetch_all: true,
+        include_details: false,
+        marketplace: "claude-plugins-official",
+        marketplace_provider: "claude",
+        marketplace_ref: "",
+        marketplace_source: "anthropics/claude-plugins-official",
+        refresh: true,
+      }),
+    );
+    expect(await screen.findByText("claude-memory 0.3.0")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Add Plugin" }));
+
+    await waitFor(() =>
+      expect(installPluginMock).toHaveBeenCalledWith({
+        allow_community_plugins: false,
+        allow_executes_code: false,
+        allow_missing_digest: false,
+        allow_unclean_scan: false,
+        enabled: true,
+        marketplace: "claude-plugins-official",
+        marketplace_provider: "claude",
+        marketplace_ref: "",
+        marketplace_source: "anthropics/claude-plugins-official",
+        scope: "user",
+        source: "claude-memory",
+        source_kind: "marketplace",
+        version: null,
+      }),
+    );
+  });
+
+  it("loads ClawHub marketplace entries with safe direct compatibility defaults", async () => {
+    loadPluginMarketplaceMock.mockResolvedValueOnce({
+      plugins: [
+        {
+          compatibility: "direct",
+          latest: "1.0.0",
+          name: "direct-plugin",
+          provider_family: "clawhub",
+          versions: [
+            {
+              source: { kind: "git", ref: "v1.0.0", value: "https://repo/direct" },
+              version: "1.0.0",
+              warnings: ["review permissions"],
+            },
+          ],
+        },
+        {
+          compatibility: "partial",
+          latest: "1.0.0",
+          name: "partial-plugin",
+          provider_family: "clawhub",
+          versions: [
+            {
+              source: { kind: "git", ref: "v1.0.0", value: "https://repo/partial" },
+              version: "1.0.0",
+            },
+          ],
+        },
+        {
+          compatibility: "unknown",
+          latest: "1.0.0",
+          name: "unknown-plugin",
+          provider_family: "clawhub",
+          versions: [
+            {
+              source: { kind: "git", ref: "v1.0.0", value: "https://repo/unknown" },
+              version: "1.0.0",
+            },
+          ],
+        },
+        {
+          compatibility: "direct",
+          latest: "2.0.0",
+          name: "unsupported-plugin",
+          provider_family: "clawhub",
+          versions: [
+            {
+              source: { kind: "unsupported", value: "@example/plugin" },
+              unsupported_reason: "npm packages are not supported",
+              version: "2.0.0",
+            },
+          ],
+        },
+      ],
+    });
+    renderDrawer();
+
+    fireEvent.click((await screen.findAllByRole("button", { name: "System" }))[0] as HTMLElement);
+    fireEvent.click((await screen.findByText("Plugins")).closest("button") as HTMLElement);
+    fireEvent.click(await screen.findByRole("button", { name: "Add Plugin" }));
+
+    fireEvent.mouseDown(await screen.findByRole("combobox", { name: "Source type" }));
+    fireEvent.click(await screen.findByText("Marketplace"));
+    fireEvent.mouseDown(await screen.findByRole("combobox", { name: "Marketplace provider" }));
+    await clickAntdSelectOption("clawhub");
+    fireEvent.click(screen.getByRole("button", { name: "Load marketplace" }));
+
+    await waitFor(() =>
+      expect(loadPluginMarketplaceMock).toHaveBeenCalledWith({
+        allow_community_plugins: false,
+        allow_executes_code: false,
+        allow_missing_digest: true,
+        allow_unclean_scan: false,
+        fetch_all: true,
+        include_details: false,
+        marketplace: "clawhub",
+        marketplace_provider: "clawhub",
+        marketplace_ref: "",
+        marketplace_source: "https://clawhub.ai",
+        refresh: true,
+      }),
+    );
+    expect(await screen.findByText("direct-plugin 1.0.0")).toBeVisible();
+    expect(screen.queryByText("partial-plugin 1.0.0")).not.toBeInTheDocument();
+    expect(screen.queryByText("unknown-plugin 1.0.0")).not.toBeInTheDocument();
+    expect(screen.queryByText("unsupported-plugin 2.0.0")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add Plugin" }));
+    await waitFor(() =>
+      expect(installPluginMock).toHaveBeenCalledWith({
+        allow_community_plugins: false,
+        allow_executes_code: false,
+        allow_missing_digest: true,
+        allow_unclean_scan: false,
+        enabled: true,
+        marketplace: "clawhub",
+        marketplace_provider: "clawhub",
+        marketplace_ref: "",
+        marketplace_source: "https://clawhub.ai",
+        scope: "user",
+        source: "direct-plugin",
+        source_kind: "marketplace",
+        version: null,
+      }),
+    );
+  });
+
   it("selects a marketplace version before updating marketplace plugins", async () => {
     renderDrawer();
 
@@ -2065,6 +2275,82 @@ describe("SettingsDrawer", () => {
     );
   });
 
+  it("updates ClawHub marketplace plugins by matching the source value", async () => {
+    getPluginsConfigMock.mockResolvedValueOnce({
+      diagnostics: [],
+      plugins: [
+        {
+          description: "Feishu integration",
+          enabled: true,
+          name: "feishu",
+          scope: "user",
+          source: {
+            kind: "marketplace",
+            marketplace: "clawhub",
+            marketplace_provider: "clawhub",
+            marketplace_source: "https://clawhub.ai",
+            value: "@openclaw/feishu",
+          },
+          valid: true,
+          version: "0.9.0",
+        },
+      ],
+    });
+    loadPluginMarketplaceMock.mockResolvedValueOnce({
+      plugins: [
+        {
+          compatibility: "direct",
+          latest: "2.0.0",
+          name: "@openclaw/feishu",
+          provider_family: "clawhub",
+          versions: [
+            {
+              source: { kind: "unsupported", value: "@openclaw/feishu" },
+              unsupported_reason: "native package is not supported",
+              version: "2.0.0",
+            },
+            {
+              source: { kind: "git", ref: "v1.1.0", value: "https://repo/feishu" },
+              version: "1.1.0",
+            },
+          ],
+        },
+      ],
+    });
+    renderDrawer();
+
+    fireEvent.click((await screen.findAllByRole("button", { name: "System" }))[0] as HTMLElement);
+    fireEvent.click((await screen.findByText("Plugins")).closest("button") as HTMLElement);
+    const feishuRow = (await screen.findByText("feishu")).closest(
+      ".at-plugin-list-row",
+    ) as HTMLElement;
+    fireEvent.click(within(feishuRow).getByRole("button", { name: "Update" }));
+
+    await waitFor(() =>
+      expect(loadPluginMarketplaceMock).toHaveBeenCalledWith({
+        allow_missing_digest: true,
+        fetch_all: true,
+        include_details: true,
+        marketplace: "clawhub",
+        marketplace_provider: "clawhub",
+        marketplace_ref: "",
+        marketplace_source: "https://clawhub.ai",
+        refresh: true,
+      }),
+    );
+    expect(await screen.findByText("1.1.0 v1.1.0")).toBeVisible();
+    expect(screen.queryByText("2.0.0")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Update" }));
+
+    await waitFor(() =>
+      expect(updatePluginMock).toHaveBeenCalledWith("feishu", {
+        allow_missing_digest: true,
+        scope: "user",
+        version: "1.1.0",
+      }),
+    );
+  });
+
   it("configures plugin user_config without resending unchanged sensitive values", async () => {
     renderDrawer();
 
@@ -2090,6 +2376,102 @@ describe("SettingsDrawer", () => {
         user_config: {
           endpoint: "https://docs.changed",
           payload: { mode: "loose" },
+        },
+      }),
+    );
+  });
+
+  it("validates typed plugin user_config values before saving", async () => {
+    getPluginsConfigMock.mockResolvedValueOnce({
+      diagnostics: [],
+      plugins: [
+        {
+          description: "Typed configuration",
+          enabled: true,
+          manifest: {
+            user_config: {
+              existing_optional: {
+                title: "Existing optional",
+                type: "string",
+              },
+              metadata: {
+                title: "Metadata",
+                type: "object",
+              },
+              notes: {
+                title: "Notes",
+              },
+              retries: {
+                title: "Retries",
+                type: "integer",
+              },
+              secret_flag: {
+                sensitive: true,
+                title: "Secret flag",
+                type: "boolean",
+              },
+              secret_json: {
+                sensitive: true,
+                title: "Secret JSON",
+                type: "object",
+              },
+              tags: {
+                title: "Tags",
+                type: "array",
+              },
+            },
+          },
+          name: "typed-config",
+          scope: "user",
+          user_config: {
+            existing_optional: "clear me",
+            secret_flag: "<configured>",
+            secret_json: "<configured>",
+          },
+          valid: true,
+          version: "1.0.0",
+        },
+      ],
+    });
+    renderDrawer();
+
+    fireEvent.click((await screen.findAllByRole("button", { name: "System" }))[0] as HTMLElement);
+    fireEvent.click((await screen.findByText("Plugins")).closest("button") as HTMLElement);
+    const typedRow = (await screen.findByText("typed-config")).closest(
+      ".at-plugin-list-row",
+    ) as HTMLElement;
+    fireEvent.click(within(typedRow).getByRole("button", { name: "Configure" }));
+
+    fireEvent.change(await screen.findByLabelText("Retries"), {
+      target: { value: "2.9" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(configurePluginMock).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText("Retries"), {
+      target: { value: "100" },
+    });
+    fireEvent.change(screen.getByLabelText("Tags"), {
+      target: { value: "[\"fast\",\"safe\"]" },
+    });
+    fireEvent.change(screen.getByLabelText("Metadata"), {
+      target: { value: "{\"mode\":\"strict\"}" },
+    });
+    fireEvent.change(screen.getByLabelText("Existing optional"), {
+      target: { value: "" },
+    });
+    fireEvent.click(screen.getByRole("switch", { name: "Secret flag" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(configurePluginMock).toHaveBeenCalledWith("typed-config", {
+        scope: "user",
+        user_config: {
+          existing_optional: "",
+          metadata: { mode: "strict" },
+          retries: 100,
+          secret_flag: false,
+          tags: ["fast", "safe"],
         },
       }),
     );
@@ -3930,6 +4312,17 @@ async function openOrchestrationSettings() {
   });
   fireEvent.click(within(sections).getByRole("button", { name: "Orchestration" }));
   await screen.findByText("Default preset");
+}
+
+async function clickAntdSelectOption(label: string) {
+  const matchingNodes = await screen.findAllByText(label);
+  const optionContent = matchingNodes.find((node) =>
+    node.classList.contains("ant-select-item-option-content"),
+  );
+  if (!(optionContent instanceof HTMLElement)) {
+    throw new Error(`Select option not found: ${label}`);
+  }
+  fireEvent.click(optionContent);
 }
 
 function installDesktopApi(version: string) {

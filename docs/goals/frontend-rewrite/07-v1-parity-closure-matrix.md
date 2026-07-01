@@ -114,6 +114,12 @@ For every row moved to `Verified`, record:
 
 ## Verification Ledger
 
+### 2026-07-02 Plugin Settings V1 Harness Coverage Expansion
+
+- `SET-14` tightened: Plugins settings now filters ClawHub marketplace installs to direct-compatible supported entries, preserves Claude and ClawHub provider defaults through load/install/update payloads, matches ClawHub updates by marketplace source value, rejects fractional integer config values instead of truncating them, omits blank optional new config fields, and still allows explicit clearing of existing optional fields.
+- `CLEAN-01` unchanged for the legacy plugins harness: `tests/integration_tests/frontend/test_plugins_settings_ui.py` remains because pending/loading states, empty-list behavior, remaining typed config edges, browser visual evidence, and broader System settings closure are not done in this slice.
+- Evidence: `npm test -- src/test/SettingsDrawer.test.tsx -t "plugins|plugin user_config"`, `npm run lint`, and `npm run build`.
+
 ### 2026-07-02 Plugin Settings Marketplace Selection And Update
 
 - `SET-14` tightened: Plugins settings now has V2-native marketplace loading on the Add Plugin secondary page, filters unsupported marketplace versions, preserves provider/source/ref/version/safety payload fields, and opens a marketplace-specific Update secondary page for installed marketplace plugins.

@@ -458,6 +458,71 @@ describe("SessionsSidebar", () => {
     ).toBeVisible();
   });
 
+  it("restores the V1 chronological sessions mode without workspace cards", async () => {
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+      {
+        workspace_id: "workspace-2",
+        root_path: "C:/work/desktop",
+        display_name: "Desktop",
+        created_at: "2026-06-01T00:00:00Z",
+        updated_at: "2026-06-01T00:00:00Z",
+      },
+    ]);
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        session_id: "session-old",
+        title: "Older Alpha",
+        updated_at: "2026-06-23T10:00:00Z",
+        workspace_id: "workspace-1",
+      },
+      {
+        session_id: "session-new",
+        title: "Newer Beta",
+        updated_at: "2026-06-23T11:00:00Z",
+        workspace_id: "workspace-2",
+      },
+    ]);
+
+    renderSidebar();
+
+    expect(await screen.findByText("Agent Teams")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Sort by project update" }));
+
+    expect(await screen.findByText("Sort by project creation")).toBeInTheDocument();
+    expect(screen.getByText("Sort by project update")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Chronological sessions"));
+
+    expect(
+      await screen.findByRole("button", { name: "Chronological sessions" }),
+    ).toBeVisible();
+    expect(screen.getByText("Sessions")).toBeVisible();
+    expect(
+      screen.queryByRole("button", {
+        name: "New session in Agent Teams",
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", {
+        name: "New session in Desktop",
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      appearsBefore(screen.getByText("Newer Beta"), screen.getByText("Older Alpha")),
+    ).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Newer Beta" }));
+
+    expect(useUiStore.getState().selectedSessionId).toBe("session-new");
+    expect(useUiStore.getState().selectedWorkspaceId).toBe("workspace-2");
+  });
+
   it("creates a session from a workspace project row", async () => {
     listWorkspacesMock.mockResolvedValue([
       {

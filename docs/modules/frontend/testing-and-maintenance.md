@@ -52,6 +52,7 @@ npm test -- src/test/apiClient.test.ts
 npm test -- src/test/frontendLogger.test.ts
 npm test -- src/test/MessageTimeline.test.tsx
 npm test -- src/test/AppBuildArtifacts.test.ts
+npm test -- src/test/SessionsSidebar.test.tsx
 ```
 
 涉及消息流、SSE、round、recovery 的变更建议补充：

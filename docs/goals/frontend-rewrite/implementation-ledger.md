@@ -2,6 +2,22 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-02 Projects Sidebar Python Harness Removal
+
+### Scope
+- Removed `tests/integration_tests/frontend/test_projects_sidebar_ui.py`, the legacy fake-DOM harness for the old `frontend/dist/js/components/sidebar.js` project/session sidebar.
+- While mapping the old assertions, found a real V1 parity gap: the V2 sidebar sort menu had lost the V1 `Chronological sessions` mode and only supported project-created/project-updated grouping.
+- Restored the chronological mode in `frontend/app/src/features/sessions/SessionsSidebar.tsx`. In that mode, the sidebar renders a flat session list sorted by session `updated_at`, hides per-workspace new/delete project controls, preserves the same capped `Show more` behavior, and still restores the selected session's workspace when a row is opened.
+- Added English and Chinese i18n labels for the restored sort mode and flat-list `Show more sessions` affordance.
+- Extended `frontend/app/src/test/SessionsSidebar.test.tsx` so the TS component test now covers the V1 sort-menu inventory, chronological session order, absence of workspace row actions in chronological mode, and cross-workspace selection recovery from the flat list.
+- Did not restore the old V1 subagent-directory behavior from this harness. The current V2 product decision, per the user direction, keeps subagent details in the right-side subagent panel opened from the subagent tool card rather than as nested sidebar directories.
+
+### Verification
+- `npm test -- src/test/SessionsSidebar.test.tsx` passed with 32 tests.
+
+### Reviewer
+- Main-agent decision: this retires one more integration frontend Python UI harness, fixes an actual V1 sidebar parity gap found during migration, and tightens `SESS-02`/`CLEAN-01`. It does not claim full sessions/projects verification, browser screenshot sign-off, remaining Python harness cleanup, reviewer sign-off, or final V2 frontend completion.
+
 ## 2026-07-02 API Facade Python Harness Removal
 
 ### Scope

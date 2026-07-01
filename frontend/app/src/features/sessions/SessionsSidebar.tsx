@@ -59,11 +59,12 @@ const initialVisibleSessionsPerGroup = 10;
 const visibleSessionIncrement = 20;
 const activeRunIndicatorStatuses = new Set(["queued", "running", "stopping"]);
 const maxConcurrentSessionSubagentLoads = 2;
+const chronologicalSessionGroupId = "__chronological_sessions__";
 let activeSessionSubagentLoads = 0;
 const queuedSessionSubagentLoads: SessionSubagentLoadTask[] = [];
 
 type SessionRunIndicatorType = "failed" | "running" | "stopped" | "unread";
-type WorkspaceSortMode = "project_updated" | "project_created";
+type WorkspaceSortMode = "project_updated" | "project_created" | "time";
 
 interface SessionSubagentLoadTask {
   run: () => void;
@@ -389,7 +390,20 @@ export function SessionsSidebar({
     });
   }, [filter, sessionsQuery.data, workspaceOptions]);
   const isFiltering = filter.trim().length > 0;
-  const includeEmptyWorkspaces = !isFiltering;
+  const isChronologicalMode = workspaceSortMode === "time";
+  const includeEmptyWorkspaces = !isFiltering && !isChronologicalMode;
+  const chronologicalSessions = useMemo(
+    () => sortSessions(filteredSessions),
+    [filteredSessions],
+  );
+  const visibleChronologicalSessions = visibleSessionsForList(
+    chronologicalSessions,
+    selectedSessionId,
+    visibleSessionLimits[chronologicalSessionGroupId],
+    isFiltering,
+  );
+  const hiddenChronologicalSessionCount =
+    chronologicalSessions.length - visibleChronologicalSessions.length;
   const sessionGroups = useMemo(
     () =>
       buildSessionGroups(
@@ -404,16 +418,23 @@ export function SessionsSidebar({
     (total, group) => total + group.sessions.length,
     0,
   );
+  const totalAvailableSessions = isChronologicalMode
+    ? chronologicalSessions.length
+    : totalVisibleSessions;
   const showSearchRow = searchExpanded || isFiltering;
   const sortLabel = workspaceSortLabel(workspaceSortMode, t);
   const sortMenuItems: MenuProps["items"] = [
+    {
+      key: "project_created",
+      label: t("sidebarSortProjectCreated"),
+    },
     {
       key: "project_updated",
       label: t("sidebarSortProjectUpdated"),
     },
     {
-      key: "project_created",
-      label: t("sidebarSortProjectCreated"),
+      key: "time",
+      label: t("sidebarSortChronologicalSessions"),
     },
   ];
 
@@ -434,7 +455,66 @@ export function SessionsSidebar({
     }
     scrolledSelectedSessionIdRef.current = selectedSessionId;
     selectedSessionItem.scrollIntoView({ block: "nearest" });
-  }, [selectedSessionId, totalVisibleSessions]);
+  }, [selectedSessionId, totalAvailableSessions]);
+
+  function renderSessionStack(session: SessionSidebarRecord) {
+    const selected = session.session_id === selectedSessionId;
+    const rawIndicatorType = sessionRunIndicatorType(session);
+    const indicatorType =
+      selected && rawIndicatorType === "unread" ? null : rawIndicatorType;
+    return (
+      <div className="at-session-stack" key={session.session_id}>
+        <div
+          className={sessionItemClassName(selected, indicatorType)}
+          ref={selected ? selectedSessionItemRef : undefined}
+        >
+          <div className="at-session-copy">
+            <button
+              aria-current={selected ? "page" : undefined}
+              className="at-session-select"
+              onClick={() => selectSession(session)}
+              title={sessionLabel(session)}
+              type="button"
+            >
+              <Typography.Text
+                className="at-session-label"
+                ellipsis
+                title={sessionLabel(session)}
+              >
+                {sessionLabel(session)}
+              </Typography.Text>
+            </button>
+            <div className="at-session-meta-slot">
+              {sessionMeta(session, t, language, indicatorType)}
+            </div>
+          </div>
+          <div className="at-session-actions">
+            <Tooltip title={t("sidebarRenameSession")}>
+              <Button
+                aria-label={t("sidebarRenameSession")}
+                className="at-session-action-button"
+                icon={<Pencil size={13} />}
+                onClick={() => openRenameSession(session)}
+                size="small"
+                type="text"
+              />
+            </Tooltip>
+            <Tooltip title={t("sidebarDeleteSession")}>
+              <Button
+                aria-label={t("sidebarDeleteSession")}
+                className="at-session-action-button"
+                danger
+                icon={<Trash2 size={13} />}
+                onClick={() => openDeleteSession(session)}
+                size="small"
+                type="text"
+              />
+            </Tooltip>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="at-sidebar-inner">
@@ -492,7 +572,11 @@ export function SessionsSidebar({
             menu={{
               items: sortMenuItems,
               onClick: ({ key }) => {
-                if (key === "project_created" || key === "project_updated") {
+                if (
+                  key === "project_created" ||
+                  key === "project_updated" ||
+                  key === "time"
+                ) {
                   setWorkspaceSortMode(key);
                 }
               },
@@ -531,12 +615,45 @@ export function SessionsSidebar({
       ) : null}
       {!sessionsQuery.isLoading &&
       !sessionsQuery.isError &&
-      totalVisibleSessions === 0 &&
+      totalAvailableSessions === 0 &&
       sessionGroups.length === 0 ? (
         <Empty description={t("sidebarNoSessions")} image={Empty.PRESENTED_IMAGE_SIMPLE} />
       ) : null}
       <div className="at-session-list">
-        {sessionGroups.map((group) => {
+        {isChronologicalMode && chronologicalSessions.length > 0 ? (
+          <section
+            aria-label={t("sidebarSortChronologicalSessions")}
+            className="at-workspace-group at-session-flat-group"
+          >
+            <div className="at-workspace-group-header at-session-flat-header">
+              <span className="at-workspace-group-title">
+                {t("workspaceSessions")}
+              </span>
+              <span className="at-workspace-group-path">
+                {visibleChronologicalSessions.length}/{chronologicalSessions.length}
+              </span>
+            </div>
+            <div className="at-workspace-group-sessions">
+              {visibleChronologicalSessions.map(renderSessionStack)}
+              {hiddenChronologicalSessionCount > 0 ? (
+                <button
+                  aria-label={t("sidebarShowMoreSessions")}
+                  className="at-workspace-group-more"
+                  onClick={() => showMoreSessions(chronologicalSessionGroupId)}
+                  type="button"
+                >
+                  <ChevronDown aria-hidden="true" size={14} />
+                  <span>{t("sidebarShowMore")}</span>
+                  <span className="at-workspace-group-more-count">
+                    {visibleChronologicalSessions.length}/
+                    {chronologicalSessions.length}
+                  </span>
+                </button>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
+        {!isChronologicalMode ? sessionGroups.map((group) => {
           const workspaceRecord = workspaceById.get(group.id);
           const groupExpanded = isFiltering || workspaceExpanded[group.id] !== false;
           const visibleSessions = visibleSessionsForGroup(
@@ -645,66 +762,7 @@ export function SessionsSidebar({
               ) : null}
               {groupExpanded && group.sessions.length > 0 ? (
                 <div className="at-workspace-group-sessions">
-                  {visibleSessions.map((session) => {
-                    const selected = session.session_id === selectedSessionId;
-                    const rawIndicatorType = sessionRunIndicatorType(session);
-                    const indicatorType =
-                      selected && rawIndicatorType === "unread"
-                        ? null
-                        : rawIndicatorType;
-                    return (
-                      <div className="at-session-stack" key={session.session_id}>
-                        <div
-                          className={sessionItemClassName(selected, indicatorType)}
-                          ref={selected ? selectedSessionItemRef : undefined}
-                        >
-                          <div className="at-session-copy">
-                            <button
-                              aria-current={selected ? "page" : undefined}
-                              className="at-session-select"
-                              onClick={() => selectSession(session)}
-                              title={sessionLabel(session)}
-                              type="button"
-                            >
-                              <Typography.Text
-                                className="at-session-label"
-                                ellipsis
-                                title={sessionLabel(session)}
-                              >
-                                {sessionLabel(session)}
-                              </Typography.Text>
-                            </button>
-                            <div className="at-session-meta-slot">
-                              {sessionMeta(session, t, language, indicatorType)}
-                            </div>
-                          </div>
-                          <div className="at-session-actions">
-                            <Tooltip title={t("sidebarRenameSession")}>
-                              <Button
-                                aria-label={t("sidebarRenameSession")}
-                                className="at-session-action-button"
-                                icon={<Pencil size={13} />}
-                                onClick={() => openRenameSession(session)}
-                                size="small"
-                                type="text"
-                              />
-                            </Tooltip>
-                            <Tooltip title={t("sidebarDeleteSession")}>
-                              <Button
-                                aria-label={t("sidebarDeleteSession")}
-                                className="at-session-action-button"
-                                danger
-                                icon={<Trash2 size={13} />}
-                                onClick={() => openDeleteSession(session)}
-                                size="small"
-                                type="text"
-                              />
-                            </Tooltip>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {visibleSessions.map(renderSessionStack)}
                   {hiddenSessionCount > 0 ? (
                     <button
                       aria-label={t("sidebarShowMoreInWorkspace", {
@@ -725,7 +783,7 @@ export function SessionsSidebar({
               ) : null}
             </section>
           );
-        })}
+        }) : null}
       </div>
       {backendStatus !== undefined ? (
         <div className="at-sidebar-footer">
@@ -1249,6 +1307,9 @@ function workspaceSortLabel(sortMode: WorkspaceSortMode, t: Translate): string {
   if (sortMode === "project_created") {
     return t("sidebarSortProjectCreated");
   }
+  if (sortMode === "time") {
+    return t("sidebarSortChronologicalSessions");
+  }
   return t("sidebarSortProjectUpdated");
 }
 
@@ -1352,26 +1413,40 @@ function visibleSessionsForGroup(
   visibleLimit: number | undefined,
   isFiltering: boolean,
 ): SessionSidebarRecord[] {
+  return visibleSessionsForList(
+    group.sessions,
+    selectedSessionId,
+    visibleLimit,
+    isFiltering,
+  );
+}
+
+function visibleSessionsForList(
+  sessions: SessionSidebarRecord[],
+  selectedSessionId: string | null,
+  visibleLimit: number | undefined,
+  isFiltering: boolean,
+): SessionSidebarRecord[] {
   if (isFiltering) {
-    return group.sessions;
+    return sessions;
   }
   const limit = Math.max(
     initialVisibleSessionsPerGroup,
     visibleLimit ?? initialVisibleSessionsPerGroup,
   );
-  if (group.sessions.length <= limit) {
-    return group.sessions;
+  if (sessions.length <= limit) {
+    return sessions;
   }
-  const selectedIndex = group.sessions.findIndex(
+  const selectedIndex = sessions.findIndex(
     (session) => session.session_id === selectedSessionId,
   );
   if (selectedIndex >= limit && limit > 1) {
     return [
-      ...group.sessions.slice(0, limit - 1),
-      group.sessions[selectedIndex],
+      ...sessions.slice(0, limit - 1),
+      sessions[selectedIndex],
     ];
   }
-  return group.sessions.slice(0, limit);
+  return sessions.slice(0, limit);
 }
 
 function sessionTimestampValue(session: SessionSidebarRecord): number {

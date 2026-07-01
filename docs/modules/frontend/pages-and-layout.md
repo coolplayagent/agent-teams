@@ -2,7 +2,11 @@
 
 ## 页面骨架
 
-`frontend/dist/index.html` 定义了长期存在的页面骨架：
+当前 V2 页面骨架由 `frontend/app/src/features/shell/AppShell.tsx`、
+`frontend/app/src/features/shell/ChatWorkspace.tsx` 和
+`frontend/app/src/styles/theme.css` 定义，构建后输出到
+`frontend/dist/app/index.html`。旧 `frontend/dist/index.html` 只作为 V1
+历史上下文保留。
 
 - `.app-shell`：全屏应用容器，纵向包含 topbar 和 app container。
 - `.topbar`：顶部栏，包含 sidebar toggle、workspace 标题、语言、observability、settings、theme、subagents toggle。
@@ -13,7 +17,7 @@
 - `.right-rail`：subagent rail 与 inspector。
 - `.input-container`：prompt composer、恢复审批入口、模式/role 控件、usage strip。
 
-CSS 中 `base.css` 定义主题 token，`layout.css` 定义 shell、sidebar、workspace、composer 等主要布局，`components/*` 定义页面局部样式。
+V2 的主要布局和主题 token 位于 `frontend/app/src/styles/theme.css`，页面局部结构由 React 组件维护。
 
 动画、过渡和加载态的完整说明见 `motion-and-loading-states.md`。本页只在各页面小节说明动效入口，不重复展开具体 keyframes。
 
@@ -30,10 +34,10 @@ CSS 中 `base.css` 定义主题 token，`layout.css` 定义 shell、sidebar、wo
 
 负责模块：
 
-- `components/navbar.js` 绑定 sidebar、theme、right rail 等布局行为。
-- `components/settings.js` 打开设置弹窗。
-- `components/observability.js` 打开观测视图。
-- `utils/i18n.js` 切换语言。
+- `features/shell/AppShell.tsx` 绑定 sidebar、theme、subagent panel、settings 和 primary navigation。
+- `features/settings/SettingsCenter.tsx` 与 `SettingsDrawer.tsx` 负责设置。
+- `features/observability/*` 负责观测视图。
+- `i18n.ts` 和 `runtime/uiStore.ts` 负责语言与持久化 UI 状态。
 
 页面表现：
 
@@ -88,23 +92,21 @@ CSS 中 `base.css` 定义主题 token，`layout.css` 定义 shell、sidebar、wo
 
 依赖 API：
 
-- sessions、workspaces、automation、gateway、trigger 等 API 通过 `core/api` facade 调用。
+- sessions、workspaces、automation、gateway、trigger 等 API 通过 `frontend/app/src/api/client.ts` typed client 调用。
 
 ## 新会话草稿页
 
-入口 DOM：
+入口组件：
 
-- 主容器由 `components/newSessionDraft.js` 在 workspace 中渲染。
-- 输入仍复用 `#prompt-input`、`#chat-form`、`#send-btn` 等 composer DOM。
+- 新会话由 `SessionsSidebar.tsx` 触发，`AppShell.tsx` 和 `ChatWorkspace.tsx` 保持 workspace/composer 状态。
+- 输入由 `features/composer/Composer.tsx` 维护，不再复用 V1 的全局 DOM id。
 
 负责模块：
 
-- `components/newSessionDraft.js`
-- `components/newSessionDraftView.js`
-- `components/newSessionDraftQuickCards.js`
-- `components/newSessionDraftAside.js`
-- `components/newSessionDraftIcons.js`
-- `app/prompt.js`
+- `features/shell/AppShell.tsx`
+- `features/sessions/SessionsSidebar.tsx`
+- `features/composer/Composer.tsx`
+- `runtime/useRunStreamController.ts`
 
 主要状态：
 

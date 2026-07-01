@@ -114,6 +114,15 @@ For every row moved to `Verified`, record:
 
 ## Verification Ledger
 
+### 2026-07-02 App Build Artifact Harness Migration
+
+- `CLEAN-01` tightened: removed `tests/integration_tests/browser/test_frontend_module_loading.py`, the old Python browser-style harness that walked V1 `frontend/dist/js` modules and imported retired `subagentRail.js`, `connectorCards.js`, and `newSessionDraft.js` fake-DOM modules.
+- V2 ownership is now explicit for this proof path: `AppBuildArtifacts.test.ts` verifies the committed React app entry under `frontend/dist/app/index.html` references existing `/app/assets/*` bundles and no longer depends on retired hand-maintained `/js/` modules.
+- Behavior-specific coverage remains in current TS/browser tests instead of the deleted V1 module harness: subagent panel behavior, connector cards/actions, and new-session/session-switch behavior are owned by `AppShell.test.tsx`, `SubagentSessionView.test.tsx`, `ConnectorsView.test.tsx`, `ChatWorkspace.test.tsx`, and the relevant packed browser specs.
+- Updated frontend testing maintenance docs so the recommended module-loading/build-artifact check is `npm test -- src/test/AppBuildArtifacts.test.ts`, not the removed Python path.
+- Automated evidence: `npm test -- src/test/AppBuildArtifacts.test.ts`.
+- Remaining before cleanup verification: broader `tests/integration_tests/frontend/*.py` harness retirement, promoted-route naming decision, migration-only file/test naming decision, and reviewer sign-off.
+
 ### 2026-07-02 Real Backend Terminal Settlement And Subagent Stream Replay
 
 - `MSG-02`/`STREAM-02` tightened with real local backend evidence for the failure class reported in the browser: a normal live run can stream, settle, hard refresh, and replay the final answer exactly once with no stale `running` marker, no prefix-only runtime row, no repeated-tail row, no stale cursor, and no document-level scroll.

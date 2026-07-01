@@ -2,6 +2,20 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-02 App Build Artifact Python Harness Removal
+
+### Scope
+- Removed `tests/integration_tests/browser/test_frontend_module_loading.py`, a legacy integration harness that walked old `frontend/dist/js` modules and imported V1-era `subagentRail.js`, `connectorCards.js`, and `newSessionDraft.js` in a fake DOM.
+- Added `frontend/app/src/test/AppBuildArtifacts.test.ts` as the V2-owned replacement for the remaining useful assertion: the committed React app entry under `frontend/dist/app/index.html` must reference existing `/app/assets/*` bundles and must not depend on retired hand-maintained `frontend/dist/js` modules.
+- Confirmed behavior-specific ownership already lives in current V2 tests rather than the deleted V1 module harness: subagent panel behavior in `AppShell.test.tsx`, `SubagentSessionView.test.tsx`, and `v2-subagent-session.spec.ts`; connectors in `ConnectorsView.test.tsx` and `v2-shell-parity.spec.ts`; new session/session switching in `AppShell.test.tsx`, `ChatWorkspace.test.tsx`, and shell/browser parity coverage.
+- Updated `docs/modules/frontend/testing-and-maintenance.md` so recommended frontend verification commands point at current TS/Vite tests instead of the removed Python module-loading path.
+
+### Verification
+- `npm test -- src/test/AppBuildArtifacts.test.ts` passed with 2 tests.
+
+### Reviewer
+- Main-agent decision: this retires one more old Python browser-style UI proof path and tightens `CLEAN-01`. It does not claim full cleanup, remaining integration frontend harness retirement, reviewer sign-off, or final V2 frontend completion.
+
 ## 2026-07-01 Round Prompt And CSS Module Python Harness Removal
 
 ### Scope

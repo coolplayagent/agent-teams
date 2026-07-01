@@ -135,8 +135,9 @@ The Connectors feature view includes a Discord connector card with:
 - workspace, session mode, role/preset, YOLO, and thinking controls
 - enable, disable, and delete actions
 
-Frontend calls go through `frontend/dist/js/core/api/gateway.js` and are re-exported
-from the API facade.
+Frontend calls go through the React typed API client under
+`frontend/app/src/api/client.ts` with gateway-related contracts in
+`frontend/app/src/api/contracts.ts`.
 
 ## Security And Operations
 

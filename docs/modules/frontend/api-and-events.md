@@ -2,25 +2,29 @@
 
 ## API Facade
 
-前端所有后端调用应通过 `frontend/dist/js/core/api/index.js` 统一导出的 facade。它按后端领域聚合具体模块：
+当前 React 前端的所有后端调用应通过 `frontend/app/src/api/client.ts`
+和 `frontend/app/src/api/contracts.ts` 暴露的 typed client 与契约模型。
+旧 `frontend/dist/js/core/api/*` 只作为 V1 历史上下文保留，不应作为 V2
+新增 UI 的证明路径或新代码入口。
 
-- `sessions.js`：session、history、round、tasks、agents、subagents、recovery、topology。
-- `runs.js`：创建 run、stop/resume、gate、tool approval、user question、background task、message injection。
-- `roles.js`：role config、options、validate。
-- `system.js`：配置状态、模型、MCP、commands、hooks、agents、notifications、web、proxy、GitHub、ClawHub、SSH、environment、health。
-- `workspaces.js`：workspace 列表、snapshot、tree、diff、open、fork、search。
-- `triggers.js`：Feishu/GitHub trigger 相关接口。
-- `gateway.js`：Discord、WeChat、Xiaoluban gateway。
-- `automation.js`：automation project、delivery binding、sessions、run now。
-- `observability.js`：overview 和 breakdowns。
-- `token_usage.js`：run/session token usage。
+V2 typed client 按后端领域聚合具体 API：
+
+- sessions：session、history、round、tasks、agents、subagents、recovery、topology。
+- runs：创建 run、stop/resume、gate、tool approval、user question、background task、message injection。
+- roles/settings：role config、options、validate。
+- system/settings：配置状态、模型、MCP、commands、hooks、agents、notifications、web、proxy、GitHub、ClawHub、SSH、environment、health。
+- workspaces：workspace 列表、snapshot、tree、diff、open、fork、search。
+- triggers/gateway：Feishu/GitHub trigger、Discord、WeChat、Xiaoluban gateway。
+- automation：automation project、delivery binding、sessions、run now。
+- observability：overview 和 breakdowns。
+- token usage：run/session token usage。
 - speech config 和 STT WebSocket URL 由 system/speech facade 暴露，供 Speech settings 与语音输入组件复用。
 
-组件不应直接绕过这些 facade 在局部重新实现请求封装。新增 API 时应先放入对应领域模块，再从 `core/api/index.js` 导出。
+组件不应直接绕过 typed client 在局部重新实现请求封装。新增 API 时应先放入 `frontend/app/src/api/client.ts` 的对应领域函数，并补充 `contracts.ts` 类型和 `apiClient.test.ts` 覆盖。
 
 ## 请求策略
 
-共享请求 helper 位于 `core/api/request.js`。
+共享请求 helper 位于 `frontend/app/src/api/http.ts`。
 
 ### requestJson
 
@@ -52,7 +56,7 @@
 
 请求成功会 emit `agent-teams-backend-status-hint` online，异常会 emit offline。hint 有 30 秒重复抑制，避免频繁刷新 UI。
 
-`utils/backendStatus.js` 监听该 hint，并结合主动探测更新左下角 backend status。
+V2 shell 通过 `AppShell.tsx` 的主动 health 查询和请求状态反馈更新后端状态。
 
 ## 主要 API 依赖地图
 

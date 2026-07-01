@@ -6,7 +6,8 @@
 
 ### 单元测试
 
-`tests/unit_tests/frontend/` 覆盖静态前端模块的行为和结构。当前测试主题包括：
+当前 React 前端测试主要在 `frontend/app/src/test/`，旧
+`tests/unit_tests/frontend/` 只保留少量非 UI 辅助覆盖。当前测试主题包括：
 
 - API facade 和 request helper。
 - backend status。
@@ -27,11 +28,12 @@
 
 ### 浏览器集成测试
 
-`tests/integration_tests/browser/` 覆盖真实浏览器或浏览器式场景：
+当前 V2 浏览器测试主要在 `frontend/app/browser-tests/`。旧
+`tests/integration_tests/browser/` 只保留非 V2 UI 的浏览器式后端集成辅助。当前测试主题包括：
 
 - backend status pressure。
 - browser smoke。
-- frontend module loading。
+- V2 app build artifact wiring。
 - streaming message timeline。
 - message copy actions。
 - ClawHub browser flow。
@@ -43,18 +45,19 @@
 文档变更通常不需要跑前端测试。前端代码或页面表现变更建议至少运行：
 
 ```powershell
-uv run --extra dev pytest -q tests/unit_tests/frontend/test_core_api_facade_exports.py
-uv run --extra dev pytest -q tests/unit_tests/frontend/test_message_renderer_facade_exports.py
-uv run --extra dev pytest -q tests/integration_tests/browser/test_frontend_module_loading.py
+cd frontend/app
+npm test -- src/test/apiClient.test.ts
+npm test -- src/test/MessageTimeline.test.tsx
+npm test -- src/test/AppBuildArtifacts.test.ts
 ```
 
 涉及消息流、SSE、round、recovery 的变更建议补充：
 
 ```powershell
-uv run --extra dev pytest -q tests/unit_tests/frontend/test_run_events_ui.py
-uv run --extra dev pytest -q tests/unit_tests/frontend/test_recovery_stream_ui.py
-uv run --extra dev pytest -q tests/unit_tests/frontend/test_message_timeline_ui.py
-uv run --extra dev pytest -q tests/integration_tests/browser/test_streaming_message_timeline.py
+cd frontend/app
+npm test -- src/test/runtimeReducers.test.ts src/test/streamClient.test.ts
+npm test -- src/test/RunStreamController.test.tsx src/test/MessageTimeline.test.tsx
+npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium
 ```
 
 涉及 settings 的变更建议运行对应 panel 测试，例如：
@@ -69,9 +72,10 @@ npm test -- src/test/RuntimeSettingsSections.test.tsx
 涉及 speech、composer action rail 或 session switch loading 的变更建议补充：
 
 ```powershell
-uv run --extra dev pytest -q tests/unit_tests/frontend/test_speech_ui.py
-uv run --extra dev pytest -q tests/integration_tests/browser/test_voice_input_audio.py
-uv run --extra dev pytest -q tests/unit_tests/frontend/test_session_selection_ui.py
+cd frontend/app
+npm test -- src/test/Composer.test.tsx
+npm run test:browser -- voice-input-audio.spec.ts --project=chromium
+npm test -- src/test/AppShell.test.tsx src/test/ChatWorkspace.test.tsx
 ```
 
 完整仓库自检仍以根目录 `AGENTS.md` 的 pre-commit self-check 为准。
@@ -81,7 +85,7 @@ uv run --extra dev pytest -q tests/unit_tests/frontend/test_session_selection_ui
 ### 保持接口边界
 
 - 前端只能通过 `/api/*` HTTP/SSE 与后端交互。
-- 新增后端接口时，在 `frontend/dist/js/core/api/` 对应领域模块中封装，并从 `core/api/index.js` 导出。
+- 新增后端接口时，在 `frontend/app/src/api/` 对应领域模块中封装，并从 typed client 导出。
 - 组件中不要散落裸 `fetch()`，除非是底层请求 helper 或非常明确的浏览器能力。
 
 ### 保持模块边界

@@ -4,14 +4,16 @@
 
 负责模块：
 
-- `app/session.js`
-- `app/sessionView.js`
-- `app/recovery.js`
-- `core/stream.js`
-- `components/sidebar.js`
-- `components/messageRenderer.js`
-- `components/subagentSessions.js`
-- `components/subagentRail.js`
+- `frontend/app/src/features/shell/AppShell.tsx`
+- `frontend/app/src/features/shell/ChatWorkspace.tsx`
+- `frontend/app/src/features/sessions/SessionsSidebar.tsx`
+- `frontend/app/src/features/timeline/MessageTimeline.tsx`
+- `frontend/app/src/features/recovery/RecoveryBar.tsx`
+- `frontend/app/src/features/sessions/SubagentSessionView.tsx`
+- `frontend/app/src/runtime/useRunStreamController.ts`
+
+旧 `app/*.js`、`core/stream.js` 和 `components/*.js` 流程描述只作为 V1
+历史上下文保留，不应作为 V2 新增行为或测试的证明路径。
 
 流程说明：
 
@@ -56,9 +58,10 @@ flowchart TD
 
 负责模块：
 
-- `app/session.js`
-- `components/subagentSessions.js`
-- `components/subagentRail.js`
+- `frontend/app/src/features/shell/AppShell.tsx`
+- `frontend/app/src/features/sessions/SessionsSidebar.tsx`
+- `frontend/app/src/features/sessions/SubagentSessionView.tsx`
+- `frontend/app/src/features/timeline/MessageTimeline.tsx`
 
 流程说明：
 
@@ -75,11 +78,10 @@ flowchart TD
 
 负责模块：
 
-- `app/prompt.js`
-- `components/newSessionDraft.js`
-- `components/rounds/timeline.js`
-- `core/submission.js`
-- `core/stream.js`
+- `frontend/app/src/features/composer/Composer.tsx`
+- `frontend/app/src/features/shell/ChatWorkspace.tsx`
+- `frontend/app/src/features/timeline/MessageTimeline.tsx`
+- `frontend/app/src/runtime/useRunStreamController.ts`
 
 流程说明：
 

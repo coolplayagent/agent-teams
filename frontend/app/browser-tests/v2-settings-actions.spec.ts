@@ -325,21 +325,22 @@ test("validates and saves Hooks from the System secondary settings page", async 
 
     await openSystemSettingsPage(settings, "Hooks");
     await expect(settings.getByRole("heading", { name: "Hooks" })).toBeVisible();
-    const editor = settings.getByLabel("Hooks JSON");
-    await expect(editor).toHaveValue(JSON.stringify(state.hooksConfig, null, 2));
+    await expect(settings.getByLabel("Hooks JSON")).toHaveCount(0);
+    await expect(settings.getByText("Session startup setup").first()).toBeVisible();
+    await expect(
+      settings.getByText("SessionStart · python hooks/start.py"),
+    ).toBeVisible();
+    await expect(settings.getByText("project", { exact: true })).toBeVisible();
 
-    await settings.getByRole("button", { name: "Validate" }).click();
-    await expect.poll(() => state.hooksValidatePayloads).toEqual([
-      state.hooksConfig,
-    ]);
-
-    const nextHooks = {
+    const existingHooksPayload = {
       hooks: {
-        UserPromptSubmit: [
+        SessionStart: [
           {
             hooks: [
               {
-                command: "python hooks/prompt.py",
+                command: "python hooks/start.py",
+                name: "Session startup setup",
+                on_error: "ignore",
                 type: "command",
               },
             ],
@@ -348,14 +349,44 @@ test("validates and saves Hooks from the System secondary settings page", async 
         ],
       },
     };
-    await editor.fill(JSON.stringify(nextHooks, null, 2));
+
+    await settings.getByRole("button", { name: "Validate" }).click();
+    await expect.poll(() => state.hooksValidatePayloads).toEqual([
+      existingHooksPayload,
+    ]);
+
+    await settings.getByRole("button", { name: "Edit" }).click();
+    await settings.getByLabel("Command").fill("python hooks/session_start.py");
+    const nextHooks = {
+      hooks: {
+        SessionStart: [
+          {
+            hooks: [
+              {
+                command: "python hooks/session_start.py",
+                name: "Session startup setup",
+                on_error: "ignore",
+                type: "command",
+              },
+            ],
+            matcher: "*",
+          },
+        ],
+      },
+    };
     await settings.getByRole("button", { name: "Save" }).click();
     await expect.poll(() => state.hooksSavePayloads).toEqual([nextHooks]);
-    await expect(editor).toHaveValue(JSON.stringify(nextHooks, null, 2));
+    await expect(page.getByText("Hooks saved.")).toBeVisible();
+    await settings.getByRole("button", { name: "Edit" }).click();
+    const savedCommand = settings.getByLabel("Command");
+    await expect(savedCommand).toHaveValue(
+      "python hooks/session_start.py",
+    );
+    await savedCommand.scrollIntoViewIfNeeded();
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await expectNoDocumentScroll(page, "v2 hooks settings should stay framed");
     await page.screenshot({
-      path: screenshotPath("v2-hooks-editor-save.png", SCREENSHOT_FOLDER),
+      path: screenshotPath("v2-hooks-structured-editor-save.png", SCREENSHOT_FOLDER),
     });
   } finally {
     await appServer.close();

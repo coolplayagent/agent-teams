@@ -2,6 +2,28 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-02 Hooks Settings Structured Editor First Pass
+
+### Scope
+- Re-audited `tests/integration_tests/frontend/test_hooks_settings_ui.py` and found a real remaining V1 gap: the V2 System -> Hooks page had regressed to a JSON textarea instead of the structured group and handler editor that users can operate safely.
+- Extracted Hooks settings out of the broad runtime settings module into `frontend/app/src/features/settings/HooksSettingsSection.tsx`.
+- Restored a structured Hooks editor for configured groups and handlers: add/edit/delete groups, add/delete handlers, event/matcher/role/session/run-kind fields, command/http/prompt/agent handler fields, timeout/on-error/async fields, validation, save, runtime diagnostics, and runtime-error resilience.
+- Kept the V1 secondary-page logic intact: Hooks remains a System-owned secondary page and is still absent from the first-level Settings navigation.
+- Replaced the previous browser JSON-editor coverage with a real structured-control path that validates the serialized payload, edits a command handler, saves through the backend API, reopens the editor, checks the saved command value, and captures the packed `/app/` screenshot.
+- Kept `tests/integration_tests/frontend/test_hooks_settings_ui.py` in place. The old harness still covers V1 details not closed in this first pass, including deeper handler matrix edges, validation/error rendering, concurrent/stale reload behavior, and final V1 visual comparison.
+- Did not claim full System settings completion, old hooks harness retirement, reviewer sign-off, or final V2 frontend completion.
+
+### Verification
+- `npm test -- src/test/HooksSettingsSection.test.tsx` passed with 3 tests.
+- `npm test -- src/test/SettingsDrawer.test.tsx -t "hooks"` passed with 1 selected test.
+- `npm run test:browser -- v2-settings-actions.spec.ts -g "validates and saves Hooks"` passed with 1 packed-browser test; screenshot generated at `.tmp/frontend-v2-ts-settings-actions/v2-hooks-structured-editor-save.png`.
+- Main-agent screenshot inspection confirmed the packed `/app/` Settings drawer stayed framed, Hooks remained under System, the JSON textarea was gone, and the saved command handler was visible in the structured editor.
+- `npm run lint` passed.
+- `npm run build` passed and regenerated the packed `frontend/dist/app` bundle.
+
+### Reviewer
+- Main-agent decision: this tightens `SET-14` with a real V1-harness-derived Hooks editor pass and browser evidence, but `CLEAN-01` is unchanged for the old hooks Python harness because it is not yet fully replaced.
+
 ## 2026-07-02 Plugin Settings Harness Retirement
 
 ### Scope

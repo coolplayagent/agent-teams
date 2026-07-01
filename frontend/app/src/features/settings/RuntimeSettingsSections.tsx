@@ -14,19 +14,15 @@ import {
   getAgentRuntimeRegistry,
   getAgentRuntimes,
   getAgentRuntimeTestJob,
-  getHookRuntimeView,
-  getHooksConfig,
   getPluginsConfig,
   getPluginsRuntime,
   installPlugin,
   installAgentRuntimeFromRegistry,
   loadPluginMarketplace,
   refreshAgentRuntimeRegistry,
-  saveHooksConfig,
   saveAgentRuntime,
   startAgentRuntimeTestJob,
   updatePlugin,
-  validateHooksConfig,
 } from "../../api/client";
 import type {
   AcpRegistryAgentView,
@@ -41,9 +37,7 @@ import type {
   AgentRuntimeTransportType,
   EnvironmentVariableCatalog,
   EnvironmentVariableRecord,
-  HooksConfigPayload,
   JsonValue,
-  LoadedHookRecord,
   PluginInstallRequest,
   PluginInstallSourceKind,
   PluginMarketplaceEntry,
@@ -224,105 +218,6 @@ export function PluginsSettingsSection() {
             plugins={plugins}
           />
           <PluginDiagnosticsList diagnostics={diagnostics} />
-        </>
-      ) : null}
-    </SettingsSection>
-  );
-}
-
-export function HooksSettingsSection() {
-  const t = useTranslations();
-  const { message } = App.useApp();
-  const queryClient = useQueryClient();
-  const [draft, setDraft] = useState("");
-  const hooksQuery = useQuery({
-    queryKey: ["settings", "hooks", "config"],
-    queryFn: getHooksConfig,
-  });
-  const runtimeQuery = useQuery({
-    queryKey: ["settings", "hooks", "runtime"],
-    queryFn: getHookRuntimeView,
-  });
-  const configuredGroups = hookGroups(hooksQuery.data);
-  const loadedHooks = runtimeQuery.data?.loaded_hooks ?? [];
-  const sources = runtimeQuery.data?.sources ?? [];
-  const loading = hooksQuery.isLoading || runtimeQuery.isLoading;
-  const error = hooksQuery.error ?? runtimeQuery.error;
-  useEffect(() => {
-    if (hooksQuery.data !== undefined) {
-      setDraft(formatHooksConfig(hooksQuery.data));
-    }
-  }, [hooksQuery.data]);
-  const validateMutation = useMutation({
-    mutationFn: () => validateHooksConfig(parseHooksDraft(draft, t)),
-    onSuccess: () => {
-      void message.success(t("settingsHooksValidated"));
-    },
-    onError: (mutationError) => {
-      void message.error(hooksMutationError(mutationError, t));
-    },
-  });
-  const saveMutation = useMutation({
-    mutationFn: () => saveHooksConfig(parseHooksDraft(draft, t)),
-    onSuccess: (config) => {
-      setDraft(formatHooksConfig(config));
-      void message.success(t("settingsHooksSaved"));
-      void queryClient.invalidateQueries({ queryKey: ["settings", "hooks"] });
-    },
-    onError: (mutationError) => {
-      void message.error(hooksMutationError(mutationError, t));
-    },
-  });
-  return (
-    <SettingsSection title={t("settingsHooks")}>
-      <SettingsQueryState error={error} loading={loading} />
-      {!loading && error === null ? (
-        <>
-          <div className="at-settings-facts">
-            <Fact
-              label={t("settingsHooksConfigured")}
-              value={String(configuredGroups.length)}
-            />
-            <Fact
-              label={t("settingsHooksLoaded")}
-              value={String(loadedHooks.length)}
-            />
-            <Fact label={t("settingsHooksSources")} value={String(sources.length)} />
-          </div>
-          <div className="at-settings-section-actions at-hooks-toolbar">
-            <Button
-              icon={<RefreshCw size={15} />}
-              loading={hooksQuery.isFetching || runtimeQuery.isFetching}
-              onClick={() => {
-                void hooksQuery.refetch();
-                void runtimeQuery.refetch();
-              }}
-            >
-              {t("settingsHooksRefresh")}
-            </Button>
-            <Button
-              loading={validateMutation.isPending}
-              onClick={() => validateMutation.mutate()}
-            >
-              {t("settingsHooksValidate")}
-            </Button>
-            <Button
-              loading={saveMutation.isPending}
-              onClick={() => saveMutation.mutate()}
-              type="primary"
-            >
-              {t("settingsHooksSave")}
-            </Button>
-          </div>
-          <Input.TextArea
-            aria-label={t("settingsHooksEditor")}
-            className="at-settings-code-editor"
-            onChange={(event) => setDraft(event.target.value)}
-            rows={14}
-            spellCheck={false}
-            value={draft}
-          />
-          <HookRuntimeList hooks={loadedHooks} />
         </>
       ) : null}
     </SettingsSection>
@@ -1006,34 +901,6 @@ function PluginDiagnosticsList({
           </div>
           <Typography.Text className="at-settings-list-meta" ellipsis>
             {diagnostic.level ?? diagnostic.code ?? "-"}
-          </Typography.Text>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function HookRuntimeList({ hooks }: { hooks: LoadedHookRecord[] }) {
-  const t = useTranslations();
-  if (hooks.length === 0) {
-    return <div className="at-settings-empty">{t("settingsHooksEmpty")}</div>;
-  }
-  return (
-    <div className="at-settings-list at-runtime-settings-list">
-      {hooks.map((hook, index) => (
-        <div className="at-settings-list-row" key={`${hook.name ?? hook.event ?? "hook"}-${index}`}>
-          <div className="at-settings-list-main">
-            <span>{hook.name ?? hook.event ?? t("settingsHooksUnnamed")}</span>
-            <Typography.Text ellipsis title={hookDetail(hook)}>
-              {hookDetail(hook)}
-            </Typography.Text>
-          </div>
-          <Typography.Text
-            className="at-settings-list-meta"
-            ellipsis
-            title={hook.source ?? "-"}
-          >
-            {hook.source ?? "-"}
           </Typography.Text>
         </div>
       ))}
@@ -1725,51 +1592,6 @@ function Fact({ label, value }: { label: string; value: string }) {
       <dd>{value}</dd>
     </div>
   );
-}
-
-function hookGroups(config: HooksConfigPayload | undefined): Array<[string, JsonValue]> {
-  return Object.entries(config?.hooks ?? {});
-}
-
-function formatHooksConfig(config: HooksConfigPayload): string {
-  return JSON.stringify(config, null, 2);
-}
-
-function parseHooksDraft(
-  draft: string,
-  t: ReturnType<typeof useTranslations>,
-): HooksConfigPayload {
-  const trimmed = draft.trim();
-  if (!trimmed) {
-    return { hooks: {} };
-  }
-  try {
-    const parsed: unknown = JSON.parse(trimmed);
-    if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed as HooksConfigPayload;
-    }
-  } catch (error) {
-    throw new Error(
-      error instanceof Error
-        ? t("settingsHooksInvalidJson", { message: error.message })
-        : t("settingsHooksJsonObjectRequired"),
-    );
-  }
-  throw new Error(t("settingsHooksJsonObjectRequired"));
-}
-
-function hooksMutationError(
-  error: unknown,
-  t: ReturnType<typeof useTranslations>,
-): string {
-  return error instanceof Error ? error.message : t("settingsHooksActionFailed");
-}
-
-function hookDetail(hook: LoadedHookRecord): string {
-  return [hook.event, hook.matcher, hook.handler]
-    .map((value) => value?.trim() ?? "")
-    .filter(Boolean)
-    .join(" · ") || "-";
 }
 
 function requiredTrimmed(value: string | undefined): string {

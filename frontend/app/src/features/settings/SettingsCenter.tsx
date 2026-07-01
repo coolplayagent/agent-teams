@@ -54,13 +54,13 @@ import { ClawHubSettingsSection } from "./ClawHubSettingsSection";
 import { CommandsSettingsSection } from "./CommandsSettingsSection";
 import { EnvironmentSettingsSection } from "./EnvironmentSettingsSection";
 import { GitHubSettingsSection } from "./GitHubSettingsSection";
+import { HooksSettingsSection } from "./HooksSettingsSection";
 import { McpSettingsSection } from "./McpSettingsSection";
 import { NotificationSettingsSection } from "./NotificationSettingsSection";
 import { OrchestrationSettingsSection } from "./OrchestrationSettingsSection";
 import { ProxySettingsSection } from "./ProxySettingsSection";
 import {
   AgentRuntimeSettingsSection,
-  HooksSettingsSection,
   PluginsSettingsSection,
 } from "./RuntimeSettingsSections";
 import { SettingsAppearanceSection } from "./SettingsAppearanceSection";

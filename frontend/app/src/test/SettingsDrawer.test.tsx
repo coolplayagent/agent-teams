@@ -1600,7 +1600,7 @@ describe("SettingsDrawer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
 
     fireEvent.click(screen.getByText("Hooks").closest("button") as HTMLElement);
-    expect(await screen.findByText("Session startup setup")).toBeVisible();
+    expect((await screen.findAllByText("Session startup setup")).length).toBeGreaterThan(0);
     expect(screen.getByText("SessionStart · python hooks/start.py")).toBeVisible();
     expect(getHooksConfigMock).toHaveBeenCalledTimes(1);
     expect(getHookRuntimeViewMock).toHaveBeenCalledTimes(1);
@@ -2658,29 +2658,8 @@ describe("SettingsDrawer", () => {
     fireEvent.click((await screen.findAllByRole("button", { name: "System" }))[0] as HTMLElement);
     fireEvent.click((await screen.findByText("Hooks")).closest("button") as HTMLElement);
 
-    const editor = await screen.findByLabelText("Hooks JSON");
-    expect(editor).toHaveValue(
-      JSON.stringify(
-        {
-          hooks: {
-            SessionStart: [
-              {
-                hooks: [
-                  {
-                    command: "python hooks/start.py",
-                    name: "Session startup setup",
-                    type: "command",
-                  },
-                ],
-                matcher: "*",
-              },
-            ],
-          },
-        },
-        null,
-        2,
-      ),
-    );
+    expect((await screen.findAllByText("Session startup setup")).length).toBeGreaterThan(0);
+    expect(screen.getByText("SessionStart · python hooks/start.py")).toBeVisible();
     expect(getHooksConfigMock).toHaveBeenCalledTimes(1);
     expect(getHookRuntimeViewMock).toHaveBeenCalledTimes(1);
 
@@ -2694,6 +2673,7 @@ describe("SettingsDrawer", () => {
                 {
                   command: "python hooks/start.py",
                   name: "Session startup setup",
+                  on_error: "ignore",
                   type: "command",
                 },
               ],
@@ -2704,26 +2684,34 @@ describe("SettingsDrawer", () => {
       }),
     );
 
-    const nextHooks = {
-      hooks: {
-        UserPromptSubmit: [
-          {
-            hooks: [
-              {
-                command: "python hooks/prompt.py",
-                type: "command",
-              },
-            ],
-            matcher: "*",
-          },
-        ],
-      },
-    };
-    fireEvent.change(editor, {
-      target: { value: JSON.stringify(nextHooks, null, 2) },
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getAllByLabelText("Hook name")[0] as HTMLElement, {
+      target: { value: "Updated session setup" },
+    });
+    fireEvent.change(screen.getByLabelText("Command"), {
+      target: { value: "python hooks/session_start.py" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(saveHooksConfigMock).toHaveBeenCalledWith(nextHooks));
+    await waitFor(() =>
+      expect(saveHooksConfigMock).toHaveBeenCalledWith({
+        hooks: {
+          SessionStart: [
+            {
+              hooks: [
+                {
+                  command: "python hooks/session_start.py",
+                  name: "Session startup setup",
+                  on_error: "ignore",
+                  type: "command",
+                },
+              ],
+              matcher: "*",
+              name: "Updated session setup",
+            },
+          ],
+        },
+      }),
+    );
   });
 
   it("manages GitHub settings from the System secondary page", async () => {

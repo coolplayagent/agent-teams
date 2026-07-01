@@ -6036,6 +6036,57 @@ body {
   margin-bottom: 0;
 }
 
+.at-settings-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--at-text);
+  font-size: 12px;
+  font-weight: 520;
+}
+
+.at-settings-field-wide {
+  grid-column: 1 / -1;
+}
+
+.at-settings-switch-field {
+  align-content: end;
+}
+
+.at-hooks-config-card {
+  gap: 12px;
+}
+
+.at-hooks-card-head,
+.at-hooks-subhead,
+.at-hooks-handler-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 12px;
+}
+
+.at-hooks-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.at-hooks-handler-stack,
+.at-hooks-runtime-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.at-hooks-handler-card {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--at-border);
+  border-radius: 8px;
+  background: var(--at-surface-muted);
+}
+
 .at-general-page {
   display: grid;
   gap: 14px;

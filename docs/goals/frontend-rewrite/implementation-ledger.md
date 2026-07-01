@@ -2,6 +2,21 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-01 Recovery Stream Python Harness Removal
+
+### Scope
+- Removed `tests/unit_tests/frontend/test_recovery_stream_ui.py`, a legacy static harness that read old `frontend/dist/js` files and asserted implementation strings from the V1 recovery, stream, sidebar, logger, and message-renderer modules.
+- Mapped its V2-relevant behavior to current React/Playwright ownership: `RecoveryBar.test.tsx` covers active/recoverable recovery streams, approvals, user questions, background tasks, paused subagents, stale-target suppression, and multiplexed background subagent recovery; `v2-recovery.spec.ts` and `v2-real-sse-stale-recovery.spec.ts` cover browser recovery placement, refresh, real-SSE resume/reconnect, and background subagent isolation.
+- Left old implementation-only assertions such as V1 `frontend/dist` logger keepalive and background discovery helper string checks behind with the removed harness; they do not prove the current React V2 UI.
+
+### Verification
+- `npm test -- src/test/RecoveryBar.test.tsx -t "live active run stream|recoverable run|background subagent|stale recovery targets|paused subagent|background tasks"` passed.
+- `npm run test:browser -- v2-recovery.spec.ts --project=chromium` passed.
+- `rg -n "test_recovery_stream_ui|frontend/dist/js/app/recovery|ensureAutomaticRecoveryStream" tests/unit_tests/frontend frontend/app/src frontend/app/browser-tests` returned no matches, confirming the removed harness and its old V1 recovery entrypoint are no longer referenced by current unit/frontend/browser proof paths.
+
+### Reviewer
+- Main-agent decision: this retires one more stale Python UI proof path, but `REC-01`, `REC-02`, `STREAM-02`, and `CLEAN-01` stay `In progress` until V1/manual visual sign-off and the remaining old Python UI harnesses are handled.
+
 ## 2026-07-01 P0 Subagent And Real-SSE Browser Rerun
 
 ### Scope

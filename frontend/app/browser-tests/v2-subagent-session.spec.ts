@@ -24,16 +24,24 @@ const SUBAGENT_RUN_ID = "87f9f69e-8622-4d46-958f-aa0d7d283095";
 const CONTROL_SESSION_ID = "session-v2-subagent-control";
 const PRESSURE_NEW_SESSION_ID = "session-v2-pressure-new";
 const PRESSURE_RUN_ID = "run-v2-pressure-send";
+const PARENT_MARKER_RUN_ID = "run-v2-parent-marker";
 const SCREENSHOT_FOLDER = "frontend-v2-ts-subagent-session";
 const SUBAGENT_PROMPT = "Inspect the project and report the subagent stream checkpoints.";
 const ORCHESTRATION_LIVE_PROMPT =
   "Stream orchestration child work into the right panel only.";
+const PARENT_MARKER_PROMPT = "Verify parent run keeps child markers isolated";
+const PARENT_MARKER_VISIBLE_TEXT = "PARENT_MARKER_VISIBLE_STREAM";
+const PARENT_MARKER_CHILD_TEXT = "LEAK_PARENT_RUN_CHILD_TEXT";
+const PARENT_MARKER_CHILD_THINKING = "LEAK_PARENT_RUN_CHILD_THINKING";
+const PARENT_MARKER_CHILD_TOOL_PATH = "LEAK_PARENT_RUN_CHILD_TOOL.md";
 
 interface SubagentSessionMockState {
   completed: boolean;
   delayFinalMessages: boolean;
   releaseFinalMessages: Array<() => void>;
   messageRequestCount: number;
+  parentNormalRootRoleId?: string | null;
+  parentRunCreateRequests?: Array<Record<string, unknown>>;
 }
 
 interface SubagentRaceMockState {
@@ -146,6 +154,149 @@ test("opens a nested subagent session and refreshes history after terminal strea
       .toHaveCount(0);
     await expectComposerControlsDoNotOverlap(page);
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
+  } finally {
+    releaseFinalSubagentMessages(state);
+    await appServer.close();
+  }
+});
+
+test("keeps subagent-marked parent-run stream rows out of the main timeline", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state: SubagentSessionMockState = {
+    completed: true,
+    delayFinalMessages: false,
+    releaseFinalMessages: [],
+    messageRequestCount: 0,
+    parentNormalRootRoleId: null,
+    parentRunCreateRequests: [],
+  };
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await installMockEventSource(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleSubagentSessionApi(context, state),
+      sessionTitle: "TS parent session",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    await expect(page.getByText("Parent session output")).toBeVisible();
+    const subagentCard = page
+      .locator('.at-chat-view .at-message-tool.is-openable-subagent[data-tool-name="spawn_subagent"]')
+      .filter({ hasText: "Explorer review" });
+    await expect(subagentCard).toHaveCount(1);
+
+    await page.getByRole("textbox", { name: "Prompt" }).fill(PARENT_MARKER_PROMPT);
+    await page.getByRole("button", { name: "Send" }).click();
+    await expect.poll(() => state.parentRunCreateRequests?.length ?? 0).toBe(1);
+    expect(state.parentRunCreateRequests?.[0]).toMatchObject({
+      input: [{ kind: "text", text: PARENT_MARKER_PROMPT }],
+      session_id: SESSION_ID,
+    });
+    await waitForEventSourceUrl(
+      page,
+      new RegExp(
+        `/api/ag-ui/runs/${PARENT_MARKER_RUN_ID}/events\\?after_event_id=0$`,
+      ),
+    );
+
+    await dispatchParentMarkerRunEvent(page, {
+      eventId: 1,
+      payload: { phase: "streaming" },
+      relayEventType: "run_started",
+      roleId: "MainAgent",
+      type: "run.started",
+    });
+    await dispatchParentMarkerRunEvent(page, {
+      eventId: 2,
+      payload: {
+        subagent_instance_id: SUBAGENT_INSTANCE_ID,
+        subagent_role_id: "Explorer",
+        subagent_run_id: SUBAGENT_RUN_ID,
+        text: PARENT_MARKER_CHILD_THINKING,
+      },
+      relayEventType: "thinking_delta",
+      roleId: "Explorer",
+      type: "message.thinking.delta",
+    });
+    await dispatchParentMarkerRunEvent(page, {
+      eventId: 3,
+      payload: {
+        kind: "subagent",
+        run_id: SUBAGENT_RUN_ID,
+        text: PARENT_MARKER_CHILD_TEXT,
+      },
+      relayEventType: "text_delta",
+      roleId: "Explorer",
+      type: "message.text.delta",
+    });
+    await dispatchParentMarkerRunEvent(page, {
+      eventId: 4,
+      payload: {
+        args: { path: PARENT_MARKER_CHILD_TOOL_PATH },
+        subagent_instance_id: SUBAGENT_INSTANCE_ID,
+        subagent_role_id: "Explorer",
+        subagent_run_id: SUBAGENT_RUN_ID,
+        tool_call_id: "call-v2-parent-marker-child-read",
+        tool_name: "read",
+      },
+      relayEventType: "tool_call",
+      roleId: "Explorer",
+      type: "tool_call.started",
+    });
+    await dispatchParentMarkerRunEvent(page, {
+      eventId: 5,
+      payload: { text: PARENT_MARKER_VISIBLE_TEXT },
+      relayEventType: "text_delta",
+      roleId: "MainAgent",
+      type: "message.text.delta",
+    });
+
+    const mainTimeline = page.locator(".at-chat-view");
+    await expect(mainTimeline.getByText(PARENT_MARKER_VISIBLE_TEXT)).toBeVisible();
+    await dispatchParentMarkerRunEvent(page, {
+      eventId: 6,
+      payload: { status: "completed" },
+      relayEventType: "run_completed",
+      roleId: "MainAgent",
+      type: "run.completed",
+    });
+    await waitForEventSourceOpenCount(page, 0);
+    await expect(mainTimeline.getByText(PARENT_MARKER_VISIBLE_TEXT)).toBeVisible();
+    await expect(mainTimeline.locator(".streaming-cursor")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Stop" })).toBeHidden();
+    await expect(mainTimeline.getByText(PARENT_MARKER_CHILD_THINKING)).toHaveCount(0);
+    await expect(mainTimeline.getByText(PARENT_MARKER_CHILD_TEXT)).toHaveCount(0);
+    await expect(mainTimeline.getByText(PARENT_MARKER_CHILD_TOOL_PATH)).toHaveCount(0);
+    await expect(mainTimeline.getByText("Explorer", { exact: true })).toHaveCount(0);
+    await expect(subagentCard).toHaveCount(1);
+
+    await subagentCard.locator(".at-message-tool-summary").click();
+    await expect(page.getByRole("heading", { name: "Explorer review" }))
+      .toBeVisible();
+    await expect(
+      page.locator(".at-subagent-session-view")
+        .getByText("Final persisted subagent answer"),
+    ).toBeVisible();
+    await expect(mainTimeline.getByText("Final persisted subagent answer"))
+      .toHaveCount(0);
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-subagent-parent-run-marker-isolated.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "parent-run subagent markers should stay out of the main timeline",
+    );
+    await expectComposerControlsDoNotOverlap(page);
   } finally {
     releaseFinalSubagentMessages(state);
     await appServer.close();
@@ -1079,6 +1230,20 @@ async function handleSubagentSessionApi(
   context: MockApiRouteContext,
   state: SubagentSessionMockState,
 ): Promise<boolean> {
+  if (context.method === "POST" && context.path === "/ag-ui/runs") {
+    if (state.parentRunCreateRequests === undefined) {
+      return false;
+    }
+    state.parentRunCreateRequests.push(
+      readRecordPayload(context.route.request().postData()),
+    );
+    await context.fulfillJson({
+      run_id: PARENT_MARKER_RUN_ID,
+      session_id: SESSION_ID,
+      target_role_id: null,
+    });
+    return true;
+  }
   if (context.method !== "GET") {
     return false;
   }
@@ -1095,7 +1260,14 @@ async function handleSubagentSessionApi(
     return true;
   }
   if (context.path === `/sessions/${SESSION_ID}`) {
-    await context.fulfillJson(parentSessionRecord());
+    await context.fulfillJson(
+      parentSessionRecord(
+        "TS parent session",
+        state.parentNormalRootRoleId === undefined
+          ? "MainAgent"
+          : state.parentNormalRootRoleId,
+      ),
+    );
     return true;
   }
   if (context.path === `/sessions/${SESSION_ID}/messages`) {
@@ -1473,12 +1645,15 @@ function controlSessionSidebarRecord(): Record<string, unknown> {
   };
 }
 
-function parentSessionRecord(title = "TS parent session"): Record<string, unknown> {
+function parentSessionRecord(
+  title = "TS parent session",
+  normalRootRoleId: string | null = "MainAgent",
+): Record<string, unknown> {
   return {
     can_switch_mode: true,
     created_at: "2026-06-26T09:00:00Z",
     normal_model_profile: null,
-    normal_root_role_id: "MainAgent",
+    normal_root_role_id: normalRootRoleId,
     orchestration_preset_id: null,
     session_id: SESSION_ID,
     session_mode: "normal",
@@ -1973,6 +2148,14 @@ interface BrowserSubagentRunEvent {
   type: string;
 }
 
+interface BrowserParentMarkerRunEvent {
+  eventId: number;
+  payload: Record<string, unknown>;
+  relayEventType: string;
+  roleId?: string;
+  type: string;
+}
+
 function readRecordPayload(body: string | null): Record<string, unknown> {
   if (body === null || !body.trim()) {
     return {};
@@ -2005,6 +2188,27 @@ async function dispatchPressureRunEvent(
       run_id: PRESSURE_RUN_ID,
       session_id: PRESSURE_NEW_SESSION_ID,
       trace_id: "trace-ts-pressure-send",
+      type: event.type,
+    },
+    lastEventId: String(event.eventId),
+    type: event.type,
+  });
+}
+
+async function dispatchParentMarkerRunEvent(
+  page: Page,
+  event: BrowserParentMarkerRunEvent,
+): Promise<void> {
+  await dispatchEventSourceMessage(page, {
+    data: {
+      event_id: event.eventId,
+      occurred_at: `2026-06-26T09:09:${String(event.eventId).padStart(2, "0")}Z`,
+      payload: event.payload,
+      relay_event_type: event.relayEventType,
+      role_id: event.roleId ?? "MainAgent",
+      run_id: PARENT_MARKER_RUN_ID,
+      session_id: SESSION_ID,
+      trace_id: "trace-v2-parent-marker",
       type: event.type,
     },
     lastEventId: String(event.eventId),

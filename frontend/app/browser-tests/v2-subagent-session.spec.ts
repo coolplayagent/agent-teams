@@ -283,6 +283,102 @@ test("streams subagent deltas incrementally before terminal history refill", asy
   }
 });
 
+test("continues typewriter reveal after terminal close before history refill", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state: SubagentSessionMockState = {
+    completed: false,
+    delayFinalMessages: false,
+    releaseFinalMessages: [],
+    messageRequestCount: 0,
+  };
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await installMockEventSource(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleSubagentSessionApi(context, state),
+      sessionTitle: "TS parent session",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    await openSubagentPanelFromToolCard(page, "Explorer review");
+    const panel = page.locator(".at-subagent-session-view");
+    await waitForEventSourceUrl(
+      page,
+      new RegExp(
+        `/api/sessions/${SESSION_ID}/subagents/events\\?after_event_id=0$`,
+      ),
+    );
+    await waitForEventSourceOpenCount(page, 1);
+
+    const terminalText = Array.from(
+      { length: 40 },
+      (_, index) => `TERMINAL_STREAM_${index}`,
+    ).join(" ");
+    await dispatchSubagentRunEvent(page, {
+      eventId: 42,
+      payload: { text: terminalText },
+      relayEventType: "text_delta",
+      type: "message.text.delta",
+    });
+    const terminalRow = panel
+      .locator(`.at-timeline-row[data-run-id="${SUBAGENT_RUN_ID}"]`)
+      .filter({ hasText: "TERMINAL_STREAM" });
+    const terminalDisplay = terminalRow.locator(".at-message-streaming-text");
+    await expect(terminalDisplay).toBeVisible();
+    const preTerminalText = await terminalDisplay.textContent();
+    expect(preTerminalText ?? "").not.toContain("TERMINAL_STREAM_39");
+
+    state.completed = true;
+    state.delayFinalMessages = true;
+    await dispatchSubagentRunEvent(page, {
+      eventId: 43,
+      payload: { status: "completed" },
+      relayEventType: "run_completed",
+      type: "run.completed",
+    });
+    await waitForEventSourceOpenCount(page, 0);
+    await expect.poll(() => state.messageRequestCount).toBeGreaterThanOrEqual(2);
+    await expect(terminalDisplay).toBeVisible();
+    const terminalSamples = await sampleTextLengths(terminalDisplay, 5, 70);
+    expect(terminalSamples[0] ?? terminalText.length).toBeLessThan(
+      terminalText.length,
+    );
+    expect(Math.max(...terminalSamples)).toBeLessThan(terminalText.length);
+    expect(new Set(terminalSamples).size).toBeGreaterThanOrEqual(3);
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-subagent-terminal-typewriter-catchup-mid.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+
+    await expect(terminalRow).toContainText(terminalText);
+    await expect(panel.locator(".streaming-cursor")).toHaveCount(0);
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-subagent-terminal-typewriter-catchup-final.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+
+    releaseFinalSubagentMessages(state);
+    await expect(panel.getByText("Final persisted subagent answer")).toBeVisible();
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "terminal typewriter catch-up should stay inside the fixed V2 shell",
+    );
+  } finally {
+    releaseFinalSubagentMessages(state);
+    await appServer.close();
+  }
+});
+
 test("streams top-level subagent output deltas inside the right panel", async ({
   page,
 }) => {

@@ -308,6 +308,14 @@ For every row moved to `Verified`, record:
 - Browser evidence: `.tmp/frontend-v2-ts-subagent-session/v2-subagent-top-level-output-delta.png`.
 - Remaining before verification: real-backend shell/stdout subagent runs, hard-refresh replay while stdout is mid-stream, and live orchestration variants.
 
+### 2026-07-01 Terminal Typewriter Catch-Up
+
+- `MSG-02` tightened: a runtime text row that was already streaming no longer jumps to the full text merely because the run reaches a terminal state or history refill starts. The presentation buffer continues revealing the existing text target until it catches up, then removes the cursor.
+- `SUB-01` tightened: a subagent panel can show `completed` while its last streamed child output is still visually catching up, without leaking that child output into the parent `.at-chat-view` and without leaving a stale cursor afterward.
+- Automated evidence: `npm run build`, `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium -g "terminal close"`, `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium`, `npm test -- src/test/MessageTimeline.test.tsx`, `npm run lint`.
+- Browser evidence: `.tmp/frontend-v2-ts-subagent-session/v2-subagent-terminal-typewriter-catchup-mid.png`, `.tmp/frontend-v2-ts-subagent-session/v2-subagent-terminal-typewriter-catchup-final.png`.
+- Remaining before verification: real-backend stdout cadence, hard-refresh during the visual catch-up window, and live orchestration child output cadence.
+
 ### 2026-07-01 Timeline Background Notification And Prompt Expansion
 
 - `STREAM-01` tightened: managed background task completion notifications are hidden from the user-visible transcript even when replayed from persisted `message.parts[*].part_kind="user-prompt"` payloads.

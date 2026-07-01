@@ -4834,47 +4834,100 @@ function MessageRowContent({
 }
 
 function MessageText({ part }: { part: TimelineTextPart }) {
-  const displayedText = useStreamingDisplayText(part.text, part.streaming);
-  if (part.streaming && part.text.length >= LONG_STREAM_TEXT_THRESHOLD) {
+  const streamingDisplay = useStreamingDisplayText(part.text, part.streaming);
+  const visuallyStreaming = part.streaming || streamingDisplay.cursorVisible;
+  if (visuallyStreaming && part.text.length >= LONG_STREAM_TEXT_THRESHOLD) {
     return (
       <pre className="at-message-plain-stream" data-render-mode="plain-stream">
-        {displayedText}
-        <StreamingCursor />
+        {streamingDisplay.text}
+        {streamingDisplay.cursorVisible ? <StreamingCursor /> : null}
       </pre>
     );
   }
-  if (part.streaming) {
+  if (visuallyStreaming) {
     return (
       <div className="at-message-streaming-text" data-streaming="true">
-        <MarkdownMessage text={displayedText} />
-        <StreamingCursor />
+        <MarkdownMessage text={streamingDisplay.text} />
+        {streamingDisplay.cursorVisible ? <StreamingCursor /> : null}
       </div>
     );
   }
   return <MarkdownMessage text={part.text} />;
 }
 
-function useStreamingDisplayText(targetText: string, streaming: boolean): string {
-  const smoothStreaming = streaming && import.meta.env.MODE !== "test";
+interface StreamingDisplayText {
+  cursorVisible: boolean;
+  text: string;
+}
+
+function useStreamingDisplayText(
+  targetText: string,
+  streaming: boolean,
+): StreamingDisplayText {
+  const smoothEnabled = import.meta.env.MODE !== "test";
+  const sawStreamingRef = useRef(smoothEnabled && streaming);
   const [displayedText, setDisplayedText] = useState(() =>
-    smoothStreaming ? initialStreamingText(targetText) : targetText,
+    smoothEnabled && streaming ? initialStreamingText(targetText) : targetText,
   );
 
   useEffect(() => {
-    if (!smoothStreaming) {
+    if (!smoothEnabled) {
       setDisplayedText(targetText);
       return;
     }
+    if (streaming) {
+      sawStreamingRef.current = true;
+    }
     setDisplayedText((current) => {
-      if (targetText.startsWith(current)) {
-        return current;
+      const canContinueTerminalReveal =
+        !streaming &&
+        sawStreamingRef.current &&
+        targetText.startsWith(current) &&
+        current.length < targetText.length;
+      if (streaming || canContinueTerminalReveal) {
+        if (current.length === 0) {
+          return initialStreamingText(targetText);
+        }
+        if (targetText.startsWith(current)) {
+          return current;
+        }
+        return initialStreamingText(targetText);
       }
-      return initialStreamingText(targetText);
+      sawStreamingRef.current = false;
+      return targetText;
     });
-  }, [smoothStreaming, targetText]);
+  }, [smoothEnabled, streaming, targetText]);
 
   useEffect(() => {
-    if (!smoothStreaming || displayedText.length >= targetText.length) {
+    if (
+      !smoothEnabled ||
+      streaming ||
+      displayedText.length < targetText.length
+    ) {
+      return;
+    }
+    sawStreamingRef.current = false;
+  }, [displayedText, smoothEnabled, streaming, targetText]);
+
+  const revealActive =
+    smoothEnabled &&
+    (
+      streaming ||
+      (
+        sawStreamingRef.current &&
+        targetText.startsWith(displayedText) &&
+        displayedText.length < targetText.length
+      )
+    );
+
+  useEffect(() => {
+    if (!revealActive) {
+      return;
+    }
+    if (displayedText.length >= targetText.length) {
+      if (!streaming) {
+        sawStreamingRef.current = false;
+      }
       return;
     }
     if (!targetText.startsWith(displayedText)) {
@@ -4884,9 +4937,18 @@ function useStreamingDisplayText(targetText: string, streaming: boolean): string
       setDisplayedText((current) => revealNextStreamingText(current, targetText));
     }, STREAM_TYPEWRITER_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [displayedText, smoothStreaming, targetText]);
+  }, [displayedText, revealActive, streaming, targetText]);
 
-  return smoothStreaming ? displayedText : targetText;
+  if (!smoothEnabled) {
+    return {
+      cursorVisible: streaming,
+      text: targetText,
+    };
+  }
+  return {
+    cursorVisible: revealActive,
+    text: displayedText,
+  };
 }
 
 function initialStreamingText(text: string): string {

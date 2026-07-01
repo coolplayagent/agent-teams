@@ -8660,3 +8660,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent failure reproduction, streaming accumulator fix, component coverage, App-level browser coverage, screenshot inspection, dist rebuild, and matrix update completed for this slice. This does not claim full real-backend stdout streaming PASS, interrupted mid-stdout refresh recovery, live orchestration PASS, reviewer sign-off, or final V2 frontend completion.
+
+## 2026-07-01 Terminal Typewriter Catch-Up Slice
+
+### Scope
+- Audited the remaining mismatch behind "only one or two characters, then the whole sentence appears": terminal runtime cleanup closed the text accumulator, which turned `part.streaming` off and made `MessageText` bypass the typewriter buffer before the visible text had caught up.
+- Updated the presentation hook so text that has already been displayed as a live stream keeps revealing after terminal close or delayed history refill, then clears the cursor once the display reaches the exact target text. Persisted replay loaded cold still renders immediately and is not animated.
+- Added App-level browser coverage for a subagent child stream that receives a large text delta and then immediately completes before final history is released. The test samples the terminal display mid-catch-up, verifies text length continues increasing instead of jumping to full output, then verifies the cursor is gone at the final settled state.
+- Rebuilt the packaged V2 frontend assets under `frontend/dist/app`.
+
+### Verification
+- `npm run build` passed and produced the current `frontend/dist/app` bundle.
+- `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium -g "terminal close"` passed with the new terminal catch-up scenario.
+- `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium` passed with 8 Chromium tests.
+- `npm test -- src/test/MessageTimeline.test.tsx` passed with 151 tests.
+- `npm run lint` passed.
+- Inspected `.tmp/frontend-v2-ts-subagent-session/v2-subagent-terminal-typewriter-catchup-mid.png`; it shows the subagent panel already marked `completed` while the child output is only partially revealed with the cursor at the next character position and no child output in the parent timeline.
+- Inspected `.tmp/frontend-v2-ts-subagent-session/v2-subagent-terminal-typewriter-catchup-final.png`; it shows the full child output with no stale cursor.
+
+### Reviewer
+- Main-agent implementation audit, display-state fix, App-level browser coverage, screenshot inspection, dist rebuild, matrix update, and focused verification completed for this slice. This does not claim real-backend stdout cadence PASS, hard-refresh during the catch-up window PASS, live orchestration child cadence PASS, reviewer sign-off, or final V2 frontend completion.

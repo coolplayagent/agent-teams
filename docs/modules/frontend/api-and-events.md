@@ -33,35 +33,27 @@ V2 typed client 按后端领域聚合具体 API：
 
 ### requestJson
 
-`requestJson(url, options, errorMessage)` 是基础 JSON helper：
+`requestJson(path, options)` 是基础 JSON helper：
 
 - GET 和 HEAD 默认使用 `cache: 'no-store'`。
-- 成功后返回 `res.json()`。
-- HTTP 非 2xx 时尝试解析后端 error payload，并构造带 `status`、`detail`、`url`、`method` 的 Error。
-- 请求异常时记录 frontend log，并派发后端 offline hint。
+- 默认补充 `Accept: application/json`，有 body 时补充 `Content-Type: application/json`。
+- 成功后解析 JSON，空响应体返回 `null`。
+- HTTP 非 2xx 时尝试解析后端 error payload，并构造带 `status` 和 `payload` 的 `ApiError`。
+- HTTP 非 2xx 或网络异常时记录 frontend log，并派发后端 offline hint。
 - AbortError 原样抛出，不当作普通错误记录。
 
-### requestJsonManaged
+### 请求缓存
 
-`requestJsonManaged(key, url, options, errorMessage, options)` 用于 GET 请求合并和限流：
-
-- 只管理 GET 请求，非 GET 回退到 `requestJson`。
-- 使用 request key 做短 TTL 缓存，默认 600ms。
-- 相同 key 的 in-flight 请求会合并，多个消费者共享同一个 promise。
-- 支持 AbortSignal，消费者 abort 不会必然取消所有共享请求。
-- 支持 lane 并发限制：
-  - `critical`：4
-  - `normal`：6
-  - `heavy`：2
-- 支持 high priority，把请求插到队列前端。
-- `invalidateManagedRequests(prefix)` 会清理缓存并 abort in-flight。
-- `invalidateManagedRequestCache(prefix)` 只失效缓存和 in-flight entry，不强调 abort 所有底层请求。
+V2 不再恢复 V1 的 `requestJsonManaged()` 手写 GET 缓存、队列和 lane 机制。
+架构目标要求 server snapshot state 通过 TanStack Query 缓存，当前页面和 feature
+组件使用 `useQuery`、`useMutation`、query key、invalidate/reset 语义管理请求合并、
+重试、过期和刷新。
 
 ### 后端状态 Hint
 
-请求成功会 emit `agent-teams-backend-status-hint` online，异常会 emit offline。hint 有 30 秒重复抑制，避免频繁刷新 UI。
-
-V2 shell 通过 `AppShell.tsx` 的主动 health 查询和请求状态反馈更新后端状态。
+请求成功会 emit `agent-teams-backend-status-hint` online，HTTP 非 2xx 或网络异常会 emit
+offline。hint 有 30 秒重复抑制，避免频繁刷新 UI。V2 shell 同时通过
+`AppShell.tsx` 的主动 health 查询更新后端状态。
 
 ## 主要 API 依赖地图
 

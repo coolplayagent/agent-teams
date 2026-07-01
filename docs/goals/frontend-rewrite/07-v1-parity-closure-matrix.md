@@ -114,6 +114,15 @@ For every row moved to `Verified`, record:
 
 ## Verification Ledger
 
+### 2026-07-02 API Request Harness Migration
+
+- `CLEAN-01` tightened: removed `tests/integration_tests/frontend/test_api_request_ui.py`, the old Python integration harness that executed V1 `frontend/dist/js/core/api/request.js` and connector facade modules in a fake Node/browser environment.
+- V2 ownership is now explicit for the still-relevant HTTP helper behavior: `apiHttp.test.ts` covers GET/HEAD no-store defaults, JSON headers, `ApiError` payloads, frontend log emission, backend status hints, AbortError pass-through, and repeated offline hint suppression.
+- `apiClient.test.ts` continues to own the typed API facade endpoint assertions, including current connector runtime-tool actions such as `/connectors/runtime-tools/system-path:add`.
+- The V1-only `requestJsonManaged()` cache/queue/lane assertions were not restored because the V2 architecture target assigns server snapshot caching to TanStack Query. The old W3 connector form-specific function assertions remain deferred to the connector/model-profile harness migrations.
+- Automated evidence: `npm test -- src/test/apiHttp.test.ts`, `npm test -- src/test/apiClient.test.ts`.
+- Remaining before cleanup verification: connector/model/profile Python harness migration decisions, broader `tests/integration_tests/frontend/*.py` retirement, promoted-route naming decision, migration-only file/test naming decision, and reviewer sign-off.
+
 ### 2026-07-02 Frontend Logger Harness Migration
 
 - `CLEAN-01` tightened: removed `tests/integration_tests/frontend/test_logger_sdk.py`, the old Python integration harness that copied V1 `frontend/dist/js/utils/logger.js` into a fake browser module runner.

@@ -2,6 +2,22 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-02 API Request Python Harness Removal
+
+### Scope
+- Removed `tests/integration_tests/frontend/test_api_request_ui.py`, a legacy harness that copied old `frontend/dist/js/core/api/request.js`, `connectors.js`, and `core/api.js` into temporary Node modules.
+- Added `frontend/app/src/test/apiHttp.test.ts` as the V2-owned request-helper proof path for behavior that still belongs in the centralized HTTP layer: default `cache: "no-store"` for GET/HEAD, JSON headers, `ApiError` payloads, frontend log emission, backend status hints, AbortError pass-through, and repeated offline hint suppression.
+- Strengthened `frontend/app/src/api/http.ts` to match that V2 contract and reuse the new `runtime/frontendLogger.ts` from the previous logger migration.
+- Confirmed existing `apiClient.test.ts` already owns the current typed API facade and runtime-tool connector endpoint assertions, including `/connectors/runtime-tools/system-path:add`.
+- Documented that V2 uses TanStack Query for server snapshot caching instead of restoring the V1-only `requestJsonManaged()` cache/queue/lane internals. The old W3 connector form-specific API functions are not claimed as covered by this slice; remaining connector/model-profile Python harnesses still need their own migration decisions.
+
+### Verification
+- `npm test -- src/test/apiHttp.test.ts` passed with 4 tests.
+- `npm test -- src/test/apiClient.test.ts` passed with 35 tests.
+
+### Reviewer
+- Main-agent decision: this retires another integration frontend Python UI harness and tightens `CLEAN-01` while correcting stale request-strategy docs. It does not claim full connector W3 settings parity, remaining integration harness cleanup, reviewer sign-off, or final V2 frontend completion.
+
 ## 2026-07-02 Frontend Logger Python Harness Removal
 
 ### Scope

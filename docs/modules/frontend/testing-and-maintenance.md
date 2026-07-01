@@ -46,6 +46,7 @@
 
 ```powershell
 cd frontend/app
+npm test -- src/test/apiHttp.test.ts
 npm test -- src/test/apiClient.test.ts
 npm test -- src/test/frontendLogger.test.ts
 npm test -- src/test/MessageTimeline.test.tsx
@@ -106,8 +107,9 @@ npm test -- src/test/AppShell.test.tsx src/test/ChatWorkspace.test.tsx
 
 ### 请求和缓存
 
-- GET 请求优先使用 `requestJsonManaged()`，尤其是列表、状态、配置、观测类接口。
-- mutation 后要调用对应 invalidate helper，确保列表和详情刷新。
+- 基础 HTTP JSON 调用通过 `requestJson()`；页面级 server snapshot 缓存通过 TanStack Query 管理。
+- GET 列表、状态、配置、观测类接口优先使用 `useQuery` 和稳定 query key，避免组件内重复裸请求。
+- mutation 后要调用对应 query invalidation 或 state refresh helper，确保列表和详情刷新。
 - 重请求或重 UI 刷新应设置合理 delay，避免 SSE 密集事件导致请求风暴。
 - AbortError 不应显示为普通错误。
 

@@ -117,6 +117,21 @@ describe("runtime reducers", () => {
     expect(completed.runs["run-1"].terminalEventType).toBe("run_completed");
   });
 
+  it("marks terminal structured output as visible runtime output", () => {
+    const completed = reduceRunEvent(
+      initialRuntimeState,
+      runEvent({
+        event_id: 2,
+        event_type: "run_completed",
+        payload_json: JSON.stringify({
+          output: [{ kind: "text", text: "terminal structured answer" }],
+        }),
+      }),
+    );
+
+    expect(completed.runs["run-1"].hadVisibleTextStream).toBe(true);
+  });
+
   it("does not reopen completed runs for trailing replay events", () => {
     const completed = reduceRunEvent(
       initialRuntimeState,

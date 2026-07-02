@@ -2,15 +2,40 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-02 Runtime Terminal Output Anchor Closure
+
+### Scope
+- Fixed the terminal `run_completed.output` path so structured terminal output counts as visible runtime output instead of replacing an already-rendered live answer with a newly hydrated history row.
+- Stabilized the text stream identity across transient timeline row suffixes such as processed/final grouping, so the typewriter state is not restarted just because the row is regrouped.
+- Merged terminal structured output into the previous runtime text row when text deltas already displayed the same answer, preventing the completion moment from briefly showing both a live text row and a terminal output row.
+- Rebuilt the packed app so `frontend/dist/app` reflects the terminal output anchor behavior.
+
+### Verification
+- `npm test -- src/test/runtimeReducers.test.ts --testTimeout=30000` passed with 17 tests.
+- `npm test -- src/test/MessageTimeline.test.tsx --testTimeout=30000` passed with 181 tests.
+- `npm run lint` passed.
+- `npm run build` passed and regenerated `frontend/dist/app`.
+- Real browser verification used system Chrome against `http://127.0.0.1:8000/app/` with unique marker `UNIQUE_STREAM_1782987247637`. At terminal detection (`terminalSeenAt=7950ms`) there was exactly one answer row, zero streaming cursors, and zero streaming wrappers; after another 1200ms the same answer still appeared exactly once. An earlier unique-marker run exposed the duplicate `runtime-text:*` plus `runtime:*` completion rows, and that failure drove the merge fix above.
+- The in-app browser control was attempted first, but timed out while reading/evaluating the page after reload, so it was not counted as passing evidence.
+
+### Reviewer
+- Main-agent decision: this closes the specific "already fully rendered, then rebuilt/duplicated on completion" defect for normal terminal text output. It does not mark streaming/replay/subagents complete; subagent panel cadence, broader orchestration/tool-heavy variants, interrupted recovery, and final V1/V2 visual sign-off remain open.
+
 ## 2026-07-02 Migration Naming Boundary Guard
 
 ### Scope
 - Tightened `UserFacingNamingParity.test.ts` so the naming cleanup is no longer only a visible-text check.
 - Runtime UI source under `frontend/app/src` plus `frontend/app/index.html` still rejects user-facing `V2/v2`, except the documented non-UI MaaS `/api/v2/` endpoint.
 - Added a file-path guard that scans the frontend source, entry point, and browser proof specs. `v2-*` file names are allowed only under `frontend/app/browser-tests` as migration proof specs; the rule fails if those temporary names leak into runtime source or the app entry.
+- Neutralized the remaining unnecessary `V2/v2` wording in frontend unit-test descriptions, fixture IDs, memory draft names, browser support constants, and screenshot default folders. `src/test` plus `browser-tests/support` now retain only the documented MaaS `/api/v2/` endpoint and the naming guard's own patterns.
+- Added a non-runtime test-support content guard so future casual `V2/v2` names cannot drift back into those support files without being justified as an explicit boundary.
 
 ### Verification
 - `npm test -- src/test/UserFacingNamingParity.test.ts` passed with both content and path-boundary checks.
+- `npm test -- src/test/UserFacingNamingParity.test.ts src/test/AppBuildArtifacts.test.ts src/test/apiClient.test.ts src/test/MemoryView.test.tsx src/test/MessageTimeline.test.tsx src/test/roundMetadata.test.ts src/test/ShellLayoutCss.test.ts src/test/uiStore.test.ts src/test/WorkspacePromptParity.test.ts src/test/SpecLineagePanel.test.tsx --testTimeout=30000` passed with 268 tests.
+- `npm test -- src/test/SettingsDrawer.test.tsx -t "imports MCP server JSON" --testTimeout=30000` passed.
+- `npm run lint` passed.
+- `rg -n "\bV2\b|\bv2\b" frontend/app/src/test frontend/app/browser-tests/support -g "*.ts" -g "*.tsx"` now reports only the documented MaaS `/api/v2/` endpoint and `UserFacingNamingParity.test.ts` guard definitions.
 
 ### Reviewer
 - Main-agent decision: this closes the migration-only test/file naming decision portion of `CLEAN-01`. It does not mark cleanup or the full frontend rewrite complete; promoted-route naming, final browser screenshot sweep, reviewer sign-off, and the remaining parity rows still need closure.

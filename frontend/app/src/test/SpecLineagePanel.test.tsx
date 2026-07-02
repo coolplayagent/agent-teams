@@ -137,7 +137,7 @@ describe("SpecLineagePanel", () => {
     expect(await screen.findByText("Implement checkout (task-spec)")).toBeVisible();
     expect(screen.queryByText("No spec (task-plain)")).not.toBeInTheDocument();
 
-    expect(await screen.findByRole("button", { name: /v2/ })).toBeVisible();
+    expect(await screen.findByText("Scope tightened")).toBeVisible();
     expect(await screen.findByText("Still aligned")).toBeVisible();
     expect(await screen.findByText("Requirements")).toBeVisible();
     const diff = screen.getByText((_content, element) => {

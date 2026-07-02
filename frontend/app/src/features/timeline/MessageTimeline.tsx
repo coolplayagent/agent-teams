@@ -971,8 +971,8 @@ function timelineRowElement(
       ) : null}
       <MessageRowContent
         onSubagentOpen={onSubagentOpen}
-        rowKey={row.key}
         parts={row.parts}
+        row={row}
         sessionId={sessionId}
         t={t}
       />
@@ -1051,8 +1051,8 @@ function ProcessedGroupRow({
             >
               <MessageRowContent
                 onSubagentOpen={onSubagentOpen}
-                rowKey={groupRow.key}
                 parts={groupRow.parts}
+                row={groupRow}
                 sessionId={sessionId}
                 t={t}
               />
@@ -1700,6 +1700,18 @@ function latestCoveredRuntimeTextAnchorKey(
       if (comparisonTexts.some((entryText) => hydratedText.includes(entryText))) {
         latestAnchorKey = runtimeTextRowKey(entry, sequence);
       }
+      continue;
+    }
+    if (entry.kind === "run_completed" && runtimeEntryHasStructuredOutput(entry)) {
+      const outputText = normalizedTimelineText(runtimeCompletedOutputText(entry));
+      if (
+        latestAnchorKey === null &&
+        outputText.length > 0 &&
+        hydratedText.includes(outputText)
+      ) {
+        latestAnchorKey = `runtime:${entry.id}`;
+      }
+      activeGroupSequences.delete(runtimeTextGroupKey(entry));
       continue;
     }
     if (runtimeHiddenEntryClosesText(entry)) {
@@ -2422,6 +2434,9 @@ function runtimeEntriesToRows(
     if (mergeRuntimeCompletedOutputIntoActiveText(entry, rows, activeText)) {
       continue;
     }
+    if (mergeRuntimeCompletedOutputIntoPreviousTextRow(entry, rows)) {
+      continue;
+    }
     if (runtimeInjectionSupersedesPendingToolCalls(entry)) {
       removeSupersededPendingToolRows(rows, entry, resolvedToolCallIds);
     }
@@ -2498,6 +2513,47 @@ function mergeRuntimeCompletedOutputIntoActiveText(
   closeRuntimeTextAccumulator(rows, existing);
   activeText.delete(runtimeTextGroupKey(entry));
   return true;
+}
+
+function mergeRuntimeCompletedOutputIntoPreviousTextRow(
+  entry: TimelineEntry,
+  rows: TimelineRow[],
+): boolean {
+  if (entry.kind !== "run_completed" || !runtimeEntryHasStructuredOutput(entry)) {
+    return false;
+  }
+  const outputText = runtimeCompletedOutputText(entry);
+  if (outputText.length === 0) {
+    return false;
+  }
+  const outputComparisonText = normalizedTimelineText(outputText);
+  for (let rowIndex = rows.length - 1; rowIndex >= 0; rowIndex -= 1) {
+    const row = rows[rowIndex];
+    if (
+      row === undefined ||
+      row.runId !== entry.runId ||
+      row.source !== "runtime" ||
+      !isAnswerRole(row.role)
+    ) {
+      continue;
+    }
+    const textParts = row.parts.filter(
+      (part): part is TimelineTextPart => part.kind === "text",
+    );
+    if (textParts.length !== row.parts.length || textParts.length !== 1) {
+      return false;
+    }
+    const currentText = normalizedTimelineText(rowCopyText(row.parts));
+    if (currentText.length === 0 || !outputComparisonText.includes(currentText)) {
+      return false;
+    }
+    textParts[0].text = outputText;
+    textParts[0].streaming = false;
+    row.text = outputText;
+    row.copyable = true;
+    return true;
+  }
+  return false;
 }
 
 function runtimeCompletedOutputText(entry: TimelineEntry): string {
@@ -3427,7 +3483,7 @@ function runtimeEntriesAfterHydration(
   ) {
     return openRuntimeEntriesWithIdleCursor(runState, scopedEntries, variant);
   }
-  const keepClosedRuntimeTextAnchor = closedRuntimeTextAnchorMatchesHydration(
+  const closedRuntimeTextAnchorKey = closedRuntimeTextAnchorKeyForHydration(
     runState,
     scopedEntries,
     hydratedText ?? "",
@@ -3447,7 +3503,7 @@ function runtimeEntriesAfterHydration(
         hydratedText ?? "",
         hydratedThinkingText ?? "",
         hydratedToolStates,
-        keepClosedRuntimeTextAnchor,
+        closedRuntimeTextAnchorKey,
       );
       if (coveredByHydration) {
         return [];
@@ -3578,19 +3634,22 @@ function openRuntimeTextCoveredByHydration(
   return entryTexts.some((entryText) => hydratedText.includes(entryText));
 }
 
-function closedRuntimeTextAnchorMatchesHydration(
+function closedRuntimeTextAnchorKeyForHydration(
   runState: RuntimeRunState,
   entries: TimelineEntry[],
   hydratedText: string,
-): boolean {
+): string | null {
   if (
     runState.status !== "closed" ||
     runState.hadVisibleTextStream !== true ||
     hydratedText.trim().length === 0
   ) {
-    return false;
+    return null;
   }
-  return normalizedTimelineText(closedRuntimeVisibleText(entries)) === hydratedText;
+  if (normalizedTimelineText(closedRuntimeVisibleText(entries)) !== hydratedText) {
+    return null;
+  }
+  return latestCoveredRuntimeTextAnchorKey(entries, hydratedText);
 }
 
 function closedRuntimeVisibleText(entries: TimelineEntry[]): string {
@@ -3906,7 +3965,7 @@ function runtimeEntryIsCoveredByHydratedOutput(
   hydratedText: string,
   hydratedThinkingText: string,
   hydratedToolStates: ReadonlyMap<string, TimelineToolHydrationState>,
-  keepClosedRuntimeTextAnchor = false,
+  closedRuntimeTextAnchorKey: string | null = null,
 ): boolean {
   if (runtimeEntryIsCoveredByHydratedTool(entry, hydratedToolStates)) {
     return true;
@@ -3915,13 +3974,16 @@ function runtimeEntryIsCoveredByHydratedOutput(
     return true;
   }
   if (entry.kind === "run_completed" && runtimeEntryHasStructuredOutput(entry)) {
+    if (closedRuntimeTextAnchorKey === `runtime:${entry.id}`) {
+      return false;
+    }
     const outputText = normalizedTimelineText(
       rowCopyText(runtimeOutputParts(entry) ?? []),
     );
     return outputText.length > 0 && hydratedText.includes(outputText);
   }
   if (entry.kind === "text_delta" || entry.kind === "output_delta") {
-    if (keepClosedRuntimeTextAnchor) {
+    if (closedRuntimeTextAnchorKey !== null) {
       return false;
     }
     const entryTexts = runtimeHydrationComparisonTexts(entry);
@@ -5709,13 +5771,13 @@ function outputDeltaMediaPart(
 function MessageRowContent({
   onSubagentOpen,
   parts,
-  rowKey,
+  row,
   sessionId,
   t,
 }: {
   onSubagentOpen?: (subagent: TimelineSubagentReference) => void;
   parts: TimelineRenderPart[];
-  rowKey: string;
+  row: TimelineRow;
   sessionId: string;
   t: Translate;
 }) {
@@ -5733,7 +5795,7 @@ function MessageRowContent({
             <MessageText
               key={partKey}
               part={part}
-              streamIdentity={`${rowKey}:${partKey}`}
+              streamIdentity={streamIdentityForTextPart(row, partKey)}
             />
           );
         }
@@ -5767,6 +5829,45 @@ function MessageRowContent({
       })}
     </div>
   );
+}
+
+function streamIdentityForTextPart(row: TimelineRow, partKey: string): string {
+  return `${stableStreamRowKey(row)}:${partKey}`;
+}
+
+function stableStreamRowKey(row: TimelineRow): string {
+  const normalizedKey = stableStreamKeyFromRowKey(row.key);
+  if (normalizedKey.startsWith("runtime-text:")) {
+    return normalizedKey;
+  }
+  const runId = row.runId?.trim() ?? "";
+  if (runId.length > 0) {
+    return [
+      "run-text",
+      runId,
+      row.instanceId?.trim() || stableTimelineRole(row.role),
+      normalizedKey,
+    ].join(":");
+  }
+  return normalizedKey;
+}
+
+function stableStreamKeyFromRowKey(rowKey: string): string {
+  let key = rowKey;
+  let nextKey = streamKeyWithoutTransientSuffix(key);
+  while (nextKey !== key) {
+    key = nextKey;
+    nextKey = streamKeyWithoutTransientSuffix(key);
+  }
+  return key;
+}
+
+function streamKeyWithoutTransientSuffix(rowKey: string): string {
+  return rowKey
+    .replace(/:before-processed$/u, "")
+    .replace(/:processed-start$/u, "")
+    .replace(/:processed$/u, "")
+    .replace(/:final$/u, "");
 }
 
 function MessageText({

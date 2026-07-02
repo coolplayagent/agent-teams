@@ -647,6 +647,137 @@ describe("MessageTimeline", () => {
     expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
   });
 
+  it("keeps terminal structured output mounted when history hydrates the answer", async () => {
+    const finalAnswer = [
+      "LIVE_STREAM_ALPHA",
+      "LIVE_STREAM_BETA",
+      "LIVE_STREAM_GAMMA",
+      "LIVE_STREAM_DELTA",
+    ].join(" ");
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "run_completed",
+        payload_json: JSON.stringify({
+          output: [{ kind: "text", text: finalAnswer }],
+        }),
+        run_id: "run-terminal-structured-output",
+        trace_id: "run-terminal-structured-output",
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: finalAnswer,
+        message_id: "assistant-terminal-structured-output",
+        role_id: "MainAgent",
+        run_id: "run-terminal-structured-output",
+      },
+    ]);
+
+    const { container } = renderTimeline();
+
+    await waitForSingleVisibleText(finalAnswer);
+    const messageRow = container.querySelector<HTMLElement>("article.at-message");
+    expect(messageRow).not.toBeNull();
+    expect(messageRow?.dataset.rowKey).toBe(
+      "runtime:run-terminal-structured-output:1:0",
+    );
+    expect(messageRow?.dataset.rowKey).not.toBe(
+      "message:assistant-terminal-structured-output",
+    );
+    expect(container.querySelectorAll(".at-message-streaming-text")).toHaveLength(0);
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
+  });
+
+  it("does not duplicate run_completed output when text deltas already anchor the final answer", async () => {
+    const finalAnswer = [
+      "LIVE_STREAM_ALPHA",
+      "LIVE_STREAM_BETA",
+      "LIVE_STREAM_GAMMA",
+      "LIVE_STREAM_DELTA",
+    ].join(" ");
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "text_delta",
+        payload_json: JSON.stringify({ text: finalAnswer }),
+        run_id: "run-terminal-duplicate-output",
+        trace_id: "run-terminal-duplicate-output",
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "run_completed",
+        payload_json: JSON.stringify({
+          output: [{ kind: "text", text: finalAnswer }],
+        }),
+        run_id: "run-terminal-duplicate-output",
+        trace_id: "run-terminal-duplicate-output",
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: finalAnswer,
+        message_id: "assistant-terminal-duplicate-output",
+        role_id: "MainAgent",
+        run_id: "run-terminal-duplicate-output",
+      },
+    ]);
+
+    const { container } = renderTimeline();
+
+    await waitForSingleVisibleText(finalAnswer);
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+    const messageRow = container.querySelector<HTMLElement>("article.at-message");
+    expect(messageRow?.dataset.rowKey).toBe(
+      "runtime-text:run-terminal-duplicate-output:MainAgent:0",
+    );
+    expect(container.querySelectorAll(".at-message-streaming-text")).toHaveLength(0);
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
+  });
+
+  it("merges terminal structured output into the previous runtime text row before hydration", async () => {
+    const finalAnswer = [
+      "LIVE_STREAM_ALPHA",
+      "LIVE_STREAM_BETA",
+      "LIVE_STREAM_GAMMA",
+      "LIVE_STREAM_DELTA",
+    ].join(" ");
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "text_delta",
+        payload_json: JSON.stringify({ text: "LIVE_STREAM_ALPHA" }),
+        run_id: "run-terminal-runtime-only",
+        trace_id: "run-terminal-runtime-only",
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "run_completed",
+        payload_json: JSON.stringify({
+          output: [{ kind: "text", text: finalAnswer }],
+        }),
+        run_id: "run-terminal-runtime-only",
+        trace_id: "run-terminal-runtime-only",
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    await waitForSingleVisibleText(finalAnswer);
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+    const messageRow = container.querySelector<HTMLElement>("article.at-message");
+    expect(messageRow?.dataset.rowKey).toBe(
+      "runtime-text:run-terminal-runtime-only:MainAgent:0",
+    );
+    expect(messageRow?.dataset.rowKey).not.toBe(
+      "runtime:run-terminal-runtime-only:2:1",
+    );
+    expect(screen.queryByText("LIVE_STREAM_ALPHA")).not.toBeInTheDocument();
+    expect(container.querySelectorAll(".at-message-streaming-text")).toHaveLength(0);
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
+  });
+
   it("keeps the runtime answer mounted when processed hydration splits thinking from final text", async () => {
     const finalAnswer = [
       "LIVE_STREAM_ALPHA",
@@ -8028,19 +8159,19 @@ describe("MessageTimeline", () => {
       "run_failed",
       {
         error: "Provider failed during TS stream.",
-        root_task_id: "root-v2",
+        root_task_id: "root-react",
         status: "failed",
       },
-      "Run failed: status failed · Provider failed during TS stream. · root task root-v2",
+      "Run failed: status failed · Provider failed during TS stream. · root task root-react",
     ],
     [
       "run_stopped",
       {
         reason: "Stopped from TS stream.",
-        root_task_id: "root-v2",
+        root_task_id: "root-react",
         status: "stopped",
       },
-      "Run stopped: status stopped · Stopped from TS stream. · root task root-v2",
+      "Run stopped: status stopped · Stopped from TS stream. · root task root-react",
     ],
   ] as const)(
     "renders %s terminal lifecycle diagnostics",

@@ -5,8 +5,8 @@ import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, type Route } from "@playwright/test";
 
-export const SESSION_ID = "session-v2-shell";
-export const WORKSPACE_ID = "workspace-v2-shell";
+export const SESSION_ID = "session-react-shell";
+export const WORKSPACE_ID = "workspace-react-shell";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const repoRoot = resolve(packageRoot, "../..");
@@ -65,13 +65,13 @@ declare global {
 
 export function screenshotPath(
   name: string,
-  folder = "frontend-v2-ts-route-switch",
+  folder = "frontend-react-ts-route-switch",
 ): string {
   return join(repoRoot, ".tmp", folder, name);
 }
 
 export async function ensureScreenshotDir(
-  folder = "frontend-v2-ts-route-switch",
+  folder = "frontend-react-ts-route-switch",
 ): Promise<void> {
   await mkdir(join(repoRoot, ".tmp", folder), {
     recursive: true,

@@ -270,7 +270,7 @@ describe("shell layout CSS", () => {
     );
   });
 
-  it("keeps legacy dist message and round selectors out of the V2 CSS surface", () => {
+  it("keeps legacy dist message and round selectors out of the React CSS surface", () => {
     expect(themeCss).not.toContain(".thinking-block");
     expect(themeCss).not.toContain(".user-prompt-block");
     expect(themeCss).not.toContain(".round-detail-header");

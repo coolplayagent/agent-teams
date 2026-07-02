@@ -40,13 +40,13 @@ describe("roundMetadata", () => {
   it("normalizes marker titles while preserving multiline prompt text", () => {
     const summary = roundSummary(
       round({
-        run_user_message: "Plan the V2 shell\nKeep V1 navigation intact",
+        run_user_message: "Plan the React shell\nKeep V1 navigation intact",
       }),
       0,
     );
 
-    expect(summary.title).toBe("Plan the V2 shell Keep V1 navigation intact");
-    expect(summary.promptText).toBe("Plan the V2 shell\nKeep V1 navigation intact");
+    expect(summary.title).toBe("Plan the React shell Keep V1 navigation intact");
+    expect(summary.promptText).toBe("Plan the React shell\nKeep V1 navigation intact");
     expect(summary.promptCollapsible).toBe(true);
   });
 

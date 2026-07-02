@@ -3748,7 +3748,7 @@ describe("SettingsDrawer", () => {
     );
   }, 35000);
 
-  it("imports MCP server JSON into the V2 MCP editor and preserves hidden fields", async () => {
+  it("imports MCP server JSON into the React MCP editor and preserves hidden fields", async () => {
     renderDrawer();
 
     const sections = await screen.findByRole("navigation", {

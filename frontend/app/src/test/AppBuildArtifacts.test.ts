@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 const distAppRoot = join("..", "dist", "app");
 const appIndexHtmlPath = join(distAppRoot, "index.html");
 
-describe("V2 app build artifacts", () => {
+describe("React app build artifacts", () => {
   it("keeps the committed React app entry wired to existing bundled assets", () => {
     const html = readFileSync(appIndexHtmlPath, "utf8");
     const assetPaths = appAssetReferences(html);
@@ -23,7 +23,7 @@ describe("V2 app build artifacts", () => {
     }
   });
 
-  it("keeps the V2 app entry independent from retired hand-maintained modules", () => {
+  it("keeps the React app entry independent from retired hand-maintained modules", () => {
     const html = readFileSync(appIndexHtmlPath, "utf8");
 
     expect(html).not.toContain("/js/");

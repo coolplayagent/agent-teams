@@ -36,7 +36,7 @@ describe("uiStore", () => {
     expect(useUiStore.getState().themeMode).toBe("light");
   });
 
-  it("syncs V2 theme changes back to the V1 theme key", async () => {
+  it("syncs React theme changes back to the V1 theme key", async () => {
     const { legacyThemeStorageKey, themeModeStorageKey, useUiStore } =
       await import("../runtime/uiStore");
 

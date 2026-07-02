@@ -346,7 +346,11 @@ function eventHasVisibleTextStream(
   eventType: RunEventType,
   payload: JsonValue,
 ): boolean {
-  if (eventType !== "text_delta" && eventType !== "output_delta") {
+  if (
+    eventType !== "text_delta" &&
+    eventType !== "output_delta" &&
+    eventType !== "run_completed"
+  ) {
     return false;
   }
   return visibleTextFromStreamPayload(payload).trim().length > 0;

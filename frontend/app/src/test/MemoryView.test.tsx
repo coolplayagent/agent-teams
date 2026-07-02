@@ -75,7 +75,7 @@ const memoryEntry: MemoryEntry = {
   confidence_score: 0.91,
   content: {
     body: "Keep workspace pages fixed height.",
-    context: "V2 shell rewrite",
+    context: "React shell rewrite",
     outcome: "Avoid body scroll",
     title: "Fixed workspace frame",
   },
@@ -276,7 +276,7 @@ describe("MemoryView", () => {
     expect(await screen.findByDisplayValue("fixed")).toBeVisible();
   });
 
-  it("renders the memory architecture map from the V2 page", async () => {
+  it("renders the memory architecture map from the React page", async () => {
     renderView();
 
     fireEvent.click(await screen.findByText("Architecture"));
@@ -320,14 +320,14 @@ describe("MemoryView", () => {
     );
 
     fireEvent.change(screen.getByDisplayValue("workspace-frame"), {
-      target: { value: "workspace-frame-v2" },
+      target: { value: "workspace-frame-react" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() =>
       expect(updateMemorySkillDraftMock).toHaveBeenCalledWith(
         "draft-1",
         expect.objectContaining({
-          runtime_name: "workspace-frame-v2",
+          runtime_name: "workspace-frame-react",
         }),
       ),
     );
@@ -366,7 +366,7 @@ describe("MemoryView", () => {
     ).toBeVisible();
   });
 
-  it("keeps Chinese memory copy on the V2 page", async () => {
+  it("keeps Chinese memory copy on the React page", async () => {
     useUiStore.setState({ language: "zh-CN" });
 
     renderView();

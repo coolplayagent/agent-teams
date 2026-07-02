@@ -1470,7 +1470,7 @@ describe("api client", () => {
             confidence_score: 0.91,
             content: {
               body: "Keep workspace pages fixed height.",
-              context: "V2 shell rewrite",
+              context: "React shell rewrite",
               outcome: "Avoid body scroll",
               title: "Fixed workspace frame",
             },
@@ -1716,7 +1716,7 @@ describe("api client", () => {
       id: "draft-1",
     });
     await expect(
-      updateMemorySkillDraft("draft-1", { runtime_name: "workspace-frame-v2" }),
+      updateMemorySkillDraft("draft-1", { runtime_name: "workspace-frame-react" }),
     ).resolves.toMatchObject({ id: "draft-1" });
     await expect(validateMemorySkillDraft("draft-1")).resolves.toMatchObject({
       status: "validated",
@@ -1753,7 +1753,7 @@ describe("api client", () => {
       4,
       "/api/memories/skill-drafts/draft-1",
       expect.objectContaining({
-        body: JSON.stringify({ runtime_name: "workspace-frame-v2" }),
+        body: JSON.stringify({ runtime_name: "workspace-frame-react" }),
         headers: expect.any(Headers),
         method: "PUT",
       }),

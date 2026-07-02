@@ -34,7 +34,7 @@ const workspaceShellSources = [
 ].join("\n");
 
 describe("workspace prompt shell parity", () => {
-  it("keeps retired V1 shell placeholders and rails out of the V2 shell", () => {
+  it("keeps retired V1 shell placeholders and rails out of the React shell", () => {
     for (const retiredToken of [
       "execution-mode-select",
       "Execution mode",
@@ -56,7 +56,7 @@ describe("workspace prompt shell parity", () => {
     expect(currentSessionIndicatorSource).toContain("workspaceLabel");
   });
 
-  it("keeps top bar, mode, token, and prompt controls in the V2 shell contract", () => {
+  it("keeps top bar, mode, token, and prompt controls in the React shell contract", () => {
     expectOrdered(appShellSource, ["<CurrentSessionIndicator", 'className="at-topbar-right"']);
     expectOrdered(topbarRightBlock(), [
       "handleLanguageToggle",
@@ -86,7 +86,7 @@ describe("workspace prompt shell parity", () => {
     expect(sessionTokenUsageSource).not.toContain("Tokens --");
   });
 
-  it("keeps workspace prompt rendering on V2 surfaces, markdown, and stream primitives", () => {
+  it("keeps workspace prompt rendering on React surfaces, markdown, and stream primitives", () => {
     for (const legacyBeige of ["#ece4d8", "#e8dfd1", "#efe7db", "#fbf7f0"]) {
       expect(themeCss).not.toContain(legacyBeige);
     }

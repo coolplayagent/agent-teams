@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import {
   dispatchEventSourceMessage,
@@ -401,16 +401,10 @@ test("streams subagent deltas incrementally before terminal history refill", asy
     const liveStreamText = liveRow.locator(".at-message-streaming-text");
     await expect(liveRow).toHaveCount(1);
     await expect(liveStreamText).toBeVisible();
-    const firstDisplaySample = await liveStreamText.textContent();
-    expect(firstDisplaySample ?? "").not.toContain("SUB_STREAM_ALPHA_17");
-    const revealSamples = await sampleTextLengths(liveStreamText, 6, 70);
-    const firstStreamLength = firstStreamText.length;
-    expect(revealSamples[0] ?? firstStreamLength).toBeLessThan(firstStreamLength);
-    expect(Math.max(...revealSamples)).toBeLessThan(firstStreamLength);
-    expect(new Set(revealSamples).size).toBeGreaterThanOrEqual(4);
+    await expect(liveStreamText).toContainText(firstStreamText);
     await page.screenshot({
       path: screenshotPath(
-        "v2-subagent-typewriter-mid-reveal.png",
+        "v2-subagent-delta-visible.png",
         SCREENSHOT_FOLDER,
       ),
     });
@@ -524,8 +518,7 @@ test("settles terminal subagent output immediately before history refill", async
       .filter({ hasText: "TERMINAL_STREAM" });
     const terminalDisplay = terminalRow.locator(".at-message-streaming-text");
     await expect(terminalDisplay).toBeVisible();
-    const preTerminalText = await terminalDisplay.textContent();
-    expect(preTerminalText ?? "").not.toContain("TERMINAL_STREAM_39");
+    await expect(terminalDisplay).toContainText(terminalText);
 
     state.completed = true;
     state.delayFinalMessages = true;
@@ -731,14 +724,10 @@ test("recovers a settled subagent stream after refresh before history refill", a
       .filter({ hasText: "REFRESH_STREAM" });
     const restoredDisplay = restoredRow.locator(".at-message-streaming-text");
     await expect(restoredDisplay).toBeVisible();
-    const restoredSamples = await sampleTextLengths(restoredDisplay, 4, 70);
-    expect(restoredSamples[0] ?? terminalText.length).toBeLessThan(
-      terminalText.length,
-    );
-    expect(Math.max(...restoredSamples)).toBeLessThan(terminalText.length);
+    await expect(restoredDisplay).toContainText(terminalText);
     await page.screenshot({
       path: screenshotPath(
-        "v2-subagent-refresh-catchup-restored-mid.png",
+        "v2-subagent-refresh-restored-delta.png",
         SCREENSHOT_FOLDER,
       ),
     });
@@ -1019,7 +1008,7 @@ test("replays an orchestration subagent panel without parent leakage after refre
   }
 });
 
-test("streams a live orchestration subagent with right-panel cadence", async ({
+test("streams a live orchestration subagent with right-panel delta cadence", async ({
   page,
 }) => {
   const appServer = await serveFrontendDist();
@@ -1083,12 +1072,7 @@ test("streams a live orchestration subagent with right-panel cadence", async ({
         exact: true,
       }),
     ).toHaveCount(0);
-    const revealSamples = await sampleTextLengths(liveText, 5, 70);
-    expect(revealSamples[0] ?? firstStreamText.length).toBeLessThan(
-      firstStreamText.length,
-    );
-    expect(Math.max(...revealSamples)).toBeLessThan(firstStreamText.length);
-    expect(new Set(revealSamples).size).toBeGreaterThanOrEqual(3);
+    await expect(liveText).toContainText(firstStreamText);
     await expect(
       page.locator(".at-chat-view").getByText("ORCH_LIVE_"),
     ).toHaveCount(0);
@@ -2351,19 +2335,6 @@ async function dispatchSubagentRunEvent(
     lastEventId: String(event.eventId),
     type: event.type,
   });
-}
-
-async function sampleTextLengths(
-  locator: Locator,
-  count: number,
-  intervalMs: number,
-): Promise<number[]> {
-  const lengths: number[] = [];
-  for (let index = 0; index < count; index += 1) {
-    lengths.push(((await locator.textContent()) ?? "").length);
-    await locator.page().waitForTimeout(intervalMs);
-  }
-  return lengths;
 }
 
 async function panelVisibleTextOccurrences(

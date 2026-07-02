@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import {
   dispatchEventSourceMessage,
@@ -162,7 +162,7 @@ test("resumes an active stream after refresh without duplicating hydrated output
   }
 });
 
-test("does not rebuild a fully revealed live answer when persisted history catches up", async ({
+test("does not rebuild a fully displayed live answer when persisted history catches up", async ({
   page,
 }) => {
   const appServer = await serveFrontendDist();
@@ -269,7 +269,7 @@ test("does not rebuild a fully revealed live answer when persisted history catch
   }
 });
 
-test("reveals terminal structured output from a visible runtime prefix", async ({
+test("fills terminal structured output from a visible runtime prefix without replay", async ({
   page,
 }) => {
   const appServer = await serveFrontendDist();
@@ -287,7 +287,7 @@ test("reveals terminal structured output from a visible runtime prefix", async (
     await mockShellApi(page, appServer.url, unhandledApiRoutes, {
       handleRequest: (context) =>
         handleRefreshApi(context, runCreateRequests, recoveryState),
-      sessionTitle: "TS stream terminal reveal",
+      sessionTitle: "TS stream terminal fill",
     });
     await ensureScreenshotDir(SCREENSHOT_FOLDER);
 
@@ -332,6 +332,7 @@ test("reveals terminal structured output from a visible runtime prefix", async (
 
     recoveryState.lastEventId = 3;
     recoveryState.completed = true;
+    recoveryState.persistedAssistantText = finalText;
     await dispatchRunEvent(page, {
       eventId: 3,
       payload: {
@@ -345,41 +346,29 @@ test("reveals terminal structured output from a visible runtime prefix", async (
     await expect.poll(() => answerRow.first().getAttribute("data-row-key"))
       .toBe(liveRowKey);
     await expect(answerRow).toHaveCount(1);
-    await expect(page.getByText(finalText)).toHaveCount(0);
-    await expect(answerRow.locator(".streaming-cursor")).toHaveCount(0);
-    await expect(answerRow.locator(".at-message-streaming-text")).toHaveCount(1);
-    await expect(answerRow.locator(".at-message-streaming-text"))
-      .toContainText(visiblePrefix);
-
-    await expect
-      .poll(() => streamingTextLength(answerRow), { timeout: 8_000 })
-      .toBeGreaterThan(visiblePrefix.length);
-    const midRevealText = await streamingTextContent(answerRow);
-    expect(midRevealText.startsWith(visiblePrefix)).toBe(true);
-    expect(midRevealText.length).toBeLessThan(finalText.length);
-    await page.screenshot({
-      path: screenshotPath(
-        "v2-stream-terminal-output-prefix-reveal.png",
-        SCREENSHOT_FOLDER,
-      ),
-    });
-
-    await expect(page.getByText(finalText)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(finalText)).toBeVisible();
     await expect(answerRow).toContainText(finalText);
-    await expect(answerRow.locator(".at-message-streaming-text")).toHaveCount(0);
     await expect(answerRow.locator(".streaming-cursor")).toHaveCount(0);
+    await expect(answerRow.locator(".at-message-streaming-text")).toHaveCount(0);
     await expect.poll(() =>
       page.locator(".at-chat-view").evaluate((element, expectedText) =>
         (element.textContent ?? "").split(expectedText).length - 1,
       finalText),
     ).toBe(1);
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-stream-terminal-output-prefix-fill.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+
     await expect.poll(() => answerRow.first().getAttribute("data-row-key"))
       .toBe(liveRowKey);
 
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await expectNoDocumentScroll(
       page,
-      "terminal output prefix reveal should stay inside the fixed V2 shell",
+      "terminal output prefix fill should stay inside the fixed V2 shell",
     );
     await expectComposerControlsDoNotOverlap(page);
     await page.screenshot({
@@ -640,15 +629,6 @@ async function expectToolChromeState(
       ...expected,
       oldStatusCount: 0,
     });
-}
-
-async function streamingTextContent(row: Locator): Promise<string> {
-  return await row.locator(".at-message-streaming-text").first()
-    .evaluate((element) => element.textContent ?? "");
-}
-
-async function streamingTextLength(row: Locator): Promise<number> {
-  return (await streamingTextContent(row)).length;
 }
 
 async function handleRefreshApi(

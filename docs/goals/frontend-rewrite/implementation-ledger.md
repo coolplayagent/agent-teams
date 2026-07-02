@@ -2,6 +2,27 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-02 Real Delta Streaming And Terminal No-Replay
+
+### Scope
+- Replaced the presentation-layer fake typewriter behavior for runtime text rows. Visible text now follows actual `text_delta`/`output_delta` content immediately, while the cursor simply marks that the stream is still open.
+- Stopped using `run_completed.output` as a local reveal animation source. Terminal structured output now fills the existing runtime row once, removes the streaming wrapper/cursor, and does not rebuild the answer after persisted history catches up.
+- Updated focused component and packed-browser coverage so future regressions fail if completed output is animated or replayed after it already reached the DOM.
+- Rebuilt the packed app so `frontend/dist/app` reflects the no-replay stream behavior.
+
+### Verification
+- `npm run build` passed and regenerated `frontend/dist/app`.
+- `npm run test -- MessageTimeline.test.tsx -t "terminal|streaming|reveal|runtime output"` passed with 35 selected tests.
+- `npm run test -- MessageTimeline.test.tsx` passed with 183 tests.
+- `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium -g "fills terminal structured output from a visible runtime prefix without replay"` passed.
+- `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium` passed with 4 Chromium scenarios.
+- `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium` passed with 12 Chromium scenarios, covering right-panel subagent stream/refill/refresh cases after the no-replay behavior change.
+- `npm run lint` passed.
+- Browser screenshot evidence was written under `.tmp/frontend-v2-ts-stream/` as `v2-stream-terminal-output-prefix-fill.png` and `v2-stream-terminal-output-prefix-final.png`.
+
+### Reviewer
+- Main-agent decision: this closes the specific "content is already rendered, then terminal/history rebuilds or retypes it" defect for normal runtime terminal text and applies the same no-replay rule to the covered right-panel subagent paths. It intentionally removes the misleading completed-output typewriter behavior; true streaming is now driven by real delta arrival. It does not claim full stream/replay PASS, real-backend visual sign-off, reviewer-subagent sign-off, or final V2 frontend completion.
+
 ## 2026-07-02 Terminal Catch-Up Browser Evidence
 
 ### Scope

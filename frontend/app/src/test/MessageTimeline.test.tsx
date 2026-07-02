@@ -593,7 +593,7 @@ describe("MessageTimeline", () => {
       ".at-message-streaming-text",
     );
     expect(streamingText).not.toBeNull();
-    expect(streamingText).not.toHaveTextContent(streamedPrefix);
+    expect(streamingText).toHaveTextContent(streamedPrefix);
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(100);
@@ -642,6 +642,81 @@ describe("MessageTimeline", () => {
 
     expect(screen.getByText(finalAnswer)).toBeVisible();
     expect(screen.queryByText(streamedPrefix)).not.toBeInTheDocument();
+    expect(container.querySelector(".at-message-streaming-text")).toBeNull();
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+  });
+
+  it("does not replay terminal output after it fills and history catches up", async () => {
+    vi.stubEnv("MODE", "production");
+    vi.useFakeTimers();
+    const streamedPrefix = "LI";
+    const finalAnswer = [
+      streamedPrefix,
+      "LIVE_STREAM_ALPHA",
+      "LIVE_STREAM_BETA",
+      "LIVE_STREAM_GAMMA",
+      "LIVE_STREAM_DELTA",
+      "LIVE_STREAM_EPSILON",
+    ].join(" ");
+    const prefixEvent = relayRunEvent({
+      event_id: 1,
+      event_type: "text_delta",
+      payload_json: JSON.stringify({ text: streamedPrefix }),
+      run_id: "run-live-terminal-history-catchup",
+      trace_id: "run-live-terminal-history-catchup",
+    });
+    const completedEvent = relayRunEvent({
+      event_id: 2,
+      event_type: "run_completed",
+      payload_json: JSON.stringify({
+        output: [{ kind: "text", text: finalAnswer }],
+        status: "completed",
+      }),
+      run_id: "run-live-terminal-history-catchup",
+      trace_id: "run-live-terminal-history-catchup",
+    });
+    setRuntimeStateFromEvents([prefixEvent]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container, queryClient } = renderTimeline();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    expect(screen.getByText(streamedPrefix)).toBeVisible();
+
+    await act(async () => {
+      setRuntimeStateFromEvents([prefixEvent, completedEvent]);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const rowBeforeHistory = container.querySelector<HTMLElement>("article.at-message");
+    expect(rowBeforeHistory).not.toBeNull();
+    for (let frame = 0; frame < 220; frame += 1) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(36);
+      });
+    }
+    expect(screen.getByText(finalAnswer)).toBeVisible();
+    expect(container.querySelector(".at-message-streaming-text")).toBeNull();
+
+    await act(async () => {
+      queryClient.setQueryData(["sessions", "session-1", "messages"], [
+        {
+          content: finalAnswer,
+          message_id: "assistant-live-terminal-history-catchup-final",
+          role_id: "MainAgent",
+          run_id: "run-live-terminal-history-catchup",
+        },
+      ]);
+    });
+
+    const rowAfterHistory = container.querySelector<HTMLElement>("article.at-message");
+    expect(rowAfterHistory).toBe(rowBeforeHistory);
+    expect(screen.getByText(finalAnswer)).toBeVisible();
     expect(container.querySelector(".at-message-streaming-text")).toBeNull();
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
     expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
@@ -778,7 +853,7 @@ describe("MessageTimeline", () => {
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
   });
 
-  it("reveals terminal structured output from the already displayed runtime prefix", async () => {
+  it("fills terminal structured output without replaying the displayed runtime prefix", async () => {
     vi.stubEnv("MODE", "production");
     vi.useFakeTimers();
     const streamedPrefix = "LI";
@@ -827,33 +902,9 @@ describe("MessageTimeline", () => {
     const rowAfterTerminal = container.querySelector<HTMLElement>("article.at-message");
     expect(rowAfterTerminal).toBe(rowBefore);
     expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
-    expect(screen.queryByText(finalAnswer)).not.toBeInTheDocument();
-    expect(
-      container.querySelector<HTMLElement>(".at-message-streaming-text"),
-    )?.toHaveTextContent(streamedPrefix);
-    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
-
-    await act(async () => {
-      await Promise.resolve();
-    });
-    for (let frame = 0; frame < 8; frame += 1) {
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(36);
-      });
-    }
-    expect(screen.queryByText(finalAnswer)).not.toBeInTheDocument();
-    const midRevealText = container.querySelector<HTMLElement>(
-      ".at-message-streaming-text",
-    )?.textContent ?? "";
-    expect(midRevealText.startsWith(streamedPrefix)).toBe(true);
-    expect(midRevealText.length).toBeGreaterThan(streamedPrefix.length);
-
-    for (let frame = 0; frame < 140; frame += 1) {
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(36);
-      });
-    }
     expect(screen.getByText(finalAnswer)).toBeVisible();
+    expect(container.querySelector(".at-message-streaming-text")).toBeNull();
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
     expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
     expect(container.querySelector<HTMLElement>("article.at-message")).toBe(rowBefore);
     expect(container.querySelector(".at-message-streaming-text")).toBeNull();
@@ -1011,14 +1062,9 @@ describe("MessageTimeline", () => {
 
     const { container, queryClient } = renderTimeline();
 
-    expect(container.querySelector(".at-message-streaming-text")).not.toHaveTextContent(
+    expect(container.querySelector(".at-message-streaming-text")).toHaveTextContent(
       finalAnswer,
     );
-    for (let frame = 0; frame < 24; frame += 1) {
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(36);
-      });
-    }
     expect(screen.getByText(finalAnswer)).toBeVisible();
     const rowBefore = container.querySelector<HTMLElement>("article.at-message");
     expect(rowBefore).not.toBeNull();
@@ -1089,7 +1135,7 @@ describe("MessageTimeline", () => {
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
   });
 
-  it("merges terminal structured output into the active runtime text reveal", async () => {
+  it("merges terminal structured output into the active runtime text row", async () => {
     useRuntimeStore.setState({
       runtimeState: {
         activeRunIds: [],

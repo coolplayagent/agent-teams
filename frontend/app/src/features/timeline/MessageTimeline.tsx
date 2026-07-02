@@ -2507,10 +2507,8 @@ function mergeRuntimeCompletedOutputIntoActiveText(
   ) {
     return false;
   }
-  const shouldRevealTerminalOutput =
-    currentText.length > 0 && currentText !== normalizedOutputText;
   existing.part.text = outputText;
-  existing.part.reveal = shouldRevealTerminalOutput;
+  delete existing.part.reveal;
   existing.row.text = outputText;
   existing.placeholder = false;
   closeRuntimeTextAccumulator(rows, existing);
@@ -2550,9 +2548,8 @@ function mergeRuntimeCompletedOutputIntoPreviousTextRow(
     if (currentText.length === 0 || !outputComparisonText.includes(currentText)) {
       return false;
     }
-    const shouldRevealTerminalOutput = currentText !== outputComparisonText;
     textParts[0].text = outputText;
-    textParts[0].reveal = shouldRevealTerminalOutput;
+    delete textParts[0].reveal;
     textParts[0].streaming = false;
     row.text = outputText;
     row.copyable = true;
@@ -5924,7 +5921,7 @@ function useStreamingDisplayText(
   streamIdentity: string,
 ): StreamingDisplayText {
   const smoothEnabled = import.meta.env.MODE !== "test";
-  const shouldReveal = streaming || reveal;
+  const shouldReveal = reveal;
   const [displayedText, setDisplayedText] = useState(() =>
     initialDisplayedStreamingText(
       targetText,

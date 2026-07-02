@@ -2,6 +2,24 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-02 Paired V1/V2 Shell Breakpoint Evidence
+
+### Scope
+- Added paired V1/V2 browser layout metrics and screenshots for desktop `1280x720` and narrow `720x720` viewports.
+- Fixed a V2 narrow-layout regression found during screenshot review: the sidebar overlay breakpoint was too wide at `760px`, causing the sidebar to cover the composer at `720px`. The overlay breakpoint is now `640px`, so tablet/narrow-desktop widths keep the V1-style inline sidebar while phone widths keep the drawer overlay.
+- Strengthened the paired browser test so widths above `640px` fail if the V2 composer starts underneath the sidebar.
+- Rebuilt the packed app so `frontend/dist/app` reflects the breakpoint change.
+
+### Verification
+- `npm run test -- src/test/ShellLayoutCss.test.ts src/test/AppShell.test.tsx -t "narrow|fixed|sidebar"` passed with 18 selected tests.
+- `npm run build` passed and regenerated `frontend/dist/app`.
+- `npm run test:browser -- v2-route-switch.spec.ts --project=chromium -g "paired V1 and V2 fixed shell"` passed.
+- `npm run test:browser -- v2-appearance-layout.spec.ts --project=chromium -g "narrow sidebar overlay"` passed.
+- Screenshot evidence was written under `.tmp/frontend-react-ts-route-switch/` as `shell-pair-v1-desktop.png`, `shell-pair-v2-desktop.png`, `shell-pair-v1-narrow.png`, and `shell-pair-v2-narrow.png`; phone overlay evidence remains `.tmp/frontend-v2-ts-appearance/v2-narrow-sidebar-overlay.png`.
+
+### Reviewer
+- Main-agent visual review: the previous `720px` V2 screenshot showed the sidebar covering the composer; after the breakpoint change, the 720px V2 composer is fully visible in the main column and no composer controls overlap. The 390px overlay screenshot still shows the intended drawer behavior. This strengthens `SHELL-03`; final reviewer sign-off is still open.
+
 ## 2026-07-02 Fixed Shell Long Sidebar Chat Evidence
 
 ### Scope

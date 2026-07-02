@@ -407,7 +407,7 @@ test("keeps the workspace fixed under the narrow sidebar overlay", async ({
     await page.goto(`${appServer.url}/app/`);
     await waitForV2Shell(page);
     await expect.poll(() =>
-      page.evaluate(() => window.matchMedia("(max-width: 760px)").matches),
+      page.evaluate(() => window.matchMedia("(max-width: 640px)").matches),
     ).toBe(true);
 
     await expect(page.locator(".at-sidebar")).toBeVisible();

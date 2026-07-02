@@ -7781,7 +7781,7 @@ body {
   font-size: 12px;
 }
 
-@media (max-width: 760px) {
+@media (max-width: 640px) {
   .at-shell,
   .at-topbar,
   .at-body,

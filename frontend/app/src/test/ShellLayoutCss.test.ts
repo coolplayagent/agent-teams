@@ -62,7 +62,7 @@ describe("shell layout CSS", () => {
       /\.at-sidebar-resizer\s*{[\s\S]*?right:\s*-6px;[\s\S]*?width:\s*6px;/,
     );
     expect(themeCss).toMatch(
-      /@media \(max-width: 760px\)[\s\S]*?\.at-sidebar\s*{[\s\S]*?margin-right:\s*0;/,
+      /@media \(max-width: 640px\)[\s\S]*?\.at-sidebar\s*{[\s\S]*?margin-right:\s*0;/,
     );
   });
 
@@ -147,10 +147,10 @@ describe("shell layout CSS", () => {
       /\.at-workspace-tree-list,\s*[\s\S]*?\.at-workspace-file-pane-list\s*{[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*auto;/,
     );
     expect(themeCss).toMatch(
-      /@media \(max-width: 760px\)[\s\S]*?\.at-workspace-workbench-content\.is-files\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);[\s\S]*?grid-template-rows:\s*minmax\(220px, 0\.64fr\) minmax\(150px, 0\.36fr\);/,
+      /@media \(max-width: 640px\)[\s\S]*?\.at-workspace-workbench-content\.is-files\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);[\s\S]*?grid-template-rows:\s*minmax\(220px, 0\.64fr\) minmax\(150px, 0\.36fr\);/,
     );
     expect(themeCss).toMatch(
-      /@media \(max-width: 760px\)[\s\S]*?\.at-workspace-workbench-content\.is-changes\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);[\s\S]*?grid-template-rows:\s*minmax\(140px, 0\.25fr\) minmax\(220px, 0\.5fr\) minmax\(150px, 0\.25fr\);/,
+      /@media \(max-width: 640px\)[\s\S]*?\.at-workspace-workbench-content\.is-changes\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);[\s\S]*?grid-template-rows:\s*minmax\(140px, 0\.25fr\) minmax\(220px, 0\.5fr\) minmax\(150px, 0\.25fr\);/,
     );
   });
 
@@ -407,7 +407,7 @@ describe("shell layout CSS", () => {
       /\.at-composer \.ant-select-disabled \.ant-select-selector,[\s\S]*?\.at-composer \.ant-segmented-disabled\s*{[\s\S]*?background:\s*var\(--at-surface-muted\) !important;[\s\S]*?color:\s*var\(--at-text-muted\) !important;/,
     );
     expect(themeCss).toMatch(
-      /@media \(max-width: 760px\)[\s\S]*?\.at-composer-controls\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/,
+      /@media \(max-width: 640px\)[\s\S]*?\.at-composer-controls\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/,
     );
     expect(themeCss).toMatch(
       /@media \(max-width: 1320px\)[\s\S]*?\.at-composer-controls\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/,
@@ -416,7 +416,7 @@ describe("shell layout CSS", () => {
       /@media \(max-width: 1320px\)[\s\S]*?\.at-composer-controls > \.ant-space:last-child\s*{[\s\S]*?justify-content:\s*flex-end;[\s\S]*?width:\s*100%;/,
     );
     expect(themeCss).toMatch(
-      /@media \(max-width: 760px\)[\s\S]*?\.at-composer-control-set > \.ant-space-item:first-child\s*{[\s\S]*?grid-column:\s*1 \/ -1;/,
+      /@media \(max-width: 640px\)[\s\S]*?\.at-composer-control-set > \.ant-space-item:first-child\s*{[\s\S]*?grid-column:\s*1 \/ -1;/,
     );
   });
 
@@ -440,19 +440,19 @@ describe("shell layout CSS", () => {
 
   it("keeps the narrow workspace full width behind the sidebar overlay", () => {
     expect(themeCss).toMatch(
-      /@media \(max-width: 760px\)[\s\S]*?\.at-body\s*{[\s\S]*?position:\s*relative;/,
+      /@media \(max-width: 640px\)[\s\S]*?\.at-body\s*{[\s\S]*?position:\s*relative;/,
     );
     expect(themeCss).toMatch(
-      /@media \(max-width: 760px\)[\s\S]*?\.at-sidebar-scrim\s*{[\s\S]*?position:\s*absolute;[\s\S]*?z-index:\s*11;[\s\S]*?inset:\s*0;[\s\S]*?display:\s*block;/,
+      /@media \(max-width: 640px\)[\s\S]*?\.at-sidebar-scrim\s*{[\s\S]*?position:\s*absolute;[\s\S]*?z-index:\s*11;[\s\S]*?inset:\s*0;[\s\S]*?display:\s*block;/,
     );
     expect(themeCss).toMatch(
-      /@media \(max-width: 760px\)[\s\S]*?\.at-sidebar\s*{[\s\S]*?position:\s*absolute;[\s\S]*?z-index:\s*12;[\s\S]*?inset:\s*0 auto 0 0;[\s\S]*?max-width:\s*calc\(100vw - 44px\);/,
+      /@media \(max-width: 640px\)[\s\S]*?\.at-sidebar\s*{[\s\S]*?position:\s*absolute;[\s\S]*?z-index:\s*12;[\s\S]*?inset:\s*0 auto 0 0;[\s\S]*?max-width:\s*calc\(100vw - 44px\);/,
     );
     expect(themeCss).toMatch(
-      /@media \(max-width: 760px\)[\s\S]*?\.at-sidebar-resizer\s*{[\s\S]*?display:\s*none;/,
+      /@media \(max-width: 640px\)[\s\S]*?\.at-sidebar-resizer\s*{[\s\S]*?display:\s*none;/,
     );
     expect(themeCss).toMatch(
-      /@media \(max-width: 760px\)[\s\S]*?\.at-workspace\s*{[\s\S]*?flex:\s*1 1 100%;[\s\S]*?min-width:\s*0;/,
+      /@media \(max-width: 640px\)[\s\S]*?\.at-workspace\s*{[\s\S]*?flex:\s*1 1 100%;[\s\S]*?min-width:\s*0;/,
     );
   });
 });

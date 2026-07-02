@@ -114,6 +114,15 @@ For every row moved to `Verified`, record:
 
 ## Verification Ledger
 
+### 2026-07-02 Refresh Hydration Cursor Replay Tightening
+
+- `MSG-02`, `STREAM-02`, and `REC-01` tightened: active refresh recovery now keeps hydrated persisted text/tool history when the EventSource resumes from `after_event_id`, instead of deleting the persisted answer/tool row just because a later live text segment arrives.
+- Runtime hydration suppression now consumes hydrated text in event order rather than using whole-answer substring matching. This prevents repeated text after tool/thinking boundaries from being hidden while still suppressing already-hydrated prefix chunks.
+- Completed runtime text close no longer marks terminal text for a second visual reveal; once terminal or persisted history catches up, the existing text row settles without fake-typing the same answer again.
+- Processed folding now keeps user injection notices and their immediate main-agent narration visible, while ordinary intermediate worker updates remain inside `已处理`.
+- Evidence: `npm test -- src/test/MessageTimeline.test.tsx`, `npm run build`, `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium`.
+- This does not move `MSG-02`, `STREAM-02`, or `REC-01` to `Verified`; live real-backend orchestration/tool-heavy recovery, subagent cadence, and final V1 paired visual sign-off remain open.
+
 ### 2026-07-02 Migration Naming Boundary Guard
 
 - `CLEAN-01` tightened: `UserFacingNamingParity.test.ts` now checks both visible runtime text and frontend file paths.

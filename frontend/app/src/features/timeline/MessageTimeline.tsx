@@ -1306,9 +1306,12 @@ function collapseProcessedSegment(
   segment: TimelineRow[],
   runId: string,
 ): TimelineRow[] {
-  const surfacedRows = segment.filter(timelineRowStaysOutsideProcessedGroup);
+  const keepMainNarrationOutside = segment.some(timelineRowHasInjectionNotice);
+  const surfacedRows = segment.filter((row) =>
+    timelineRowStaysOutsideProcessedGroup(row, keepMainNarrationOutside),
+  );
   const processableSegment = segment.filter(
-    (row) => !timelineRowStaysOutsideProcessedGroup(row),
+    (row) => !timelineRowStaysOutsideProcessedGroup(row, keepMainNarrationOutside),
   );
   if (surfacedRows.length > 0 && processableSegment.length > 0) {
     return [
@@ -1395,20 +1398,31 @@ function collapseProcessedSegmentCore(
   return collapsedRows;
 }
 
-function timelineRowStaysOutsideProcessedGroup(row: TimelineRow): boolean {
+function timelineRowStaysOutsideProcessedGroup(
+  row: TimelineRow,
+  keepMainNarrationOutside: boolean,
+): boolean {
+  if (timelineRowHasInjectionNotice(row)) {
+    return true;
+  }
+  return (
+    keepMainNarrationOutside &&
+    timelineRoleIsMainTimelineAgent(row.role) &&
+    !timelineRowHasWorkPart(row)
+  );
+}
+
+function timelineRowHasInjectionNotice(row: TimelineRow): boolean {
   const textParts = row.parts.filter((part): part is TimelineTextPart =>
     part.kind === "text" && part.text.trim().length > 0
   );
   if (textParts.length === 0) {
     return false;
   }
-  if (textParts.some((part) =>
+  return textParts.some((part) =>
     part.text.trim().startsWith("Injection applied:") ||
     part.text.trim().startsWith("Injection queued:")
-  )) {
-    return true;
-  }
-  return timelineRoleIsMainTimelineAgent(row.role) && !timelineRowHasWorkPart(row);
+  );
 }
 
 function firstWorkPartLocation(
@@ -2265,16 +2279,36 @@ function dropPersistedRowsCoveredByTerminalRuntime(
 ): TimelineRow[] {
   const terminalRuntimeTextsByRunId = new Map<string, Set<string>>();
   const openRuntimeTextRunIds = new Set<string>();
+  const openRuntimeTextsByRunId = new Map<string, string[]>();
+  const hydratedOpenRuntimeTextRunIds = new Set<string>();
   for (const row of runtimeRows) {
     const runId = row.runId?.trim() ?? "";
     if (runId.length === 0 || row.source !== "runtime") {
       continue;
     }
+    const hasHydratedOpenText = row.parts.some(
+      (part) =>
+        part.kind === "text" &&
+        part.streaming &&
+        part.text.trim().length === 0,
+    );
+    if (hasHydratedOpenText) {
+      hydratedOpenRuntimeTextRunIds.add(runId);
+    }
     const hasOpenText = row.parts.some(
-      (part) => part.kind === "text" && part.streaming,
+      (part) =>
+        part.kind === "text" &&
+        part.streaming &&
+        part.text.trim().length > 0,
     );
     if (hasOpenText) {
       openRuntimeTextRunIds.add(runId);
+      const openText = normalizedTimelineText(rowCopyText(row.parts));
+      if (openText.length > 0) {
+        const texts = openRuntimeTextsByRunId.get(runId) ?? [];
+        texts.push(openText);
+        openRuntimeTextsByRunId.set(runId, texts);
+      }
       continue;
     }
     const text = normalizedTimelineText(rowCopyText(row.parts));
@@ -2295,10 +2329,17 @@ function dropPersistedRowsCoveredByTerminalRuntime(
     }
     if (
       openRuntimeTextRunIds.has(runId) &&
+      !hydratedOpenRuntimeTextRunIds.has(runId) &&
+      !openRuntimeRunHasPersistedTextPrefix(runStates[runId], row) &&
       runStates[runId]?.status !== "closed" &&
+      row.parts.every((part) => part.kind === "text") &&
       persistedAnswerRowCanHydrateRuntimeText(row)
     ) {
-      return false;
+      const persistedText = normalizedTimelineText(rowCopyText(row.parts));
+      const openTexts = openRuntimeTextsByRunId.get(runId) ?? [];
+      return !openTexts.some((openText) =>
+        runtimeTextOverlapsPersistedAnswer(openText, persistedText),
+      );
     }
     if (row.parts.some((part) => part.kind !== "text")) {
       return true;
@@ -2310,6 +2351,42 @@ function dropPersistedRowsCoveredByTerminalRuntime(
     const text = normalizedTimelineText(rowCopyText(row.parts));
     return text.length === 0 || !terminalTexts.has(text);
   });
+}
+
+function openRuntimeRunHasPersistedTextPrefix(
+  runState: RuntimeRunState | undefined,
+  persistedRow: TimelineRow,
+): boolean {
+  if (runState === undefined || runState.status === "closed") {
+    return false;
+  }
+  const targetText = normalizedTimelineText(rowCopyText(persistedRow.parts));
+  if (targetText.length === 0) {
+    return false;
+  }
+  let accumulatedText = "";
+  for (const entry of runState.entries) {
+    if (entry.kind === "text_delta" || entry.kind === "output_delta") {
+      const entryText = runtimeHydrationComparisonTexts(entry).join(" ");
+      if (entryText.length === 0) {
+        continue;
+      }
+      accumulatedText = normalizedTimelineText(
+        [accumulatedText, entryText].filter(Boolean).join(" "),
+      );
+      if (!targetText.startsWith(accumulatedText)) {
+        return false;
+      }
+      if (accumulatedText === targetText) {
+        return true;
+      }
+      continue;
+    }
+    if (accumulatedText.length > 0) {
+      return false;
+    }
+  }
+  return false;
 }
 
 function timelineNonToolPartDedupeText(part: TimelineRenderPart): string {
@@ -3592,6 +3669,7 @@ function runtimeEntriesAfterHydration(
   }
   const hydratedEntries: TimelineEntry[] = [];
   const safeHydratedText = hydratedText ?? "";
+  const hydratedCursor = runtimeHydratedTextCursor(safeHydratedText);
   let suppressCoveredText = runState.hadVisibleTextStream !== true;
   for (const entry of scopedEntries) {
     const nextEntry = runtimeEntryAfterThinkingHydration(
@@ -3603,7 +3681,7 @@ function runtimeEntriesAfterHydration(
     }
     if (
       suppressCoveredText &&
-      openRuntimeTextCoveredByHydration(nextEntry, safeHydratedText)
+      openRuntimeTextCoveredByHydration(nextEntry, hydratedCursor)
     ) {
       hydratedEntries.push(runtimeHydrationCursorEntry(nextEntry));
       continue;
@@ -3697,13 +3775,30 @@ function runtimeEntryRestoresIdleCursor(entry: TimelineEntry): boolean {
 
 function openRuntimeTextCoveredByHydration(
   entry: TimelineEntry,
-  hydratedText: string,
+  hydratedCursor: RuntimeHydratedTextCursor,
 ): boolean {
   if (entry.kind !== "text_delta" && entry.kind !== "output_delta") {
     return false;
   }
-  const entryTexts = runtimeHydrationComparisonTexts(entry);
-  return entryTexts.some((entryText) => hydratedText.includes(entryText));
+  const entryText = runtimeHydrationComparisonTexts(entry).join(" ");
+  if (entryText.length === 0 || hydratedCursor.remainingText.length === 0) {
+    return false;
+  }
+  if (!hydratedCursor.remainingText.startsWith(entryText)) {
+    return false;
+  }
+  hydratedCursor.remainingText = hydratedCursor.remainingText
+    .slice(entryText.length)
+    .trimStart();
+  return true;
+}
+
+interface RuntimeHydratedTextCursor {
+  remainingText: string;
+}
+
+function runtimeHydratedTextCursor(hydratedText: string): RuntimeHydratedTextCursor {
+  return { remainingText: normalizedTimelineText(hydratedText) };
 }
 
 function closedRuntimeTextAnchorKeyForHydration(

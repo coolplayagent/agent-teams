@@ -2,6 +2,24 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-02 Terminal Stream Catch-Up Identity Closure
+
+### Scope
+- Fixed a concrete live-stream/replay mismatch where a fully revealed live answer could be removed when terminal persisted history caught up, causing React to mount a new persisted message row for the same answer.
+- Changed terminal hydration filtering so a closed run that already had a visible text stream keeps the runtime text row as the display anchor when the combined runtime deltas exactly match the hydrated final answer. Partial or stale runtime prefixes are still allowed to be replaced by persisted history.
+- Added packed-browser coverage that records the live answer row key before terminal catch-up, completes the run with matching persisted history, and verifies the same row key remains, the answer appears once, and no streaming cursor or streaming text container remains.
+- Rebuilt the packed app so `frontend/dist/app` reflects the timeline fix.
+
+### Verification
+- `npm test -- src/test/MessageTimeline.test.tsx -t "persisted text upgrades|terminal runtime|covered by hydrated|closed runtime output"` passed with 9 selected tests.
+- `npm run typecheck` passed.
+- `npm run build` passed and regenerated `frontend/dist/app`.
+- `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium` passed with 3 Chromium scenarios.
+- Manual screenshot review checked `.tmp/frontend-v2-ts-stream/v2-stream-terminal-catchup-before-history.png` and `.tmp/frontend-v2-ts-stream/v2-stream-terminal-catchup-after-history.png`.
+
+### Reviewer
+- Main-agent decision: this tightens `MSG-02`, `STREAM-02`, and `REC-01` for the specific terminal history catch-up identity bug. It does not mark streaming/replay complete; live real-backend orchestration variants, subagent stream cadence, interrupted recovery, and final V1 visual sign-off remain open.
+
 ## 2026-07-02 Model Profile Auth Harness Retirement
 
 ### Scope

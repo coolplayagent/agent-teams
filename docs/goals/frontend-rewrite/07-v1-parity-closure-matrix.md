@@ -114,6 +114,13 @@ For every row moved to `Verified`, record:
 
 ## Verification Ledger
 
+### 2026-07-02 Terminal Stream Catch-Up Identity Closure
+
+- `MSG-02`, `STREAM-02`, and `REC-01` tightened: terminal persisted history catch-up no longer rebuilds a fully revealed live answer row. When the closed runtime deltas exactly match the hydrated final answer, the runtime row remains the display anchor, partial/stale prefixes still yield to persisted history, and the terminal view has no stale cursor or duplicate answer text.
+- Added a packed-browser regression that records the live answer row key before terminal catch-up, completes the run with matching persisted history, and verifies the same row key remains after terminal settlement with one visible answer.
+- Evidence: `npm test -- src/test/MessageTimeline.test.tsx -t "persisted text upgrades|terminal runtime|covered by hydrated|closed runtime output"`, `npm run typecheck`, `npm run build`, `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium`; screenshots `.tmp/frontend-v2-ts-stream/v2-stream-terminal-catchup-before-history.png` and `.tmp/frontend-v2-ts-stream/v2-stream-terminal-catchup-after-history.png`.
+- This does not move `MSG-02`, `STREAM-02`, or `REC-01` to `Verified`; complex tool/orchestration streaming, subagent stream cadence, live real-backend recovery, and final V1 visual sign-off remain open.
+
 ### 2026-07-02 Model Profile Auth Harness Retirement
 
 - `SET-06` tightened: Model settings now exposes provider-specific MaaS and CodeAgent credential controls in the V2 detail page, hides the generic API Key field for those providers, preserves saved CodeAgent profile-owned passwords when left blank, and saves MaaS profile-owned credentials from catalog-created profiles.

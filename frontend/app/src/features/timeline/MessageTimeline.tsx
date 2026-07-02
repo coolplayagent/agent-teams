@@ -3160,6 +3160,11 @@ function runtimeEntriesAfterHydration(
   ) {
     return openRuntimeEntriesWithIdleCursor(runState, scopedEntries, variant);
   }
+  const keepClosedRuntimeTextAnchor = closedRuntimeTextAnchorMatchesHydration(
+    runState,
+    scopedEntries,
+    hydratedText ?? "",
+  );
   if (runState.status === "closed") {
     return scopedEntries.flatMap((entry) => {
       const nextEntry = runtimeEntryAfterThinkingHydration(
@@ -3175,6 +3180,7 @@ function runtimeEntriesAfterHydration(
         hydratedText ?? "",
         hydratedThinkingText ?? "",
         hydratedToolStates,
+        keepClosedRuntimeTextAnchor,
       );
       if (coveredByHydration) {
         return [];
@@ -3303,6 +3309,55 @@ function openRuntimeTextCoveredByHydration(
   }
   const entryTexts = runtimeHydrationComparisonTexts(entry);
   return entryTexts.some((entryText) => hydratedText.includes(entryText));
+}
+
+function closedRuntimeTextAnchorMatchesHydration(
+  runState: RuntimeRunState,
+  entries: TimelineEntry[],
+  hydratedText: string,
+): boolean {
+  if (
+    runState.status !== "closed" ||
+    runState.hadVisibleTextStream !== true ||
+    hydratedText.trim().length === 0
+  ) {
+    return false;
+  }
+  return normalizedTimelineText(closedRuntimeVisibleText(entries)) === hydratedText;
+}
+
+function closedRuntimeVisibleText(entries: TimelineEntry[]): string {
+  let text = "";
+  for (const entry of entries) {
+    if (entry.kind === "text_delta") {
+      text += runtimeTextDeltaText(entry);
+      continue;
+    }
+    if (entry.kind === "output_delta") {
+      const parts = runtimeOutputParts(entry);
+      if (parts === null || parts.some((part) => part.kind !== "text")) {
+        continue;
+      }
+      text += parts
+        .filter((part): part is TimelineTextPart => part.kind === "text")
+        .map((part) => part.text)
+        .join("");
+      continue;
+    }
+    if (entry.kind !== "run_completed" || !runtimeEntryHasStructuredOutput(entry)) {
+      continue;
+    }
+    const outputText = runtimeCompletedOutputText(entry);
+    if (outputText.length === 0) {
+      continue;
+    }
+    const currentText = normalizedTimelineText(text);
+    const normalizedOutputText = normalizedTimelineText(outputText);
+    if (currentText.length === 0 || normalizedOutputText.includes(currentText)) {
+      text = outputText;
+    }
+  }
+  return text;
 }
 
 function runtimeHydrationCursorEntry(entry: TimelineEntry): TimelineEntry {
@@ -3581,6 +3636,7 @@ function runtimeEntryIsCoveredByHydratedOutput(
   hydratedText: string,
   hydratedThinkingText: string,
   hydratedToolStates: ReadonlyMap<string, TimelineToolHydrationState>,
+  keepClosedRuntimeTextAnchor = false,
 ): boolean {
   if (runtimeEntryIsCoveredByHydratedTool(entry, hydratedToolStates)) {
     return true;
@@ -3595,6 +3651,9 @@ function runtimeEntryIsCoveredByHydratedOutput(
     return outputText.length > 0 && hydratedText.includes(outputText);
   }
   if (entry.kind === "text_delta" || entry.kind === "output_delta") {
+    if (keepClosedRuntimeTextAnchor) {
+      return false;
+    }
     const entryTexts = runtimeHydrationComparisonTexts(entry);
     return entryTexts.some((entryText) => hydratedText.includes(entryText));
   }

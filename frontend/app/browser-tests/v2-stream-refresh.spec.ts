@@ -162,6 +162,113 @@ test("resumes an active stream after refresh without duplicating hydrated output
   }
 });
 
+test("does not rebuild a fully revealed live answer when persisted history catches up", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const runCreateRequests: CapturedRunCreateRequest[] = [];
+  const recoveryState: RefreshRecoveryState = {
+    completed: false,
+    lastEventId: 0,
+    persistedAssistantText: "",
+    runCreated: false,
+  };
+  try {
+    await installShellState(page);
+    await installMockEventSource(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) =>
+        handleRefreshApi(context, runCreateRequests, recoveryState),
+      sessionTitle: "TS stream terminal catchup",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+
+    await page.getByRole("textbox", { name: "Prompt" }).fill(
+      "Terminal catch-up should not replay a completed live answer",
+    );
+    await page.getByRole("button", { name: "Send" }).click();
+    await expect.poll(() => runCreateRequests.length).toBe(1);
+    await waitForEventSourceUrl(
+      page,
+      /\/api\/ag-ui\/runs\/run-ts-refresh\/events\?after_event_id=0$/,
+    );
+    await waitForEventSourceOpenCount(page, 1);
+
+    const finalText =
+      "LIVE_STREAM_ALPHA LIVE_STREAM_BETA LIVE_STREAM_GAMMA LIVE_STREAM_DELTA";
+    await dispatchRunEvent(page, {
+      eventId: 1,
+      payload: { phase: "streaming" },
+      relayEventType: "run_started",
+      type: "run.started",
+    });
+    await dispatchRunEvent(page, {
+      eventId: 2,
+      payload: { text: finalText },
+      relayEventType: "text_delta",
+      type: "message.text.delta",
+    });
+    recoveryState.lastEventId = 2;
+
+    const liveAnswerRow = page.locator(".at-timeline-row.at-message").filter({
+      hasText: finalText,
+    });
+    await expect(liveAnswerRow).toHaveCount(1);
+    const liveRowKey = await liveAnswerRow.first().getAttribute("data-row-key");
+    expect(liveRowKey).toContain("runtime-text:");
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-stream-terminal-catchup-before-history.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+
+    recoveryState.persistedAssistantText = finalText;
+    recoveryState.lastEventId = 3;
+    recoveryState.completed = true;
+    await dispatchRunEvent(page, {
+      eventId: 3,
+      payload: { status: "completed" },
+      relayEventType: "run_completed",
+      type: "run.completed",
+    });
+    await waitForEventSourceOpenCount(page, 0);
+    await expect(page.getByRole("button", { name: "Stop" })).toBeHidden();
+
+    await expect(liveAnswerRow).toHaveCount(1);
+    await expect(liveAnswerRow).toContainText(finalText);
+    await expect(liveAnswerRow.locator(".at-message-streaming-text")).toHaveCount(0);
+    await expect(liveAnswerRow.locator(".streaming-cursor")).toHaveCount(0);
+    await expect.poll(() => liveAnswerRow.first().getAttribute("data-row-key"))
+      .toBe(liveRowKey);
+    await expect.poll(() =>
+      page.locator(".at-chat-view").evaluate((element, expectedText) =>
+        (element.textContent ?? "").split(expectedText).length - 1,
+      finalText),
+    ).toBe(1);
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "terminal history catch-up should not rebuild the fixed V2 timeline",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-stream-terminal-catchup-after-history.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
 test("continues a tool-heavy replay after refresh from the hydrated cursor", async ({
   page,
 }) => {

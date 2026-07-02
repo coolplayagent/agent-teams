@@ -3370,6 +3370,48 @@ def test_root_message_fast_path_resolves_slash_command(
     assert capsys.readouterr().out == "\n"
 
 
+def test_root_message_fast_path_sends_model_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requests: list[tuple[str, str, str, dict[str, object] | None]] = []
+
+    def fake_request_json(
+        *,
+        base_url: str,
+        method: str,
+        path: str,
+        payload: dict[str, object] | None,
+    ) -> object:
+        requests.append((base_url, method, path, payload))
+        if path == "/api/workspaces/pick":
+            return {"workspace": {"workspace_id": "workspace-1"}}
+        if path == "/api/sessions":
+            return {"session_id": "session-1"}
+        if path == "/api/runs":
+            return {"run_id": "run-1"}
+        raise AssertionError(f"unexpected request: {method} {path}")
+
+    monkeypatch.setattr(cli_app, "_is_agent_teams_healthy", lambda *, host, port: True)
+    monkeypatch.setattr(cli_app, "_http_request_json", fake_request_json)
+    monkeypatch.setattr(cli_app, "_stream_fast_prompt_events", lambda **_kwargs: None)
+
+    handled = cli_app._handle_fast_local_command(["-m", "hello", "--model", "precise"])
+
+    assert handled is True
+    assert requests[-1] == (
+        "http://127.0.0.1:8000",
+        "POST",
+        "/api/runs",
+        {
+            "session_id": "session-1",
+            "input": [{"kind": "text", "text": "hello"}],
+            "execution_mode": "ai",
+            "yolo": True,
+            "normal_model_profile": "precise",
+        },
+    )
+
+
 def test_root_message_fast_path_configures_role_and_workspace(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -3464,6 +3506,7 @@ def test_root_message_fast_path_autostarts_server(
         (["-m", "hi", "--mode", "bad"], "--mode must be normal or orchestration"),
         (["-m", "hi", "--role", ""], "--role must not be empty"),
         (["-m", "hi", "--orchestration", ""], "--orchestration must not be empty"),
+        (["-m", "hi", "--model", ""], "--model must not be empty"),
         (
             ["-m", "hi", "--mode", "orchestration", "--role", "dev"],
             "--role can only be used with --mode normal",
@@ -3471,6 +3514,10 @@ def test_root_message_fast_path_autostarts_server(
         (
             ["-m", "hi", "--mode", "normal", "--orchestration", "preset"],
             "--orchestration can only be used with --mode orchestration",
+        ),
+        (
+            ["-m", "hi", "--mode", "orchestration", "--model", "precise"],
+            "--model can only be used with --mode normal",
         ),
     ),
 )
@@ -3484,6 +3531,13 @@ def test_fast_prompt_argument_errors(
 
     assert exc_info.value.code == 2
     assert expected_error in capsys.readouterr().err
+
+
+def test_fast_prompt_parses_inline_model_profile() -> None:
+    options = _PARSE_FAST_PROMPT_ARGS(["-m", "hello", "--model=precise"])
+
+    assert options.message == "hello"
+    assert options.model_profile == "precise"
 
 
 def test_fast_prompt_rejects_non_local_autostart(

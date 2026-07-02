@@ -315,6 +315,90 @@ def test_run_prompt_handle_stream_line_supports_debug_and_errors(capsys) -> None
         )
 
 
+@pytest.mark.parametrize(
+    ("model_profile", "session_mode", "match"),
+    (
+        ("  ", prompt_cli.SessionMode.NORMAL, "--model must not be empty"),
+        ("precise", prompt_cli.SessionMode.ORCHESTRATION, "--model can only be used"),
+    ),
+)
+def test_run_single_prompt_validates_model_option(
+    model_profile: str,
+    session_mode: prompt_cli.SessionMode,
+    match: str,
+) -> None:
+    with pytest.raises(typer.BadParameter, match=match):
+        prompt_cli.run_single_prompt(
+            message="hello",
+            yolo=False,
+            session_mode=session_mode,
+            role_id=None,
+            orchestration_id=None,
+            model_profile=model_profile,
+            workspace=None,
+            daemon=False,
+            force=False,
+            default_base_url="http://127.0.0.1:8000",
+            execute_prompt=lambda **kwargs: None,
+        )
+
+
+def test_execute_prompt_sends_normal_model_profile() -> None:
+    requests: list[tuple[str, str, dict[str, object] | None]] = []
+    streamed: list[tuple[str, str, bool]] = []
+
+    def request_json(
+        base_url: str,
+        method: str,
+        path: str,
+        payload: dict[str, object] | None,
+    ) -> dict[str, object] | list[object]:
+        _ = base_url
+        requests.append((method, path, payload))
+        if path == "/api/workspaces/pick":
+            return {"workspace": {"workspace_id": "workspace-1"}}
+        if path == "/api/sessions":
+            return {"session_id": "session-1"}
+        if path == "/api/runs":
+            return {"run_id": "run-1"}
+        raise AssertionError(f"unexpected path: {path}")
+
+    prompt_cli.execute_prompt(
+        message="hello",
+        session_id=None,
+        base_url="http://127.0.0.1:8000",
+        execution_mode="ai",
+        yolo=True,
+        session_mode=prompt_cli.SessionMode.NORMAL,
+        normal_root_role_id=None,
+        orchestration_id=None,
+        normal_model_profile="precise",
+        workspace=None,
+        autostart=True,
+        daemon=False,
+        force=False,
+        debug=False,
+        auto_start_if_needed=lambda base_url, autostart, daemon, force: None,
+        request_json=request_json,
+        stream_events=lambda base_url, run_id, debug: streamed.append(
+            (base_url, run_id, debug)
+        ),
+    )
+
+    assert requests[-1] == (
+        "POST",
+        "/api/runs",
+        {
+            "session_id": "session-1",
+            "input": [{"kind": "text", "text": "hello"}],
+            "execution_mode": "ai",
+            "yolo": True,
+            "normal_model_profile": "precise",
+        },
+    )
+    assert streamed == [("http://127.0.0.1:8000", "run-1", False)]
+
+
 @pytest.mark.asyncio
 async def test_run_prompt_stream_events_async_reads_sse_lines(
     monkeypatch,

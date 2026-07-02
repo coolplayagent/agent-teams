@@ -237,6 +237,7 @@ Request field:
 Returns the persisted model config with secret-backed profile API keys rehydrated for UI editing.
 Literal profile `api_key` values and secret header values are migrated out of `model.json` into the unified secret store on read.
 Saved MAAS and CodeAgent profile passwords are never returned in plaintext; password-auth profiles return `password: "••••••••••••"` when a saved password exists.
+For profile-local MaaS and CodeAgent username/password auth, raw passwords stay out of `model.json`; when the unified secret store cannot use system keyring and falls back to `secrets.json`, those password entries are stored as local-machine-bound `ENC:` encrypted values.
 The response body is a root object whose keys are profile ids and whose values use the same typed profile schema as `PUT /system/configs/model`, without any legacy top-level `config` wrapper.
 
 ### `GET /system/configs/model/profiles`
@@ -287,6 +288,7 @@ Profiles may include `headers[]`, where each item has `name`, optional `value`, 
 Profiles must provide at least one auth source: `api_key`, one configured header, `maas_auth` for `provider = "maas"`, or `codeagent_auth` for `provider = "codeagent"`.
 When `provider = "maas"`, `maas_auth.auth_source` may be `profile` or `w3` and defaults to `profile`. `profile` requires `username`; `password` is accepted on write but persisted only in the unified secret store. Omitting `password`, sending it blank, or sending `password: "••••••••••••"` preserves an existing saved password; the legacy `password: "***"` placeholder is also accepted for compatibility. First-time profile credentials require a real password, and neither placeholder can be stored as the password. `w3` stores only the W3 reference in the profile and requires the W3 connector to already have a saved username/password. The backend always authenticates against `http://rnd-idea-api.huawei.com/ideaclientservice/login/v4/secureLogin`, always sends `app-id: RelayTeams`, and always uses `http://snapengine.cida.cce.prod-szv-g.dragon.tools.huawei.com/api/v2/` as the MAAS inference base URL.
 When `provider = "codeagent"`, `codeagent_auth.auth_method` must be either `sso` or `password`. `sso` accepts the saved-token flags plus an optional `oauth_session_id`; the backend persists the resulting CodeAgent tokens in the unified secret store and does not support W3 auth source. `password` accepts `auth_source = "profile"` or `"w3"` and defaults to `profile`; profile credentials keep `username` in the profile and persist `password` only in the unified secret store. Omitting `password`, sending it blank, or sending `password: "••••••••••••"` preserves an existing saved password when the username is unchanged; the legacy `password: "***"` placeholder is also accepted for compatibility. Changing the username requires re-entering a real password, and first-time profile credentials cannot use either placeholder as a password. W3 source stores only the W3 reference and resolves the saved W3 username/password on demand. CodeAgent password login reuses the MaaS secure-login endpoint and request/response contract, but it remains a CodeAgent-only auth flow under `codeagent_auth`. The backend always uses `https://codeagentcli.rnd.huawei.com/codeAgentPro` as the CodeAgent inference base URL. When `context_window` is omitted and the backend recognizes the provider/model pair, it may auto-fill a known context limit during save and runtime load.
+If profile-local MaaS or CodeAgent passwords are file-backed because keyring is unavailable, the corresponding `model_profile` entries in `secrets.json` are written as `ENC:` encrypted values. Existing plaintext file-backed entries remain readable for compatibility.
 
 ### `GET /system/configs/model-fallback`
 
@@ -388,7 +390,7 @@ Blank values remove the corresponding proxy key.
 `proxy_username` and `proxy_password` are optional shared credentials.
 `ssl_verify` controls the default TLS certificate verification policy for Agent Teams outbound HTTP clients.
 When omitted or `null`, the backend removes `SSL_VERIFY` from `.env` and falls back to skipping certificate verification by default.
-On save, proxy passwords are persisted through the unified secret store. When a usable system keyring backend exists, the secret store uses keyring; otherwise it falls back to `secrets.json` in the resolved config dir, by default `~/.relay-teams/secrets.json`.
+On save, proxy passwords are persisted through the unified secret store. When a usable system keyring backend exists, the secret store uses keyring; otherwise it falls back to `secrets.json` in the resolved config dir, by default `~/.relay-teams/secrets.json`, and stores the proxy password as a local-machine-bound `ENC:` encrypted value. Existing plaintext file-backed proxy passwords remain readable for compatibility.
 The `.env` file stores proxy URLs without the password portion.
 Runtime loading still supports manual `.env` proxy URLs that already contain embedded passwords.
 `no_proxy` accepts both comma-separated and semicolon-separated entries. Wildcard host patterns such as `127.*`, `192.168.*`, and the special token `<local>` are supported.
@@ -1997,11 +1999,12 @@ Request:
     }
   ],
   "run_kind": "conversation",
-    "generation_config": null,
-    "execution_mode": "ai",
-    "yolo": false,
-    "shell_safety_policy_enabled": true,
-    "target_role_id": "Architect",
+  "generation_config": null,
+  "execution_mode": "ai",
+  "yolo": false,
+  "shell_safety_policy_enabled": true,
+  "target_role_id": "Architect",
+  "normal_model_profile": "precise",
   "thinking": {
     "enabled": false,
     "effort": null
@@ -2053,6 +2056,8 @@ Notes:
 - `thinking.effort` optionally sets provider reasoning effort (`minimal`, `low`, `medium`, `high`); when set, it is forwarded to OpenAI-compatible providers as `openai_reasoning_effort`.
 - `target_role_id` is optional. When set, that run starts from the specified role instead of the session-default root role, without mutating the saved session topology.
 - `target_role_id` may point to `Coordinator`, `MainAgent`, or any normal role known to the role registry.
+- `normal_model_profile` is optional. When set, it must name an existing model profile and overrides the session normal-mode model profile for this run only.
+- `normal_model_profile` is only applied to normal-mode root runs and `target_role_id` runs. Orchestration-mode runs clear the normal-mode override.
 - `orchestration_policy` is optional. When provided, it overrides the selected orchestration preset policy for that run only and is stored in the run topology snapshot.
 - The backend resolves the session mode at run creation time and snapshots the chosen root topology into the run intent for queued and recoverable resume flows.
 - `session_id`, `target_role_id`, `run_id`, and other identifier-style request fields follow the common identifier validation rules above.
@@ -2060,8 +2065,15 @@ Notes:
 Response:
 
 ```json
-{"run_id": "run-1", "session_id": "session-1", "target_role_id": "Architect"}
+{
+  "run_id": "run-1",
+  "session_id": "session-1",
+  "target_role_id": "Architect",
+  "normal_model_profile": "precise"
+}
 ```
+
+- `normal_model_profile` is omitted when no normal-mode model profile is resolved for the run.
 
 ### `GET /runs/events`
 

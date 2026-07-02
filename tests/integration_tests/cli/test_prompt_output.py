@@ -143,6 +143,55 @@ def test_root_message_uses_yolo_by_default(monkeypatch, tmp_path: Path) -> None:
     )
 
 
+def test_root_message_sends_model_profile(monkeypatch, tmp_path: Path) -> None:
+    calls: list[tuple[str, str, dict[str, object] | None]] = []
+
+    def fake_autostart(
+        base_url: str, autostart: bool, daemon: bool = False, force: bool = False
+    ) -> None:
+        _ = (base_url, autostart, daemon, force)
+
+    def fake_request_json(
+        base_url: str,
+        method: str,
+        path: str,
+        payload: dict[str, object] | None = None,
+        timeout_seconds: float = 30.0,
+    ) -> dict[str, object] | list[object]:
+        _ = (base_url, timeout_seconds)
+        calls.append((method, path, payload))
+        if path == "/api/workspaces/pick":
+            return _workspace_response(tmp_path)
+        if path == "/api/sessions":
+            return {"session_id": "session-1"}
+        if path == "/api/runs":
+            return {"run_id": "run-1"}
+        raise AssertionError(f"unexpected path: {path}")
+
+    def fake_stream(base_url: str, run_id: str, debug: bool) -> None:
+        _ = (base_url, run_id, debug)
+
+    monkeypatch.setattr(cli_app, "_auto_start_if_needed", fake_autostart)
+    monkeypatch.setattr(cli_app, "_request_json", fake_request_json)
+    monkeypatch.setattr(cli_app, "_stream_events", fake_stream)
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(cli_app.app, ["-m", "hello", "--model", "precise"])
+
+    assert result.exit_code == 0
+    assert calls[-1] == (
+        "POST",
+        "/api/runs",
+        {
+            "session_id": "session-1",
+            "input": [{"kind": "text", "text": "hello"}],
+            "execution_mode": "ai",
+            "yolo": True,
+            "normal_model_profile": "precise",
+        },
+    )
+
+
 def _get_fake_llm_call_count(integration_env: IntegrationEnvironment) -> int:
     response = httpx.get(
         f"{integration_env.fake_llm_admin_url}/metrics",

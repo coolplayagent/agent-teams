@@ -1759,8 +1759,22 @@ export async function fetchSessions() {
     return [];
 }
 
-export async function sendUserPrompt(sessionId, promptText) {
-    globalThis.__sendUserPromptCalls.push({ sessionId, promptText });
+export async function sendUserPrompt(
+    sessionId,
+    promptText,
+    yolo,
+    thinking,
+    targetRoleId,
+    inputParts,
+    skills,
+    displayInputParts,
+    normalModelProfile,
+) {
+    globalThis.__sendUserPromptCalls.push({
+        sessionId,
+        promptText,
+        normalModelProfile,
+    });
     return new Promise(resolve => {
         globalThis.__sendUserPromptResolvers.push(resolve);
     });
@@ -1972,6 +1986,7 @@ const streamPromise = startIntentStream(
     sessionId => completed.push(sessionId),
     {
         targetRoleId: "MainAgent",
+        normalModelProfile: "precise",
         onRunCreated: run => runCreated.push(run.run_id),
     },
 );
@@ -2047,7 +2062,11 @@ console.log(JSON.stringify({
     assert payload["completed"] == []
     assert payload["scheduleSessionsRefreshCalls"] == 1
     assert payload["sendUserPromptCalls"] == [
-        {"sessionId": "session-a", "promptText": "hello"},
+        {
+            "sessionId": "session-a",
+            "promptText": "hello",
+            "normalModelProfile": "precise",
+        },
     ]
     assert payload["stopRunCalls"] == 0
 

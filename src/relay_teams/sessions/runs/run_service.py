@@ -179,9 +179,15 @@ def _run_event_replay_sort_key(run_event: RunEvent) -> int:
     return int(run_event.event_id or 0)
 
 
-def _normal_model_profile_for_intent(session: SessionRecord) -> str | None:
+def _normal_model_profile_for_intent(
+    session: SessionRecord,
+    intent: IntentInput,
+) -> str | None:
     if session.session_mode != SessionMode.NORMAL:
         return None
+    explicit_profile = str(intent.normal_model_profile or "").strip()
+    if explicit_profile:
+        return explicit_profile
     normalized = str(session.normal_model_profile or "").strip()
     return normalized or None
 
@@ -543,7 +549,7 @@ class SessionRunService:
     def _prepare_intent(self, intent: IntentInput) -> IntentInput:
         session = self._session_repo.get(intent.session_id)
         target_role_id = str(intent.target_role_id or "").strip() or None
-        normal_model_profile = _normal_model_profile_for_intent(session)
+        normal_model_profile = _normal_model_profile_for_intent(session, intent)
         skills = tuple(str(skill or "").strip() for skill in (intent.skills or ()))
         skills = tuple(skill for skill in skills if skill) or None
         if self._orchestration_settings_service is None:
@@ -572,7 +578,7 @@ class SessionRunService:
     async def _prepare_intent_async(self, intent: IntentInput) -> IntentInput:
         session = await self._session_repo.get_async(intent.session_id)
         target_role_id = str(intent.target_role_id or "").strip() or None
-        normal_model_profile = _normal_model_profile_for_intent(session)
+        normal_model_profile = _normal_model_profile_for_intent(session, intent)
         skills = tuple(str(skill or "").strip() for skill in (intent.skills or ()))
         skills = tuple(skill for skill in skills if skill) or None
         if self._orchestration_settings_service is None:
@@ -836,6 +842,29 @@ class SessionRunService:
             source=InjectionSource.USER,
         )
 
+    async def get_run_intent_snapshot_async(self, run_id: str) -> IntentInput | None:
+        safe_run_id = str(run_id or "").strip()
+        if not safe_run_id:
+            return None
+        if self._should_delegate_to_bound_loop():
+            return await self._call_coroutine_in_bound_loop_async(
+                lambda: self._get_run_intent_snapshot_local_async(safe_run_id)
+            )
+        return await self._get_run_intent_snapshot_local_async(safe_run_id)
+
+    async def _get_run_intent_snapshot_local_async(
+        self, run_id: str
+    ) -> IntentInput | None:
+        pending_intent = self._pending_runs.get(run_id)
+        if pending_intent is not None:
+            return pending_intent.model_copy(deep=True)
+        if self._run_intent_repo is None:
+            return None
+        try:
+            return await self._run_intent_repo.get_async(run_id)
+        except KeyError:
+            return None
+
     def _create_run_local(
         self,
         intent: IntentInput,
@@ -859,6 +888,9 @@ class SessionRunService:
         async with self._run_creation_lock:
             session_id = await self._ensure_session_async(intent.session_id)
             intent.session_id = session_id
+            normal_model_profile_override_provided = bool(
+                str(intent.normal_model_profile or "").strip()
+            )
             intent = await self._prepare_intent_async(intent)
             self._run_control_manager.assert_session_allows_main_input(session_id)
             _ = await self._session_repo.mark_started_async(session_id)
@@ -892,6 +924,8 @@ class SessionRunService:
                         pending.shell_safety_policy_enabled = (
                             intent.shell_safety_policy_enabled
                         )
+                    if normal_model_profile_override_provided:
+                        pending.normal_model_profile = intent.normal_model_profile
                     run_intent_repo = self._run_intent_repo
                     if run_intent_repo is not None:
                         await run_intent_repo.upsert_async(
@@ -912,6 +946,10 @@ class SessionRunService:
                             payload={"mode": "pending_merge"},
                         )
                     return active_run_id, session_id
+                if normal_model_profile_override_provided:
+                    raise RuntimeError(
+                        f"Run {active_run_id} is active and cannot accept a normal model profile override"
+                    )
                 if (
                     active_run_id in self._running_run_ids
                     or self._injection_manager.is_active(active_run_id)

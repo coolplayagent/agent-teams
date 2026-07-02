@@ -175,7 +175,12 @@ export async function ensureSessionForNewSessionDraft(options = {}) {
         ? 'orchestration'
         : 'normal';
     const normalRootRoleId = String(state.currentNormalRootRoleId || '').trim();
-    const normalModelProfile = String(state.currentNormalModelProfile || '').trim();
+    const normalModelProfile = Object.prototype.hasOwnProperty.call(
+        options,
+        'normalModelProfile',
+    )
+        ? String(options.normalModelProfile || '').trim()
+        : String(state.currentNormalModelProfile || '').trim();
     const orchestrationPresetId = String(state.currentOrchestrationPresetId || '').trim();
 
     const created = await startNewSession(workspaceId, {

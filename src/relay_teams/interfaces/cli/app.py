@@ -75,6 +75,7 @@ _OPTIONS_WITH_VALUES = frozenset(
         "--marketplace-source",
         "--memory-id",
         "--message",
+        "--model",
         "--mode",
         "--objective",
         "--option-id",
@@ -551,6 +552,7 @@ class FastPromptOptions(NamedTuple):
     mode: str
     role_id: str | None
     orchestration_id: str | None
+    model_profile: str | None
     workspace: Path | None
     yolo: bool
     daemon: bool
@@ -1280,17 +1282,21 @@ def _run_fast_prompt(args: list[str]) -> None:
     )
     session_id = _require_json_string(session, "session_id")
     _configure_fast_prompt_topology(session_id=session_id, options=options)
+    run_payload: dict[str, object] = {
+        "session_id": session_id,
+        "input": [{"kind": "text", "text": resolved_message}],
+        "execution_mode": "ai",
+        "yolo": options.yolo,
+    }
+    if options.model_profile is not None:
+        run_payload["normal_model_profile"] = options.model_profile
+
     run = _require_json_object(
         _http_request_json(
             base_url=options.base_url,
             method="POST",
             path="/api/runs",
-            payload={
-                "session_id": session_id,
-                "input": [{"kind": "text", "text": resolved_message}],
-                "execution_mode": "ai",
-                "yolo": options.yolo,
-            },
+            payload=run_payload,
         ),
         "/api/runs",
     )
@@ -1316,6 +1322,7 @@ def _parse_fast_prompt_args(args: list[str]) -> FastPromptOptions:
         value_option_names = {
             "-m",
             "--message",
+            "--model",
             "--mode",
             "--role",
             "--orchestration",
@@ -1375,12 +1382,19 @@ def _parse_fast_prompt_args(args: list[str]) -> FastPromptOptions:
         orchestration_id = orchestration_id.strip()
         if not orchestration_id:
             _raise_fast_prompt_usage("--orchestration must not be empty")
+    model_profile = values.get("--model")
+    if model_profile is not None:
+        model_profile = model_profile.strip()
+        if not model_profile:
+            _raise_fast_prompt_usage("--model must not be empty")
     if mode == "orchestration" and role_id is not None:
         _raise_fast_prompt_usage("--role can only be used with --mode normal")
     if mode != "orchestration" and orchestration_id is not None:
         _raise_fast_prompt_usage(
             "--orchestration can only be used with --mode orchestration"
         )
+    if mode == "orchestration" and model_profile is not None:
+        _raise_fast_prompt_usage("--model can only be used with --mode normal")
     workspace = None
     raw_workspace = values.get("--workspace")
     if raw_workspace is not None:
@@ -1390,6 +1404,7 @@ def _parse_fast_prompt_args(args: list[str]) -> FastPromptOptions:
         mode=mode,
         role_id=role_id,
         orchestration_id=orchestration_id,
+        model_profile=model_profile,
         workspace=workspace,
         yolo=yolo,
         daemon=daemon,

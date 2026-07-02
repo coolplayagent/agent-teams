@@ -53,10 +53,33 @@
     font-family: var(--font-mono);
 }
 
+.round-model-profile {
+    display: inline-flex;
+    align-items: center;
+    max-width: min(18rem, 100%);
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .round-detail-token-host {
     display: inline-flex;
     align-items: center;
+    gap: 0.6rem;
     min-width: 0;
+    padding-left: 0.6rem;
+    border-left: 1px solid var(--border-color);
+}
+
+.round-detail-token-host:empty {
+    display: none;
+}
+
+.round-detail-token-host .round-token-summary + .round-model-profile {
     padding-left: 0.6rem;
     border-left: 1px solid var(--border-color);
 }

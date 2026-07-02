@@ -138,6 +138,59 @@ console.log(JSON.stringify(globalThis.__captured));
     assert "shell_safety_policy_enabled" not in payload["body"]
     assert payload["body"]["execution_mode"] == "ai"
     assert payload["body"]["thinking"] == {"enabled": True, "effort": "high"}
+    assert "normal_model_profile" not in payload["body"]
+
+
+def test_send_user_prompt_includes_normal_model_profile_when_provided(
+    tmp_path: Path,
+) -> None:
+    source = Path("frontend/dist/js/core/api/runs.js").read_text(encoding="utf-8")
+    temp_dir = tmp_path / "api_model_profile"
+    temp_dir.mkdir()
+    (temp_dir / "runs.js").write_text(source, encoding="utf-8")
+    (temp_dir / "request.js").write_text(
+        """
+export async function requestJson(url, options, errorMessage) {
+    globalThis.__captured = {
+        url,
+        errorMessage,
+        method: options.method,
+        body: JSON.parse(options.body),
+    };
+    return { run_id: "run-1", session_id: "session-1" };
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    runner = """
+import { sendUserPrompt } from "./runs.js";
+
+await sendUserPrompt(
+    "session-1",
+    "ship it",
+    false,
+    { enabled: false, effort: null },
+    null,
+    null,
+    null,
+    null,
+    "precise",
+);
+console.log(JSON.stringify(globalThis.__captured));
+""".strip()
+    result = subprocess.run(
+        ["node", "--input-type=module", "-e", runner],
+        cwd=temp_dir,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["url"] == "/api/runs"
+    assert payload["method"] == "POST"
+    assert payload["body"]["normal_model_profile"] == "precise"
 
 
 def test_send_user_prompt_uses_explicit_input_parts_when_provided(
@@ -2996,6 +3049,278 @@ console.log(JSON.stringify({
                 "sessionId": "session-1",
                 "title": "preview after run",
             },
+        }
+    ]
+
+
+def test_handle_send_uses_run_created_model_profile_for_live_round(
+    tmp_path: Path,
+) -> None:
+    temp_dir = _write_multimodal_prompt_fixture(tmp_path, role_supports_image=True)
+    (temp_dir / "mockRounds.mjs").write_text(
+        """
+export function appendRoundUserMessage() {
+    return undefined;
+}
+
+export function createLiveRound(runId, text, inputParts, options = {}) {
+    globalThis.__liveRounds = [
+        ...(globalThis.__liveRounds || []),
+        {
+            runId,
+            text,
+            inputParts,
+            normalModelProfile: options.normalModelProfile || null,
+        },
+    ];
+}
+
+export function showPendingRunStartPlaceholder() {
+    return undefined;
+}
+
+export function clearPendingRunStartPlaceholder() {
+    return undefined;
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (temp_dir / "mockStream.mjs").write_text(
+        """
+export async function startIntentStream(promptText, sessionId, onCompleted, options = {}) {
+    globalThis.__streamCalls.push({
+        promptText,
+        sessionId,
+        options,
+    });
+    if (globalThis.__invokeRunCreated && typeof options.onRunCreated === "function") {
+        options.onRunCreated(globalThis.__runCreatedPayload || { run_id: "run-created-1" });
+    }
+    return onCompleted;
+}
+
+export function attachRunStream() {
+    return undefined;
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    runner = """
+const {
+    handleSend,
+    refreshModelProfileOptions,
+} = await import("./prompt.js");
+const { els } = await import("./mockDom.mjs");
+const { state } = await import("./mockState.mjs");
+
+globalThis.__streamCalls = [];
+globalThis.__logs = [];
+globalThis.__notifications = [];
+globalThis.__liveRounds = [];
+globalThis.__invokeRunCreated = true;
+state.currentSessionMode = "normal";
+state.currentNormalModelProfile = "fast";
+await refreshModelProfileOptions({ refreshControls: false });
+
+els.promptInput.value = "use precise";
+globalThis.__runCreatedPayload = {
+    run_id: "run-1",
+    normal_model_profile: "precise",
+};
+await handleSend();
+
+els.promptInput.value = "server returned no profile";
+els.promptInput.disabled = false;
+state.isGenerating = false;
+globalThis.__runCreatedPayload = { run_id: "run-2" };
+await handleSend();
+
+console.log(JSON.stringify({
+    liveRounds: globalThis.__liveRounds,
+    streamProfiles: globalThis.__streamCalls.map(
+        call => call.options.normalModelProfile || null,
+    ),
+}));
+""".strip()
+    result = subprocess.run(
+        ["node", "--input-type=module", "-e", runner],
+        cwd=temp_dir,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["liveRounds"] == [
+        {
+            "runId": "run-1",
+            "text": "use precise",
+            "inputParts": [{"kind": "text", "text": "use precise"}],
+            "normalModelProfile": "precise",
+        },
+        {
+            "runId": "run-2",
+            "text": "server returned no profile",
+            "inputParts": [{"kind": "text", "text": "server returned no profile"}],
+            "normalModelProfile": None,
+        },
+    ]
+    assert payload["streamProfiles"] == ["fast", "fast"]
+
+
+def test_handle_send_omits_missing_normal_model_profile_override(
+    tmp_path: Path,
+) -> None:
+    temp_dir = _write_multimodal_prompt_fixture(tmp_path, role_supports_image=True)
+    runner = """
+const {
+    handleSend,
+    refreshModelProfileOptions,
+} = await import("./prompt.js");
+const { els } = await import("./mockDom.mjs");
+const { state } = await import("./mockState.mjs");
+
+globalThis.__streamCalls = [];
+globalThis.__logs = [];
+globalThis.__notifications = [];
+globalThis.__modelProfiles = {
+    fast: { model: "gpt-4.1-mini" },
+};
+state.currentSessionMode = "normal";
+state.currentNormalModelProfile = "removed-profile";
+els.promptInput.value = "use default";
+
+await refreshModelProfileOptions({ refreshControls: false });
+await handleSend();
+
+console.log(JSON.stringify({
+    streamProfiles: globalThis.__streamCalls.map(
+        call => call.options.normalModelProfile || null,
+    ),
+}));
+""".strip()
+    result = subprocess.run(
+        ["node", "--input-type=module", "-e", runner],
+        cwd=temp_dir,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["streamProfiles"] == [None]
+
+
+def test_handle_send_detached_draft_uses_captured_normal_model_profile(
+    tmp_path: Path,
+) -> None:
+    temp_dir = _write_multimodal_prompt_fixture(tmp_path, role_supports_image=True)
+    (tmp_path / "components" / "newSessionDraft.js").write_text(
+        """
+export function applyDraftSessionTopology() {
+    return undefined;
+}
+
+export async function ensureSessionForNewSessionDraft(options = {}) {
+    globalThis.__ensureDraftCalls = [
+        ...(globalThis.__ensureDraftCalls || []),
+        {
+            normalModelProfile: options.normalModelProfile || null,
+        },
+    ];
+    globalThis.__detachDraftRun?.();
+    return "draft-session";
+}
+
+export function isNewSessionDraftActive() {
+    return true;
+}
+
+export function syncNewSessionDraftMentionHintVisibility() {
+    return undefined;
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    (tmp_path / "core" / "submission.js").write_text(
+        """
+export function beginForegroundSubmission() {
+    globalThis.__submissionDetached = false;
+    return {};
+}
+
+export function finishForegroundSubmission() {
+    return undefined;
+}
+
+export function hasActiveForegroundSubmission() {
+    return false;
+}
+
+export function isForegroundSubmissionActive() {
+    return globalThis.__submissionDetached !== true;
+}
+
+export function isForegroundSubmissionDetached() {
+    return globalThis.__submissionDetached === true;
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    runner = """
+const {
+    handleSend,
+    refreshModelProfileOptions,
+} = await import("./prompt.js");
+const { els } = await import("./mockDom.mjs");
+const { state } = await import("./mockState.mjs");
+
+globalThis.__streamCalls = [];
+globalThis.__logs = [];
+globalThis.__notifications = [];
+globalThis.__modelProfiles = {
+    fast: { model: "gpt-4.1-mini" },
+    precise: { model: "gpt-4.1" },
+};
+state.currentSessionMode = "normal";
+state.currentNormalModelProfile = "fast";
+els.promptInput.value = "detached draft";
+globalThis.__detachDraftRun = () => {
+    globalThis.__submissionDetached = true;
+    state.currentSessionId = "other-session";
+    state.currentNormalModelProfile = "precise";
+};
+
+await refreshModelProfileOptions({ refreshControls: false });
+await handleSend();
+
+console.log(JSON.stringify({
+    ensureCalls: globalThis.__ensureDraftCalls || [],
+    streamCalls: globalThis.__streamCalls.map(call => ({
+        sessionId: call.sessionId,
+        detached: call.options.detached === true,
+        normalModelProfile: call.options.normalModelProfile || null,
+    })),
+}));
+""".strip()
+    result = subprocess.run(
+        ["node", "--input-type=module", "-e", runner],
+        cwd=temp_dir,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload["ensureCalls"] == [{"normalModelProfile": "fast"}]
+    assert payload["streamCalls"] == [
+        {
+            "sessionId": "draft-session",
+            "detached": True,
+            "normalModelProfile": "fast",
         }
     ]
 

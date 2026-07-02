@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
+from types import SimpleNamespace
 from typing import cast
 
 import pytest
@@ -11,6 +13,7 @@ from fastapi.testclient import TestClient
 from relay_teams.general import GeneralConfig
 from relay_teams.interfaces.server.deps import (
     get_general_config_service,
+    get_model_config_service,
     get_run_service,
     get_skill_registry,
 )
@@ -85,6 +88,12 @@ class _FakeRunService:
 
     async def create_run_async(self, intent_input) -> tuple[str, str]:
         return self.create_run(intent_input)
+
+    async def get_run_intent_snapshot_async(self, run_id: str) -> IntentInput | None:
+        _ = run_id
+        if not self.created_run_inputs:
+            return None
+        return self.created_run_inputs[-1]
 
     def resume_run(self, run_id: str) -> str:
         self.resumed_run_ids.append(run_id)
@@ -529,6 +538,7 @@ def _create_client(
     fake_skill_registry: _FakeSkillRegistry | None = None,
     fake_container: _FakeContainer | None = None,
     fake_general_config_service: _FakeGeneralConfigService | None = None,
+    model_config_service_factory: Callable[[], SimpleNamespace] | None = None,
 ) -> TestClient:
     app = FastAPI()
     registry = fake_skill_registry or _FakeSkillRegistry()
@@ -540,7 +550,19 @@ def _create_client(
     app.dependency_overrides[get_general_config_service] = lambda: (
         fake_general_config_service or _FakeGeneralConfigService()
     )
+    app.dependency_overrides[get_model_config_service] = (
+        model_config_service_factory or _fake_model_config_service
+    )
     return TestClient(app)
+
+
+def _fake_model_config_service() -> SimpleNamespace:
+    return SimpleNamespace(
+        runtime=SimpleNamespace(
+            default_model_profile="fast",
+            llm_profiles={"fast": object(), "precise": object()},
+        )
+    )
 
 
 def test_resume_route_marks_run_for_resume_and_starts_worker() -> None:
@@ -912,6 +934,51 @@ def test_create_run_route_accepts_target_role_id() -> None:
     assert created.target_role_id == "writer"
     assert fake_service.scheduled_start_runs == [("run-1", "session-1")]
     assert fake_service.started_run_ids == []
+
+
+def test_create_run_route_accepts_normal_model_profile() -> None:
+    fake_service = _FakeRunService()
+    client = _create_client(fake_service)
+
+    response = client.post(
+        "/api/runs",
+        json={
+            "session_id": "session-1",
+            "input": [{"kind": "text", "text": "hello"}],
+            "execution_mode": "ai",
+            "normal_model_profile": "precise",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "run_id": "run-1",
+        "session_id": "session-1",
+        "normal_model_profile": "precise",
+    }
+    created = fake_service.created_run_inputs[0]
+    assert created.intent == "hello"
+    assert created.normal_model_profile == "precise"
+    assert fake_service.scheduled_start_runs == [("run-1", "session-1")]
+
+
+def test_create_run_route_rejects_unknown_normal_model_profile() -> None:
+    fake_service = _FakeRunService()
+    client = _create_client(fake_service)
+
+    response = client.post(
+        "/api/runs",
+        json={
+            "session_id": "session-1",
+            "input": [{"kind": "text", "text": "hello"}],
+            "execution_mode": "ai",
+            "normal_model_profile": "missing-profile",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Unknown model profile: missing-profile"
+    assert fake_service.created_run_inputs == []
 
 
 def test_inject_message_route_rejects_whitespace_only_content() -> None:

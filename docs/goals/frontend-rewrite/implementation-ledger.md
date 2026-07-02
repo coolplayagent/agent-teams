@@ -2,6 +2,23 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-02 Terminal Catch-Up Browser Evidence
+
+### Scope
+- Added packed-browser coverage for terminal structured output that extends a visible runtime prefix. The test samples the actual `/app/` DOM immediately after `run_completed.output`, during catch-up, and after the final answer settles.
+- The browser check proves the completion event does not instantly render the full answer, the same `runtime-text:*` row remains mounted, the revealed text grows from the visible prefix, and the streaming wrapper disappears after the final answer is fully displayed.
+- Kept the evidence in the existing stream refresh suite so it runs alongside active refresh, persisted-history catch-up, and tool-heavy replay scenarios.
+
+### Verification
+- `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium -g "reveals terminal structured output from a visible runtime prefix"` passed.
+- `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium` passed with 4 Chromium scenarios.
+- `npm run lint` passed.
+- `npm run build` passed.
+- Screenshot evidence was written under `.tmp/frontend-v2-ts-stream/` as `v2-stream-terminal-output-prefix-reveal.png` and `v2-stream-terminal-output-prefix-final.png`.
+
+### Reviewer
+- Main-agent decision: this strengthens `MSG-02`/`STREAM-02` browser evidence for terminal catch-up cadence. It does not mark the rows verified; real production-backend orchestration variants, interrupted recovery, and final V1/V2 visual sign-off remain open.
+
 ## 2026-07-02 Terminal Catch-Up Reveal Closure
 
 ### Scope

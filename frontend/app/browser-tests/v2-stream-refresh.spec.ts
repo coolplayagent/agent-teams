@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import {
   dispatchEventSourceMessage,
@@ -269,6 +269,130 @@ test("does not rebuild a fully revealed live answer when persisted history catch
   }
 });
 
+test("reveals terminal structured output from a visible runtime prefix", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const runCreateRequests: CapturedRunCreateRequest[] = [];
+  const recoveryState: RefreshRecoveryState = {
+    completed: false,
+    lastEventId: 0,
+    persistedAssistantText: "",
+    runCreated: false,
+  };
+  try {
+    await installShellState(page);
+    await installMockEventSource(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) =>
+        handleRefreshApi(context, runCreateRequests, recoveryState),
+      sessionTitle: "TS stream terminal reveal",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+
+    await page.getByRole("textbox", { name: "Prompt" }).fill(
+      "Terminal structured output should continue from the visible prefix",
+    );
+    await page.getByRole("button", { name: "Send" }).click();
+    await expect.poll(() => runCreateRequests.length).toBe(1);
+    await waitForEventSourceUrl(
+      page,
+      /\/api\/ag-ui\/runs\/run-ts-refresh\/events\?after_event_id=0$/,
+    );
+    await waitForEventSourceOpenCount(page, 1);
+
+    const visiblePrefix = "LI";
+    const finalText =
+      "LI LIVE_STREAM_ALPHA LIVE_STREAM_BETA LIVE_STREAM_GAMMA LIVE_STREAM_DELTA LIVE_STREAM_EPSILON";
+    await dispatchRunEvent(page, {
+      eventId: 1,
+      payload: { phase: "streaming" },
+      relayEventType: "run_started",
+      type: "run.started",
+    });
+    await dispatchRunEvent(page, {
+      eventId: 2,
+      payload: { text: visiblePrefix },
+      relayEventType: "text_delta",
+      type: "message.text.delta",
+    });
+    recoveryState.lastEventId = 2;
+
+    const answerRow = page.locator(".at-timeline-row.at-message").filter({
+      hasText: visiblePrefix,
+    });
+    await expect(answerRow).toHaveCount(1);
+    const liveRowKey = await answerRow.first().getAttribute("data-row-key");
+    expect(liveRowKey).toContain("runtime-text:");
+
+    recoveryState.lastEventId = 3;
+    recoveryState.completed = true;
+    await dispatchRunEvent(page, {
+      eventId: 3,
+      payload: {
+        output: [{ kind: "text", text: finalText }],
+      },
+      relayEventType: "run_completed",
+      type: "run.completed",
+    });
+    await waitForEventSourceOpenCount(page, 0);
+    await expect(page.getByRole("button", { name: "Stop" })).toBeHidden();
+    await expect.poll(() => answerRow.first().getAttribute("data-row-key"))
+      .toBe(liveRowKey);
+    await expect(answerRow).toHaveCount(1);
+    await expect(page.getByText(finalText)).toHaveCount(0);
+    await expect(answerRow.locator(".streaming-cursor")).toHaveCount(0);
+    await expect(answerRow.locator(".at-message-streaming-text")).toHaveCount(1);
+    await expect(answerRow.locator(".at-message-streaming-text"))
+      .toContainText(visiblePrefix);
+
+    await expect
+      .poll(() => streamingTextLength(answerRow), { timeout: 8_000 })
+      .toBeGreaterThan(visiblePrefix.length);
+    const midRevealText = await streamingTextContent(answerRow);
+    expect(midRevealText.startsWith(visiblePrefix)).toBe(true);
+    expect(midRevealText.length).toBeLessThan(finalText.length);
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-stream-terminal-output-prefix-reveal.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+
+    await expect(page.getByText(finalText)).toBeVisible({ timeout: 10_000 });
+    await expect(answerRow).toContainText(finalText);
+    await expect(answerRow.locator(".at-message-streaming-text")).toHaveCount(0);
+    await expect(answerRow.locator(".streaming-cursor")).toHaveCount(0);
+    await expect.poll(() =>
+      page.locator(".at-chat-view").evaluate((element, expectedText) =>
+        (element.textContent ?? "").split(expectedText).length - 1,
+      finalText),
+    ).toBe(1);
+    await expect.poll(() => answerRow.first().getAttribute("data-row-key"))
+      .toBe(liveRowKey);
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "terminal output prefix reveal should stay inside the fixed V2 shell",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-stream-terminal-output-prefix-final.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
 test("continues a tool-heavy replay after refresh from the hydrated cursor", async ({
   page,
 }) => {
@@ -516,6 +640,15 @@ async function expectToolChromeState(
       ...expected,
       oldStatusCount: 0,
     });
+}
+
+async function streamingTextContent(row: Locator): Promise<string> {
+  return await row.locator(".at-message-streaming-text").first()
+    .evaluate((element) => element.textContent ?? "");
+}
+
+async function streamingTextLength(row: Locator): Promise<number> {
+  return (await streamingTextContent(row)).length;
 }
 
 async function handleRefreshApi(

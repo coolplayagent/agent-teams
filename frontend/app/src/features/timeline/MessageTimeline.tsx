@@ -46,6 +46,9 @@ const THINKING_DELTA_TEXT_KEYS = [
   "message",
 ] as const;
 const HIDDEN_RUNTIME_CHAT_EVENT_KINDS = new Set<string>([
+  "background_task_completed",
+  "background_task_started",
+  "background_task_stopped",
   "injection_applied",
   "injection_enqueued",
   "model_step_finished",
@@ -219,6 +222,28 @@ export function MessageTimeline({
     () => terminalRunIdOverrideSet(latestTerminalRunId, latestTerminalRunStatus),
     [latestTerminalRunId, latestTerminalRunStatus],
   );
+  const [freshTerminalRevealRunIds, setFreshTerminalRevealRunIds] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
+  const previousTerminalRunIdRef = useRef(latestTerminalRunId?.trim() ?? "");
+  useEffect(() => {
+    const nextTerminalRunId = latestTerminalRunId?.trim() ?? "";
+    const previousTerminalRunId = previousTerminalRunIdRef.current;
+    previousTerminalRunIdRef.current = nextTerminalRunId;
+    if (
+      nextTerminalRunId.length === 0 ||
+      nextTerminalRunId === previousTerminalRunId ||
+      normalizedTerminalRoundStatus(latestTerminalRunStatus) === null
+    ) {
+      return;
+    }
+    setFreshTerminalRevealRunIds((current) => {
+      if (current.has(nextTerminalRunId)) {
+        return current;
+      }
+      return new Set([...current, nextTerminalRunId]);
+    });
+  }, [latestTerminalRunId, latestTerminalRunStatus]);
   const railRounds = useMemo(
     () => visibleRoundRailRounds(displayRounds, expandedHistorySegmentIds),
     [displayRounds, expandedHistorySegmentIds],
@@ -282,6 +307,15 @@ export function MessageTimeline({
     () => timelineToolStatesByRunId(anchoredPersistedRows),
     [anchoredPersistedRows],
   );
+  const revealedPersistedRows = useMemo(
+    () =>
+      markFreshTerminalHydratedRowsForReveal(
+        anchoredPersistedRows,
+        runtimeState.runs,
+        freshTerminalRevealRunIds,
+      ),
+    [anchoredPersistedRows, freshTerminalRevealRunIds, runtimeState.runs],
+  );
   const runtimeEntries = useMemo(
     () =>
       Object.values(runtimeState.runs)
@@ -319,10 +353,10 @@ export function MessageTimeline({
   const displayPersistedRows = useMemo(
     () =>
       dropPersistedRowsCoveredByTerminalRuntime(
-        anchoredPersistedRows,
+        revealedPersistedRows,
         runtimeRows,
       ),
-    [anchoredPersistedRows, runtimeRows],
+    [revealedPersistedRows, runtimeRows],
   );
   const timelineRowsBeforeGrouping = useMemo(
     () =>
@@ -1200,6 +1234,40 @@ function dropRoundPromptDuplicateUserRows(
       return true;
     }
     return normalizedTimelineText(row.text) !== promptByRunId.get(runId);
+  });
+}
+
+function markFreshTerminalHydratedRowsForReveal(
+  rows: TimelineRow[],
+  runStates: Record<string, RuntimeRunState>,
+  freshTerminalRevealRunIds: ReadonlySet<string>,
+): TimelineRow[] {
+  return rows.map((row) => {
+    const runId = row.runId?.trim() ?? "";
+    const runState = runId.length > 0 ? runStates[runId] : undefined;
+    const freshTerminalFromSession = freshTerminalRevealRunIds.has(runId);
+    const freshTerminalFromRuntime = runState !== undefined &&
+      runtimeRunStateClosesText(runState) &&
+      runState.hadVisibleTextStream !== true;
+    if (
+      (!freshTerminalFromRuntime && !freshTerminalFromSession) ||
+      row.source === "runtime" ||
+      !isAnswerRole(row.role)
+    ) {
+      return row;
+    }
+    const nextParts = row.parts.map((part) => {
+      if (part.kind !== "text" || part.text.trim().length === 0) {
+        return part;
+      }
+      return { ...part, reveal: true };
+    });
+    if (nextParts === row.parts || !nextParts.some((part) =>
+      part.kind === "text" && part.reveal === true
+    )) {
+      return row;
+    }
+    return rowWithParts(row, nextParts, "fresh-terminal-reveal");
   });
 }
 
@@ -2391,6 +2459,17 @@ function runtimeEntriesToRows(
   };
   for (const entry of entries) {
     rememberResolvedRuntimeToolCall(entry, resolvedToolCallIds);
+    if (
+      entry.kind === "background_task_updated" &&
+      applyRuntimeBackgroundTaskUpdateEvent(
+        entry,
+        rows,
+        activeText,
+        nextTextSegmentSequence,
+      )
+    ) {
+      continue;
+    }
     if (entry.kind === "text_delta") {
       if (
         applyRuntimeTextDeltaEvent(
@@ -2457,6 +2536,29 @@ function runtimeEntriesToRows(
   }
   closeTerminalRuntimeTextSegments(rows, activeText, runStates);
   return rows;
+}
+
+function applyRuntimeBackgroundTaskUpdateEvent(
+  entry: TimelineEntry,
+  rows: TimelineRow[],
+  activeText: Map<string, RuntimeTextAccumulator>,
+  nextTextSegmentSequence: () => number,
+): boolean {
+  const payload = jsonObject(entry.payload);
+  if (payload === null || payloadHasParseError(payload)) {
+    return false;
+  }
+  const delta = objectRawString(payload, "delta");
+  if (delta.length === 0) {
+    return false;
+  }
+  return appendRuntimeTextSegment(
+    entry,
+    delta,
+    rows,
+    activeText,
+    nextTextSegmentSequence,
+  );
 }
 
 function closeTerminalRuntimeTextSegments(
@@ -4179,6 +4281,8 @@ function runtimeHiddenEntryClosesText(entry: TimelineEntry): boolean {
   return (
     entry.kind === "injection_applied" ||
     entry.kind === "injection_enqueued" ||
+    entry.kind === "background_task_completed" ||
+    entry.kind === "background_task_stopped" ||
     entry.kind === "run_completed" ||
     entry.kind === "user_question_answered" ||
     entry.kind === "user_question_requested"
@@ -5238,6 +5342,12 @@ function runtimeFallbackText(entry: TimelineEntry): string {
   if (entry.kind === "message" && entry.text.trim().toLowerCase() === "message") {
     return "";
   }
+  if (
+    entry.kind === "subagent_session_status_changed" ||
+    entry.kind.startsWith("background_task_")
+  ) {
+    return "";
+  }
   return entry.text;
 }
 
@@ -5897,15 +6007,18 @@ function MessageText({
       </pre>
     );
   }
-  if (visuallyStreaming) {
-    return (
-      <div className="at-message-streaming-text" data-streaming="true">
-        <MarkdownMessage text={streamingDisplay.text} />
-        {streamingDisplay.cursorVisible ? <StreamingCursor /> : null}
-      </div>
-    );
-  }
-  return <MarkdownMessage text={part.text} />;
+  return (
+    <div
+      className={[
+        "at-message-text",
+        visuallyStreaming ? "at-message-streaming-text" : "",
+      ].filter(Boolean).join(" ")}
+      data-streaming={visuallyStreaming ? "true" : undefined}
+    >
+      <MarkdownMessage text={visuallyStreaming ? streamingDisplay.text : part.text} />
+      {streamingDisplay.cursorVisible ? <StreamingCursor /> : null}
+    </div>
+  );
 }
 
 interface StreamingDisplayText {

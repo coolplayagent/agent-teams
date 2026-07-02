@@ -536,7 +536,9 @@ describe("MessageTimeline", () => {
       });
     });
 
-    await waitForSingleVisibleText(finalAnswer);
+    await waitFor(() => expect(screen.getByText(finalAnswer)).toBeVisible(), {
+      timeout: 3000,
+    });
     const rowAfter = container.querySelector<HTMLElement>("article.at-message");
     expect(rowAfter).toBe(rowBefore);
     expect(rowAfter?.dataset.rowKey).toBe(
@@ -720,7 +722,10 @@ describe("MessageTimeline", () => {
     }
     expect(screen.getByText(finalAnswer)).toBeVisible();
     const rowBefore = container.querySelector<HTMLElement>("article.at-message");
+    const textNodeBefore = container.querySelector<HTMLElement>(".at-message-text");
     expect(rowBefore).not.toBeNull();
+    expect(textNodeBefore).not.toBeNull();
+    expect(textNodeBefore).toHaveClass("at-message-streaming-text");
 
     await act(async () => {
       setRuntimeStateFromEvents([
@@ -739,7 +744,10 @@ describe("MessageTimeline", () => {
     });
 
     const rowAfter = container.querySelector<HTMLElement>("article.at-message");
+    const textNodeAfter = container.querySelector<HTMLElement>(".at-message-text");
     expect(rowAfter).toBe(rowBefore);
+    expect(textNodeAfter).toBe(textNodeBefore);
+    expect(textNodeAfter).not.toHaveClass("at-message-streaming-text");
     expect(screen.getByText(finalAnswer)).toBeVisible();
     expect(container.querySelector(".at-message-streaming-text")).toBeNull();
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
@@ -819,6 +827,76 @@ describe("MessageTimeline", () => {
     expect(container.querySelector(".at-message-streaming-text")).toBeNull();
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
     expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+  });
+
+  it("reveals a fresh terminal hydrated answer when no live text stream was visible", async () => {
+    vi.stubEnv("MODE", "production");
+    const finalAnswer = [
+      "TERMINAL_ONLY_ALPHA",
+      "TERMINAL_ONLY_BETA",
+      "TERMINAL_ONLY_GAMMA",
+      "TERMINAL_ONLY_DELTA",
+    ].join(" ");
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "run_started",
+        payload_json: JSON.stringify({ status: "running" }),
+        run_id: "run-terminal-only-hydrated",
+        trace_id: "run-terminal-only-hydrated",
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "run_completed",
+        payload_json: JSON.stringify({ status: "completed" }),
+        run_id: "run-terminal-only-hydrated",
+        trace_id: "run-terminal-only-hydrated",
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: finalAnswer,
+        message_id: "assistant-terminal-only-hydrated",
+        role_id: "MainAgent",
+        run_id: "run-terminal-only-hydrated",
+      },
+    ]);
+
+    const { container } = renderTimeline();
+
+    await waitFor(() =>
+      expect(container.querySelector(".at-message-streaming-text")).not.toBeNull(),
+    );
+    expect(screen.queryByText(finalAnswer)).not.toBeInTheDocument();
+
+    await waitFor(() => expect(screen.getByText(finalAnswer)).toBeVisible(), {
+      timeout: 3000,
+    });
+    expect(container.querySelector(".at-message-streaming-text")).toBeNull();
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
+  });
+
+  it("does not reveal historical hydrated answers without a fresh runtime terminal", async () => {
+    vi.stubEnv("MODE", "production");
+    const finalAnswer = [
+      "HISTORY_ONLY_ALPHA",
+      "HISTORY_ONLY_BETA",
+      "HISTORY_ONLY_GAMMA",
+    ].join(" ");
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: finalAnswer,
+        message_id: "assistant-history-only",
+        role_id: "MainAgent",
+        run_id: "run-history-only",
+      },
+    ]);
+
+    const { container } = renderTimeline();
+
+    await waitForSingleVisibleText(finalAnswer);
+    expect(container.querySelector(".at-message-streaming-text")).toBeNull();
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
   });
 
   it("keeps terminal structured output mounted when history hydrates the answer", async () => {
@@ -1161,6 +1239,11 @@ describe("MessageTimeline", () => {
 
     const { container, queryClient } = renderTimeline();
 
+    for (let frame = 0; frame < 40; frame += 1) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(36);
+      });
+    }
     expect(container.querySelector(".at-message-streaming-text")).toHaveTextContent(
       finalAnswer,
     );
@@ -9017,24 +9100,73 @@ describe("MessageTimeline", () => {
     expect(
       screen.queryByText("Model step finished: model pass complete"),
     ).not.toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Background task started: npm run watch · status running · kind command · #background-task-1",
-      ),
-    ).toBeVisible();
-    expect(
-      screen.getByText(
-        "Background task updated: Compiled successfully · status running · #background-task-1",
-      ),
-    ).toBeVisible();
-    expect(
-      screen.getByText(
-        "Background task completed: Build finished · status completed · exit 0 · #background-task-1",
-      ),
-    ).toBeVisible();
+    expect(screen.getByText("Compiled successfully")).toBeVisible();
     expect(screen.queryByText("model step started")).not.toBeInTheDocument();
     expect(screen.queryByText("notification requested")).not.toBeInTheDocument();
     expect(screen.queryByText("background task started")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Background task/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/npm run watch/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Build finished/)).not.toBeInTheDocument();
+  });
+
+  it("renders background task deltas as one output stream without internal labels", async () => {
+    setRuntimeEntries([
+      runtimeGenericEntry({
+        id: "run-background-stream:1:0",
+        kind: "background_task_started",
+        text: "background task started",
+        eventId: 1,
+        payload: {
+          background_task_id: "background-task-stream",
+          command: "python slow_stream.py",
+          kind: "command",
+          status: "running",
+        },
+      }),
+      runtimeGenericEntry({
+        id: "run-background-stream:2:1",
+        kind: "background_task_updated",
+        text: "background task updated",
+        eventId: 2,
+        payload: {
+          background_task_id: "background-task-stream",
+          delta: "STREAM_ALPHA ",
+          status: "running",
+        },
+      }),
+      runtimeGenericEntry({
+        id: "run-background-stream:3:2",
+        kind: "background_task_updated",
+        text: "background task updated",
+        eventId: 3,
+        payload: {
+          background_task_id: "background-task-stream",
+          delta: "STREAM_BETA",
+          status: "running",
+        },
+      }),
+      runtimeGenericEntry({
+        id: "run-background-stream:4:3",
+        kind: "background_task_completed",
+        text: "background task completed",
+        eventId: 4,
+        payload: {
+          background_task_id: "background-task-stream",
+          output_excerpt: "STREAM_ALPHA STREAM_BETA",
+          status: "completed",
+        },
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("STREAM_ALPHA STREAM_BETA")).toBeVisible();
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+    expect(container.querySelector(".at-message-streaming-text")).toBeNull();
+    expect(container.querySelector(".streaming-cursor")).toBeNull();
+    expect(screen.queryByText(/Background task/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/python slow_stream.py/)).not.toBeInTheDocument();
   });
 
   it("hides question coordination events from the transcript while keeping recovery events visible", async () => {

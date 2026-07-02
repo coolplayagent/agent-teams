@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import {
   ensureScreenshotDir,
@@ -47,12 +47,13 @@ test("real backend normal stream reveals incrementally and survives session swit
     await expectRealShellReady(page);
 
     const streamTag = streamTagFromTitle(title);
-    const expectedText = slowStreamExpectedText(streamTag, 18);
+    const expectedText = slowStreamExpectedText(streamTag, 48);
     const firstToken = slowStreamToken(streamTag, 0);
-    const lastToken = slowStreamToken(streamTag, 17);
+    const lastToken = slowStreamToken(streamTag, 47);
     const promptText = [
-      `${title}: run deterministic slow text stream for UI verification.`,
-      `[slow-stream tag=${streamTag} repeat=18 delay=160 chunk=8]`,
+      `${title}: 请不要调用任何工具。`,
+      "请只输出下面这一段文字，保持原文顺序，不要解释，不要添加额外内容：",
+      expectedText,
     ].join("\n");
 
     const runResponse = waitForRunCreateResponse(page);
@@ -65,9 +66,8 @@ test("real backend normal stream reveals incrementally and survives session swit
     const samples = await collectLiveStreamTextLengthSamples(page, 90_000, 30);
     expect(increasingSampleCount(samples)).toBeGreaterThanOrEqual(3);
     expect(Math.max(...samples)).toBeGreaterThan(8);
-    await expect(
-      page.locator(".at-chat-view .at-message-streaming-text").last(),
-    ).toBeVisible({ timeout: 90_000 });
+    await expect(liveStreamLocator(page)).toBeVisible({ timeout: 90_000 });
+    const liveSnippet = await stableLiveStreamSnippet(page);
 
     await page.screenshot({
       fullPage: false,
@@ -77,24 +77,21 @@ test("real backend normal stream reveals incrementally and survives session swit
     await switchAwayAndBack(page, title);
     await expect
       .poll(() => mainTimelineMessageArticleText(page))
-      .toContain(firstToken);
-    await expect.poll(() => messageArticleTextOccurrenceCount(page, firstToken))
+      .toContain(liveSnippet);
+    await expect.poll(() => messageArticleContainingCount(page, liveSnippet))
       .toBe(1);
 
     await waitForRunToLeaveActive(page, session.session_id, runId, 120_000);
     await expect
       .poll(() => mainTimelineMessageArticleText(page), { timeout: 30_000 })
       .toContain(lastToken);
-    await expect.poll(() => messageArticleTextOccurrenceCount(page, firstToken))
-      .toBe(1);
     await expect
-      .poll(() =>
-        strictPrefixMessageArticleCount(
-          page,
-          expectedText,
-        ),
-      )
-      .toBe(0);
+      .poll(() => mainTimelineMessageArticleText(page), { timeout: 30_000 })
+      .toContain(liveSnippet);
+    await expect.poll(() => messageArticleContainingCount(page, firstToken))
+      .toBe(1);
+    await expect.poll(() => messageArticleContainingCount(page, liveSnippet))
+      .toBe(1);
     await expect(page.locator(".streaming-cursor")).toHaveCount(0);
     await expectNoDocumentScroll(
       page,
@@ -126,8 +123,9 @@ test("real backend normal stream survives terminal hard refresh without duplicat
     const firstToken = slowStreamToken(refreshTag, 0);
     const lastToken = slowStreamToken(refreshTag, REAL_REFRESH_TOKEN_COUNT - 1);
     const promptText = [
-      `${title}: run deterministic slow text stream for refresh verification.`,
-      `[slow-stream tag=${refreshTag} repeat=${REAL_REFRESH_TOKEN_COUNT} delay=90 chunk=8]`,
+      `${title}: 请不要调用任何工具。`,
+      "请只输出下面这一段文字，保持原文顺序，不要解释，不要添加额外内容：",
+      refreshText,
     ].join("\n");
 
     const runResponse = waitForRunCreateResponse(page);
@@ -193,11 +191,14 @@ test("real backend subagent stream opens while running and stays out of main tim
     await expectRealShellReady(page);
 
     const childTag = streamTagFromTitle(title);
+    const childExpectedText = subagentStreamExpectedText(childTag, 14);
     const childFirstToken = subagentStreamToken(childTag, 0);
     const childLastToken = subagentStreamToken(childTag, 13);
     const promptText = [
-      `${title}: run deterministic subagent lifecycle stream for UI verification.`,
-      `[hook-subagent-lifecycle tag=${childTag}]`,
+      `${title}: 请启动一个 Explorer 子代理验证右侧面板流式显示。`,
+      "子代理任务：不要调用任何工具，只输出下面这一段文字，保持原文顺序，不要解释，不要添加额外内容：",
+      childExpectedText,
+      "子代理完成后，主代理只用一句中文总结子代理已完成。",
     ].join("\n");
 
     const runResponse = waitForRunCreateResponse(page);
@@ -219,10 +220,11 @@ test("real backend subagent stream opens while running and stays out of main tim
       .toContain(childTag);
 
     await expect(
-      panel.locator(".at-message-tool, .at-message-streaming-text, .at-message").first(),
+      panel.locator(
+        ".at-message-tool, .at-message-streaming-text, .at-message-plain-stream, .at-message",
+      ).first(),
     ).toBeVisible({ timeout: 90_000 });
-    await expect
-      .poll(() => panel.textContent(), { timeout: 120_000 })
+    await expect.poll(() => panel.textContent(), { timeout: 120_000 })
       .toContain(childFirstToken);
 
     await page.screenshot({
@@ -427,6 +429,12 @@ function slowStreamExpectedText(tag: string, count: number): string {
   ).join(" ");
 }
 
+function subagentStreamExpectedText(tag: string, count: number): string {
+  return Array.from({ length: count }, (_, index) =>
+    subagentStreamToken(tag, index),
+  ).join(" ");
+}
+
 function slowStreamToken(tag: string, index: number): string {
   return `SLOW_STREAM_${tag}_${String(index).padStart(2, "0")}`;
 }
@@ -513,10 +521,54 @@ async function collectLiveStreamTextLengthSamples(
 }
 
 async function latestLiveStreamText(page: Page): Promise<string> {
-  return page.locator(".at-chat-view .at-message-streaming-text").evaluateAll((nodes) => {
+  return liveStreamLocator(page).evaluateAll((nodes) => {
     const text = nodes.at(-1)?.textContent ?? "";
     return text.replace(/\s+/g, " ").trim();
   });
+}
+
+function liveStreamLocator(page: Page): Locator {
+  return page.locator(
+    ".at-chat-view .at-message-streaming-text, .at-chat-view .at-message-plain-stream",
+  );
+}
+
+async function stableLiveStreamSnippet(page: Page): Promise<string> {
+  await expect
+    .poll(async () => (await latestLiveStreamText(page)).length >= 24, {
+      timeout: 90_000,
+    })
+    .toBe(true);
+  const text = await latestLiveStreamText(page);
+  return stableSnippetFromText(text);
+}
+
+async function stableSubagentPanelSnippet(panel: Locator): Promise<string> {
+  await expect
+    .poll(async () => (await subagentPanelRuntimeSnippet(panel)).length >= 24, {
+      timeout: 120_000,
+    })
+    .toBe(true);
+  return subagentPanelRuntimeSnippet(panel);
+}
+
+async function subagentPanelRuntimeSnippet(panel: Locator): Promise<string> {
+  return panel
+    .locator(
+      ".at-message-streaming-text, .at-message-plain-stream, article.at-message, .at-message-tool",
+    )
+    .evaluateAll((nodes) => {
+      const ignored = new Set(["思考", "Thinking"]);
+      const candidate = nodes
+        .map((node) => (node.textContent ?? "").replace(/\s+/g, " ").trim())
+        .find((text) => text.length >= 24 && !ignored.has(text));
+      return candidate ?? "";
+    })
+    .then(stableSnippetFromText);
+}
+
+function stableSnippetFromText(text: string): string {
+  return text.replace(/\s+/g, " ").trim().slice(0, 80);
 }
 
 function increasingSampleCount(samples: number[]): number {
@@ -539,6 +591,12 @@ async function messageArticleTextOccurrenceCount(page: Page, text: string): Prom
     }
     return haystack.split(needle).length - 1;
   }, text);
+}
+
+async function messageArticleContainingCount(page: Page, text: string): Promise<number> {
+  return page.locator(".at-chat-view article.at-message").evaluateAll((nodes, needle) =>
+    nodes.filter((node) => (node.textContent ?? "").includes(needle)).length,
+  text);
 }
 
 async function strictPrefixMessageArticleCount(

@@ -185,6 +185,9 @@ test("reveals live stream text progressively and does not replay after terminal 
     expect(initialText).not.toBe(finalAnswer);
     expect(initialText?.length ?? 0).toBeLessThan(finalAnswer.length);
     await expect(page.getByText(finalAnswer)).toBeVisible({ timeout: 12_000 });
+    await page.locator(".at-message-streaming-text").evaluate((element) => {
+      element.setAttribute("data-stream-stable-node", "before-terminal");
+    });
 
     const rowKeyBeforeTerminal = await page
       .locator("article.at-message")
@@ -203,6 +206,9 @@ test("reveals live stream text progressively and does not replay after terminal 
 
     await expect(page.locator(".at-message-streaming-text")).toHaveCount(0);
     await expect(page.locator(".streaming-cursor")).toHaveCount(0);
+    await expect(
+      page.locator('.at-message-text[data-stream-stable-node="before-terminal"]'),
+    ).toHaveCount(1);
     await expect(page.getByText(finalAnswer)).toHaveCount(1);
     await expect(page.locator("article.at-message")).toHaveCount(1);
     await expect(page.locator("article.at-message").first()).toHaveAttribute(

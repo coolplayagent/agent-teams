@@ -1620,7 +1620,7 @@ describe("AppShell", () => {
     expect(useUiStore.getState().selectedWorkspaceId).toBe("workspace-1");
   });
 
-  it("closes the active subagent panel across session switches", async () => {
+  it("hides the active subagent panel across session switches and restores it on return", async () => {
     getSessionMock.mockImplementation(async (sessionId: string) => ({
       normal_root_role_id: "MainAgent",
       session_id: sessionId,
@@ -1678,7 +1678,9 @@ describe("AppShell", () => {
       ),
     );
     expect(screen.queryByTestId("subagent-session-view")).not.toBeInTheDocument();
-    expect(window.localStorage.getItem("agentTeams.activeSubagentPanel")).toBeNull();
+    expect(window.localStorage.getItem("agentTeams.activeSubagentPanel")).toContain(
+      "subagent-instance-1",
+    );
 
     await act(async () => {
       useUiStore.getState().setSelectedSessionId("session-1");
@@ -1691,10 +1693,6 @@ describe("AppShell", () => {
         "session-1",
       ),
     );
-    expect(screen.queryByTestId("subagent-session-view")).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByTestId("open-subagent-from-timeline"));
-
     expect(await screen.findByTestId("subagent-session-view")).toHaveAttribute(
       "data-instance-id",
       "subagent-instance-1",

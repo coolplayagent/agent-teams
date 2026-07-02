@@ -971,6 +971,7 @@ function timelineRowElement(
       ) : null}
       <MessageRowContent
         onSubagentOpen={onSubagentOpen}
+        rowKey={row.key}
         parts={row.parts}
         sessionId={sessionId}
         t={t}
@@ -1050,6 +1051,7 @@ function ProcessedGroupRow({
             >
               <MessageRowContent
                 onSubagentOpen={onSubagentOpen}
+                rowKey={groupRow.key}
                 parts={groupRow.parts}
                 sessionId={sessionId}
                 t={t}
@@ -5707,26 +5709,40 @@ function outputDeltaMediaPart(
 function MessageRowContent({
   onSubagentOpen,
   parts,
+  rowKey,
   sessionId,
   t,
 }: {
   onSubagentOpen?: (subagent: TimelineSubagentReference) => void;
   parts: TimelineRenderPart[];
+  rowKey: string;
   sessionId: string;
   t: Translate;
 }) {
+  let textIndex = 0;
+  let toolIndex = 0;
+  let thinkingIndex = 0;
+  let mediaIndex = 0;
   return (
     <div className="at-message-content">
-      {parts.map((part, index) => {
+      {parts.map((part) => {
         if (part.kind === "text") {
+          const partKey = `text:${textIndex}`;
+          textIndex += 1;
           return (
-            <MessageText key={`text:${index}`} part={part} />
+            <MessageText
+              key={partKey}
+              part={part}
+              streamIdentity={`${rowKey}:${partKey}`}
+            />
           );
         }
         if (part.kind === "tool") {
+          const partKey = `tool:${toolIndex}`;
+          toolIndex += 1;
           return (
             <MessageToolBlock
-              key={`tool:${index}`}
+              key={partKey}
               onSubagentOpen={onSubagentOpen}
               sessionId={sessionId}
               tool={part}
@@ -5735,25 +5751,36 @@ function MessageRowContent({
           );
         }
         if (part.kind === "thinking") {
+          const partKey = `thinking:${thinkingIndex}`;
+          thinkingIndex += 1;
           return (
             <MessageThinkingBlock
-              key={`thinking:${index}`}
+              key={partKey}
               thinking={part}
               t={t}
             />
           );
         }
-        return <MessageMediaPreview key={`media:${index}`} media={part} t={t} />;
+        const partKey = `media:${mediaIndex}`;
+        mediaIndex += 1;
+        return <MessageMediaPreview key={partKey} media={part} t={t} />;
       })}
     </div>
   );
 }
 
-function MessageText({ part }: { part: TimelineTextPart }) {
+function MessageText({
+  part,
+  streamIdentity,
+}: {
+  part: TimelineTextPart;
+  streamIdentity: string;
+}) {
   const streamingDisplay = useStreamingDisplayText(
     part.text,
     part.streaming,
     part.reveal === true,
+    streamIdentity,
   );
   const visuallyStreaming = part.streaming || streamingDisplay.revealing;
   if (visuallyStreaming && part.text.length >= LONG_STREAM_TEXT_THRESHOLD) {
@@ -5785,11 +5812,17 @@ function useStreamingDisplayText(
   targetText: string,
   streaming: boolean,
   reveal: boolean,
+  streamIdentity: string,
 ): StreamingDisplayText {
   const smoothEnabled = import.meta.env.MODE !== "test";
   const shouldReveal = streaming || reveal;
   const [displayedText, setDisplayedText] = useState(() =>
-    smoothEnabled && shouldReveal ? initialStreamingText(targetText) : targetText,
+    initialDisplayedStreamingText(
+      targetText,
+      smoothEnabled,
+      shouldReveal,
+      streamIdentity,
+    ),
   );
 
   useEffect(() => {
@@ -5798,6 +5831,9 @@ function useStreamingDisplayText(
       return;
     }
     setDisplayedText((current) => {
+      if (revealedStreamingTextCache.get(streamIdentity) === targetText) {
+        return targetText;
+      }
       if (shouldReveal) {
         if (current.length === 0) {
           return initialStreamingText(targetText);
@@ -5809,7 +5845,7 @@ function useStreamingDisplayText(
       }
       return targetText;
     });
-  }, [shouldReveal, smoothEnabled, targetText]);
+  }, [shouldReveal, smoothEnabled, streamIdentity, targetText]);
 
   const revealActive =
     smoothEnabled &&
@@ -5834,6 +5870,13 @@ function useStreamingDisplayText(
     return () => window.clearTimeout(timer);
   }, [displayedText, revealActive, targetText]);
 
+  useEffect(() => {
+    if (!smoothEnabled || targetText.length === 0 || displayedText !== targetText) {
+      return;
+    }
+    rememberRevealedStreamingText(streamIdentity, targetText);
+  }, [displayedText, smoothEnabled, streamIdentity, targetText]);
+
   if (!smoothEnabled) {
     return {
       cursorVisible: streaming,
@@ -5846,6 +5889,39 @@ function useStreamingDisplayText(
     revealing: revealActive,
     text: displayedText,
   };
+}
+
+const REVEALED_STREAMING_TEXT_CACHE_LIMIT = 240;
+const revealedStreamingTextCache = new Map<string, string>();
+
+function initialDisplayedStreamingText(
+  targetText: string,
+  smoothEnabled: boolean,
+  shouldReveal: boolean,
+  streamIdentity: string,
+): string {
+  if (!smoothEnabled || !shouldReveal) {
+    return targetText;
+  }
+  if (revealedStreamingTextCache.get(streamIdentity) === targetText) {
+    return targetText;
+  }
+  return initialStreamingText(targetText);
+}
+
+function rememberRevealedStreamingText(
+  streamIdentity: string,
+  targetText: string,
+): void {
+  revealedStreamingTextCache.delete(streamIdentity);
+  revealedStreamingTextCache.set(streamIdentity, targetText);
+  while (revealedStreamingTextCache.size > REVEALED_STREAMING_TEXT_CACHE_LIMIT) {
+    const oldestKey = revealedStreamingTextCache.keys().next().value;
+    if (oldestKey === undefined) {
+      return;
+    }
+    revealedStreamingTextCache.delete(oldestKey);
+  }
 }
 
 function initialStreamingText(text: string): string {

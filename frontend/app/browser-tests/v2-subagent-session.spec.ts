@@ -557,7 +557,7 @@ test("settles terminal subagent output immediately before history refill", async
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await expectNoDocumentScroll(
       page,
-      "terminal typewriter catch-up should stay inside the fixed V2 shell",
+      "terminal settled subagent stream should stay inside the fixed V2 shell",
     );
   } finally {
     releaseFinalSubagentMessages(state);
@@ -775,7 +775,7 @@ test("recovers a settled subagent stream after refresh before history refill", a
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await expectNoDocumentScroll(
       page,
-      "subagent refresh catch-up should stay inside the fixed V2 shell",
+      "subagent refresh settled stream should stay inside the fixed V2 shell",
     );
   } finally {
     releaseFinalSubagentMessages(state);

@@ -751,9 +751,7 @@ describe("MessageTimeline", () => {
     });
 
     await waitForSingleVisibleText(finalAnswer);
-    await waitFor(() => {
-      expect(container.querySelector("details.at-processed-group")).not.toBeNull();
-    });
+    expect(container.querySelector("details.at-processed-group")).not.toBeNull();
     const rowAfter = container.querySelector<HTMLElement>("article.at-message");
     expect(rowAfter).toBe(rowBefore);
     expect(rowAfter?.dataset.rowKey).toBe(
@@ -765,18 +763,9 @@ describe("MessageTimeline", () => {
   });
 
   it("keeps a fully streamed answer mounted when processed hydration arrives", async () => {
-    const finalAnswer = [
-      "LIVE_STREAM_ALPHA",
-      "LIVE_STREAM_BETA",
-      "LIVE_STREAM_GAMMA",
-      "LIVE_STREAM_DELTA",
-      "LIVE_STREAM_EPSILON",
-      "LIVE_STREAM_ZETA",
-      "LIVE_STREAM_ETA",
-      "LIVE_STREAM_THETA",
-      "LIVE_STREAM_IOTA",
-      "LIVE_STREAM_KAPPA",
-    ].join(" ");
+    vi.stubEnv("MODE", "production");
+    vi.useFakeTimers();
+    const finalAnswer = "LIVE_STREAM_ALPHA";
     const thinkingText = "The user wants me to output the same text again.";
     const streamEntry: TimelineEntry = {
       eventId: 8,
@@ -809,7 +798,15 @@ describe("MessageTimeline", () => {
 
     const { container, queryClient } = renderTimeline();
 
-    await waitForSingleVisibleText(finalAnswer);
+    expect(container.querySelector(".at-message-streaming-text")).not.toHaveTextContent(
+      finalAnswer,
+    );
+    for (let frame = 0; frame < 24; frame += 1) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(36);
+      });
+    }
+    expect(screen.getByText(finalAnswer)).toBeVisible();
     const rowBefore = container.querySelector<HTMLElement>("article.at-message");
     expect(rowBefore).not.toBeNull();
     expect(rowBefore?.dataset.rowKey).toBe(
@@ -867,16 +864,14 @@ describe("MessageTimeline", () => {
       });
     });
 
-    await waitForSingleVisibleText(finalAnswer);
-    await waitFor(() => {
-      expect(container.querySelector("details.at-processed-group")).not.toBeNull();
-    });
+    expect(container.querySelector("details.at-processed-group")).not.toBeNull();
     const rowAfter = container.querySelector<HTMLElement>("article.at-message");
     expect(rowAfter).toBe(rowBefore);
     expect(rowAfter?.dataset.rowKey).toBe(
       "runtime-text:run-live-full-hydrate:MainAgent:0",
     );
     expect(rowAfter).not.toHaveTextContent(thinkingText);
+    expect(container.querySelector(".at-message-streaming-text")).toBeNull();
     expect(screen.getAllByText(finalAnswer)).toHaveLength(1);
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
   });

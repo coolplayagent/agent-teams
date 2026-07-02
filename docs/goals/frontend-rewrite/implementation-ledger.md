@@ -9513,3 +9513,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent V1 harness audit, real V2 role capability edit restoration, focused component coverage, packed browser role verification, role harness deletion, matrix update, and ledger update completed for this slice. This does not claim `SET-07` Verified, `CLEAN-01` Verified, Project View harness migration, reviewer sign-off, or final V2 frontend completion.
+
+## 2026-07-02 Runtime Processed Hydration Key Stability Slice
+
+### Scope
+- Reproduced the completed-answer rebuild issue at the timeline data/DOM identity level instead of treating it as a cursor or CSS artifact.
+- Found the concrete failure path: when a live runtime answer later hydrates from persisted history that contains processed work before the final text, `collapseProcessedSegmentCore` split the row and changed the final answer key from the stable runtime key to a `:processed-start`/`:final` derivative.
+- Updated `MessageTimeline` so final text split out of processed hydration restores the original `runtime-text:*` or `runtime:*` anchor key. The processed group can still fold thinking/tool work, but the final answer keeps the same React identity and does not remount into a second reveal.
+- Added focused component coverage that simulates a live text prefix, then hydrates persisted history with a thinking part plus the final answer. The test asserts one processed group exists, the final answer keeps the exact same DOM node/key, and no streaming wrapper or cursor remains after terminal hydration.
+
+### Verification
+- `npm test -- src/test/MessageTimeline.test.tsx -t "keeps the runtime answer mounted when processed hydration splits thinking from final text"` passed.
+- `npm test -- src/test/MessageTimeline.test.tsx -t "runtime row mounted|persisted text upgrades|terminal structured output|repeated live thinking|empty active thinking"` passed with 3 focused tests.
+- `npm test -- src/test/MessageTimeline.test.tsx` passed with 175 tests.
+- `npm run typecheck` passed.
+- `npm run lint` passed.
+- `npm run build` passed and regenerated the packed `frontend/dist/app` bundle.
+- `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium` passed with 3 Chromium browser tests covering refresh recovery, terminal catch-up, and tool-heavy replay.
+
+### Reviewer
+- Main-agent failure-path analysis, production timeline key-stability fix, focused DOM-identity regression coverage, full timeline component verification, packed dist rebuild, and browser stream-refresh verification completed for this slice. This does not claim full stream/replay PASS, full real-backend visual sign-off, Project View harness migration, reviewer sign-off, or final V2 frontend completion.

@@ -1338,7 +1338,7 @@ function collapseProcessedSegmentCore(
   if (finalSourceRow !== undefined && finalStart !== null) {
     const finalRow = finalParts.length === finalSourceRow.parts.length
       ? finalSourceRow
-      : rowWithParts(finalSourceRow, finalParts, "final");
+      : finalRowWithParts(finalSourceRow, finalParts);
     if (timelineRowHasRenderableContent(finalRow)) {
       collapsedRows.push(finalRow);
     }
@@ -1458,6 +1458,30 @@ function rowWithParts(
       text.trim().length > 0 &&
       parts.every((part) => part.kind === "text"),
   };
+}
+
+function finalRowWithParts(
+  row: TimelineRow,
+  parts: TimelineRenderPart[],
+): TimelineRow {
+  const nextRow = rowWithParts(row, parts, "final");
+  const runtimeKey = runtimeFinalRowAnchorKey(row.key);
+  if (runtimeKey === null) {
+    return nextRow;
+  }
+  return {
+    ...nextRow,
+    key: runtimeKey,
+  };
+}
+
+function runtimeFinalRowAnchorKey(key: string): string | null {
+  if (!key.startsWith("runtime-text:") && !key.startsWith("runtime:")) {
+    return null;
+  }
+  return key
+    .replace(/:processed-start(?::processed)?$/u, "")
+    .replace(/:processed$/u, "");
 }
 
 function mergeRuntimeThinkingRowsIntoHydratedRows(

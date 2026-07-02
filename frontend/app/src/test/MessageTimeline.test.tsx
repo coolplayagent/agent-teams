@@ -544,6 +544,123 @@ describe("MessageTimeline", () => {
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
   });
 
+  it("keeps the runtime answer mounted when processed hydration splits thinking from final text", async () => {
+    const finalAnswer = [
+      "LIVE_STREAM_ALPHA",
+      "LIVE_STREAM_BETA",
+      "LIVE_STREAM_GAMMA",
+      "LIVE_STREAM_DELTA",
+      "LIVE_STREAM_EPSILON",
+      "LIVE_STREAM_ZETA",
+      "LIVE_STREAM_ETA",
+      "LIVE_STREAM_THETA",
+      "LIVE_STREAM_IOTA",
+      "LIVE_STREAM_KAPPA",
+    ].join(" ");
+    const streamedPrefix = "LIVE_STREAM_ALPHA LIVE_STREAM_BETA";
+    const streamEntry: TimelineEntry = {
+      eventId: 8,
+      id: "run-live-processed-hydrate:8:0",
+      kind: "text_delta",
+      occurredAt: "2026-06-23T00:00:00Z",
+      payload: { text: streamedPrefix },
+      roleId: "MainAgent",
+      runId: "run-live-processed-hydrate",
+      sessionId: "session-1",
+      text: streamedPrefix,
+    };
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: ["run-live-processed-hydrate"],
+        runs: {
+          "run-live-processed-hydrate": {
+            entries: [streamEntry],
+            hadVisibleTextStream: true,
+            lastEventId: 8,
+            runId: "run-live-processed-hydrate",
+            seenEventKeys: [],
+            status: "open",
+            terminalEventType: null,
+          },
+        },
+      },
+    });
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container, queryClient } = renderTimeline();
+
+    expect(await screen.findByText(streamedPrefix)).toBeVisible();
+    const rowBefore = container.querySelector<HTMLElement>("article.at-message");
+    expect(rowBefore).not.toBeNull();
+    expect(rowBefore?.dataset.rowKey).toBe(
+      "runtime-text:run-live-processed-hydrate:MainAgent:0",
+    );
+
+    act(() => {
+      queryClient.setQueryData(["sessions", "session-1", "messages"], [
+        {
+          message: {
+            parts: [
+              {
+                content: "The user wants me to output the same text again.",
+                part_kind: "thinking",
+              },
+              {
+                content: finalAnswer,
+                part_kind: "text",
+              },
+            ],
+          },
+          message_id: "assistant-live-processed-hydrate-final",
+          role_id: "MainAgent",
+          run_id: "run-live-processed-hydrate",
+        },
+      ]);
+      useRuntimeStore.setState({
+        runtimeState: {
+          activeRunIds: [],
+          runs: {
+            "run-live-processed-hydrate": {
+              entries: [
+                streamEntry,
+                {
+                  eventId: 9,
+                  id: "run-live-processed-hydrate:9:1",
+                  kind: "run_completed",
+                  occurredAt: "2026-06-23T00:00:01Z",
+                  payload: { status: "completed" },
+                  roleId: "MainAgent",
+                  runId: "run-live-processed-hydrate",
+                  sessionId: "session-1",
+                  text: "completed",
+                },
+              ],
+              hadVisibleTextStream: true,
+              lastEventId: 9,
+              runId: "run-live-processed-hydrate",
+              seenEventKeys: [],
+              status: "closed",
+              terminalEventType: "run_completed",
+            },
+          },
+        },
+      });
+    });
+
+    await waitForSingleVisibleText(finalAnswer);
+    await waitFor(() => {
+      expect(container.querySelector("details.at-processed-group")).not.toBeNull();
+    });
+    const rowAfter = container.querySelector<HTMLElement>("article.at-message");
+    expect(rowAfter).toBe(rowBefore);
+    expect(rowAfter?.dataset.rowKey).toBe(
+      "runtime-text:run-live-processed-hydrate:MainAgent:0",
+    );
+    expect(rowAfter).not.toHaveClass("is-streaming");
+    expect(container.querySelectorAll(".at-message-streaming-text")).toHaveLength(0);
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
+  });
+
   it("merges terminal structured output into the active runtime text reveal", async () => {
     useRuntimeStore.setState({
       runtimeState: {

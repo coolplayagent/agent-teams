@@ -137,7 +137,6 @@ export function AppShell() {
   const themeMode = useUiStore((state) => state.themeMode);
   const language = useUiStore((state) => state.language);
   const selectedSessionId = useUiStore((state) => state.selectedSessionId);
-  const previousSelectedSessionIdRef = useRef(selectedSessionId);
   const selectedWorkspaceId = useUiStore((state) => state.selectedWorkspaceId);
   const setSidebarCollapsed = useUiStore((state) => state.setSidebarCollapsed);
   const setSidebarWidth = useUiStore((state) => state.setSidebarWidth);
@@ -327,14 +326,6 @@ export function AppShell() {
     [selectedSessionId, sidebarSessionsQuery.data],
   );
   const visibleActiveSubagent = activeSubagentForSelectedSession;
-
-  useEffect(() => {
-    const previousSessionId = previousSelectedSessionIdRef.current;
-    previousSelectedSessionIdRef.current = selectedSessionId;
-    if (previousSessionId !== selectedSessionId) {
-      setActiveSubagent(null);
-    }
-  }, [selectedSessionId]);
 
   useEffect(() => {
     const savedLanguage = uiLanguageQuery.data?.language;

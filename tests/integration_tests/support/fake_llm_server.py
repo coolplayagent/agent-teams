@@ -343,7 +343,7 @@ def plan_fake_response(payload: object) -> dict[str, object]:
     if _slow_stream_hold_mode(messages):
         return _plan_slow_stream_hold_response(messages)
     if _slow_stream_mode(messages):
-        return _plan_slow_stream_response()
+        return _plan_slow_stream_response(messages)
     if _webfetch_approval_validation_mode(messages):
         return _plan_webfetch_approval_validation_response(payload, messages)
     if _ask_question_validation_mode(messages):
@@ -958,10 +958,30 @@ def _plan_hook_agent_stop_main_response(messages: list[object]) -> dict[str, obj
 
 
 def _hook_subagent_worker_mode(messages: list[object]) -> bool:
-    return _messages_contain_user_text(messages, "[hook-subagent-worker]")
+    return _messages_contain_user_text(messages, "[hook-subagent-worker")
 
 
 def _plan_hook_subagent_worker_response(messages: list[object]) -> dict[str, object]:
+    user_text = _extract_last_user_text(messages)
+    tag_match = re.search(r"\[hook-subagent-worker[^\]]*\btag=([A-Za-z0-9_-]+)", user_text)
+    if tag_match is not None:
+        tag = tag_match.group(1)
+        repeat_match = re.search(r"\[hook-subagent-worker[^\]]*\brepeat=(\d+)", user_text)
+        delay_match = re.search(r"\[hook-subagent-worker[^\]]*\bdelay=(\d+)", user_text)
+        chunk_match = re.search(r"\[hook-subagent-worker[^\]]*\bchunk=(\d+)", user_text)
+        repeat = int(repeat_match.group(1)) if repeat_match is not None else 10
+        delay_ms = int(delay_match.group(1)) if delay_match is not None else 160
+        chunk_size = int(chunk_match.group(1)) if chunk_match is not None else 10
+        return {
+            "kind": "text",
+            "content": " ".join(
+                f"SUBAGENT_STREAM_{tag}_{index:02d}"
+                for index in range(max(4, min(48, repeat)))
+            ),
+            "chunk_size": max(1, min(80, chunk_size)),
+            "delay_before_ms": 200,
+            "delay_between_chunks_ms": max(0, min(2_000, delay_ms)),
+        }
     return {
         "kind": "text",
         "content": "[fake-llm] subagent worker completed",
@@ -969,7 +989,7 @@ def _plan_hook_subagent_worker_response(messages: list[object]) -> dict[str, obj
 
 
 def _hook_subagent_lifecycle_mode(messages: list[object]) -> bool:
-    return _messages_contain_user_text(messages, "[hook-subagent-lifecycle]")
+    return _messages_contain_user_text(messages, "[hook-subagent-lifecycle")
 
 
 def _plan_hook_subagent_lifecycle_response(
@@ -984,6 +1004,18 @@ def _plan_hook_subagent_lifecycle_response(
         }
     last_tool_call_id = _extract_last_tool_call_id(messages)
     if last_tool_call_id is None:
+        user_text = _extract_last_user_text(messages)
+        tag_match = re.search(
+            r"\[hook-subagent-lifecycle[^\]]*\btag=([A-Za-z0-9_-]+)",
+            user_text,
+        )
+        tag = tag_match.group(1) if tag_match is not None else ""
+        worker_prompt = "[hook-subagent-worker] return one short status line"
+        if tag:
+            worker_prompt = (
+                f"[hook-subagent-worker tag={tag} repeat=14 delay=180 chunk=8] "
+                "stream deterministic subagent status tokens"
+            )
         return {
             "kind": "tool_call",
             "tool_name": "spawn_subagent",
@@ -991,7 +1023,7 @@ def _plan_hook_subagent_lifecycle_response(
             "arguments": {
                 "role_id": "Explorer",
                 "description": "Run a short hook lifecycle verification task",
-                "prompt": "[hook-subagent-worker] return one short status line",
+                "prompt": worker_prompt,
                 "background": False,
             },
         }
@@ -1171,7 +1203,7 @@ def _plan_stream_drop_retry_response(messages: list[object]) -> dict[str, object
 
 
 def _slow_stream_mode(messages: list[object]) -> bool:
-    return _messages_contain_user_text(messages, "[slow-stream]")
+    return _messages_contain_user_text(messages, "[slow-stream")
 
 
 def _slow_stream_hold_mode(messages: list[object]) -> bool:
@@ -1190,15 +1222,56 @@ def _plan_slow_stream_hold_response(messages: list[object]) -> dict[str, object]
     }
 
 
-def _plan_slow_stream_response() -> dict[str, object]:
-    return {
-        "kind": "text",
-        "content": (
+class _SlowStreamConfig:
+    def __init__(
+        self,
+        *,
+        chunk_size: int,
+        content: str,
+        delay_between_chunks_ms: int,
+    ) -> None:
+        self.chunk_size = chunk_size
+        self.content = content
+        self.delay_between_chunks_ms = delay_between_chunks_ms
+
+
+def _extract_slow_stream_config(messages: list[object]) -> _SlowStreamConfig:
+    user_text = _extract_last_user_text(messages)
+    tag_match = re.search(r"\[slow-stream[^\]]*\btag=([A-Za-z0-9_-]+)", user_text)
+    repeat_match = re.search(r"\[slow-stream[^\]]*\brepeat=(\d+)", user_text)
+    delay_match = re.search(r"\[slow-stream[^\]]*\bdelay=(\d+)", user_text)
+    chunk_match = re.search(r"\[slow-stream[^\]]*\bchunk=(\d+)", user_text)
+    tag = tag_match.group(1) if tag_match is not None else ""
+    repeat = int(repeat_match.group(1)) if repeat_match is not None else 0
+    if tag:
+        content = " ".join(
+            f"SLOW_STREAM_{tag}_{index:02d}"
+            for index in range(max(4, min(80, repeat or 16)))
+        )
+    else:
+        content = (
             "[fake-llm] Slow stream completed successfully after simulated "
             "latency across multiple chunks."
-        ),
+        )
+    delay_between_chunks_ms = (
+        int(delay_match.group(1)) if delay_match is not None else 120
+    )
+    chunk_size = int(chunk_match.group(1)) if chunk_match is not None else 12
+    return _SlowStreamConfig(
+        chunk_size=max(1, min(80, chunk_size)),
+        content=content,
+        delay_between_chunks_ms=max(0, min(2_000, delay_between_chunks_ms)),
+    )
+
+
+def _plan_slow_stream_response(messages: list[object]) -> dict[str, object]:
+    config = _extract_slow_stream_config(messages)
+    return {
+        "kind": "text",
+        "content": config.content,
+        "chunk_size": config.chunk_size,
         "delay_before_ms": 200,
-        "delay_between_chunks_ms": 120,
+        "delay_between_chunks_ms": config.delay_between_chunks_ms,
     }
 
 

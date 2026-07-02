@@ -510,6 +510,15 @@ For every row moved to `Verified`, record:
 - Browser evidence: `.tmp/frontend-v2-ts-subagent-session/v2-subagent-orchestration-live-stream-mid.png`, `.tmp/frontend-v2-ts-subagent-session/v2-subagent-orchestration-live-stream-final.png`.
 - Real HTTP SSE stdout cadence is now covered; remaining before verification: production-backend orchestration/SSE cadence and final V1 visual sign-off.
 
+### 2026-07-02 Real Backend Terminal Reveal And Session Switch Closure
+
+- `MSG-02` tightened: terminal persisted assistant history no longer creates a second `runtime-reveal` row after the same answer has already streamed. A matching persisted final answer now keeps its stable `message:*` row key, consumes the duplicate closed runtime row, and does not visually rebuild the completed response.
+- `SESS-03`/`STREAM-02` tightened: the real-backend live browser suite now covers normal live stream session switching, terminal hard refresh after live stream, subagent panel open while running plus switch-away/switch-back restoration, and orchestration tool-heavy session switching in one deterministic run.
+- `SUB-01` tightened: the right-side subagent panel is no longer permanently cleared by switching away from its parent session; it is hidden for other sessions and restored when the user returns to the owning session.
+- Fake backend support now has deterministic slow-stream and hook-subagent triggers so stream/replay tests assert exact tokens, ordering, duplicate counts, and final settlement instead of depending on vague model prose.
+- Automated evidence: `npm run test -- MessageTimeline.test.tsx -t "terminal runtime reveal|orchestration coordinator|live runtime tools|subagent stream|internal orchestration"`, `npm run typecheck`, `npm run build`, `uv run --extra dev ruff check tests/integration_tests/support/fake_llm_server.py`, and the real local backend browser runner for `v2-real-backend-live-stream.spec.ts` passed 4/4 scenarios.
+- Remaining before verification: broader production-backend visual sign-off, remaining Settings/page parity rows, and final full-goal reviewer pass.
+
 ### 2026-07-02 Subagent Stream Isolation And Catch-Up
 
 - `STREAM-02`/`SUB-01` tightened: parent run streams now filter later child-role runtime rows when an earlier `spawn_subagent` tool result in the same run identified that child role, even if those later child text/tool rows omit explicit subagent markers and `normal_root_role_id` is still unavailable.

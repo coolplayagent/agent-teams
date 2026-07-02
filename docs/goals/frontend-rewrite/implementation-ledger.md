@@ -9378,3 +9378,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent V1/V2 browser pairing, DOM-state evidence, screenshot inspection, and matrix update completed for `SET-05`. This verifies Notifications only; it does not claim complete Settings parity, other Settings rows, reviewer-subagent sign-off for the full rewrite, or final V2 frontend completion.
+
+## 2026-07-02 Real Backend Timeline Stream Replay Closure
+
+### Scope
+- Reproduced the user-facing stream/replay failure mode behind the completed answer being visually rebuilt after it had already rendered. The problem was not a cosmetic cursor issue: terminal runtime hydration could synthesize a second `hydrated-reveal` text entry and replace the stable persisted answer row with a runtime-keyed row.
+- Removed the terminal hydrated-reveal path from `MessageTimeline`, so a terminal stream covered by persisted history does not create a second reveal row. Matching persisted final answers now consume duplicate closed runtime rows while keeping their original `message:*` key.
+- Tightened main/subagent event ownership for live streams: main timeline roles stay in the main timeline, internal orchestration roles stay hidden, `spawn_subagent`/skill child rows are treated as subagent work, and the parent timeline keeps only the compact subagent affordance.
+- Fixed right-side subagent panel restoration across session switches. Switching to another session hides the panel, but switching back to the owning parent restores the running or completed child panel instead of losing it.
+- Added deterministic fake-backend stream controls for exact browser validation: `[slow-stream tag=... repeat=... delay=... chunk=...]`, `[hook-subagent-lifecycle tag=...]`, and `[hook-subagent-worker tag=...]` produce predictable normal and child stream tokens.
+- Strengthened `v2-real-backend-live-stream.spec.ts` to assert exact token order, duplicate counts, terminal hard refresh behavior, session switch recovery, subagent running-panel openability, parent/child isolation, and orchestration tool stream recovery.
+
+### Verification
+- `npm run test -- MessageTimeline.test.tsx -t "terminal runtime reveal|orchestration coordinator|live runtime tools|subagent stream|internal orchestration"` passed with 12 focused tests.
+- `npm run typecheck` passed.
+- `npm run build` passed and regenerated the packed `frontend/dist/app` bundle.
+- `uv run --extra dev ruff check tests/integration_tests/support/fake_llm_server.py` passed.
+- Real local backend browser verification for `v2-real-backend-live-stream.spec.ts` passed 4/4 scenarios: normal stream session switch, normal stream terminal hard refresh, subagent stream open while running plus switch-back restore, and orchestration tool stream session switch.
+
+### Reviewer
+- Main-agent code inspection, focused timeline unit coverage, fake backend deterministic trigger audit, packed dist rebuild, and real local backend browser run completed for this slice. This does not claim final V2 frontend completion, Settings-wide parity completion, full V1 visual sign-off, or a full pre-commit pass.

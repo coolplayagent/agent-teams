@@ -46,10 +46,13 @@ test("real backend normal stream reveals incrementally and survives session swit
     await openRealBackendSession(page, session, title);
     await expectRealShellReady(page);
 
+    const streamTag = streamTagFromTitle(title);
+    const expectedText = slowStreamExpectedText(streamTag, 18);
+    const firstToken = slowStreamToken(streamTag, 0);
+    const lastToken = slowStreamToken(streamTag, 17);
     const promptText = [
-      `${title}: 请只输出下面这一段文字，不要调用任何工具。`,
-      "输出时保持原文顺序：",
-      "LIVE_STREAM_ALPHA LIVE_STREAM_BETA LIVE_STREAM_GAMMA LIVE_STREAM_DELTA LIVE_STREAM_EPSILON LIVE_STREAM_ZETA LIVE_STREAM_ETA LIVE_STREAM_THETA LIVE_STREAM_IOTA LIVE_STREAM_KAPPA。",
+      `${title}: run deterministic slow text stream for UI verification.`,
+      `[slow-stream tag=${streamTag} repeat=18 delay=160 chunk=8]`,
     ].join("\n");
 
     const runResponse = waitForRunCreateResponse(page);
@@ -74,18 +77,21 @@ test("real backend normal stream reveals incrementally and survives session swit
     await switchAwayAndBack(page, title);
     await expect
       .poll(() => mainTimelineMessageArticleText(page))
-      .toContain("LIVE_STREAM_KAPPA");
-    await expect.poll(() => messageArticleTextOccurrenceCount(page, "LIVE_STREAM_ALPHA"))
+      .toContain(firstToken);
+    await expect.poll(() => messageArticleTextOccurrenceCount(page, firstToken))
       .toBe(1);
 
     await waitForRunToLeaveActive(page, session.session_id, runId, 120_000);
-    await expect.poll(() => messageArticleTextOccurrenceCount(page, "LIVE_STREAM_ALPHA"))
+    await expect
+      .poll(() => mainTimelineMessageArticleText(page), { timeout: 30_000 })
+      .toContain(lastToken);
+    await expect.poll(() => messageArticleTextOccurrenceCount(page, firstToken))
       .toBe(1);
     await expect
       .poll(() =>
         strictPrefixMessageArticleCount(
           page,
-          "LIVE_STREAM_ALPHA LIVE_STREAM_BETA LIVE_STREAM_GAMMA LIVE_STREAM_DELTA LIVE_STREAM_EPSILON LIVE_STREAM_ZETA LIVE_STREAM_ETA LIVE_STREAM_THETA LIVE_STREAM_IOTA LIVE_STREAM_KAPPA",
+          expectedText,
         ),
       )
       .toBe(0);
@@ -115,12 +121,13 @@ test("real backend normal stream survives terminal hard refresh without duplicat
     await openRealBackendSession(page, session, title);
     await expectRealShellReady(page);
 
-    const refreshText = realRefreshExpectedText(title);
-    const firstToken = realRefreshToken(title, 0);
-    const lastToken = realRefreshToken(title, REAL_REFRESH_TOKEN_COUNT - 1);
+    const refreshTag = streamTagFromTitle(title);
+    const refreshText = slowStreamExpectedText(refreshTag, REAL_REFRESH_TOKEN_COUNT);
+    const firstToken = slowStreamToken(refreshTag, 0);
+    const lastToken = slowStreamToken(refreshTag, REAL_REFRESH_TOKEN_COUNT - 1);
     const promptText = [
-      `${title}: 请只输出下面这一整行文字，不要调用任何工具，不要解释，不要添加标点。`,
-      refreshText,
+      `${title}: run deterministic slow text stream for refresh verification.`,
+      `[slow-stream tag=${refreshTag} repeat=${REAL_REFRESH_TOKEN_COUNT} delay=90 chunk=8]`,
     ].join("\n");
 
     const runResponse = waitForRunCreateResponse(page);
@@ -185,12 +192,12 @@ test("real backend subagent stream opens while running and stays out of main tim
     await openRealBackendSession(page, session, title);
     await expectRealShellReady(page);
 
-    const childMarker = `REAL_SUBAGENT_CHILD_${Date.now()}`;
+    const childTag = streamTagFromTitle(title);
+    const childFirstToken = subagentStreamToken(childTag, 0);
+    const childLastToken = subagentStreamToken(childTag, 13);
     const promptText = [
-      `${title}: 请启动一个 Crafter 子代理验证右侧面板流式显示。`,
-      "子代理只允许执行下面这个 shell 命令，不要修改任何文件：",
-      `python -c "import time; print('${childMarker}_1', flush=True); time.sleep(3); print('${childMarker}_2', flush=True); time.sleep(3); print('${childMarker}_DONE', flush=True)"`,
-      "主代理不要复述子代理过程；子代理完成后主代理只用一句中文总结。",
+      `${title}: run deterministic subagent lifecycle stream for UI verification.`,
+      `[hook-subagent-lifecycle tag=${childTag}]`,
     ].join("\n");
 
     const runResponse = waitForRunCreateResponse(page);
@@ -209,14 +216,14 @@ test("real backend subagent stream opens while running and stays out of main tim
     await expect(panel).toBeVisible({ timeout: 20_000 });
     await expect
       .poll(() => panel.locator(".at-subagent-session-prompt").textContent())
-      .toContain(childMarker);
+      .toContain(childTag);
 
     await expect(
       panel.locator(".at-message-tool, .at-message-streaming-text, .at-message").first(),
     ).toBeVisible({ timeout: 90_000 });
     await expect
       .poll(() => panel.textContent(), { timeout: 120_000 })
-      .toContain(`${childMarker}_1`);
+      .toContain(childFirstToken);
 
     await page.screenshot({
       fullPage: false,
@@ -230,12 +237,12 @@ test("real backend subagent stream opens while running and stays out of main tim
     });
     await expect
       .poll(() => page.locator(".at-subagent-session-prompt").textContent())
-      .toContain(childMarker);
+      .toContain(childTag);
     await expect
       .poll(() => page.locator(".at-subagent-session-view").textContent(), {
         timeout: 90_000,
       })
-      .toContain(`${childMarker}_1`);
+      .toContain(childFirstToken);
     await page.screenshot({
       fullPage: false,
       path: screenshotPath(
@@ -246,17 +253,17 @@ test("real backend subagent stream opens while running and stays out of main tim
 
     await expect
       .poll(() => mainTimelineMessageArticleText(page))
-      .not.toContain(`${childMarker}_1`);
+      .not.toContain(childFirstToken);
     await switchAwayAndBack(page, title);
     await expect(panel).toBeVisible({ timeout: 30_000 });
     await expect
       .poll(() => panel.locator(".at-subagent-session-prompt").textContent())
-      .toContain(childMarker);
+      .toContain(childTag);
 
     await waitForRunToLeaveActive(page, session.session_id, runId, 150_000);
     await expect
       .poll(() => panel.textContent(), { timeout: 120_000 })
-      .toContain(`${childMarker}_DONE`);
+      .toContain(childLastToken);
     await expect(panel.locator(".at-subagent-session-badge")).not.toContainText(
       /running/i,
     );
@@ -270,7 +277,7 @@ test("real backend subagent stream opens while running and stays out of main tim
       .not.toMatch(/\brunning\b/i);
     await expect
       .poll(() => mainTimelineMessageArticleText(page))
-      .not.toContain(`${childMarker}_DONE`);
+      .not.toContain(childLastToken);
     await expect(page.locator(".streaming-cursor")).toHaveCount(0);
     await expectNoDocumentScroll(
       page,
@@ -280,6 +287,100 @@ test("real backend subagent stream opens while running and stays out of main tim
     await page.screenshot({
       fullPage: false,
       path: screenshotPath("real-live-subagent-completed.png", SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await stopRunIfPresent(runId);
+    await deleteRealSession(session.session_id);
+  }
+});
+
+test("real backend orchestration tool stream survives session switch without role leakage", async ({
+  page,
+}) => {
+  const title = `real-live-orchestration-tool-${Date.now()}`;
+  const session = await createRealSession(title);
+  let runId: string | null = null;
+  try {
+    await updateRealSessionTopology(session.session_id, {
+      session_mode: "orchestration",
+      orchestration_preset_id: null,
+      normal_root_role_id: null,
+    });
+    await openRealBackendSession(page, session, title);
+    await expectRealShellReady(page);
+    await expect(page.locator(".at-composer")).toContainText(/编排模式|Orchestration/);
+
+    const promptText = [
+      `${title}: run deterministic orchestration tool pressure for UI verification.`,
+      "[orch-tool-pressure count=4 tools=8 delay=2000] dispatch tool-heavy workers in orchestrated mode.",
+    ].join("\n");
+
+    const runResponse = waitForRunCreateResponse(page);
+    await submitPrompt(page, promptText);
+    runId = await runIdFromResponse(await runResponse);
+    await expect(page.getByRole("button", { name: /停止|Stop/ })).toBeVisible({
+      timeout: 20_000,
+    });
+
+    await waitForVisibleMainTimelineToolCard(page, 120_000);
+    await expect.poll(() => nakedRuntimeRoleLineCount(page)).toBe(0);
+    await expect
+      .poll(() => mainTimelineMessageArticleText(page))
+      .not.toContain("tool-pressure-0");
+    await expect
+      .poll(() => mainTimelineMessageArticleText(page))
+      .not.toContain("Return only the delegation plan JSON object");
+
+    await page.screenshot({
+      fullPage: false,
+      path: screenshotPath(
+        "real-live-orchestration-tool-running.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+
+    await switchAwayAndBack(page, title);
+    await waitForVisibleMainTimelineToolCard(page, 45_000);
+    await expect.poll(() => nakedRuntimeRoleLineCount(page)).toBe(0);
+    await expect
+      .poll(() => mainTimelineMessageArticleText(page))
+      .not.toContain("Return only the delegation plan JSON object");
+
+    await waitForRunToLeaveActive(page, session.session_id, runId, 180_000);
+    await expect
+      .poll(() => mainTimelineMessageArticleText(page), { timeout: 90_000 })
+      .toContain("[fake-llm] orchestration tool pressure completed 4 tasks.");
+    const processedGroup = page.locator(".at-chat-view details.at-processed-group").first();
+    await expect(processedGroup).toBeVisible({ timeout: 30_000 });
+    await expect(processedGroup).not.toHaveAttribute("open", "");
+    await expect
+      .poll(() => visibleMainTimelineText(page), { timeout: 30_000 })
+      .not.toContain("[normal-tool-pressure");
+    await processedGroup.locator(".at-processed-group-summary").click();
+    await expect(processedGroup).toHaveAttribute("open", "");
+    await expect.poll(() => visibleMainTimelineToolCardCount(page), {
+      timeout: 30_000,
+    }).toBeGreaterThanOrEqual(3);
+    await expect
+      .poll(() => visibleMainTimelineText(page), { timeout: 30_000 })
+      .not.toContain("[normal-tool-pressure");
+    await expect.poll(() => nakedRuntimeRoleLineCount(page)).toBe(0);
+    await expect
+      .poll(() => mainTimelineMessageArticleText(page))
+      .not.toContain("Return only the delegation plan JSON object");
+    await expect(page.locator(".streaming-cursor")).toHaveCount(0);
+    await expect(page.locator(".at-message-role")).toHaveCount(0);
+    await expectNoDocumentScroll(
+      page,
+      "real orchestration tool stream should stay inside the fixed V2 shell",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.screenshot({
+      fullPage: false,
+      path: screenshotPath(
+        "real-live-orchestration-tool-completed.png",
+        SCREENSHOT_FOLDER,
+      ),
     });
   } finally {
     await stopRunIfPresent(runId);
@@ -316,14 +417,22 @@ async function openRealBackendSession(
 
 const REAL_REFRESH_TOKEN_COUNT = 32;
 
-function realRefreshExpectedText(title: string): string {
-  return Array.from({ length: REAL_REFRESH_TOKEN_COUNT }, (_, index) =>
-    realRefreshToken(title, index),
+function streamTagFromTitle(title: string): string {
+  return title.replace(/[^A-Za-z0-9_-]/g, "_").replace(/-/g, "_");
+}
+
+function slowStreamExpectedText(tag: string, count: number): string {
+  return Array.from({ length: count }, (_, index) =>
+    slowStreamToken(tag, index),
   ).join(" ");
 }
 
-function realRefreshToken(title: string, index: number): string {
-  return `${title.replace(/-/g, "_").toUpperCase()}_${String(index).padStart(2, "0")}`;
+function slowStreamToken(tag: string, index: number): string {
+  return `SLOW_STREAM_${tag}_${String(index).padStart(2, "0")}`;
+}
+
+function subagentStreamToken(tag: string, index: number): string {
+  return `SUBAGENT_STREAM_${tag}_${String(index).padStart(2, "0")}`;
 }
 
 async function expectRealShellReady(page: Page): Promise<void> {
@@ -364,12 +473,23 @@ async function runIdFromResponse(response: RunCreateResponse): Promise<string> {
 async function switchAwayAndBack(page: Page, title: string): Promise<void> {
   const selected = page.locator(".at-session-item.is-selected");
   await expect(selected).toContainText(title);
-  const candidates = page.locator(".at-session-item").filter({ hasNotText: title });
+  let createdFallbackSessionId: string | null = null;
+  let candidates = page.locator(".at-session-item").filter({ hasNotText: title });
+  if (await candidates.count() === 0) {
+    const fallback = await createRealSession(`real-live-switch-target-${Date.now()}`);
+    createdFallbackSessionId = fallback.session_id;
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expectRealShellReady(page);
+    candidates = page.locator(".at-session-item").filter({ hasNotText: title });
+  }
   await expect(candidates.first()).toBeVisible({ timeout: 20_000 });
   await candidates.first().click();
   await expect(selected).not.toContainText(title);
   await page.locator(".at-session-item").filter({ hasText: title }).first().click();
   await expect(page.locator(".at-session-item.is-selected")).toContainText(title);
+  if (createdFallbackSessionId !== null) {
+    await deleteRealSession(createdFallbackSessionId);
+  }
 }
 
 async function collectLiveStreamTextLengthSamples(
@@ -444,6 +564,14 @@ async function mainTimelineMessageArticleText(page: Page): Promise<string> {
   );
 }
 
+async function visibleMainTimelineText(page: Page): Promise<string> {
+  return page.locator(".at-chat-view").evaluate((node) =>
+    (node instanceof HTMLElement ? node.innerText : node.textContent ?? "")
+      .replace(/\s+/g, " ")
+      .trim(),
+  );
+}
+
 async function mainRoundMarkerText(page: Page): Promise<string> {
   return page.evaluate(() => {
     const shell = document.querySelector(".at-workspace-chat-shell");
@@ -508,6 +636,20 @@ async function createRealSession(title: string): Promise<SessionRecord> {
   });
 }
 
+async function updateRealSessionTopology(
+  sessionId: string,
+  request: {
+    normal_root_role_id?: string | null;
+    orchestration_preset_id?: string | null;
+    session_mode: "normal" | "orchestration";
+  },
+): Promise<SessionRecord> {
+  return fetchJson<SessionRecord>(`/api/sessions/${encodeURIComponent(sessionId)}/topology`, {
+    method: "PATCH",
+    body: JSON.stringify(request),
+  });
+}
+
 async function stopRunIfPresent(runId: string | null): Promise<void> {
   if (runId === null) {
     return;
@@ -542,6 +684,90 @@ async function fetchJson<T>(path: string, init: RequestInit = {}): Promise<T> {
 function stringField(value: Record<string, unknown>, key: string): string {
   const field = value[key];
   return typeof field === "string" ? field.trim() : "";
+}
+
+async function visibleMainTimelineToolCardCount(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const nodes = Array.from(document.querySelectorAll(".at-chat-view .at-message-tool"));
+    return nodes.filter((node) => {
+      if (!(node instanceof HTMLElement)) {
+        return false;
+      }
+      if (node.closest("details.at-processed-group:not([open])") !== null) {
+        return false;
+      }
+      const style = window.getComputedStyle(node);
+      return (
+        style.display !== "none" &&
+        style.visibility !== "hidden" &&
+        node.getClientRects().length > 0
+      );
+    }).length;
+  });
+}
+
+async function waitForVisibleMainTimelineToolCard(
+  page: Page,
+  timeoutMs: number,
+): Promise<void> {
+  try {
+    await expect
+      .poll(() => visibleMainTimelineToolCardCount(page), { timeout: timeoutMs })
+      .toBeGreaterThanOrEqual(1);
+  } catch (error) {
+    const diagnostic = await mainTimelineToolCardDiagnostic(page);
+    throw new Error(
+      [
+        "Timed out waiting for a visible main timeline tool card.",
+        diagnostic,
+        error instanceof Error ? error.message : String(error),
+      ].join("\n\n"),
+    );
+  }
+}
+
+async function mainTimelineToolCardDiagnostic(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const chat = document.querySelector(".at-chat-view");
+    const toolCards = Array.from(chat?.querySelectorAll(".at-message-tool") ?? []);
+    const toolRows = toolCards.map((node, index) => {
+      if (!(node instanceof HTMLElement)) {
+        return `#${index}: non-element`;
+      }
+      const style = window.getComputedStyle(node);
+      const text = (node.textContent ?? "").replace(/\s+/g, " ").trim();
+      return [
+        `#${index}`,
+        `status=${node.dataset.status ?? ""}`,
+        `tool=${node.dataset.toolName ?? ""}`,
+        `closedProcessedGroup=${node.closest("details.at-processed-group:not([open])") !== null}`,
+        `display=${style.display}`,
+        `visibility=${style.visibility}`,
+        `rects=${node.getClientRects().length}`,
+        `text=${text.slice(0, 240)}`,
+      ].join(" ");
+    });
+    const visibleText = (chat instanceof HTMLElement ? chat.innerText : chat?.textContent ?? "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 2000);
+    return [
+      `toolCardCount=${toolCards.length}`,
+      `visibleText=${visibleText}`,
+      "toolCards:",
+      toolRows.join("\n"),
+    ].join("\n");
+  });
+}
+
+async function nakedRuntimeRoleLineCount(page: Page): Promise<number> {
+  return page.locator(".at-chat-view").evaluate((chat) => {
+    const roleNames = new Set(["Coordinator", "Explorer", "Designer", "Crafter", "Gater"]);
+    return (chat.textContent ?? "")
+      .split("\n")
+      .filter((line) => roleNames.has(line.trim()))
+      .length;
+  });
 }
 
 function realBackendUrl(): string {

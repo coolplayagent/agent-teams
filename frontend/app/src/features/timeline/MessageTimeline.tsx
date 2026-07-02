@@ -71,6 +71,19 @@ const INTERNAL_RUNTIME_STATUS_NOISE_EVENT_KINDS = new Set<string>([
   "spec_checkpoint_applied",
   "spec_checkpoint_evaluated",
 ]);
+const INTERNAL_ORCHESTRATION_TIMELINE_ROLES = new Set<string>([
+  "delegationplanner",
+  "llmsecurityevaluator",
+]);
+const MAIN_TIMELINE_AGENT_ROLES = new Set<string>([
+  "assistant",
+  "coordinator",
+]);
+const runtimeRunStateDetachedRoleCache = new WeakMap<
+  RuntimeRunState,
+  ReadonlySet<string>
+>();
+const runtimeRunStateMainRoleCache = new WeakMap<RuntimeRunState, boolean>();
 const IMAGE_CODE_SPAN_PATTERN = /`([^`\n]+)`/g;
 const IMAGE_BARE_PATH_PATTERN =
   /((?:\/|\.{1,2}\/|[A-Za-z]:[\\/])[^"'`\s<>]+?\.(?:avif|bmp|gif|jpe?g|png|webp))/gi;
@@ -1264,36 +1277,17 @@ function collapseProcessedSegment(
   }
   const groupedParts = finalSourceRow?.parts.slice(0, finalStart?.partIndex ?? 0) ?? [];
   const finalParts = finalSourceRow?.parts.slice(finalStart?.partIndex ?? 0) ?? [];
-  const visibleRowsBeforeGroup: TimelineRow[] = [];
-  const visibleRowsAfterGroup: TimelineRow[] = [];
-  let sawWork = false;
   for (let rowIndex = 0; rowIndex < finalBoundary.rowIndex; rowIndex += 1) {
     const row = groupableRows[rowIndex];
     if (row === undefined) {
       continue;
     }
-    const split = splitWorkParts(row);
-    if (split.workParts.length > 0) {
-      groupedRows.push(rowWithParts(row, split.workParts, "processed"));
-      sawWork = true;
-    }
-    if (split.visibleParts.length > 0) {
-      const visibleRow = rowWithParts(row, split.visibleParts, "visible");
-      if (sawWork) {
-        visibleRowsAfterGroup.push(visibleRow);
-      } else {
-        visibleRowsBeforeGroup.push(visibleRow);
-      }
+    if (row.parts.length > 0) {
+      groupedRows.push(rowWithParts(row, row.parts, "processed"));
     }
   }
   if (finalSourceRow !== undefined && groupedParts.length > 0) {
-    const split = splitPartsByWork(groupedParts);
-    if (split.workParts.length > 0) {
-      groupedRows.push(rowWithParts(finalSourceRow, split.workParts, "processed"));
-    }
-    if (split.visibleParts.length > 0) {
-      visibleRowsAfterGroup.push(rowWithParts(finalSourceRow, split.visibleParts, "visible"));
-    }
+    groupedRows.push(rowWithParts(finalSourceRow, groupedParts, "processed"));
   }
   if (!groupedRows.some(timelineRowHasWorkPart)) {
     return segment;
@@ -1301,9 +1295,7 @@ function collapseProcessedSegment(
 
   const collapsedRows = [
     ...leadingRows,
-    ...visibleRowsBeforeGroup,
     processedGroupRow(groupedRows, runId),
-    ...visibleRowsAfterGroup,
   ];
   if (finalSourceRow !== undefined && finalStart !== null) {
     const finalRow = finalParts.length === finalSourceRow.parts.length
@@ -1315,33 +1307,6 @@ function collapseProcessedSegment(
     collapsedRows.push(...groupableRows.slice(finalStart.rowIndex + 1));
   }
   return collapsedRows;
-}
-
-function splitWorkParts(row: TimelineRow): {
-  visibleParts: TimelineRenderPart[];
-  workParts: TimelineRenderPart[];
-} {
-  return splitPartsByWork(row.parts);
-}
-
-function splitPartsByWork(parts: TimelineRenderPart[]): {
-  visibleParts: TimelineRenderPart[];
-  workParts: TimelineRenderPart[];
-} {
-  return parts.reduce<{
-    visibleParts: TimelineRenderPart[];
-    workParts: TimelineRenderPart[];
-  }>(
-    (result, part) => {
-      if (timelinePartIsWork(part)) {
-        result.workParts.push(part);
-      } else {
-        result.visibleParts.push(part);
-      }
-      return result;
-    },
-    { visibleParts: [], workParts: [] },
-  );
 }
 
 function timelineRowIsUserPrompt(row: TimelineRow): boolean {
@@ -1370,13 +1335,13 @@ function finalPartLocationAfterWork(
   rows: TimelineRow[],
   lastWork: { rowIndex: number; partIndex: number },
 ): { rowIndex: number; partIndex: number } | null {
-  for (let rowIndex = lastWork.rowIndex; rowIndex < rows.length; rowIndex += 1) {
+  for (let rowIndex = rows.length - 1; rowIndex >= lastWork.rowIndex; rowIndex -= 1) {
     const row = rows[rowIndex];
     if (row === undefined) {
       continue;
     }
     const partStart = rowIndex === lastWork.rowIndex ? lastWork.partIndex + 1 : 0;
-    for (let partIndex = partStart; partIndex < row.parts.length; partIndex += 1) {
+    for (let partIndex = row.parts.length - 1; partIndex >= partStart; partIndex -= 1) {
       const part = row.parts[partIndex];
       if (part !== undefined && timelinePartIsFinal(part)) {
         return { partIndex, rowIndex };
@@ -1521,7 +1486,7 @@ function mergeTerminalRuntimeTextRowsIntoPersistedAnswers(
       return row;
     }
     consumedRuntimeIndexes.add(candidate.index);
-    return persistedAnswerRowWithRuntimeReveal(row, candidate.row);
+    return row;
   });
 
   if (consumedRuntimeIndexes.size === 0) {
@@ -1624,29 +1589,6 @@ function timelineRowsShareRunId(left: TimelineRow, right: TimelineRow): boolean 
   const leftRunId = left.runId?.trim() ?? "";
   const rightRunId = right.runId?.trim() ?? "";
   return leftRunId.length > 0 && leftRunId === rightRunId;
-}
-
-function persistedAnswerRowWithRuntimeReveal(
-  persistedRow: TimelineRow,
-  runtimeRow: TimelineRow,
-): TimelineRow {
-  const runtimeRevealed = runtimeRow.parts.some(
-    (part) => part.kind === "text" && part.reveal === true,
-  );
-  if (!runtimeRevealed) {
-    return persistedRow;
-  }
-  const parts = persistedRow.parts.map((part) =>
-    part.kind === "text"
-      ? { ...part, reveal: true, streaming: false }
-      : part,
-  );
-  return {
-    ...persistedRow,
-    key: `${persistedRow.key}:runtime-reveal:${runtimeRow.key}`,
-    parts,
-    text: rowCopyText(parts),
-  };
 }
 
 function runtimeThinkingMergeItem(
@@ -3235,13 +3177,7 @@ function runtimeEntriesAfterHydration(
         hydratedToolStates,
       );
       if (coveredByHydration) {
-        const revealEntry = terminalRuntimeHydratedRevealEntry(
-          nextEntry,
-          runState,
-          variant,
-          hydratedText ?? "",
-        );
-        return revealEntry === null ? [] : [revealEntry];
+        return [];
       }
       return terminalRuntimeTextSupersededByHydratedAnswer(
         nextEntry,
@@ -3257,9 +3193,6 @@ function runtimeEntriesAfterHydration(
   const safeHydratedText = hydratedText ?? "";
   let suppressCoveredText = true;
   for (const entry of scopedEntries) {
-    if (runtimeEntryIsCoveredByHydratedTool(entry, hydratedToolStates)) {
-      continue;
-    }
     const nextEntry = runtimeEntryAfterThinkingHydration(
       entry,
       hydratedThinkingText ?? "",
@@ -3316,31 +3249,6 @@ function openRuntimeEntriesWithIdleCursor(
     return [...rowPipelineEntries, runtimePendingCursorEntry(latestEntry, runState)];
   }
   return rowPipelineEntries;
-}
-
-function terminalRuntimeHydratedRevealEntry(
-  entry: TimelineEntry,
-  runState: RuntimeRunState,
-  variant: "session" | "subagent-panel",
-  hydratedText: string,
-): TimelineEntry | null {
-  const runtimeText = normalizedTimelineText(rowCopyText(runtimeEntryParts(entry, variant)));
-  const normalizedHydratedText = normalizedTimelineText(hydratedText);
-  if (
-    (runState.hadVisibleTextStream !== true && runState.scope !== "subagent") ||
-    runState.status !== "closed" ||
-    (entry.kind !== "text_delta" && entry.kind !== "output_delta") ||
-    runtimeText.length === 0
-  ) {
-    return null;
-  }
-  if (normalizedHydratedText.length === 0 || runtimeText === normalizedHydratedText) {
-    return entry;
-  }
-  if (!normalizedHydratedText.includes(runtimeText)) {
-    return null;
-  }
-  return runtimeTextEntryWithText(entry, hydratedText);
 }
 
 function terminalRuntimeTextSupersededByHydratedAnswer(
@@ -3411,20 +3319,6 @@ function runtimeHydrationCursorEntry(entry: TimelineEntry): TimelineEntry {
   };
 }
 
-function runtimeTextEntryWithText(entry: TimelineEntry, text: string): TimelineEntry {
-  return {
-    ...entry,
-    id: `${entry.id}:hydrated-reveal`,
-    kind: "text_delta",
-    payload: {
-      hydrated_terminal_reveal: true,
-      source_event_kind: entry.kind,
-      text,
-    },
-    text,
-  };
-}
-
 function runtimeIdleCursorEntry(entry: TimelineEntry): TimelineEntry {
   return {
     ...entry,
@@ -3491,7 +3385,13 @@ function runtimeEntryBelongsToMainTimeline(
   if (runtimeEntryLooksLikeDetachedSubagent(entry, runState, primaryRoleId)) {
     return false;
   }
+  if (timelineRoleIsInternalOrchestration(entry.roleId)) {
+    return false;
+  }
   const normalizedPrimaryRole = stableTimelineRole(primaryRoleId ?? "");
+  if (timelineRoleIsMainTimelineAgent(entry.roleId)) {
+    return true;
+  }
   if (normalizedPrimaryRole.length === 0) {
     return true;
   }
@@ -3516,6 +3416,9 @@ function runtimeRunStateBelongsToMainTimeline(
     return true;
   }
   const runRole = stableTimelineRole(runState.targetRoleId ?? "");
+  if (timelineRoleIsMainTimelineAgent(runState.targetRoleId ?? "")) {
+    return true;
+  }
   if (runRole === normalizedPrimaryRole) {
     return true;
   }
@@ -3538,10 +3441,33 @@ function runtimeRunStateIdentityLooksLikeDetachedSubagent(
   if (identifiers.includes("subagent")) {
     return true;
   }
+  if (timelineRoleIsMainTimelineAgent(runState.targetRoleId ?? "")) {
+    return false;
+  }
+  if (timelineRoleIsInternalOrchestration(runState.targetRoleId ?? "")) {
+    return false;
+  }
+  if (runtimeRunStateHasMainTimelineAgentEntry(runState)) {
+    return false;
+  }
   return (
     timelineRoleCanBeDetachedAgent(runState.targetRoleId ?? "", primaryRoleId) &&
     timelineIdentifiersIncludeGeneratedReference([runState.runId])
   );
+}
+
+function runtimeRunStateHasMainTimelineAgentEntry(
+  runState: RuntimeRunState,
+): boolean {
+  const cached = runtimeRunStateMainRoleCache.get(runState);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const hasMainRole = runState.entries.some((entry) =>
+    timelineRoleIsMainTimelineAgent(entry.roleId)
+  );
+  runtimeRunStateMainRoleCache.set(runState, hasMainRole);
+  return hasMainRole;
 }
 
 function runtimeEntryLooksLikeDetachedSubagent(
@@ -3570,6 +3496,9 @@ function runtimeEntryLooksLikeDetachedSubagent(
   const roleId = entry.roleId.trim().length > 0
     ? entry.roleId
     : (runState.targetRoleId ?? "");
+  if (timelineRoleIsMainTimelineAgent(roleId)) {
+    return false;
+  }
   if (!timelineRoleCanBeDetachedAgent(roleId, primaryRoleId)) {
     return false;
   }
@@ -3611,10 +3540,25 @@ function runtimeRunStateReferencesDetachedSubagentRole(
   ) {
     return false;
   }
-  return runState.entries.some(
-    (entry) =>
-      runtimeEntrySubagentReferenceRole(entry) === normalizedRole,
-  );
+  return runtimeRunStateDetachedSubagentRoles(runState).has(normalizedRole);
+}
+
+function runtimeRunStateDetachedSubagentRoles(
+  runState: RuntimeRunState,
+): ReadonlySet<string> {
+  const cached = runtimeRunStateDetachedRoleCache.get(runState);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const roles = new Set<string>();
+  for (const entry of runState.entries) {
+    const role = runtimeEntrySubagentReferenceRole(entry);
+    if (role.length > 0) {
+      roles.add(role);
+    }
+  }
+  runtimeRunStateDetachedRoleCache.set(runState, roles);
+  return roles;
 }
 
 function runtimeEntrySubagentReferenceRole(entry: TimelineEntry): string {
@@ -4011,7 +3955,9 @@ function messagesVisibleInTimelineScope(
     return transcriptMessages;
   }
   return transcriptMessages.filter(
-    (message) => !timelineMessageLooksDetachedSubagent(message, primaryRoleId),
+    (message) =>
+      !timelineMessageLooksDetachedSubagent(message, primaryRoleId) &&
+      !timelineMessageIsInternalOrchestrationNoise(message),
   );
 }
 
@@ -4095,6 +4041,33 @@ function timelineMessageLooksDetachedSubagent(
     message.run_id ?? "",
     message.trace_id ?? "",
   ]);
+}
+
+function timelineMessageIsInternalOrchestrationNoise(
+  message: TimelineMessage,
+): boolean {
+  return (
+    timelineRoleIsInternalOrchestration(message.role_id ?? message.role ?? "") ||
+    timelineMessageLooksInternalOrchestrationPrompt(message)
+  );
+}
+
+function timelineRoleIsInternalOrchestration(roleName: string): boolean {
+  return INTERNAL_ORCHESTRATION_TIMELINE_ROLES.has(stableTimelineRole(roleName));
+}
+
+function timelineRoleIsMainTimelineAgent(roleName: string): boolean {
+  return MAIN_TIMELINE_AGENT_ROLES.has(stableTimelineRole(roleName));
+}
+
+function timelineMessageLooksInternalOrchestrationPrompt(
+  message: TimelineMessage,
+): boolean {
+  const text = timelineMessageSearchText(message).trim().toLowerCase();
+  return (
+    text.includes("return only the delegation plan json object") ||
+    text.includes("[fake-llm] return only the delegation plan json object")
+  );
 }
 
 function timelineMessageHasSubagentToolPart(message: TimelineMessage): boolean {
@@ -4194,7 +4167,11 @@ function timelineRoleCanBeDetachedAgent(
   primaryRoleId: string | null,
 ): boolean {
   const role = stableTimelineRole(roleName);
-  if (role === "assistant" || role === "user" || role.length === 0) {
+  if (
+    role === "user" ||
+    role.length === 0 ||
+    MAIN_TIMELINE_AGENT_ROLES.has(role)
+  ) {
     return false;
   }
   const primaryRole = stableTimelineRole(primaryRoleId ?? "");
@@ -6697,7 +6674,11 @@ function toolActionCategory(
   toolName: string,
 ): "edit" | "generic" | "read" | "run" | "search" | "subagent" {
   const normalized = toolName.trim().toLowerCase().replaceAll("-", "_");
-  if (normalized.includes("subagent")) {
+  if (
+    normalized.includes("subagent") ||
+    normalized === "orch_dispatch_task" ||
+    normalized === "activate_skill_roles"
+  ) {
     return "subagent";
   }
   if (

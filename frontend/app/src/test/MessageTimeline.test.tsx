@@ -442,6 +442,9 @@ describe("MessageTimeline", () => {
     await waitFor(() => {
       expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
     });
+    const messageRow = container.querySelector<HTMLElement>("article.at-message");
+    expect(messageRow?.dataset.rowKey).toBe("message:assistant-reveal-upgrade-final");
+    expect(messageRow?.dataset.rowKey).not.toContain("runtime-reveal");
   });
 
   it("merges terminal structured output into the active runtime text reveal", async () => {
@@ -897,6 +900,87 @@ describe("MessageTimeline", () => {
     expect(screen.getByText("Thinking")).toBeVisible();
     expect(screen.getByText("Checking project state")).not.toBeVisible();
     expect(screen.getByText("Tool result: read")).toBeVisible();
+  });
+
+  it("folds intermediate text after completed work while keeping the final answer visible", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "Run orchestration with tools",
+        message_id: "user-processed-intermediate",
+        role: "user",
+        run_id: "run-processed-intermediate",
+      },
+      {
+        message: {
+          parts: [
+            {
+              content: "Planning the tool call",
+              part_kind: "thinking",
+            },
+            {
+              args: { command: "echo one" },
+              part_kind: "tool-call",
+              tool_call_id: "tool-intermediate",
+              tool_name: "shell",
+            },
+            {
+              content: "one",
+              part_kind: "tool-return",
+              tool_call_id: "tool-intermediate",
+              tool_name: "shell",
+            },
+          ],
+        },
+        message_id: "assistant-processed-work",
+        role_id: "Coordinator",
+        run_id: "run-processed-intermediate",
+      },
+      {
+        content: "Intermediate worker update should be hidden in processed.",
+        message_id: "assistant-processed-middle",
+        role_id: "Coordinator",
+        run_id: "run-processed-intermediate",
+      },
+      {
+        content: "Final answer after work remains visible.",
+        message_id: "assistant-processed-final",
+        role_id: "Coordinator",
+        run_id: "run-processed-intermediate",
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          created_at: "2026-06-23T12:42:33Z",
+          run_id: "run-processed-intermediate",
+          run_status: "completed",
+          run_user_message: "Run orchestration with tools",
+        },
+      ],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline("session-1", {
+      primaryRoleId: "Coordinator",
+    });
+
+    expect(await screen.findByText("Final answer after work remains visible."))
+      .toBeVisible();
+    expect(screen.getAllByText("Run orchestration with tools").length)
+      .toBeGreaterThan(0);
+    expect(screen.getByText("Intermediate worker update should be hidden in processed."))
+      .not.toBeVisible();
+    const group = container.querySelector("details.at-processed-group");
+    expect(group).not.toBeNull();
+    expect(group).not.toHaveAttribute("open");
+
+    openProcessedGroup(container);
+
+    expect(screen.getByText("Intermediate worker update should be hidden in processed."))
+      .toBeVisible();
+    expect(screen.getByText("Final answer after work remains visible."))
+      .toBeVisible();
   });
 
   it("renders the round rail from session rounds and marks selected rounds", async () => {
@@ -2911,6 +2995,64 @@ describe("MessageTimeline", () => {
       "Args: npm test",
     ]);
     expect(container.querySelectorAll("article.at-message")).toHaveLength(3);
+  });
+
+  it("keeps live runtime tools when open round hydration already has the same call", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "tool_call",
+        instance_id: "main-instance",
+        role_id: "MainAgent",
+        run_id: "run-live-tool-hydrated",
+        trace_id: "run-live-tool-hydrated",
+        payload_json: JSON.stringify({
+          args: { command: "runtime live command" },
+          tool_call_id: "call-live-tool-hydrated",
+          tool_name: "shell",
+        }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message: {
+          parts: [
+            {
+              args: { command: "persisted command" },
+              part_kind: "tool-call",
+              tool_call_id: "call-live-tool-hydrated",
+              tool_name: "shell",
+            },
+          ],
+        },
+        message_id: "assistant-live-tool-hydrated",
+        role_id: "MainAgent",
+        run_id: "run-live-tool-hydrated",
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          created_at: "2026-06-23T12:42:33Z",
+          run_id: "run-live-tool-hydrated",
+          run_status: "running",
+          run_user_message: "Hydrated open tool check",
+        },
+      ],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline("session-1", {
+      runtimeRunId: "run-live-tool-hydrated",
+    });
+
+    await waitForToolPreviews(container, ["runtime live command"]);
+    const visibleToolCards = Array.from(container.querySelectorAll(".at-message-tool"))
+      .filter((element) =>
+        element.closest("details.at-processed-group:not([open])") === null
+      );
+    expect(visibleToolCards.length).toBeGreaterThanOrEqual(1);
   });
 
   it("renders live subagent overlay as a separate row beside persisted history", async () => {
@@ -4970,7 +5112,7 @@ describe("MessageTimeline", () => {
     });
 
     const { container } = renderTimeline("session-1", {
-      primaryRoleId: null,
+      primaryRoleId: "Default Orchestration - default",
     });
 
     expect(await screen.findByText("Subagent started")).toBeVisible();
@@ -5030,6 +5172,188 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText(/SUBOPEN_1/)).not.toBeInTheDocument();
     expect(screen.queryByText(/SUBOPEN_DONE/)).not.toBeInTheDocument();
     expect(container.querySelector('[data-role-id="Crafter"]')).toBeNull();
+  });
+
+  it("keeps internal orchestration planner replay messages out of the main timeline", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "Run orchestration tool pressure.",
+        message_id: "orchestration-user",
+        role: "user",
+        run_id: "run-orchestration",
+      },
+      {
+        content: "Return only the delegation plan JSON object.",
+        message_id: "planner-prompt",
+        role_id: "DelegationPlanner",
+        run_id: "run-orchestration",
+      },
+      {
+        content: (
+          "Return only the delegation plan JSON object. " +
+          "Do not include Markdown fences or explanatory prose."
+        ),
+        message_id: "planner-prompt-unscoped",
+        role: "assistant",
+        run_id: "run-orchestration",
+      },
+      {
+        content: "[fake-llm] Return only the delegation plan JSON object",
+        message_id: "planner-output",
+        role_id: "DelegationPlanner",
+        run_id: "run-orchestration",
+      },
+      {
+        content: "Coordinator final answer stays visible.",
+        message_id: "coordinator-final",
+        role_id: "Coordinator",
+        run_id: "run-orchestration",
+      },
+    ]);
+
+    const { container } = renderTimeline("session-1", {
+      primaryRoleId: null,
+    });
+
+    expect(await screen.findByText("Coordinator final answer stays visible."))
+      .toBeVisible();
+    expect(screen.getByText("Run orchestration tool pressure.")).toBeVisible();
+    expect(screen.queryByText("Return only the delegation plan JSON object."))
+      .not.toBeInTheDocument();
+    expect(screen.queryByText(
+      "Return only the delegation plan JSON object. " +
+        "Do not include Markdown fences or explanatory prose.",
+    )).not.toBeInTheDocument();
+    expect(screen.queryByText("[fake-llm] Return only the delegation plan JSON object"))
+      .not.toBeInTheDocument();
+    expect(container.querySelector('[data-role-id="DelegationPlanner"]')).toBeNull();
+  });
+
+  it("keeps internal orchestration planner stream rows out of the main timeline", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "text_delta",
+        payload_json: JSON.stringify({
+          text: "Planner stream should not render.",
+        }),
+        role_id: "DelegationPlanner",
+        run_id: "run-orchestration-live",
+        trace_id: "run-orchestration-live",
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "text_delta",
+        payload_json: JSON.stringify({
+          text: "Coordinator stream remains visible.",
+        }),
+        role_id: "Coordinator",
+        run_id: "run-orchestration-live",
+        trace_id: "run-orchestration-live",
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline("session-1", {
+      primaryRoleId: null,
+    });
+
+    expect(await screen.findByText("Coordinator stream remains visible."))
+      .toBeVisible();
+    expect(screen.queryByText("Planner stream should not render."))
+      .not.toBeInTheDocument();
+    expect(container.querySelector('[data-role-id="DelegationPlanner"]')).toBeNull();
+  });
+
+  it("keeps orchestration coordinator tools visible while hiding dispatched worker rows", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "run_started",
+        instance_id: "00386a5a-133d-4b08-8037-458047f2522a",
+        role_id: "DelegationPlanner",
+        run_id: "cef60ea9-c6ec-4ea1-ae4a-8195440c46e9",
+        trace_id: "cef60ea9-c6ec-4ea1-ae4a-8195440c46e9",
+        payload_json: JSON.stringify({ phase: "streaming" }),
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "text_delta",
+        instance_id: "00386a5a-133d-4b08-8037-458047f2522a",
+        role_id: "DelegationPlanner",
+        run_id: "cef60ea9-c6ec-4ea1-ae4a-8195440c46e9",
+        trace_id: "cef60ea9-c6ec-4ea1-ae4a-8195440c46e9",
+        payload_json: JSON.stringify({
+          text: "Return only the delegation plan JSON object.",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 3,
+        event_type: "tool_call",
+        instance_id: "00386a5a-133d-4b08-8037-458047f2522a",
+        role_id: "Coordinator",
+        run_id: "cef60ea9-c6ec-4ea1-ae4a-8195440c46e9",
+        trace_id: "cef60ea9-c6ec-4ea1-ae4a-8195440c46e9",
+        payload_json: JSON.stringify({
+          args: {
+            prompt: "Complete dispatched tool pressure worker.",
+            role_id: "Crafter",
+            task_id: "worker-task-1",
+          },
+          tool_call_id: "call-orch-tool-pressure-dispatch-1",
+          tool_name: "orch_dispatch_task",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 4,
+        event_type: "text_delta",
+        instance_id: "339d6dac-b322-4151-8130-61ccc18913f8",
+        role_id: "Crafter",
+        run_id: "cef60ea9-c6ec-4ea1-ae4a-8195440c46e9",
+        trace_id: "cef60ea9-c6ec-4ea1-ae4a-8195440c46e9",
+        payload_json: JSON.stringify({
+          text: "Dispatched worker output should stay out of main timeline.",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 5,
+        event_type: "tool_call",
+        instance_id: "339d6dac-b322-4151-8130-61ccc18913f8",
+        role_id: "Crafter",
+        run_id: "cef60ea9-c6ec-4ea1-ae4a-8195440c46e9",
+        trace_id: "cef60ea9-c6ec-4ea1-ae4a-8195440c46e9",
+        payload_json: JSON.stringify({
+          args: { command: "echo worker" },
+          tool_call_id: "call-worker-shell",
+          tool_name: "shell",
+        }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline("session-1", {
+      primaryRoleId: null,
+    });
+
+    expect(await screen.findByText("Starting subagent")).toBeVisible();
+    expect(screen.queryByText("Return only the delegation plan JSON object."))
+      .not.toBeInTheDocument();
+    expect(screen.queryByText(
+      "Dispatched worker output should stay out of main timeline.",
+    )).not.toBeInTheDocument();
+    expect(screen.queryByText("Tool call: shell")).not.toBeInTheDocument();
+    expect(container.querySelector('[data-role-id="Crafter"]')).toBeNull();
+    expect(container.querySelector('[data-role-id="Coordinator"]')).not.toBeNull();
   });
 
   it("keeps same-role runtime streams separate by instance identity", async () => {

@@ -791,6 +791,54 @@ describe("MessageTimeline", () => {
     expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
   });
 
+  it("does not fake-type a completed runtime text segment after the full delta arrives", async () => {
+    vi.stubEnv("MODE", "production");
+    vi.useFakeTimers();
+    const finalAnswer = [
+      "LIVE_STREAM_ALPHA",
+      "LIVE_STREAM_BETA",
+      "LIVE_STREAM_GAMMA",
+      "LIVE_STREAM_DELTA",
+      "LIVE_STREAM_EPSILON",
+    ].join(" ");
+    const textEvent = relayRunEvent({
+      event_id: 1,
+      event_type: "text_delta",
+      payload_json: JSON.stringify({ text: finalAnswer }),
+      run_id: "run-live-terminal-no-fake-type",
+      trace_id: "run-live-terminal-no-fake-type",
+    });
+    setRuntimeStateFromEvents([textEvent]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(screen.queryByText(finalAnswer)).not.toBeInTheDocument();
+    expect(container.querySelector(".at-message-streaming-text")).toHaveTextContent("L");
+    const rowBefore = container.querySelector<HTMLElement>("article.at-message");
+    const textNodeBefore = container.querySelector<HTMLElement>(".at-message-text");
+
+    await act(async () => {
+      setRuntimeStateFromEvents([
+        textEvent,
+        relayRunEvent({
+          event_id: 2,
+          event_type: "run_completed",
+          payload_json: JSON.stringify({ status: "completed" }),
+          run_id: "run-live-terminal-no-fake-type",
+          trace_id: "run-live-terminal-no-fake-type",
+        }),
+      ]);
+    });
+
+    expect(screen.getByText(finalAnswer)).toBeVisible();
+    expect(container.querySelector<HTMLElement>("article.at-message")).toBe(rowBefore);
+    expect(container.querySelector<HTMLElement>(".at-message-text")).toBe(textNodeBefore);
+    expect(container.querySelector(".at-message-streaming-text")).toBeNull();
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+  });
+
   it("does not replay terminal output after it fills and history catches up", async () => {
     vi.stubEnv("MODE", "production");
     vi.useFakeTimers();

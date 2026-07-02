@@ -2489,7 +2489,7 @@ function runtimeEntriesToRows(
     }
     if (!runtimeEntryShouldRenderChatContent(entry)) {
       if (runtimeHiddenEntryClosesText(entry)) {
-        closeRuntimeTextSegment(entry, rows, activeText);
+        closeRuntimeTextSegment(entry, rows, activeText, false);
       }
       continue;
     }
@@ -2537,7 +2537,7 @@ function closeTerminalRuntimeTextSegments(
   activeText.forEach((existing, groupKey) => {
     const runId = existing.row.runId;
     if (runId !== null && runtimeRunStateClosesText(runStates[runId])) {
-      closeRuntimeTextAccumulator(rows, existing);
+      closeRuntimeTextAccumulator(rows, existing, false);
       activeText.delete(groupKey);
     }
   });
@@ -2581,7 +2581,7 @@ function mergeRuntimeCompletedOutputIntoActiveText(
   delete existing.part.reveal;
   existing.row.text = outputText;
   existing.placeholder = false;
-  closeRuntimeTextAccumulator(rows, existing);
+  closeRuntimeTextAccumulator(rows, existing, false);
   activeText.delete(runtimeTextGroupKey(entry));
   return true;
 }
@@ -5141,11 +5141,12 @@ function closeRuntimeTextSegment(
   entry: TimelineEntry,
   rows: TimelineRow[],
   activeText: Map<string, RuntimeTextAccumulator>,
+  reveal = true,
 ): void {
   const groupKey = runtimeTextGroupKey(entry);
   const existing = activeText.get(groupKey);
   if (existing !== undefined) {
-    closeRuntimeTextAccumulator(rows, existing);
+    closeRuntimeTextAccumulator(rows, existing, reveal);
   }
   activeText.delete(groupKey);
 }
@@ -5153,6 +5154,7 @@ function closeRuntimeTextSegment(
 function closeRuntimeTextAccumulator(
   rows: TimelineRow[],
   existing: RuntimeTextAccumulator,
+  reveal = true,
 ): void {
   if (existing.placeholder && existing.part.text.length === 0) {
     const rowIndex = rows.indexOf(existing.row);
@@ -5161,7 +5163,11 @@ function closeRuntimeTextAccumulator(
     }
     return;
   }
-  existing.part.reveal = true;
+  if (reveal) {
+    existing.part.reveal = true;
+  } else {
+    delete existing.part.reveal;
+  }
   existing.part.streaming = false;
 }
 

@@ -5921,7 +5921,7 @@ function useStreamingDisplayText(
   streamIdentity: string,
 ): StreamingDisplayText {
   const smoothEnabled = import.meta.env.MODE !== "test";
-  const shouldReveal = reveal;
+  const shouldReveal = reveal || streaming;
   const [displayedText, setDisplayedText] = useState(() =>
     initialDisplayedStreamingText(
       targetText,
@@ -6051,13 +6051,15 @@ function revealNextStreamingText(
   }
   let step = STREAM_TYPEWRITER_MIN_STEP;
   if (remaining > 1200) {
-    step = 6;
+    step = 24;
   } else if (remaining > 520) {
-    step = 4;
+    step = 16;
   } else if (remaining > 220) {
-    step = 3;
+    step = 10;
   } else if (remaining > 96) {
-    step = 2;
+    step = 6;
+  } else if (remaining > 24) {
+    step = 3;
   }
   return target.slice(0, Math.min(target.length, current.length + step));
 }

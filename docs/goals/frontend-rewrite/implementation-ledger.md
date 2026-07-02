@@ -2,6 +2,26 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-02 Live Typewriter And Terminal Settlement Correction
+
+### Scope
+- Reproduced the user-facing mismatch where live stream text could appear as a whole delta and previous terminal catch-up behavior could leave a stream wrapper active after the run had already completed.
+- Updated `MessageTimeline` streaming display so live `text_delta`/`output_delta` rows reveal progressively from the current text, using faster adaptive steps for long outputs instead of jumping an entire sentence into the DOM.
+- Corrected the terminal boundary: when `run_completed`/terminal hydration settles the row, the UI now snaps to the final text, removes `.at-message-streaming-text` and the cursor, and keeps the existing row mounted instead of continuing a post-terminal loading animation.
+- Added focused component coverage plus packed `/app/` browser coverage for normal stream creation and right-panel subagent streams.
+- Rebuilt the packed app so `frontend/dist/app` reflects the current stream display behavior.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx -t "live runtime text|fully revealed live row|terminal hydrated answer|terminal output after it fills|terminal structured output"` passed with 8 selected tests.
+- `npm run build` passed and regenerated `frontend/dist/app`.
+- `npm run test:browser -- v2-stream-create-run.spec.ts --project=chromium` passed with 4 Chromium scenarios.
+- `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium -g "settles terminal subagent output|recovers a settled subagent stream"` passed before the full suite.
+- `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium` passed with 12 Chromium scenarios.
+- Screenshot evidence was inspected at `.tmp/frontend-v2-ts-stream/v2-stream-progressive-no-replay.png`, `.tmp/frontend-v2-ts-subagent-session/v2-subagent-terminal-typewriter-catchup-mid.png`, and `.tmp/frontend-v2-ts-subagent-session/v2-subagent-terminal-typewriter-catchup-final.png`.
+
+### Reviewer
+- Main-agent visual review: the normal stream final screenshot shows one settled answer with no cursor or duplicate row. The subagent mid screenshot shows child output revealing only inside the right panel while the parent timeline keeps only the compact subagent card; the final screenshot shows full child output with no stale cursor. This corrects the previous terminal-catch-up interpretation; it does not claim full stream/replay PASS, real-backend orchestration PASS, reviewer sign-off, or final V2 frontend completion.
+
 ## 2026-07-02 Paired V1/V2 Shell Breakpoint Evidence
 
 ### Scope

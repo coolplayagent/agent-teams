@@ -124,6 +124,100 @@ test("creates a run from the V2 composer and renders live stream output", async 
   }
 });
 
+test("reveals live stream text progressively and does not replay after terminal output", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const runCreateRequests: CapturedRunCreateRequest[] = [];
+  try {
+    await installShellState(page);
+    await installMockEventSource(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleStreamApi(context, runCreateRequests),
+      sessionTitle: "TS stream progressive",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+
+    await page.getByRole("textbox", { name: "Prompt" }).fill("Progressive stream check");
+    await page.getByRole("button", { name: "Send" }).click();
+    await expect.poll(() => runCreateRequests.length).toBe(1);
+    await waitForEventSourceUrl(
+      page,
+      /\/api\/ag-ui\/runs\/run-ts-stream\/events\?after_event_id=0$/,
+    );
+    await waitForEventSourceOpenCount(page, 1);
+
+    const finalAnswer = [
+      "LIVE_STREAM_ALPHA",
+      "LIVE_STREAM_BETA",
+      "LIVE_STREAM_GAMMA",
+      "LIVE_STREAM_DELTA",
+      "LIVE_STREAM_EPSILON",
+      "LIVE_STREAM_ZETA",
+      "LIVE_STREAM_ETA",
+      "LIVE_STREAM_THETA",
+      "LIVE_STREAM_IOTA",
+      "LIVE_STREAM_KAPPA",
+    ].join(" ");
+
+    await dispatchRunEvent(page, {
+      eventId: 1,
+      payload: { status: "running" },
+      relayEventType: "run_started",
+      type: "run.started",
+    });
+    await dispatchRunEvent(page, {
+      eventId: 2,
+      payload: { text: finalAnswer },
+      relayEventType: "text_delta",
+      type: "message.text.delta",
+    });
+
+    const streamingText = page.locator(".at-message-streaming-text").first();
+    await expect(streamingText).toBeVisible();
+    const initialText = await streamingText.textContent();
+    expect(initialText?.length ?? 0).toBeGreaterThan(0);
+    expect(initialText).not.toBe(finalAnswer);
+    expect(initialText?.length ?? 0).toBeLessThan(finalAnswer.length);
+    await expect(page.getByText(finalAnswer)).toBeVisible({ timeout: 12_000 });
+
+    const rowKeyBeforeTerminal = await page
+      .locator("article.at-message")
+      .first()
+      .getAttribute("data-row-key");
+    await dispatchRunEvent(page, {
+      eventId: 3,
+      payload: {
+        output: [{ kind: "text", text: finalAnswer }],
+        status: "completed",
+      },
+      relayEventType: "run_completed",
+      type: "run.completed",
+    });
+    await waitForEventSourceOpenCount(page, 0);
+
+    await expect(page.locator(".at-message-streaming-text")).toHaveCount(0);
+    await expect(page.locator(".streaming-cursor")).toHaveCount(0);
+    await expect(page.getByText(finalAnswer)).toHaveCount(1);
+    await expect(page.locator("article.at-message")).toHaveCount(1);
+    await expect(page.locator("article.at-message").first()).toHaveAttribute(
+      "data-row-key",
+      rowKeyBeforeTerminal ?? "",
+    );
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await page.screenshot({
+      path: screenshotPath("v2-stream-progressive-no-replay.png", SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
 test("starts burst new sessions with fast feedback and bounded requests", async ({
   page,
 }) => {

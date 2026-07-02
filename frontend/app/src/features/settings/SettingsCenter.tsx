@@ -47,6 +47,7 @@ import type {
   JsonValue,
   RoleConfigDocument,
   RoleConfigSummary,
+  RoleSkillOption,
   RoleOption,
 } from "../../api/contracts";
 import { useTranslations } from "../../i18n";
@@ -638,6 +639,7 @@ function SettingsRoles({
           onValidate={(document) => validateMutation.mutate(document)}
           agentRuntimes={agentRuntimesQuery.data ?? []}
           agentRuntimesLoading={agentRuntimesQuery.isLoading}
+          roleOptions={roles}
           roleId="new-role"
           saving={saveMutation.isPending}
           summary={undefined}
@@ -655,6 +657,7 @@ function SettingsRoles({
           onValidate={(document) => validateMutation.mutate(document)}
           agentRuntimes={agentRuntimesQuery.data ?? []}
           agentRuntimesLoading={agentRuntimesQuery.isLoading}
+          roleOptions={roles}
           roleId={selectedRoleId}
           saving={saveMutation.isPending}
           summary={selectedRoleSummary}
@@ -696,6 +699,7 @@ function RoleConfigDetail({
   onValidate,
   agentRuntimes,
   agentRuntimesLoading,
+  roleOptions,
   roleId,
   saving,
   summary,
@@ -712,6 +716,7 @@ function RoleConfigDetail({
   onValidate: (document: RoleConfigDocument) => void;
   agentRuntimes: AgentRuntimeSummary[];
   agentRuntimesLoading: boolean;
+  roleOptions: Awaited<ReturnType<typeof getRoleConfigOptions>> | undefined;
   roleId: string;
   saving: boolean;
   summary: RoleConfigSummary | undefined;
@@ -726,6 +731,10 @@ function RoleConfigDetail({
   const boundAgentOptions = useMemo(
     () => agentRuntimeSelectOptions(agentRuntimes, document?.bound_agent_id),
     [agentRuntimes, document?.bound_agent_id],
+  );
+  const skillOptions = useMemo(
+    () => roleSkillSelectOptions(roleOptions?.skills ?? [], document?.skills ?? []),
+    [document?.skills, roleOptions?.skills],
   );
 
   useEffect(() => {
@@ -825,6 +834,9 @@ function RoleConfigDetail({
             <Form.Item label={t("settingsRoleModelProfile")} name="model_profile">
               <Input autoComplete="off" />
             </Form.Item>
+            <Form.Item label={t("settingsRoleExecutionSurface")} name="execution_surface">
+              <Input autoComplete="off" />
+            </Form.Item>
             <Form.Item
               label={t("settingsRoleMemoryEnabled")}
               name="memory_enabled"
@@ -843,6 +855,29 @@ function RoleConfigDetail({
             </Form.Item>
             <Form.Item label={t("settingsRoleMode")} name="mode">
               <Input autoComplete="off" />
+            </Form.Item>
+            <Form.Item label={t("settingsMcpToolCount")} name="tools">
+              <Select
+                mode="tags"
+                options={stringSelectOptions(document.tools ?? [])}
+                tokenSeparators={[",", "\n", " "]}
+              />
+            </Form.Item>
+            <Form.Item label={t("settingsMcpServers")} name="mcp_servers">
+              <Select
+                mode="tags"
+                options={stringSelectOptions(document.mcp_servers ?? [])}
+                tokenSeparators={[",", "\n", " "]}
+              />
+            </Form.Item>
+            <Form.Item label={t("settingsSkills")} name="skills">
+              <Select
+                mode="tags"
+                optionLabelProp="label"
+                optionFilterProp="label"
+                options={skillOptions}
+                tokenSeparators={[",", "\n"]}
+              />
             </Form.Item>
             <Form.Item label={t("settingsRoleSystemPrompt")}>
               <div className="at-role-prompt-editor">
@@ -2256,12 +2291,16 @@ interface SettingsListItem {
 interface RoleConfigForm {
   bound_agent_id?: string;
   description?: string;
+  execution_surface?: string;
   memory_enabled?: boolean;
+  mcp_servers?: string[];
   mode?: string;
   model_profile?: string;
   name?: string;
   role_id?: string;
+  skills?: string[];
   system_prompt?: string;
+  tools?: string[];
   version?: string;
 }
 
@@ -2417,12 +2456,16 @@ function roleConfigFormValues(document: RoleConfigDocument): RoleConfigForm {
   return {
     bound_agent_id: document.bound_agent_id ?? "",
     description: document.description ?? "",
+    execution_surface: document.execution_surface ?? "",
     memory_enabled: document.memory_profile?.enabled === true,
+    mcp_servers: normalizeStringList(document.mcp_servers ?? []),
     mode: document.mode ?? "",
     model_profile: document.model_profile ?? "",
     name: document.name ?? "",
     role_id: document.role_id,
+    skills: normalizeStringList(document.skills ?? []),
     system_prompt: document.system_prompt ?? "",
+    tools: normalizeStringList(document.tools ?? []),
     version: document.version ?? "",
   };
 }
@@ -2437,6 +2480,8 @@ function updateRoleConfigDocument(
     ...document,
     bound_agent_id: nullableText(values.bound_agent_id),
     description: textValue(values.description),
+    execution_surface: nullableText(values.execution_surface),
+    mcp_servers: normalizeStringList(values.mcp_servers ?? []),
     mode: mode || document.mode,
     model_profile: nullableText(values.model_profile),
     memory_profile: {
@@ -2445,7 +2490,9 @@ function updateRoleConfigDocument(
     },
     name: textValue(values.name),
     role_id: roleId || document.role_id,
+    skills: normalizeStringList(values.skills ?? []),
     system_prompt: values.system_prompt ?? "",
+    tools: normalizeStringList(values.tools ?? []),
     version: textValue(values.version),
   };
 }
@@ -2509,6 +2556,44 @@ function policyValue(value: boolean | number | string | null | undefined): strin
 
 function modalityList(values: string[]): string {
   return values.map((value) => value.trim()).filter(Boolean).join(", ");
+}
+
+function normalizeStringList(values: string[]): string[] {
+  return Array.from(
+    new Set(values.map((value) => value.trim()).filter(Boolean)),
+  );
+}
+
+function stringSelectOptions(values: string[]): Array<{ label: string; value: string }> {
+  return normalizeStringList(values).map((value) => ({ label: value, value }));
+}
+
+function roleSkillSelectOptions(
+  skills: RoleSkillOption[],
+  selectedSkills: string[],
+): Array<{ label: string; value: string }> {
+  const options = skills
+    .filter((skill) => skill.ref.trim())
+    .map((skill) => ({
+      label: roleSkillLabel(skill),
+      value: skill.ref,
+    }));
+  const optionRefs = new Set(options.map((option) => option.value));
+  for (const selectedSkill of normalizeStringList(selectedSkills)) {
+    if (!optionRefs.has(selectedSkill)) {
+      options.push({ label: selectedSkill, value: selectedSkill });
+    }
+  }
+  return options;
+}
+
+function roleSkillLabel(skill: RoleSkillOption): string {
+  const name = skill.name.trim() || skill.ref;
+  const source = skill.source?.trim();
+  if (source && source !== skill.ref && source !== name) {
+    return `${name} (${source})`;
+  }
+  return name;
 }
 
 function capabilitySummary(profile: ModelProfileRecord): string {

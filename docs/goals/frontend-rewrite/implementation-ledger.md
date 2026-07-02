@@ -9490,3 +9490,26 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent code inspection, focused timeline unit coverage, fake backend deterministic trigger audit, packed dist rebuild, and real local backend browser run completed for this slice. This does not claim final V2 frontend completion, Settings-wide parity completion, full V1 visual sign-off, or a full pre-commit pass.
+
+## 2026-07-02 Roles Settings Harness Migration Slice
+
+### Scope
+- Re-checked the remaining frontend Python UI harness inventory instead of assuming it was empty. Two integration-level files remained: `test_roles_settings_ui.py` and the much broader `test_project_view_ui.py`.
+- Audited `test_roles_settings_ui.py` and found a real V2 parity gap: the React Roles detail page preserved tools/MCP/skills only as read-only counts, while V1 role settings allowed editing those role capability lists along with execution surface, bound runtime, memory, and prompt.
+- Restored editable role capability fields in the V2 Roles secondary detail page: execution surface, tools, MCP servers, and skills now submit with the saved/validated role document. Existing tools/MCP values are preserved as tag options; skills use `/roles:options` refs when available while preserving unknown saved refs.
+- Added V2-native component coverage for prompt preview and save payload preservation across bound runtime, memory, execution surface, tools, MCP servers, skills, and system prompt.
+- Removed `tests/integration_tests/frontend/test_roles_settings_ui.py` after the current V2 component and packed-browser settings action coverage took ownership. `test_project_view_ui.py` remains and must be migrated separately; this slice does not claim full old-harness retirement.
+
+### Verification
+- `npm test -- src/test/SettingsDrawer.test.tsx -t "edits role config capabilities"` passed.
+- `npm run typecheck` passed.
+- `npm run lint` passed.
+- `uv run --extra dev ruff check tests/integration_tests/frontend` passed.
+- `npm run build` passed and regenerated the packed `frontend/dist/app` bundle.
+- `npm run test:browser -- v2-settings-actions.spec.ts --project=chromium -g "role configs"` passed.
+- `npm test -- src/test/UserFacingNamingParity.test.ts` passed.
+- `Get-ChildItem -LiteralPath tests\integration_tests\frontend,tests\unit_tests\frontend -Recurse -File -Filter *.py | Where-Object { $_.FullName -notlike '*__pycache__*' }` shows only `test_project_view_ui.py` plus `css_helpers.py` and `__init__.py` helper/package files; `test_roles_settings_ui.py` is no longer present.
+- Attempted `npm test -- src/test/SettingsDrawer.test.tsx`; it exceeded a reasonable runtime with repeated jsdom `getComputedStyle` warnings and was stopped. The focused role test and browser role flow above are the trusted evidence for this slice.
+
+### Reviewer
+- Main-agent V1 harness audit, real V2 role capability edit restoration, focused component coverage, packed browser role verification, role harness deletion, matrix update, and ledger update completed for this slice. This does not claim `SET-07` Verified, `CLEAN-01` Verified, Project View harness migration, reviewer sign-off, or final V2 frontend completion.

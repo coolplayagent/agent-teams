@@ -931,6 +931,14 @@ beforeEach(() => {
         role_id: "reviewer",
       },
     ],
+    skills: [
+      {
+        description: "Review delivered work.",
+        name: "Review",
+        ref: "review",
+        source: "builtin",
+      },
+    ],
   });
   listRoleConfigsMock.mockResolvedValue([
     {
@@ -964,6 +972,7 @@ beforeEach(() => {
       },
       description: roleId === "reviewer" ? "Review changes" : "Main role",
       deletable: roleId === "reviewer",
+      execution_surface: roleId === "reviewer" ? "browser" : "api",
       file_name: `${roleId}.md`,
       mcp_servers: ["filesystem"],
       memory_profile: {
@@ -1899,6 +1908,55 @@ describe("SettingsDrawer", () => {
     expect(screen.getByLabelText("Model profile")).toBeVisible();
     expect(screen.getByRole("switch", { name: "Memory enabled" })).toBeVisible();
   }, 30000);
+
+  it("edits role config capabilities without dropping V1 role fields", async () => {
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "Roles" }));
+    const reviewerRoleRow = (await screen.findByText("Reviewer")).closest("button");
+    expect(reviewerRoleRow).not.toBeNull();
+    fireEvent.click(reviewerRoleRow as HTMLElement);
+
+    expect(await screen.findByLabelText("Role ID")).toHaveValue("reviewer");
+    expect(screen.getByLabelText("Execution surface")).toHaveValue("browser");
+    expect(screen.getAllByText("read_file").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("filesystem").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("review").length).toBeGreaterThan(0);
+
+    fireEvent.click(within(screen.getByLabelText("Prompt view")).getByText("Preview"));
+    expect(screen.getByRole("region", { name: "Preview" })).toHaveTextContent(
+      "Review carefully.",
+    );
+    fireEvent.click(within(screen.getByLabelText("Prompt view")).getByText("Edit"));
+    fireEvent.change(screen.getByLabelText("Execution surface"), {
+      target: { value: "desktop" },
+    });
+    fireEvent.change(screen.getByLabelText("Description"), {
+      target: { value: "Review changed work." },
+    });
+    fireEvent.change(screen.getByLabelText("System prompt"), {
+      target: { value: "Review carefully and cite risks." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(saveRoleConfigMock).toHaveBeenCalledTimes(1));
+    expect(saveRoleConfigMock.mock.calls[0]?.[0]).toBe("reviewer");
+    expect(saveRoleConfigMock.mock.calls[0]?.[1]).toMatchObject({
+      bound_agent_id: "codex-local",
+      description: "Review changed work.",
+      execution_surface: "desktop",
+      mcp_servers: ["filesystem"],
+      memory_profile: { enabled: true },
+      model_profile: "default",
+      role_id: "reviewer",
+      skills: ["review"],
+      system_prompt: "Review carefully and cite risks.",
+      tools: ["read_file"],
+    });
+  });
 
   it("manages plugins from the System secondary page", async () => {
     renderDrawer();

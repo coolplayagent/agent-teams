@@ -103,6 +103,7 @@ interface MessageTimelineProps {
   roundsEnabled?: boolean;
   runtimeRunId?: string | null;
   sessionId: string | null;
+  subagentScopeRoleId?: string | null;
   suppressExactText?: string;
   variant?: "session" | "subagent-panel";
   workspaceId?: string | null;
@@ -120,6 +121,8 @@ export interface TimelineSubagentReference {
   runPhase?: string;
   runStatus?: string;
   sessionId: string;
+  sourceRunId?: string;
+  sourceToolCallId?: string;
   status?: string;
   subagentKind?: string;
   title?: string;
@@ -140,6 +143,7 @@ export function MessageTimeline({
   roundsEnabled = true,
   runtimeRunId = null,
   sessionId,
+  subagentScopeRoleId = null,
   suppressExactText = "",
   variant = "session",
   workspaceId = null,
@@ -191,6 +195,7 @@ export function MessageTimeline({
               sessionId,
               runtimeRunId,
               primaryRoleId,
+              subagentScopeRoleId,
               variant,
             ),
             latestTerminalRunId,
@@ -206,6 +211,7 @@ export function MessageTimeline({
       runtimeRunId,
       runtimeState.runs,
       sessionId,
+      subagentScopeRoleId,
       variant,
     ],
   );
@@ -285,6 +291,7 @@ export function MessageTimeline({
             sessionId,
             runtimeRunId,
             primaryRoleId,
+            subagentScopeRoleId,
             variant,
             hydratedOutputTextByRunId,
             hydratedOutputSourcesByRunId,
@@ -301,6 +308,7 @@ export function MessageTimeline({
       runtimeRunId,
       runtimeState.runs,
       sessionId,
+      subagentScopeRoleId,
       variant,
     ],
   );
@@ -362,10 +370,18 @@ export function MessageTimeline({
             primaryRoleId,
             runtimeRunId,
             sessionId,
+            subagentRoleId: subagentScopeRoleId,
             variant,
           }),
       ),
-    [primaryRoleId, runtimeRunId, runtimeState.runs, sessionId, variant],
+    [
+      primaryRoleId,
+      runtimeRunId,
+      runtimeState.runs,
+      sessionId,
+      subagentScopeRoleId,
+      variant,
+    ],
   );
   const lastAnswer = useMemo(() => {
     for (let index = rows.length - 1; index >= 0; index -= 1) {
@@ -655,6 +671,7 @@ interface TimelineToolPart {
     | "result"
     | "validation";
   subagent: TimelineSubagentReference | null;
+  sourceRunId?: string;
   toolName: string;
 }
 
@@ -2755,6 +2772,7 @@ function roundsWithRuntimeRunState(
   sessionId: string | null,
   runtimeRunId: string | null,
   primaryRoleId: string | null,
+  subagentScopeRoleId: string | null,
   variant: "session" | "subagent-panel",
 ): SessionRound[] {
   let changed = false;
@@ -2812,6 +2830,7 @@ function roundsWithRuntimeRunState(
       primaryRoleId,
       runtimeRunId,
       sessionId,
+      subagentRoleId: subagentScopeRoleId,
       variant,
     });
     return runtimeRound === null ? [] : [runtimeRound];
@@ -2823,6 +2842,7 @@ function roundsWithRuntimeRunState(
     primaryRoleId,
     runtimeRunId,
     sessionId,
+    subagentRoleId: subagentScopeRoleId,
     variant,
   });
 }
@@ -2971,16 +2991,21 @@ function runtimeRunStateMatchesScope(
   runState: RuntimeRunState,
   scope: RuntimeTimelineScope,
 ): boolean {
-  const { primaryRoleId, runtimeRunId, sessionId, variant } = scope;
+  const { primaryRoleId, runtimeRunId, sessionId, subagentRoleId, variant } =
+    scope;
   if (sessionId === null) {
     return false;
   }
   const scopedRunId = runtimeRunId?.trim() ?? "";
   if (scopedRunId.length > 0) {
-    return (
-      scopedRunId === runState.runId &&
-      runtimeRunStateHasSession(runState, sessionId)
-    );
+    if (
+      scopedRunId !== runState.runId ||
+      !runtimeRunStateHasSession(runState, sessionId)
+    ) {
+      return false;
+    }
+    return variant !== "subagent-panel" ||
+      runtimeRunStateHasSubagentScopeRole(runState, subagentRoleId);
   }
   if (variant === "subagent-panel" || !runtimeRunStateHasSession(runState, sessionId)) {
     return false;
@@ -2996,6 +3021,34 @@ function runtimeRunStateHasSession(
     return true;
   }
   return runState.entries.some((entry) => entry.sessionId === sessionId);
+}
+
+function runtimeRunStateHasSubagentScopeRole(
+  runState: RuntimeRunState,
+  roleId: string | null,
+): boolean {
+  const normalizedRole = stableTimelineRole(roleId ?? "");
+  if (normalizedRole.length === 0) {
+    return true;
+  }
+  return runState.entries.some(
+    (entry) => stableTimelineRole(entry.roleId) === normalizedRole,
+  );
+}
+
+function runtimeEntryMatchesSubagentScopeRole(
+  entry: TimelineEntry,
+  roleId: string | null,
+  variant: "session" | "subagent-panel",
+): boolean {
+  if (variant !== "subagent-panel") {
+    return true;
+  }
+  const normalizedRole = stableTimelineRole(roleId ?? "");
+  return (
+    normalizedRole.length === 0 ||
+    stableTimelineRole(entry.roleId) === normalizedRole
+  );
 }
 
 function runtimeRunCreatedAt(runState: RuntimeRunState): string | undefined {
@@ -3343,6 +3396,7 @@ function runtimeEntriesAfterHydration(
   sessionId: string | null,
   runtimeRunId: string | null,
   primaryRoleId: string | null,
+  subagentScopeRoleId: string | null,
   variant: "session" | "subagent-panel",
   hydratedOutputTextByRunId: Map<string, string>,
   hydratedOutputSourcesByRunId: Map<string, Set<TimelineRunIdSource>>,
@@ -3354,6 +3408,7 @@ function runtimeEntriesAfterHydration(
       primaryRoleId,
       runtimeRunId,
       sessionId,
+      subagentRoleId: subagentScopeRoleId,
       variant,
     }),
   );
@@ -3620,6 +3675,7 @@ interface RuntimeTimelineScope {
   primaryRoleId: string | null;
   runtimeRunId: string | null;
   sessionId: string | null;
+  subagentRoleId: string | null;
   variant: "session" | "subagent-panel";
 }
 
@@ -3628,13 +3684,15 @@ function runtimeEntryMatchesScope(
   runState: RuntimeRunState,
   scope: RuntimeTimelineScope,
 ): boolean {
-  const { primaryRoleId, runtimeRunId, sessionId, variant } = scope;
+  const { primaryRoleId, runtimeRunId, sessionId, subagentRoleId, variant } =
+    scope;
   if (entry.sessionId !== sessionId) {
     return false;
   }
   const scopedRunId = runtimeRunId?.trim() ?? "";
   if (scopedRunId.length > 0) {
-    return entry.runId === scopedRunId;
+    return entry.runId === scopedRunId &&
+      runtimeEntryMatchesSubagentScopeRole(entry, subagentRoleId, variant);
   }
   if (variant === "subagent-panel") {
     return false;
@@ -5926,9 +5984,16 @@ function MessageToolBlock({
     sessionId,
     status,
   );
+  const openSubagentReference = subagentReference === null
+    ? null
+    : {
+      ...subagentReference,
+      sourceRunId: subagentReference.sourceRunId ?? tool.sourceRunId,
+      sourceToolCallId: subagentReference.sourceToolCallId ?? tool.callId,
+    };
   const canOpenSubagent =
     onSubagentOpen !== undefined &&
-    subagentReference !== null;
+    openSubagentReference !== null;
   const hasDetails =
     !isSubagentTool &&
     (
@@ -5939,7 +6004,7 @@ function MessageToolBlock({
   const handleSummaryClick = canOpenSubagent
     ? (event: MouseEvent<HTMLElement>) => {
         event.preventDefault();
-        onSubagentOpen(subagentReference);
+        onSubagentOpen(openSubagentReference);
       }
     : undefined;
   return (
@@ -5950,8 +6015,8 @@ function MessageToolBlock({
         canOpenSubagent ? "is-openable-subagent" : "",
       ].filter(Boolean).join(" ")}
       data-status={status}
-      data-subagent-instance-id={subagentReference?.instanceId ?? undefined}
-      data-subagent-run-id={subagentReference?.runId ?? undefined}
+      data-subagent-instance-id={openSubagentReference?.instanceId ?? undefined}
+      data-subagent-run-id={openSubagentReference?.runId ?? undefined}
       data-tool-call-id={tool.callId || undefined}
       data-tool-name={tool.toolName}
     >
@@ -6521,11 +6586,16 @@ function runtimeToolPart(entry: TimelineEntry): TimelineToolPart | null {
       kind: "tool",
       mediaParts: [],
       phase: "call",
-      subagent: subagentReferenceFromValues({
+      subagent: subagentReferenceWithSource(
+        subagentReferenceFromValues({
+          callId,
+          payload: payload.args ?? null,
+          toolName,
+        }),
+        entry,
         callId,
-        payload: payload.args ?? null,
-        toolName,
-      }),
+      ),
+      sourceRunId: entry.runId,
       toolName,
     };
   }
@@ -6559,11 +6629,16 @@ function runtimeToolPart(entry: TimelineEntry): TimelineToolPart | null {
     kind: "tool",
     mediaParts: toolReturnMediaParts(result),
     phase: "result",
-    subagent: subagentReferenceFromValues({
+    subagent: subagentReferenceWithSource(
+      subagentReferenceFromValues({
+        callId,
+        payload: result,
+        toolName,
+      }),
+      entry,
       callId,
-      payload: result,
-      toolName,
-    }),
+    ),
+    sourceRunId: entry.runId,
     toolName,
   };
 }
@@ -7047,6 +7122,21 @@ function completeSubagentReference(
     runStatus,
     sessionId: reference.sessionId.trim() || sessionId,
     status,
+  };
+}
+
+function subagentReferenceWithSource(
+  reference: TimelineSubagentReference | null,
+  entry: TimelineEntry,
+  callId: string,
+): TimelineSubagentReference | null {
+  if (reference === null) {
+    return null;
+  }
+  return {
+    ...reference,
+    sourceRunId: entry.runId,
+    sourceToolCallId: callId.trim(),
   };
 }
 

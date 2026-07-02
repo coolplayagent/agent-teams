@@ -591,6 +591,13 @@ For every row moved to `Verified`, record:
 - Automated evidence: `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH="C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" npm run test:browser -- v2-real-backend-history.spec.ts --project=chromium`.
 - Remaining before verification: live production-backend stream variants and final V1/V2 visual sign-off still need to be completed; this closes the missing real-history audit gap.
 
+### 2026-07-02 Pending Subagent Source Stream
+
+- `SUB-01` tightened: clicking a running subagent tool card before child `run_id`/`instance_id` hydration now carries the parent source run into the right-side panel, so child-role live output can render there immediately while parent-role rows stay out of the panel.
+- `MSG-02` tightened: terminal subagent streams no longer keep a fake `.at-message-streaming-text` catch-up after EventSource close. The already received final text settles immediately, remains singular during delayed history refill, and replay still hydrates the persisted answer once.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx src/test/SubagentSessionView.test.tsx`, `npm run typecheck`, `npm run lint`, `npm run build`, `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium`.
+- Remaining before verification: live production-backend stream variants and final V1/V2 visual sign-off still need to be completed.
+
 ### 2026-07-01 Timeline Background Notification And Prompt Expansion
 
 - `STREAM-01` tightened: managed background task completion notifications are hidden from the user-visible transcript even when replayed from persisted `message.parts[*].part_kind="user-prompt"` payloads.

@@ -1071,6 +1071,8 @@ function writeActiveSubagentPanel(subagent: ActiveSubagentSession | null): void 
       runPhase: subagent.runPhase,
       runStatus: subagent.runStatus,
       sessionId: subagent.sessionId,
+      sourceRunId: subagent.sourceRunId,
+      sourceToolCallId: subagent.sourceToolCallId,
       status: subagent.status,
       subagentKind: subagent.subagentKind,
       title: subagent.title,
@@ -1106,6 +1108,8 @@ function activeSubagentPanelFromRecord(
     runPhase: stringRecordValue(value, "runPhase"),
     runStatus: stringRecordValue(value, "runStatus"),
     sessionId,
+    sourceRunId: stringRecordValue(value, "sourceRunId"),
+    sourceToolCallId: stringRecordValue(value, "sourceToolCallId"),
     status: stringRecordValue(value, "status"),
     subagentKind: stringRecordValue(value, "subagentKind"),
     title,
@@ -1186,6 +1190,8 @@ function activeSubagentFromTimelineReference(
     runPhase,
     runStatus,
     sessionId: reference.sessionId,
+    sourceRunId: reference.sourceRunId ?? "",
+    sourceToolCallId: reference.sourceToolCallId ?? "",
     status,
     subagentKind: reference.subagentKind ?? "normal",
     title,
@@ -1253,6 +1259,11 @@ function mergeActiveSubagentPanelContext(
   return {
     ...authoritative,
     promptText: firstNonBlank(authoritative.promptText, previous.promptText),
+    sourceRunId: firstNonBlank(authoritative.sourceRunId, previous.sourceRunId),
+    sourceToolCallId: firstNonBlank(
+      authoritative.sourceToolCallId,
+      previous.sourceToolCallId,
+    ),
     title: firstNonBlank(authoritative.title, previous.title),
   };
 }

@@ -73,6 +73,8 @@ export function SubagentSessionView({
       : mergeSubagentRecordContext(latestSubagentRecord, subagent);
   const sessionId = recordAwareSubagent.sessionId;
   const runId = recordAwareSubagent.runId.trim();
+  const sourceRunId = recordAwareSubagent.sourceRunId?.trim() ?? "";
+  const timelineRunId = runId || sourceRunId;
   const instanceId = recordAwareSubagent.instanceId.trim();
   const runtimeRunState = useRuntimeStore((state) =>
     runId ? state.runtimeState.runs[runId] ?? null : null,
@@ -94,7 +96,7 @@ export function SubagentSessionView({
     displayedSubagent.runPhase,
   ].join("|");
   const hasMessageHistoryTarget = instanceId.length > 0;
-  const canRenderTimeline = hasMessageHistoryTarget || runId.length > 0;
+  const canRenderTimeline = hasMessageHistoryTarget || timelineRunId.length > 0;
   const title =
     displayedSubagent.title ||
     humanizeRoleId(displayedSubagent.roleId) ||
@@ -290,8 +292,8 @@ export function SubagentSessionView({
                 <SubagentPendingState label={t("subagentSessionWaiting")} />
               ) : undefined
             }
-            fallbackRunId={runId}
-            latestTerminalRunId={runId}
+            fallbackRunId={timelineRunId}
+            latestTerminalRunId={timelineRunId}
             latestTerminalRunStatus={
               displayedSubagent.runStatus || displayedSubagent.status || null
             }
@@ -299,8 +301,9 @@ export function SubagentSessionView({
             loadMessages={loadSubagentMessages}
             messageQueryKey={messageQueryKey}
             roundsEnabled={false}
-            runtimeRunId={runId}
+            runtimeRunId={timelineRunId}
             sessionId={sessionId}
+            subagentScopeRoleId={runId.length > 0 ? null : recordAwareSubagent.roleId}
             suppressExactText={subagentPromptText}
             variant="subagent-panel"
           />
@@ -703,6 +706,11 @@ function mergeSubagentRecordContext(
   return {
     ...record,
     promptText: firstNonEmpty(record.promptText, source.promptText),
+    sourceRunId: firstNonEmpty(record.sourceRunId, source.sourceRunId),
+    sourceToolCallId: firstNonEmpty(
+      record.sourceToolCallId,
+      source.sourceToolCallId,
+    ),
     title: firstNonEmpty(record.title, source.title),
   };
 }
@@ -816,6 +824,9 @@ function humanizeRoleId(roleId: string): string {
     .replace(/\b\w/g, (match) => match.toUpperCase());
 }
 
-function firstNonEmpty(first: string, second: string): string {
-  return first.trim() || second.trim();
+function firstNonEmpty(
+  first: string | null | undefined,
+  second: string | null | undefined,
+): string {
+  return (first ?? "").trim() || (second ?? "").trim();
 }

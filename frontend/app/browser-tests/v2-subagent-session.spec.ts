@@ -477,7 +477,7 @@ test("streams subagent deltas incrementally before terminal history refill", asy
   }
 });
 
-test("continues typewriter reveal after terminal close before history refill", async ({
+test("settles terminal subagent output immediately before history refill", async ({
   page,
 }) => {
   const appServer = await serveFrontendDist();
@@ -537,31 +537,23 @@ test("continues typewriter reveal after terminal close before history refill", a
     });
     await waitForEventSourceOpenCount(page, 0);
     await expect.poll(() => state.messageRequestCount).toBeGreaterThanOrEqual(2);
-    await expect(terminalDisplay).toBeVisible();
-    const terminalSamples = await sampleTextLengths(terminalDisplay, 5, 70);
-    expect(terminalSamples[0] ?? terminalText.length).toBeLessThan(
-      terminalText.length,
-    );
-    expect(Math.max(...terminalSamples)).toBeLessThan(terminalText.length);
-    expect(new Set(terminalSamples).size).toBeGreaterThanOrEqual(3);
-    await page.screenshot({
-      path: screenshotPath(
-        "v2-subagent-terminal-typewriter-catchup-mid.png",
-        SCREENSHOT_FOLDER,
-      ),
-    });
-
+    await expect(terminalDisplay).toHaveCount(0);
     await expect(terminalRow).toContainText(terminalText);
     await expect(panel.locator(".streaming-cursor")).toHaveCount(0);
     await page.screenshot({
       path: screenshotPath(
-        "v2-subagent-terminal-typewriter-catchup-final.png",
+        "v2-subagent-terminal-settled-before-refill.png",
         SCREENSHOT_FOLDER,
       ),
     });
 
     releaseFinalSubagentMessages(state);
     await expect(panel.getByText("Final persisted subagent answer")).toBeVisible();
+    await expect(
+      panel
+        .locator(`.at-timeline-row[data-run-id="${SUBAGENT_RUN_ID}"]`)
+        .filter({ hasText: "TERMINAL_STREAM_" }),
+    ).toHaveCount(1);
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await expectNoDocumentScroll(
       page,
@@ -653,7 +645,7 @@ test("does not replay an already complete subagent stream during terminal hydrat
   }
 });
 
-test("recovers a subagent stream after refresh during terminal catch-up", async ({
+test("recovers a settled subagent stream after refresh before history refill", async ({
   page,
 }) => {
   const appServer = await serveFrontendDist();
@@ -710,7 +702,8 @@ test("recovers a subagent stream after refresh during terminal catch-up", async 
     await waitForEventSourceOpenCount(page, 0);
     await expect.poll(() => state.messageRequestCount).toBeGreaterThanOrEqual(2);
     await expect(initialPanel.locator(".at-message-streaming-text"))
-      .toBeVisible();
+      .toHaveCount(0);
+    await expect(initialPanel).toContainText(terminalText);
 
     await page.reload();
     await waitForV2Shell(page);
@@ -757,6 +750,7 @@ test("recovers a subagent stream after refresh during terminal catch-up", async 
       type: "run.completed",
     });
     await waitForEventSourceOpenCount(page, 0);
+    await expect(restoredDisplay).toHaveCount(0);
     await expect(restoredRow).toContainText(terminalText);
     await expect(restoredPanel.locator(".streaming-cursor")).toHaveCount(0);
     await expect(

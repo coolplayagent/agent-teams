@@ -110,6 +110,50 @@ describe("SubagentSessionView", () => {
     );
   });
 
+  it("shows pending subagent output from the source parent run before child ids hydrate", async () => {
+    const runId = "parent-run-with-pending-subagent";
+    setRuntimeEntries([
+      {
+        eventId: 41,
+        id: `${runId}:41:0`,
+        instanceId: "main-instance",
+        kind: "text_delta",
+        occurredAt: "2026-06-23T10:02:00Z",
+        payload: { text: "Parent output should stay out of the subagent panel." },
+        roleId: "MainAgent",
+        runId,
+        sessionId: "session-parent",
+        text: "Parent output should stay out of the subagent panel.",
+      },
+      runtimeMessageEntry({
+        instanceId: "pending-child-instance",
+        runId,
+        text: "Live child output before backend ids hydrate.",
+      }),
+    ]);
+    const controller = createRunStreamController();
+
+    renderSubagentSessionView({
+      controller,
+      subagent: createSubagent({
+        instanceId: "",
+        lastEventId: null,
+        runId: "",
+        sourceRunId: runId,
+        title: "Explore skills implementation",
+      }),
+    });
+
+    expect(
+      await screen.findByText("Live child output before backend ids hydrate."),
+    ).toBeVisible();
+    expect(
+      screen.queryByText("Parent output should stay out of the subagent panel."),
+    ).not.toBeInTheDocument();
+    expect(listAgentMessagesMock).not.toHaveBeenCalled();
+    expect(openSessionSubagentRunStreamMock).not.toHaveBeenCalled();
+  });
+
   it("hydrates a running subagent id from the latest record before streaming", async () => {
     const controller = createRunStreamController();
     listSessionSubagentsMock.mockResolvedValue([

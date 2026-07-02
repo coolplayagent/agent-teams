@@ -97,6 +97,8 @@ export interface ActiveSubagentSession {
   runPhase: string;
   runStatus: string;
   sessionId: string;
+  sourceRunId?: string;
+  sourceToolCallId?: string;
   status: string;
   subagentKind: string;
   title: string;

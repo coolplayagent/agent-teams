@@ -135,7 +135,7 @@ test("renders received live stream text immediately and does not replay after te
     const unhandledApiRoutes: string[] = [];
     await mockShellApi(page, appServer.url, unhandledApiRoutes, {
       handleRequest: (context) => handleStreamApi(context, runCreateRequests),
-      sessionTitle: "TS stream progressive",
+      sessionTitle: "TS stream immediate delta",
     });
     await ensureScreenshotDir(SCREENSHOT_FOLDER);
 
@@ -215,7 +215,7 @@ test("renders received live stream text immediately and does not replay after te
     );
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await page.screenshot({
-      path: screenshotPath("v2-stream-progressive-no-replay.png", SCREENSHOT_FOLDER),
+      path: screenshotPath("v2-stream-immediate-delta-no-replay.png", SCREENSHOT_FOLDER),
     });
   } finally {
     await appServer.close();

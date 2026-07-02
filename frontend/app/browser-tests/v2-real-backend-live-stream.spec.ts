@@ -191,13 +191,15 @@ test("real backend subagent stream opens while running and stays out of main tim
     await expectRealShellReady(page);
 
     const childTag = streamTagFromTitle(title);
-    const childExpectedText = subagentStreamExpectedText(childTag, 14);
+    const childTokenCount = 32;
     const childFirstToken = subagentStreamToken(childTag, 0);
-    const childLastToken = subagentStreamToken(childTag, 13);
+    const childLastToken = subagentStreamToken(childTag, childTokenCount - 1);
     const promptText = [
       `${title}: 请启动一个 Explorer 子代理验证右侧面板流式显示。`,
-      "子代理任务：不要调用任何工具，只输出下面这一段文字，保持原文顺序，不要解释，不要添加额外内容：",
-      childExpectedText,
+      "子代理任务：不要调用任何工具。",
+      `请输出 ${childTokenCount} 个按规则生成的 token：前缀 SUBAGENT_STREAM，标签 ${childTag}，序号从 00 到 ${String(childTokenCount - 1).padStart(2, "0")}。`,
+      "每个 token 的格式是 SUBAGENT_STREAM_<标签>_<两位序号>，用单个空格分隔。",
+      "不要解释，不要添加额外内容。",
       "子代理完成后，主代理只用一句中文总结子代理已完成。",
     ].join("\n");
 
@@ -224,8 +226,18 @@ test("real backend subagent stream opens while running and stays out of main tim
         ".at-message-tool, .at-message-streaming-text, .at-message-plain-stream, .at-message",
       ).first(),
     ).toBeVisible({ timeout: 90_000 });
-    await expect.poll(() => panel.textContent(), { timeout: 120_000 })
+    await expect.poll(() => latestSubagentPanelRuntimeText(panel), {
+      timeout: 120_000,
+    })
       .toContain(childFirstToken);
+    expect(await latestSubagentPanelRuntimeText(panel)).not.toContain(childLastToken);
+    const panelSamples = await collectSubagentPanelTextLengthSamples(
+      panel,
+      90_000,
+      40,
+    );
+    expect(increasingSampleCount(panelSamples)).toBeGreaterThanOrEqual(1);
+    expect(Math.max(...panelSamples)).toBeGreaterThan(childFirstToken.length);
 
     await page.screenshot({
       fullPage: false,
@@ -238,7 +250,9 @@ test("real backend subagent stream opens while running and stays out of main tim
       timeout: 30_000,
     });
     await expect
-      .poll(() => page.locator(".at-subagent-session-prompt").textContent())
+      .poll(() => page.locator(".at-subagent-session-prompt").textContent(), {
+        timeout: 45_000,
+      })
       .toContain(childTag);
     await expect
       .poll(() => page.locator(".at-subagent-session-view").textContent(), {
@@ -545,6 +559,38 @@ async function subagentPanelRuntimeSnippet(panel: Locator): Promise<string> {
       return candidate ?? "";
     })
     .then(stableSnippetFromText);
+}
+
+async function collectSubagentPanelTextLengthSamples(
+  panel: Locator,
+  timeoutMs: number,
+  delayMs: number,
+): Promise<number[]> {
+  const samples: number[] = [];
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    samples.push((await latestSubagentPanelRuntimeText(panel)).length);
+    if (
+      increasingSampleCount(samples) >= 1 &&
+      Math.max(...samples) > 8
+    ) {
+      return samples;
+    }
+    await panel.page().waitForTimeout(delayMs);
+  }
+  return samples;
+}
+
+async function latestSubagentPanelRuntimeText(panel: Locator): Promise<string> {
+  return panel
+    .locator(".at-message-streaming-text, .at-message-plain-stream, article.at-message")
+    .evaluateAll((nodes) => {
+      const ignored = new Set(["思考", "Thinking"]);
+      return nodes
+        .map((node) => (node.textContent ?? "").replace(/\s+/g, " ").trim())
+        .filter((candidate) => candidate.length > 0 && !ignored.has(candidate))
+        .at(-1) ?? "";
+    });
 }
 
 function stableSnippetFromText(text: string): string {

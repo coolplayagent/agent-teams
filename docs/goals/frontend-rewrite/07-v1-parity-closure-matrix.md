@@ -127,6 +127,13 @@ For every row moved to `Verified`, record:
 - Evidence target: `npm run test:browser -- v2-stream-create-run.spec.ts --project=chromium -g "renders received live stream text immediately"`.
 - This is still scoped evidence. Complex production tool/orchestration streams, subagent live cadence, and final V1/V2 visual sign-off remain open.
 
+### 2026-07-03 Real Backend Subagent Runtime-Text Cadence Pass
+
+- `SUB-01` and `STREAM-02` tightened: the real-backend subagent live browser scenario no longer proves output by searching the whole panel text, because the prompt itself can contain the expected token. The prompt now describes the token-generation rule without embedding the full expected output, and the test samples only right-panel runtime text rows.
+- The scenario now proves the first child token appears in the right-panel timeline before the last child token is present, then the same visible runtime text grows before terminal/reload checks. This catches the user-visible "prompt text or final replay looked like streaming" false positive.
+- Evidence: `AGENT_TEAMS_REAL_LIVE_STREAM=1 npm run test:browser -- v2-real-backend-live-stream.spec.ts --project=chromium -g "real backend subagent stream"` passed in Chromium against the live local backend.
+- This still does not close all live production-backend subagent/orchestration variants or final V1/V2 visual sign-off.
+
 ### 2026-07-02 Direct Delta Rendering Closure
 
 - `MSG-02` tightened: the frontend no longer simulates typewriter reveal for live text rows or terminal catch-up. Timeline text now shows the exact received delta text immediately, with the cursor only indicating that the stream remains open.

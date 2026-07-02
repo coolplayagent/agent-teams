@@ -686,9 +686,8 @@ describe("MessageTimeline", () => {
     expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
   });
 
-  it("types live runtime text progressively instead of replacing a whole delta", async () => {
+  it("renders received live runtime text directly instead of faking a second typewriter pass", async () => {
     vi.stubEnv("MODE", "production");
-    vi.useFakeTimers();
     const finalAnswer = [
       "LIVE_STREAM_ALPHA",
       "LIVE_STREAM_BETA",
@@ -713,22 +712,9 @@ describe("MessageTimeline", () => {
       ".at-message-streaming-text",
     );
     expect(streamingText).not.toBeNull();
-    expect(streamingText?.textContent).toBe("L");
-    expect(screen.queryByText(finalAnswer)).not.toBeInTheDocument();
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(4 * 36);
-    });
-    const partialText = streamingText?.textContent ?? "";
-    expect(partialText.length).toBeGreaterThan(1);
-    expect(partialText.length).toBeLessThan(finalAnswer.length);
-
-    for (let frame = 0; frame < 120; frame += 1) {
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(36);
-      });
-    }
+    expect(streamingText).toHaveTextContent(finalAnswer);
     expect(screen.getByText(finalAnswer)).toBeVisible();
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
   });
 
   it("keeps a fully revealed live row mounted when terminal output arrives", async () => {
@@ -813,8 +799,8 @@ describe("MessageTimeline", () => {
 
     const { container } = renderTimeline();
 
-    expect(screen.queryByText(finalAnswer)).not.toBeInTheDocument();
-    expect(container.querySelector(".at-message-streaming-text")).toHaveTextContent("L");
+    expect(screen.getByText(finalAnswer)).toBeVisible();
+    expect(container.querySelector(".at-message-streaming-text")).toHaveTextContent(finalAnswer);
     const rowBefore = container.querySelector<HTMLElement>("article.at-message");
     const textNodeBefore = container.querySelector<HTMLElement>(".at-message-text");
 

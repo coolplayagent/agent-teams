@@ -31,8 +31,6 @@ import { roundPromptText, roundTitle } from "./roundMetadata";
 
 const TIMELINE_BOTTOM_FOLLOW_THRESHOLD_PX = 96;
 const LONG_STREAM_TEXT_THRESHOLD = 12000;
-const STREAM_TYPEWRITER_DELAY_MS = 36;
-const STREAM_TYPEWRITER_MIN_STEP = 1;
 const ROUND_RAIL_PAGE_LIMIT = 100;
 const ROUND_RAIL_MAX_PAGES = 10;
 const TOOL_RESULT_MAX_LINES = 200;
@@ -6097,151 +6095,14 @@ interface StreamingDisplayText {
 function useStreamingDisplayText(
   targetText: string,
   streaming: boolean,
-  reveal: boolean,
-  streamIdentity: string,
+  _reveal: boolean,
+  _streamIdentity: string,
 ): StreamingDisplayText {
-  const smoothEnabled = import.meta.env.MODE !== "test";
-  const shouldReveal = reveal || streaming;
-  const [displayedText, setDisplayedText] = useState(() =>
-    initialDisplayedStreamingText(
-      targetText,
-      smoothEnabled,
-      shouldReveal,
-      streamIdentity,
-    ),
-  );
-
-  useEffect(() => {
-    if (!smoothEnabled) {
-      setDisplayedText(targetText);
-      return;
-    }
-    setDisplayedText((current) => {
-      if (revealedStreamingTextCache.get(streamIdentity) === targetText) {
-        return targetText;
-      }
-      if (shouldReveal) {
-        if (current.length === 0) {
-          return initialStreamingText(targetText);
-        }
-        if (targetText.startsWith(current)) {
-          return current;
-        }
-        return initialStreamingText(targetText);
-      }
-      return targetText;
-    });
-  }, [shouldReveal, smoothEnabled, streamIdentity, targetText]);
-
-  const revealActive =
-    smoothEnabled &&
-    shouldReveal &&
-    displayedText.length < targetText.length &&
-    targetText.startsWith(displayedText);
-
-  useEffect(() => {
-    if (!revealActive) {
-      return;
-    }
-    if (displayedText.length >= targetText.length) {
-      return;
-    }
-    if (!targetText.startsWith(displayedText)) {
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      setDisplayedText((current) =>
-        revealNextStreamingText(current, targetText),
-      );
-    }, STREAM_TYPEWRITER_DELAY_MS);
-    return () => window.clearTimeout(timer);
-  }, [displayedText, revealActive, targetText]);
-
-  useEffect(() => {
-    if (!smoothEnabled || targetText.length === 0 || displayedText !== targetText) {
-      return;
-    }
-    rememberRevealedStreamingText(streamIdentity, targetText);
-  }, [displayedText, smoothEnabled, streamIdentity, targetText]);
-
-  if (!smoothEnabled) {
-    return {
-      cursorVisible: streaming,
-      revealing: streaming,
-      text: targetText,
-    };
-  }
   return {
     cursorVisible: streaming,
-    revealing: revealActive,
-    text: displayedText,
+    revealing: false,
+    text: targetText,
   };
-}
-
-const REVEALED_STREAMING_TEXT_CACHE_LIMIT = 240;
-const revealedStreamingTextCache = new Map<string, string>();
-
-function initialDisplayedStreamingText(
-  targetText: string,
-  smoothEnabled: boolean,
-  shouldReveal: boolean,
-  streamIdentity: string,
-): string {
-  if (!smoothEnabled || !shouldReveal) {
-    return targetText;
-  }
-  if (revealedStreamingTextCache.get(streamIdentity) === targetText) {
-    return targetText;
-  }
-  return initialStreamingText(targetText);
-}
-
-function rememberRevealedStreamingText(
-  streamIdentity: string,
-  targetText: string,
-): void {
-  revealedStreamingTextCache.delete(streamIdentity);
-  revealedStreamingTextCache.set(streamIdentity, targetText);
-  while (revealedStreamingTextCache.size > REVEALED_STREAMING_TEXT_CACHE_LIMIT) {
-    const oldestKey = revealedStreamingTextCache.keys().next().value;
-    if (oldestKey === undefined) {
-      return;
-    }
-    revealedStreamingTextCache.delete(oldestKey);
-  }
-}
-
-function initialStreamingText(text: string): string {
-  if (text.length <= STREAM_TYPEWRITER_MIN_STEP) {
-    return text;
-  }
-  return text.slice(0, STREAM_TYPEWRITER_MIN_STEP);
-}
-
-function revealNextStreamingText(
-  current: string,
-  target: string,
-): string {
-  if (!target.startsWith(current)) {
-    return initialStreamingText(target);
-  }
-  const remaining = target.length - current.length;
-  if (remaining <= 0) {
-    return target;
-  }
-  let step = STREAM_TYPEWRITER_MIN_STEP;
-  if (remaining > 1200) {
-    step = 24;
-  } else if (remaining > 520) {
-    step = 16;
-  } else if (remaining > 220) {
-    step = 10;
-  } else if (remaining > 96) {
-    step = 6;
-  } else if (remaining > 24) {
-    step = 3;
-  }
-  return target.slice(0, Math.min(target.length, current.length + step));
 }
 
 function StreamingCursor() {

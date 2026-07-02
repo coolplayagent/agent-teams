@@ -219,6 +219,9 @@ test("does not rebuild a fully displayed live answer when persisted history catc
       hasText: finalText,
     });
     await expect(liveAnswerRow).toHaveCount(1);
+    await expect(liveAnswerRow.locator(".at-message-streaming-text"))
+      .toHaveText(finalText);
+    await expect(liveAnswerRow.locator(".streaming-cursor")).toHaveCount(1);
     const liveRowKey = await liveAnswerRow.first().getAttribute("data-row-key");
     expect(liveRowKey).toContain("runtime-text:");
     await page.screenshot({

@@ -263,6 +263,13 @@ export function HooksSettingsSection() {
   });
   const loadedHooks = runtimeQuery.data?.loaded_hooks ?? [];
   const sources = runtimeQuery.data?.sources ?? [];
+  const configLoading = hooksQuery.isLoading;
+  const hasConfigData = hooksQuery.data !== undefined;
+  const hasConfigLoadError = hooksQuery.error !== null;
+  const hasLocalDraft = groups.some((group) => group.isNew);
+  const canShowEditor =
+    !configLoading && (hasConfigData || hasConfigLoadError || groups.length > 0);
+  const showConfigError = hasConfigLoadError && !hasLocalDraft && groups.length === 0;
 
   useEffect(() => {
     if (hooksQuery.data !== undefined) {
@@ -380,13 +387,12 @@ export function HooksSettingsSection() {
   }
 
   const roleOptions = hookRoleOptions(roleOptionsQuery.data);
-  const configLoading = hooksQuery.isLoading;
   const runtimeUnavailable = runtimeQuery.error !== null;
 
   return (
     <SettingsSection title={t("settingsHooks")}>
-      <SettingsQueryState error={hooksQuery.error} loading={configLoading} />
-      {!configLoading && hooksQuery.data !== undefined ? (
+      <SettingsQueryState error={showConfigError ? hooksQuery.error : null} loading={configLoading} />
+      {canShowEditor ? (
         <>
           <div className="at-settings-facts">
             <Fact label={t("settingsHooksConfigured")} value={String(groups.length)} />

@@ -91,6 +91,90 @@ describe("HooksSettingsSection", () => {
     expect(screen.queryByLabelText("Hooks JSON")).toBeNull();
   });
 
+  it("allows a new structured hook to be added after config loading fails", async () => {
+    getHooksConfigMock.mockRejectedValueOnce(new Error("broken config"));
+    renderSection();
+
+    expect(await screen.findByText("broken config")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Add hook" }));
+
+    await waitFor(() => expect(screen.queryByText("broken config")).toBeNull());
+    fireEvent.change(screen.getAllByLabelText("Hook name")[0] as HTMLElement, {
+      target: { value: "Recovered policy" },
+    });
+    fireEvent.change(screen.getAllByLabelText("Hook name")[1] as HTMLElement, {
+      target: { value: "Recovered command" },
+    });
+    fireEvent.change(screen.getByLabelText("Matcher"), {
+      target: { value: "Write" },
+    });
+    fireEvent.change(screen.getByLabelText("Command"), {
+      target: { value: "python hooks/recovered.py" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(saveHooksConfigMock).toHaveBeenCalledWith({
+        hooks: {
+          PreToolUse: [
+            {
+              hooks: [
+                {
+                  command: "python hooks/recovered.py",
+                  name: "Recovered command",
+                  on_error: "ignore",
+                  type: "command",
+                },
+              ],
+              matcher: "Write",
+              name: "Recovered policy",
+            },
+          ],
+        },
+      }),
+    );
+  });
+
+  it("renders multiple configured matchers under the same hook event", async () => {
+    getHooksConfigMock.mockResolvedValue({
+      hooks: {
+        PreToolUse: [
+          {
+            hooks: [
+              {
+                command: "python hooks/write.py",
+                name: "lint changed files",
+                type: "command",
+              },
+            ],
+            matcher: "Write",
+            name: "Write guard",
+          },
+          {
+            hooks: [
+              {
+                command: "python hooks/edit.py",
+                name: "format changed files",
+                type: "command",
+              },
+            ],
+            matcher: "Edit",
+            name: "Edit formatter",
+          },
+        ],
+      },
+    });
+    renderSection();
+
+    expect(await screen.findByText("Write guard")).toBeVisible();
+    expect(screen.getByText("Edit formatter")).toBeVisible();
+    expect(screen.getByText("PreToolUse · Write")).toBeVisible();
+    expect(screen.getByText("PreToolUse · Edit")).toBeVisible();
+    expect(screen.getByText("Configured groups").nextElementSibling?.textContent).toBe(
+      "2",
+    );
+  });
+
   it("adds an agent hook through structured fields and saves the payload", async () => {
     getHooksConfigMock.mockResolvedValue({ hooks: {} });
     renderSection();
@@ -459,6 +543,66 @@ describe("HooksSettingsSection", () => {
                 },
               ],
               name: "Prompt policy",
+            },
+          ],
+        },
+      }),
+    );
+  });
+
+  it("preserves http handler fields and group scope fields on save", async () => {
+    getHooksConfigMock.mockResolvedValue({
+      hooks: {
+        PreToolUse: [
+          {
+            hooks: [
+              {
+                allowed_env_vars: ["HOOK_TOKEN"],
+                headers: { Authorization: "Bearer $HOOK_TOKEN" },
+                if: "shell(git *)",
+                name: "notify policy",
+                on_error: "fail",
+                timeout: 12,
+                type: "http",
+                url: "https://example.test/hook",
+              },
+            ],
+            matcher: "shell",
+            name: "HTTP policy",
+            role_ids: ["coordinator"],
+            run_kinds: ["foreground"],
+            session_modes: ["normal"],
+          },
+        ],
+      },
+    });
+    renderSection();
+
+    await editCard("HTTP policy");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(saveHooksConfigMock).toHaveBeenCalledWith({
+        hooks: {
+          PreToolUse: [
+            {
+              hooks: [
+                {
+                  allowed_env_vars: ["HOOK_TOKEN"],
+                  headers: { Authorization: "Bearer $HOOK_TOKEN" },
+                  if: "shell(git *)",
+                  name: "notify policy",
+                  on_error: "fail",
+                  timeout: 12,
+                  type: "http",
+                  url: "https://example.test/hook",
+                },
+              ],
+              matcher: "shell",
+              name: "HTTP policy",
+              role_ids: ["coordinator"],
+              run_kinds: ["foreground"],
+              session_modes: ["normal"],
             },
           ],
         },

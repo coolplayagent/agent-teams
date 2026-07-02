@@ -2,6 +2,25 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-02 Hooks Settings Harness Retirement
+
+### Scope
+- Re-audited the remaining `tests/integration_tests/frontend/test_hooks_settings_ui.py` behavior instead of deleting it as stale. The remaining useful assertions were config-load failure recovery, same-event multi-matcher rendering, HTTP handler field preservation, and structured save behavior under the System -> Hooks secondary page.
+- Fixed the V2 Hooks settings page so a config-load failure no longer blocks the user from adding a new structured hook. Once the user starts a local hook draft, the stale load-error alert is hidden and Save/Validate operate on the local structured state.
+- Added V2-native component coverage for load-failure Add/Save recovery, multiple matchers under `PreToolUse`, and HTTP handler serialization of `headers`, `allowed_env_vars`, `timeout`, `on_error`, `if`, plus group scope fields.
+- Deleted `tests/integration_tests/frontend/test_hooks_settings_ui.py` after the remaining current behavior was owned by `HooksSettingsSection.test.tsx`, existing `SettingsDrawer` coverage, and the packed `/app/` Hooks browser scenario.
+- Rebuilt the packed app so the dist bundle reflects the Hooks recovery behavior.
+
+### Verification
+- `npm test -- src/test/HooksSettingsSection.test.tsx` passed with 15 tests.
+- `uv run --extra dev ruff check tests/integration_tests/frontend` passed.
+- `npm run test:browser -- v2-settings-actions.spec.ts --project=chromium -g "validates and saves Hooks"` passed with 1 Chromium browser test.
+- `npm run typecheck` passed.
+- `npm run build` passed and regenerated `frontend/dist/app`.
+
+### Reviewer
+- Main-agent decision: this retires the Hooks Python UI harness and tightens `SET-14`/`CLEAN-01`. It does not mark System settings, cleanup, or the V2 frontend rewrite complete; formal V1 visual pairing, broader System secondary-page evidence, remaining frontend Python harness decisions, and reviewer sign-off remain open.
+
 ## 2026-07-02 Orchestration Session-Switch Browser Closure
 
 ### Scope

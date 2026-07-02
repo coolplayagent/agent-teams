@@ -634,6 +634,78 @@ test("keeps subagent directories out of large initial sidebar load", async ({
   }
 });
 
+test("keeps long sidebar and long chat history in independent fixed scroll regions", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const workspaces = lazyLoadWorkspaces();
+  const sessions = lazyLoadSessions(workspaces);
+  const state: SidebarLazyLoadState = {
+    recoveryRequestPaths: [],
+    sessionIndexRequestPaths: [],
+    subagentRequestPaths: [],
+  };
+  const messages = fixedShellLongHistoryMessages();
+  try {
+    await page.setViewportSize({ height: 720, width: 1280 });
+    await installShellState(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) =>
+        handleSidebarLazyLoadApi(context, state, workspaces, sessions, messages),
+      sessionTitle: LAZY_SELECTED_SESSION_TITLE,
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    await expect(page.getByRole("button", { name: LAZY_SELECTED_SESSION_TITLE }))
+      .toBeVisible();
+    await expect(page.getByText("Fixed shell long history row 48")).toBeVisible();
+
+    const before = await shellLayoutMetrics(page);
+    expect(before.documentScrollTop).toBe(0);
+    expect(before.documentScrollHeight).toBeLessThanOrEqual(before.viewportHeight);
+    expect(before.timeline.scrollHeight - before.timeline.clientHeight)
+      .toBeGreaterThan(900);
+    expect(before.sessionList.scrollHeight - before.sessionList.clientHeight)
+      .toBeGreaterThan(240);
+    expect(before.composer.bottom).toBeLessThanOrEqual(before.viewportHeight);
+
+    await page.locator(".at-timeline").evaluate((element) => {
+      element.scrollTop = Math.round(element.scrollHeight * 0.42);
+      element.dispatchEvent(new Event("scroll", { bubbles: true }));
+    });
+    const afterTimelineScroll = await shellLayoutMetrics(page);
+    expect(afterTimelineScroll.documentScrollTop).toBe(0);
+    expect(afterTimelineScroll.timeline.scrollTop).toBeGreaterThan(400);
+    expect(afterTimelineScroll.sessionList.scrollTop).toBe(before.sessionList.scrollTop);
+    expectStableShellFrame(before, afterTimelineScroll);
+
+    await page.locator(".at-session-list").evaluate((element) => {
+      element.scrollTop = Math.round(element.scrollHeight * 0.52);
+      element.dispatchEvent(new Event("scroll", { bubbles: true }));
+    });
+    const afterSessionScroll = await shellLayoutMetrics(page);
+    expect(afterSessionScroll.documentScrollTop).toBe(0);
+    expect(afterSessionScroll.sessionList.scrollTop).toBeGreaterThan(200);
+    expect(afterSessionScroll.timeline.scrollTop).toBe(afterTimelineScroll.timeline.scrollTop);
+    expectStableShellFrame(afterTimelineScroll, afterSessionScroll);
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "long sidebar and chat history should stay inside independent fixed shell regions",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.screenshot({
+      path: screenshotPath("v2-shell-fixed-long-sidebar-chat.png", SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
 async function openSystemPage(
   settings: Locator,
   systemPages: Locator,
@@ -771,6 +843,7 @@ async function handleSidebarLazyLoadApi(
   state: SidebarLazyLoadState,
   workspaces: LazyLoadWorkspace[],
   sessions: LazyLoadSession[],
+  selectedMessages: Record<string, unknown>[] = [],
 ): Promise<boolean> {
   if (context.method !== "GET") {
     return false;
@@ -814,7 +887,7 @@ async function handleSidebarLazyLoadApi(
     return true;
   }
   if (leaf === "messages") {
-    await context.fulfillJson([]);
+    await context.fulfillJson(sessionId === SESSION_ID ? selectedMessages : []);
     return true;
   }
   if (leaf === "rounds") {
@@ -899,6 +972,94 @@ function lazyLoadSessionDetail(session: LazyLoadSession): Record<string, unknown
     updated_at: session.updated_at,
     workspace_id: session.workspace_id,
   };
+}
+
+function fixedShellLongHistoryMessages(): Record<string, unknown>[] {
+  return Array.from({ length: 48 }, (_, index) => ({
+    created_at: `2026-07-02T10:${String(index).padStart(2, "0")}:00Z`,
+    message_id: `fixed-shell-long-history-${index}`,
+    message: {
+      parts: [
+        {
+          content: [
+            `Fixed shell long history row ${index + 1}`,
+            "This row keeps the chat timeline taller than the viewport.",
+            "Only the timeline should scroll; the document, sidebar, and composer must remain fixed.",
+          ].join("\n"),
+          part_kind: "text",
+        },
+      ],
+    },
+    role_id: index % 2 === 0 ? "user" : "MainAgent",
+    run_id: `fixed-shell-long-history-run-${index}`,
+  }));
+}
+
+async function shellLayoutMetrics(page: Page): Promise<ShellLayoutMetrics> {
+  return page.evaluate(() => {
+    function elementMetrics(selector: string): ElementLayoutMetrics {
+      const element = document.querySelector<HTMLElement>(selector);
+      if (element === null) {
+        throw new Error(`Missing shell element: ${selector}`);
+      }
+      const rect = element.getBoundingClientRect();
+      return {
+        bottom: Math.round(rect.bottom),
+        clientHeight: Math.round(element.clientHeight),
+        height: Math.round(rect.height),
+        left: Math.round(rect.left),
+        scrollHeight: Math.round(element.scrollHeight),
+        scrollTop: Math.round(element.scrollTop),
+        top: Math.round(rect.top),
+        width: Math.round(rect.width),
+      };
+    }
+    return {
+      composer: elementMetrics(".at-composer"),
+      documentScrollHeight: Math.round(document.documentElement.scrollHeight),
+      documentScrollTop: Math.round(document.documentElement.scrollTop),
+      sessionList: elementMetrics(".at-session-list"),
+      sidebar: elementMetrics(".at-sidebar"),
+      timeline: elementMetrics(".at-timeline"),
+      viewportHeight: Math.round(window.innerHeight),
+    };
+  });
+}
+
+function expectStableShellFrame(
+  before: ShellLayoutMetrics,
+  after: ShellLayoutMetrics,
+): void {
+  expect(after.sidebar.top).toBe(before.sidebar.top);
+  expect(after.sidebar.left).toBe(before.sidebar.left);
+  expect(after.sidebar.height).toBe(before.sidebar.height);
+  expect(after.sessionList.top).toBe(before.sessionList.top);
+  expect(after.sessionList.height).toBe(before.sessionList.height);
+  expect(after.timeline.top).toBe(before.timeline.top);
+  expect(after.timeline.height).toBe(before.timeline.height);
+  expect(after.composer.top).toBe(before.composer.top);
+  expect(after.composer.bottom).toBe(before.composer.bottom);
+}
+
+interface ShellLayoutMetrics {
+  composer: ElementLayoutMetrics;
+  documentScrollHeight: number;
+  documentScrollTop: number;
+  sessionList: ElementLayoutMetrics;
+  sidebar: ElementLayoutMetrics;
+  timeline: ElementLayoutMetrics;
+  viewportHeight: number;
+}
+
+interface ElementLayoutMetrics {
+  bottom: number;
+  clientHeight: number;
+  height: number;
+  left: number;
+  scrollHeight: number;
+  scrollTop: number;
+  top: number;
+  width: number;
 }
 
 function sidebarInventoryState(): SidebarInventoryState {

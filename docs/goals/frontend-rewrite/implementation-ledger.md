@@ -2,6 +2,20 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-02 Fixed Shell Long Sidebar Chat Evidence
+
+### Scope
+- Added a packed-browser regression for the user-reported fixed-frame failure shape: a long workspace/session sidebar and a long chat transcript in the same 1280x720 app viewport.
+- The browser check scrolls the chat timeline and the session list separately, then asserts the document does not scroll, sidebar/session/timeline/composer rectangles remain stable, timeline scroll does not move the session list, session-list scroll does not move the timeline, and composer controls do not overlap.
+- Captured a new screenshot for manual shell-frame review without changing runtime UI code.
+
+### Verification
+- `npm run test:browser -- v2-shell-parity.spec.ts --project=chromium -g "long sidebar and long chat history"` passed.
+- Screenshot evidence was written under `.tmp/frontend-v2-ts-shell/` as `v2-shell-fixed-long-sidebar-chat.png`.
+
+### Reviewer
+- Main-agent visual review: the screenshot shows one fixed app page with the long sidebar and long chat timeline contained in their own scroll regions and the composer pinned at the bottom. This strengthens `SHELL-03` evidence but does not mark it `Verified`; formal V1 paired screenshots and narrow-density sign-off are still open.
+
 ## 2026-07-02 Real Delta Streaming And Terminal No-Replay
 
 ### Scope

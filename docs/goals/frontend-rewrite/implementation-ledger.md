@@ -9533,3 +9533,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent failure-path analysis, production timeline key-stability fix, focused DOM-identity regression coverage, full timeline component verification, packed dist rebuild, and browser stream-refresh verification completed for this slice. This does not claim full stream/replay PASS, full real-backend visual sign-off, Project View harness migration, reviewer sign-off, or final V2 frontend completion.
+
+## 2026-07-02 Stream Replay Processed Collapse Closure
+
+### Scope
+- Closed the remaining completed-stream rebuild path where a fully rendered live answer could be replaced when persisted history with processed work arrived.
+- Kept persisted assistant rows that contain thinking/tool work in the processed splitter instead of dropping them as plain duplicate text. Pure duplicate final text can still be suppressed, but mixed work+answer rows now split into `已处理` plus one final answer.
+- Tightened processed grouping so assistant rows with thinking/tool parts are not surfaced whole above the processed group. This prevents replay from showing `思考` content inside the visible final answer.
+- Passed completed subagent status into the right-side subagent timeline so replay without live runtime state still collapses processed child work. Running subagents remain live-scoped and are not forced into completed replay.
+
+### Verification
+- `npm test -- src/test/MessageTimeline.test.tsx -t "completed persisted subagent|fully streamed answer|processed hydration splits thinking"` passed with 3 focused tests.
+- `npm test -- src/test/MessageTimeline.test.tsx` passed with 177 tests.
+- `npm run typecheck` passed.
+- `npm run lint` passed.
+- `npm run build` passed and regenerated the packed `frontend/dist/app` bundle.
+- `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium` passed with 3 Chromium browser tests.
+- In-app browser reload verified the active bundle `index-Ci2MROZc.js`. DOM inspection of the current subagent panel reported `cursorCount: 0`, `duplicateMessageTexts: []`, and `messageThinkingLeaks: []`, with rows reduced to `已处理` plus the final answer.
+
+### Reviewer
+- Main-agent browser inspection, production timeline collapse fix, subagent terminal replay wiring, focused component coverage, full timeline component suite, packed dist rebuild, and browser stream-refresh verification completed for this slice. This does not claim final V2 frontend completion, full Project View migration, full Settings parity, or reviewer-subagent sign-off.

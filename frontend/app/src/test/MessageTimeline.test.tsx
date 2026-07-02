@@ -661,6 +661,123 @@ describe("MessageTimeline", () => {
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
   });
 
+  it("keeps a fully streamed answer mounted when processed hydration arrives", async () => {
+    const finalAnswer = [
+      "LIVE_STREAM_ALPHA",
+      "LIVE_STREAM_BETA",
+      "LIVE_STREAM_GAMMA",
+      "LIVE_STREAM_DELTA",
+      "LIVE_STREAM_EPSILON",
+      "LIVE_STREAM_ZETA",
+      "LIVE_STREAM_ETA",
+      "LIVE_STREAM_THETA",
+      "LIVE_STREAM_IOTA",
+      "LIVE_STREAM_KAPPA",
+    ].join(" ");
+    const thinkingText = "The user wants me to output the same text again.";
+    const streamEntry: TimelineEntry = {
+      eventId: 8,
+      id: "run-live-full-hydrate:8:0",
+      kind: "text_delta",
+      occurredAt: "2026-06-23T00:00:00Z",
+      payload: { text: finalAnswer },
+      roleId: "MainAgent",
+      runId: "run-live-full-hydrate",
+      sessionId: "session-1",
+      text: finalAnswer,
+    };
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: ["run-live-full-hydrate"],
+        runs: {
+          "run-live-full-hydrate": {
+            entries: [streamEntry],
+            hadVisibleTextStream: true,
+            lastEventId: 8,
+            runId: "run-live-full-hydrate",
+            seenEventKeys: [],
+            status: "open",
+            terminalEventType: null,
+          },
+        },
+      },
+    });
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container, queryClient } = renderTimeline();
+
+    await waitForSingleVisibleText(finalAnswer);
+    const rowBefore = container.querySelector<HTMLElement>("article.at-message");
+    expect(rowBefore).not.toBeNull();
+    expect(rowBefore?.dataset.rowKey).toBe(
+      "runtime-text:run-live-full-hydrate:MainAgent:0",
+    );
+
+    act(() => {
+      queryClient.setQueryData(["sessions", "session-1", "messages"], [
+        {
+          message: {
+            parts: [
+              {
+                content: thinkingText,
+                part_kind: "thinking",
+              },
+              {
+                content: finalAnswer,
+                part_kind: "text",
+              },
+            ],
+          },
+          message_id: "assistant-live-full-hydrate-final",
+          role_id: "MainAgent",
+          run_id: "run-live-full-hydrate",
+        },
+      ]);
+      useRuntimeStore.setState({
+        runtimeState: {
+          activeRunIds: [],
+          runs: {
+            "run-live-full-hydrate": {
+              entries: [
+                streamEntry,
+                {
+                  eventId: 9,
+                  id: "run-live-full-hydrate:9:1",
+                  kind: "run_completed",
+                  occurredAt: "2026-06-23T00:00:01Z",
+                  payload: { status: "completed" },
+                  roleId: "MainAgent",
+                  runId: "run-live-full-hydrate",
+                  sessionId: "session-1",
+                  text: "completed",
+                },
+              ],
+              hadVisibleTextStream: true,
+              lastEventId: 9,
+              runId: "run-live-full-hydrate",
+              seenEventKeys: [],
+              status: "closed",
+              terminalEventType: "run_completed",
+            },
+          },
+        },
+      });
+    });
+
+    await waitForSingleVisibleText(finalAnswer);
+    await waitFor(() => {
+      expect(container.querySelector("details.at-processed-group")).not.toBeNull();
+    });
+    const rowAfter = container.querySelector<HTMLElement>("article.at-message");
+    expect(rowAfter).toBe(rowBefore);
+    expect(rowAfter?.dataset.rowKey).toBe(
+      "runtime-text:run-live-full-hydrate:MainAgent:0",
+    );
+    expect(rowAfter).not.toHaveTextContent(thinkingText);
+    expect(screen.getAllByText(finalAnswer)).toHaveLength(1);
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
+  });
+
   it("merges terminal structured output into the active runtime text reveal", async () => {
     useRuntimeStore.setState({
       runtimeState: {
@@ -4789,6 +4906,40 @@ describe("MessageTimeline", () => {
     expect(await screen.findByText("Tool call: read")).toBeVisible();
     expect(container.querySelector(".at-message-role")).toBeNull();
     expect(screen.queryByText("Explorer")).not.toBeInTheDocument();
+  });
+
+  it("collapses completed persisted subagent work without leaking thinking into the answer", async () => {
+    const thinkingText = "The subagent is checking the requested command.";
+    const answerText = "子代理命令执行完成，输出正常。";
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message: {
+          parts: [
+            { content: thinkingText, part_kind: "thinking" },
+            { content: answerText, part_kind: "text" },
+          ],
+        },
+        message_id: "subagent-final",
+        role_id: "Crafter",
+        run_id: "subagent_run_done",
+      },
+    ]);
+
+    const { container } = renderTimeline("session-1", {
+      latestTerminalRunId: "subagent_run_done",
+      latestTerminalRunStatus: "completed",
+      roundsEnabled: false,
+      runtimeRunId: "subagent_run_done",
+      variant: "subagent-panel",
+    });
+
+    expect(await screen.findByText(answerText)).toBeVisible();
+    expect(container.querySelector("details.at-processed-group")).not.toBeNull();
+    const answerRow = container.querySelector<HTMLElement>("article.at-message");
+    expect(answerRow).not.toBeNull();
+    expect(answerRow).toHaveTextContent(answerText);
+    expect(answerRow).not.toHaveTextContent(thinkingText);
+    expect(screen.getAllByText(answerText)).toHaveLength(1);
   });
 
   it("renders subagent panel background updates as output without internal labels", async () => {
@@ -8996,6 +9147,7 @@ interface RenderTimelineOptions {
   latestTerminalRunStatus?: string | null;
   onSubagentOpen?: Parameters<typeof MessageTimeline>[0]["onSubagentOpen"];
   primaryRoleId?: string | null;
+  roundsEnabled?: boolean;
   runtimeRunId?: string | null;
   variant?: Parameters<typeof MessageTimeline>[0]["variant"];
   workspaceId?: string | null;
@@ -9023,6 +9175,7 @@ function renderTimeline(
             latestTerminalRunStatus={options.latestTerminalRunStatus ?? null}
             onSubagentOpen={options.onSubagentOpen}
             primaryRoleId={options.primaryRoleId ?? null}
+            roundsEnabled={options.roundsEnabled ?? true}
             sessionId={sessionId}
             runtimeRunId={options.runtimeRunId ?? null}
             variant={options.variant ?? "session"}

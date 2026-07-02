@@ -210,6 +210,10 @@ export function MessageTimeline({
       variant,
     ],
   );
+  const terminalRunIdOverrides = useMemo(
+    () => terminalRunIdOverrideSet(latestTerminalRunId, latestTerminalRunStatus),
+    [latestTerminalRunId, latestTerminalRunStatus],
+  );
   const railRounds = useMemo(
     () => visibleRoundRailRounds(displayRounds, expandedHistorySegmentIds),
     [displayRounds, expandedHistorySegmentIds],
@@ -340,12 +344,14 @@ export function MessageTimeline({
         ),
         displayRounds,
         runtimeState.runs,
+        terminalRunIdOverrides,
       ),
     [
       displayRounds,
       expandedHistorySegmentIds,
       roundChromeEnabled,
       runtimeState.runs,
+      terminalRunIdOverrides,
       timelineRowsBeforeGrouping,
     ],
   );
@@ -1183,6 +1189,7 @@ function collapseProcessedRows(
   rows: TimelineRow[],
   rounds: SessionRound[],
   runStates: Record<string, RuntimeRunState>,
+  terminalRunIdOverrides: ReadonlySet<string>,
 ): TimelineRow[] {
   const roundByRunId = new Map(
     rounds.flatMap((round) => {
@@ -1202,7 +1209,10 @@ function collapseProcessedRows(
       continue;
     }
     const runId = row.runId?.trim() ?? "";
-    if (runId.length === 0 || !runIsTerminal(runId, roundByRunId, runStates)) {
+    if (
+      runId.length === 0 ||
+      !runIsTerminal(runId, roundByRunId, runStates, terminalRunIdOverrides)
+    ) {
       collapsedRows.push(row);
       index += 1;
       continue;
@@ -1238,7 +1248,11 @@ function runIsTerminal(
   runId: string,
   roundByRunId: ReadonlyMap<string, SessionRound>,
   runStates: Record<string, RuntimeRunState>,
+  terminalRunIdOverrides: ReadonlySet<string>,
 ): boolean {
+  if (terminalRunIdOverrides.has(runId)) {
+    return true;
+  }
   const runState = runStates[runId];
   if (runState !== undefined) {
     return runtimeRunStateClosesText(runState);
@@ -1252,6 +1266,17 @@ function runIsTerminal(
     "paused",
     "stopped",
   ].includes(status);
+}
+
+function terminalRunIdOverrideSet(
+  latestTerminalRunId: string | null,
+  latestTerminalRunStatus: string | null,
+): ReadonlySet<string> {
+  const runId = latestTerminalRunId?.trim() ?? "";
+  if (runId.length === 0 || normalizedTerminalRoundStatus(latestTerminalRunStatus) === null) {
+    return new Set();
+  }
+  return new Set([runId]);
 }
 
 function collapseProcessedSegment(
@@ -1360,7 +1385,7 @@ function timelineRowStaysOutsideProcessedGroup(row: TimelineRow): boolean {
   )) {
     return true;
   }
-  return stableTimelineRole(row.role) === "assistant";
+  return stableTimelineRole(row.role) === "assistant" && !timelineRowHasWorkPart(row);
 }
 
 function firstWorkPartLocation(
@@ -2207,6 +2232,9 @@ function dropPersistedRowsCoveredByTerminalRuntime(
   return persistedRows.filter((row) => {
     const runId = row.runId?.trim() ?? "";
     if (runId.length === 0) {
+      return true;
+    }
+    if (row.parts.some((part) => part.kind !== "text")) {
       return true;
     }
     const terminalTexts = terminalRuntimeTextsByRunId.get(runId);

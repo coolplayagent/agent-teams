@@ -291,6 +291,10 @@ export function SubagentSessionView({
               ) : undefined
             }
             fallbackRunId={runId}
+            latestTerminalRunId={runId}
+            latestTerminalRunStatus={
+              displayedSubagent.runStatus || displayedSubagent.status || null
+            }
             loadErrorDescription={t("subagentSessionLoadError")}
             loadMessages={loadSubagentMessages}
             messageQueryKey={messageQueryKey}

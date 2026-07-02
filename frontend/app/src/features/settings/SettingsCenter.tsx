@@ -44,6 +44,7 @@ import type {
   ModelConnectivityProbeResult,
   ModelProfileRecord,
   ModelProfileSaveRequest,
+  JsonValue,
   RoleConfigDocument,
   RoleConfigSummary,
   RoleOption,
@@ -1257,12 +1258,17 @@ function SettingsModels({
 interface ModelProfileFormValues {
   api_key?: string;
   base_url?: string;
+  codeagent_auth_method?: string;
+  codeagent_password?: string;
+  codeagent_username?: string;
   connect_timeout_seconds?: string;
   context_window?: string;
   fallback_policy_id?: string;
   fallback_priority?: string;
   image_capability?: ImageCapabilityMode;
   is_default?: boolean;
+  maas_password?: string;
+  maas_username?: string;
   max_tokens?: string;
   model?: string;
   profile_id?: string;
@@ -1325,6 +1331,7 @@ function ModelProfileDetail({
   const [form] = Form.useForm<ModelProfileFormValues>();
   const [catalogProfilePatch, setCatalogProfilePatch] =
     useState<ModelProfileRecord | null>(null);
+  const [providerOverride, setProviderOverride] = useState<string | null>(null);
   const effectiveProfile =
     catalogProfilePatch !== null ? { ...profile, ...catalogProfilePatch } : profile;
   const input = capabilityModes(
@@ -1338,10 +1345,17 @@ function ModelProfileDetail({
     (probeState?.result !== undefined ? formatModelProbeResult(probeState.result, t) : null);
   const probeTone =
     probeState?.error !== undefined || probeState?.result?.ok === false ? "is-error" : "is-ok";
+  const normalizedProvider = normalizeModelProvider(
+    providerOverride ?? effectiveProfile.provider,
+  );
+  const showMaasAuth = normalizedProvider === "maas";
+  const showCodeAgentAuth = normalizedProvider === "codeagent";
+  const showGenericApiKey = !showMaasAuth && !showCodeAgentAuth;
 
   useEffect(() => {
     form.setFieldsValue(modelProfileToFormValues(profileId, profile));
     setCatalogProfilePatch(null);
+    setProviderOverride(null);
   }, [form, profile, profileId]);
 
   const submitProfile = (values: ModelProfileFormValues) => {
@@ -1372,6 +1386,7 @@ function ModelProfileDetail({
       provider: nextProvider,
     };
     setCatalogProfilePatch(nextPatch);
+    setProviderOverride(nextProvider);
     form.setFieldsValue({
       base_url: nextBaseUrl,
       context_window: model.context_window !== undefined && model.context_window !== null
@@ -1386,9 +1401,12 @@ function ModelProfileDetail({
     });
   };
 
-  const clearCatalogPatchOnManualEndpointEdit = (
+  const updateFormDerivedState = (
     changedValues: Partial<ModelProfileFormValues>,
   ) => {
+    if ("provider" in changedValues) {
+      setProviderOverride(changedValues.provider ?? null);
+    }
     if (
       "base_url" in changedValues ||
       "model" in changedValues ||
@@ -1444,7 +1462,7 @@ function ModelProfileDetail({
         form={form}
         layout="vertical"
         onFinish={submitProfile}
-        onValuesChange={clearCatalogPatchOnManualEndpointEdit}
+        onValuesChange={updateFormDerivedState}
       >
         {mode === "create" ? (
           <ModelCatalogPicker
@@ -1470,7 +1488,7 @@ function ModelProfileDetail({
             name="provider"
             rules={[{ message: t("settingsModelProviderRequired"), required: true }]}
           >
-            <Input />
+            <Input onChange={(event) => setProviderOverride(event.target.value)} />
           </Form.Item>
           <Form.Item
             label={t("settingsModelName")}
@@ -1501,16 +1519,69 @@ function ModelProfileDetail({
           <Form.Item label={t("settingsModelTimeoutSeconds")} name="connect_timeout_seconds">
             <Input inputMode="decimal" type="number" />
           </Form.Item>
-          <Form.Item label={t("settingsModelApiKey")} name="api_key">
-            <Input.Password
-              autoComplete="new-password"
-              placeholder={
-                modelProfileHasApiKey(profile)
-                  ? t("settingsModelApiKeyPreserved")
-                  : t("settingsModelApiKeyPlaceholder")
-              }
-            />
-          </Form.Item>
+          {showGenericApiKey ? (
+            <Form.Item label={t("settingsModelApiKey")} name="api_key">
+              <Input.Password
+                autoComplete="new-password"
+                placeholder={
+                  modelProfileHasApiKey(profile)
+                    ? t("settingsModelApiKeyPreserved")
+                    : t("settingsModelApiKeyPlaceholder")
+                }
+              />
+            </Form.Item>
+          ) : null}
+          {showMaasAuth ? (
+            <>
+              <Form.Item label={t("settingsModelMaasUsername")} name="maas_username">
+                <Input autoComplete="username" />
+              </Form.Item>
+              <Form.Item label={t("settingsModelMaasPassword")} name="maas_password">
+                <Input.Password
+                  autoComplete="new-password"
+                  placeholder={
+                    modelProfileHasPassword(profile.maas_auth)
+                      ? t("settingsModelPasswordPreserved")
+                      : t("settingsModelPasswordPlaceholder")
+                  }
+                />
+              </Form.Item>
+            </>
+          ) : null}
+          {showCodeAgentAuth ? (
+            <>
+              <Form.Item
+                label={t("settingsModelCodeAgentAuthMethod")}
+                name="codeagent_auth_method"
+              >
+                <select className="at-settings-native-select">
+                  <option value="sso">{t("settingsModelCodeAgentAuthMethodSso")}</option>
+                  <option value="password">
+                    {t("settingsModelCodeAgentAuthMethodPassword")}
+                  </option>
+                </select>
+              </Form.Item>
+              <Form.Item
+                label={t("settingsModelCodeAgentUsername")}
+                name="codeagent_username"
+              >
+                <Input autoComplete="username" />
+              </Form.Item>
+              <Form.Item
+                label={t("settingsModelCodeAgentPassword")}
+                name="codeagent_password"
+              >
+                <Input.Password
+                  autoComplete="new-password"
+                  placeholder={
+                    modelProfileHasPassword(profile.codeagent_auth)
+                      ? t("settingsModelPasswordPreserved")
+                      : t("settingsModelPasswordPlaceholder")
+                  }
+                />
+              </Form.Item>
+            </>
+          ) : null}
           <Form.Item label={t("settingsModelImageCapability")} name="image_capability">
             <select className="at-settings-native-select">
               <option value="follow">{t("settingsModelImageCapabilityFollow")}</option>
@@ -1738,7 +1809,8 @@ function buildModelProfileSaveRequest(
   if (values !== undefined) {
     request.max_tokens = positiveIntegerOrNullFromText(values.max_tokens);
     const apiKey = textValue(values.api_key);
-    if (apiKey.length > 0) {
+    const provider = normalizeModelProvider(values.provider ?? profile.provider);
+    if (apiKey.length > 0 && provider !== "maas" && provider !== "codeagent") {
       request.api_key = apiKey;
     }
     const imageCapabilities = modelCapabilitiesForImageMode(
@@ -1751,6 +1823,12 @@ function buildModelProfileSaveRequest(
     const sslVerify = optionalBooleanFromText(values.ssl_verify);
     if (sslVerify !== null) {
       request.ssl_verify = sslVerify;
+    }
+    if (provider === "maas") {
+      request.maas_auth = modelMaasAuthFromForm(profile.maas_auth, values);
+    }
+    if (provider === "codeagent") {
+      request.codeagent_auth = modelCodeAgentAuthFromForm(profile.codeagent_auth, values);
     }
   } else if (profile.max_tokens !== undefined) {
     request.max_tokens = integerOrNull(profile.max_tokens);
@@ -1811,7 +1889,12 @@ function modelProfileToFormValues(
         : "",
     model: profile.model ?? "",
     api_key: "",
+    codeagent_auth_method: stringFromJsonObject(profile.codeagent_auth, "auth_method") || "sso",
+    codeagent_password: "",
+    codeagent_username: stringFromJsonObject(profile.codeagent_auth, "username"),
     image_capability: imageCapabilityMode(profile.capabilities),
+    maas_password: "",
+    maas_username: stringFromJsonObject(profile.maas_auth, "username"),
     profile_id: profileId,
     provider: profile.provider ?? "openai_compatible",
     ssl_verify: serializeOptionalBoolean(profile.ssl_verify),
@@ -1822,6 +1905,93 @@ function modelProfileToFormValues(
 
 function modelProfileHasApiKey(profile: ModelProfileRecord): boolean {
   return profile.has_api_key === true || textValue(profile.api_key ?? undefined).length > 0;
+}
+
+function modelProfileHasPassword(auth: JsonValue | null | undefined): boolean {
+  const authObject = jsonObject(auth);
+  if (authObject === null) {
+    return false;
+  }
+  return (
+    authObject.has_password === true ||
+    jsonString(authObject.password).length > 0 ||
+    stringFromJsonObject(auth, "password").includes("*")
+  );
+}
+
+function modelMaasAuthFromForm(
+  previousAuth: JsonValue | null | undefined,
+  values: ModelProfileFormValues,
+): JsonValue {
+  const auth: { [key: string]: JsonValue } = {
+    auth_source: "profile",
+  };
+  const username = trimmedStringOrNull(values.maas_username);
+  const password = textValue(values.maas_password);
+  if (username !== null) {
+    auth.username = username;
+  }
+  if (password.length > 0 && !looksLikeMaskedSecret(password)) {
+    auth.password = password;
+  }
+  if (password.length === 0 && modelProfileHasPassword(previousAuth)) {
+    auth.has_password = true;
+  }
+  return auth;
+}
+
+function modelCodeAgentAuthFromForm(
+  previousAuth: JsonValue | null | undefined,
+  values: ModelProfileFormValues,
+): JsonValue {
+  const authMethod = values.codeagent_auth_method === "password" ? "password" : "sso";
+  const auth: { [key: string]: JsonValue } = {
+    auth_method: authMethod,
+    auth_source: "profile",
+  };
+  const username = trimmedStringOrNull(values.codeagent_username);
+  const password = textValue(values.codeagent_password);
+  if (username !== null) {
+    auth.username = username;
+  }
+  if (authMethod === "password" && password.length > 0 && !looksLikeMaskedSecret(password)) {
+    auth.password = password;
+  }
+  if (authMethod === "password" && password.length === 0 && modelProfileHasPassword(previousAuth)) {
+    auth.has_password = true;
+  }
+  return auth;
+}
+
+function stringFromJsonObject(
+  auth: JsonValue | null | undefined,
+  key: string,
+): string {
+  const authObject = jsonObject(auth);
+  if (authObject === null) {
+    return "";
+  }
+  return jsonString(authObject[key]);
+}
+
+function jsonObject(value: JsonValue | null | undefined): { [key: string]: JsonValue } | null {
+  if (value === null || value === undefined || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  return value;
+}
+
+function looksLikeMaskedSecret(value: string): boolean {
+  const normalized = value.trim();
+  return normalized.length > 0 && [...normalized].every((character) => character === "*" || character === "•");
+}
+
+function normalizeModelProvider(value: string | null | undefined): string {
+  return value?.trim().toLowerCase() ?? "";
+}
+
+function jsonString(value: JsonValue | undefined): string {
+  return typeof value === "string" ? value : "";
 }
 
 function imageCapabilityMode(

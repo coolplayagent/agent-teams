@@ -3415,6 +3415,139 @@ describe("SettingsDrawer", () => {
     );
   }, 25000);
 
+  it("creates a MaaS model profile with profile-owned credentials", async () => {
+    getModelCatalogMock.mockResolvedValueOnce({
+      ok: true,
+      providers: [
+        {
+          api: null,
+          id: "maas",
+          models: [
+            {
+              id: "maas-chat",
+              name: "MaaS Chat",
+            },
+          ],
+          name: "MaaS",
+          runtime_provider: "maas",
+        },
+      ],
+      source_url: "https://models.dev/api.json",
+    });
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "Model" }));
+    fireEvent.click(await screen.findByRole("button", { name: "New profile" }));
+
+    fireEvent.click((await screen.findByText("MaaS Chat")).closest("button") as HTMLElement);
+    fireEvent.change(await screen.findByLabelText("Profile ID"), {
+      target: { value: "maas-profile" },
+    });
+    expect(screen.getByLabelText("Profile ID")).toHaveValue("maas-profile");
+    expect(screen.getByLabelText("Provider")).toHaveValue("maas");
+    expect(screen.getByLabelText("Model")).toHaveValue("maas-chat");
+    expect(screen.getByLabelText("Base URL")).toHaveValue(
+      "http://snapengine.cida.cce.prod-szv-g.dragon.tools.huawei.com/api/v2/",
+    );
+
+    const maasUsername = await screen.findByLabelText("MaaS username");
+    expect(screen.queryByLabelText("API Key")).toBeNull();
+    fireEvent.change(maasUsername, {
+      target: { value: "relay-user" },
+    });
+    fireEvent.change(screen.getByLabelText("MaaS password"), {
+      target: { value: "relay-password" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(saveModelProfileMock).toHaveBeenCalledTimes(1));
+    expect(saveModelProfileMock).toHaveBeenCalledWith(
+      "maas-profile",
+      expect.objectContaining({
+        base_url: "http://snapengine.cida.cce.prod-szv-g.dragon.tools.huawei.com/api/v2/",
+        maas_auth: {
+          auth_source: "profile",
+          password: "relay-password",
+          username: "relay-user",
+        },
+        model: "maas-chat",
+        provider: "maas",
+      }),
+    );
+    expect(saveModelProfileMock.mock.calls[0]?.[1]).not.toHaveProperty("api_key");
+  }, 25000);
+
+  it("preserves saved CodeAgent password credentials when the password is left blank", async () => {
+    getModelProfilesMock.mockResolvedValue({
+      "codeagent-profile": {
+        base_url: "https://codeagentcli.rnd.huawei.com/codeAgentPro",
+        codeagent_auth: {
+          auth_method: "password",
+          auth_source: "profile",
+          has_password: true,
+          username: "saved-codeagent-user",
+        },
+        connect_timeout_seconds: 15,
+        is_default: false,
+        model: "codeagent-chat",
+        provider: "codeagent",
+      },
+      default: {
+        is_default: true,
+        model: "gpt-5-mini",
+        provider: "openai",
+      },
+    });
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "Model" }));
+
+    const codeAgentRow = (await screen.findByText("codeagent-profile")).closest(
+      ".at-model-profile-row",
+    );
+    expect(codeAgentRow).not.toBeNull();
+    fireEvent.click(
+      within(codeAgentRow as HTMLElement).getByRole("button", {
+        name: /codeagent-profile/,
+      }),
+    );
+
+    expect(await screen.findByLabelText("CodeAgent auth method")).toHaveValue("password");
+    expect(screen.getByLabelText("CodeAgent username")).toHaveValue("saved-codeagent-user");
+    expect(screen.getByLabelText("CodeAgent password")).toHaveAttribute(
+      "placeholder",
+      "Leave blank to keep the saved password.",
+    );
+    expect(screen.queryByLabelText("API Key")).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("Model"), {
+      target: { value: "codeagent-chat-next" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(saveModelProfileMock).toHaveBeenCalledTimes(1));
+    expect(saveModelProfileMock).toHaveBeenCalledWith(
+      "codeagent-profile",
+      expect.objectContaining({
+        codeagent_auth: {
+          auth_method: "password",
+          auth_source: "profile",
+          has_password: true,
+          username: "saved-codeagent-user",
+        },
+        model: "codeagent-chat-next",
+        provider: "codeagent",
+      }),
+    );
+    expect(saveModelProfileMock.mock.calls[0]?.[1]).not.toHaveProperty("api_key");
+  }, 25000);
+
   it("creates a model profile from the catalog without changing settings navigation", async () => {
     renderDrawer();
 

@@ -1170,6 +1170,94 @@ test("creates a model profile from the catalog", async ({ page }) => {
   }
 });
 
+test("creates a MaaS model profile from the catalog with profile credentials", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state = settingsActionState();
+  try {
+    await installShellState(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleSettingsActionApi(context, state),
+      sessionTitle: "TS model MaaS settings",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    const settings = await openSettingsDialog(page);
+    await settings
+      .getByRole("navigation", { name: "Settings sections" })
+      .getByRole("button", { name: "Model" })
+      .click();
+
+    await settings.getByRole("button", { name: "New profile" }).click();
+    await expect(settings.getByText("Model catalog", { exact: true })).toBeVisible();
+    await settings.locator(".at-model-catalog-option").filter({ hasText: "MaaS" }).click();
+
+    await expect(settings.locator("input#provider")).toHaveValue("maas");
+    await expect(settings.locator("input#model")).toHaveValue("maas-chat");
+    await expect(settings.locator("input#base_url")).toHaveValue(
+      "http://snapengine.cida.cce.prod-szv-g.dragon.tools.huawei.com/api/v2/",
+    );
+    await expect(settings.getByLabel("API Key")).toHaveCount(0);
+    await settings.locator("input#profile_id").fill("maas-browser");
+    await settings.getByLabel("MaaS username").fill("relay-user");
+    await settings.getByLabel("MaaS password").fill("relay-password");
+
+    await page.screenshot({
+      path: screenshotPath("v2-model-profile-maas-credentials.png", SCREENSHOT_FOLDER),
+    });
+
+    await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          response.url().endsWith("/api/system/configs/model:reload") &&
+          response.status() === 200,
+      ),
+      page.waitForResponse(
+        (response) =>
+          response.request().method() === "PUT" &&
+          response
+            .url()
+            .endsWith("/api/system/configs/model/profiles/maas-browser") &&
+          response.status() === 200,
+      ),
+      settings.getByRole("button", { name: "Save" }).click(),
+    ]);
+
+    expect(state.modelProfileSaveRequests).toEqual(["maas-browser"]);
+    expect(state.modelProfileSavePayloads.at(-1)).toEqual({
+      base_url: "http://snapengine.cida.cce.prod-szv-g.dragon.tools.huawei.com/api/v2/",
+      catalog_model_name: "MaaS Chat",
+      catalog_provider_id: "maas",
+      catalog_provider_name: "MaaS",
+      connect_timeout_seconds: 15,
+      context_window: null,
+      fallback_policy_id: null,
+      fallback_priority: 0,
+      is_default: false,
+      maas_auth: {
+        auth_source: "profile",
+        password: "relay-password",
+        username: "relay-user",
+      },
+      max_tokens: null,
+      model: "maas-chat",
+      provider: "maas",
+      temperature: 0.7,
+      top_p: 1,
+    });
+    expect(state.modelProfileSavePayloads.at(-1)).not.toHaveProperty("api_key");
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(page, "v2 MaaS model profile should stay framed");
+  } finally {
+    await appServer.close();
+  }
+});
+
 test("matches Web settings declared defaults and persisted language", async ({
   page,
 }) => {
@@ -2496,6 +2584,18 @@ function modelCatalogResponse(): Record<string, unknown> {
         ],
         name: "OpenAI",
         runtime_provider: "openai_compatible",
+      },
+      {
+        api: null,
+        id: "maas",
+        models: [
+          {
+            id: "maas-chat",
+            name: "MaaS Chat",
+          },
+        ],
+        name: "MaaS",
+        runtime_provider: "maas",
       },
     ],
     source_url: "https://models.dev/api.json",

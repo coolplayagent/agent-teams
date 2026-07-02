@@ -2,6 +2,25 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-02 Model Profile Auth Harness Retirement
+
+### Scope
+- Re-audited the remaining `tests/integration_tests/frontend/test_model_profiles_ui.py` behavior before removing it. The current V2-relevant gap was provider-specific model profile credentials, especially MaaS and CodeAgent profile-owned auth semantics.
+- Added provider-specific fields to the Model settings detail page: MaaS username/password and CodeAgent auth method/username/password. MaaS and CodeAgent profiles no longer show the generic API Key field.
+- Preserved saved profile-owned CodeAgent passwords when the password field is left blank, while still allowing MaaS catalog-created profiles to save explicit profile credentials.
+- Added V2-native component coverage and packed-browser coverage for MaaS catalog creation and CodeAgent saved-password preservation.
+- Deleted `tests/integration_tests/frontend/test_model_profiles_ui.py` after the remaining current behavior was owned by TypeScript and browser coverage.
+- Rebuilt the packed app so `frontend/dist/app` reflects the Model settings auth behavior.
+
+### Verification
+- `npm test -- src/test/SettingsDrawer.test.tsx -t "MaaS|CodeAgent|model profile"` passed with 6 selected tests.
+- `npm run typecheck` passed.
+- `npm run build` passed and regenerated `frontend/dist/app`.
+- `npm run test:browser -- v2-settings-actions.spec.ts --project=chromium -g "MaaS model profile"` passed with 1 Chromium browser test.
+
+### Reviewer
+- Main-agent decision: this retires the Model profiles Python UI harness and tightens `SET-06`/`CLEAN-01`. It does not mark Settings, cleanup, or the V2 frontend rewrite complete; formal V1 visual/DOM pairing, broader Model credential edge cases, the remaining old frontend Python harnesses, and reviewer sign-off remain open.
+
 ## 2026-07-02 Hooks Settings Harness Retirement
 
 ### Scope

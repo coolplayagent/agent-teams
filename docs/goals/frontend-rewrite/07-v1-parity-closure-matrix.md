@@ -114,6 +114,13 @@ For every row moved to `Verified`, record:
 
 ## Verification Ledger
 
+### 2026-07-02 Model Profile Auth Harness Retirement
+
+- `SET-06` tightened: Model settings now exposes provider-specific MaaS and CodeAgent credential controls in the V2 detail page, hides the generic API Key field for those providers, preserves saved CodeAgent profile-owned passwords when left blank, and saves MaaS profile-owned credentials from catalog-created profiles.
+- `CLEAN-01` tightened: removed `tests/integration_tests/frontend/test_model_profiles_ui.py` after moving the remaining current MaaS/CodeAgent auth and catalog-save semantics to V2-native component and packed-browser coverage.
+- Evidence: `npm test -- src/test/SettingsDrawer.test.tsx -t "MaaS|CodeAgent|model profile"`, `npm run typecheck`, `npm run build`, `npm run test:browser -- v2-settings-actions.spec.ts --project=chromium -g "MaaS model profile"`.
+- This does not move `SET-06` or `CLEAN-01` to `Verified`; formal V1 visual/DOM pairing, broader Model credentials/SSO failure states, remaining old frontend Python harness decisions, promoted-route naming, and reviewer sign-off remain open.
+
 ### 2026-07-02 Orchestration Session-Switch Browser Closure
 
 - Added packed-browser coverage for an orchestration-mode, tool/thinking-heavy stream that switches away from the active session while a tool result and answer text continue in the background, then switches back and verifies the restored timeline order exactly.

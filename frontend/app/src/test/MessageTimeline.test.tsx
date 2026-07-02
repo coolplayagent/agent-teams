@@ -548,6 +548,43 @@ describe("MessageTimeline", () => {
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
   });
 
+  it("keeps MainAgent live answer text outside the processed group", async () => {
+    const finalAnswer = "LIVE_MAIN_AGENT_ALPHA LIVE_MAIN_AGENT_BETA";
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "thinking_started",
+        payload_json: "{}",
+        run_id: "run-mainagent-live",
+        trace_id: "run-mainagent-live",
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "thinking_delta",
+        payload_json: JSON.stringify({ text: "I will answer directly." }),
+        run_id: "run-mainagent-live",
+        trace_id: "run-mainagent-live",
+      }),
+      relayRunEvent({
+        event_id: 3,
+        event_type: "text_delta",
+        payload_json: JSON.stringify({ text: finalAnswer }),
+        run_id: "run-mainagent-live",
+        trace_id: "run-mainagent-live",
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText(finalAnswer)).toBeVisible();
+    const streamingText = container.querySelector<HTMLElement>(
+      ".at-message-streaming-text",
+    );
+    expect(streamingText).not.toBeNull();
+    expect(streamingText?.closest("details.at-processed-group")).toBeNull();
+  });
+
   it("does not type the terminal hydrated answer a second time after stream close", async () => {
     vi.stubEnv("MODE", "production");
     vi.useFakeTimers();
@@ -827,76 +864,6 @@ describe("MessageTimeline", () => {
     expect(container.querySelector(".at-message-streaming-text")).toBeNull();
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
     expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
-  });
-
-  it("reveals a fresh terminal hydrated answer when no live text stream was visible", async () => {
-    vi.stubEnv("MODE", "production");
-    const finalAnswer = [
-      "TERMINAL_ONLY_ALPHA",
-      "TERMINAL_ONLY_BETA",
-      "TERMINAL_ONLY_GAMMA",
-      "TERMINAL_ONLY_DELTA",
-    ].join(" ");
-    setRuntimeStateFromEvents([
-      relayRunEvent({
-        event_id: 1,
-        event_type: "run_started",
-        payload_json: JSON.stringify({ status: "running" }),
-        run_id: "run-terminal-only-hydrated",
-        trace_id: "run-terminal-only-hydrated",
-      }),
-      relayRunEvent({
-        event_id: 2,
-        event_type: "run_completed",
-        payload_json: JSON.stringify({ status: "completed" }),
-        run_id: "run-terminal-only-hydrated",
-        trace_id: "run-terminal-only-hydrated",
-      }),
-    ]);
-    listSessionMessagesMock.mockResolvedValue([
-      {
-        content: finalAnswer,
-        message_id: "assistant-terminal-only-hydrated",
-        role_id: "MainAgent",
-        run_id: "run-terminal-only-hydrated",
-      },
-    ]);
-
-    const { container } = renderTimeline();
-
-    await waitFor(() =>
-      expect(container.querySelector(".at-message-streaming-text")).not.toBeNull(),
-    );
-    expect(screen.queryByText(finalAnswer)).not.toBeInTheDocument();
-
-    await waitFor(() => expect(screen.getByText(finalAnswer)).toBeVisible(), {
-      timeout: 3000,
-    });
-    expect(container.querySelector(".at-message-streaming-text")).toBeNull();
-    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
-  });
-
-  it("does not reveal historical hydrated answers without a fresh runtime terminal", async () => {
-    vi.stubEnv("MODE", "production");
-    const finalAnswer = [
-      "HISTORY_ONLY_ALPHA",
-      "HISTORY_ONLY_BETA",
-      "HISTORY_ONLY_GAMMA",
-    ].join(" ");
-    listSessionMessagesMock.mockResolvedValue([
-      {
-        content: finalAnswer,
-        message_id: "assistant-history-only",
-        role_id: "MainAgent",
-        run_id: "run-history-only",
-      },
-    ]);
-
-    const { container } = renderTimeline();
-
-    await waitForSingleVisibleText(finalAnswer);
-    expect(container.querySelector(".at-message-streaming-text")).toBeNull();
-    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
   });
 
   it("keeps terminal structured output mounted when history hydrates the answer", async () => {

@@ -80,6 +80,7 @@ const INTERNAL_ORCHESTRATION_TIMELINE_ROLES = new Set<string>([
 const MAIN_TIMELINE_AGENT_ROLES = new Set<string>([
   "assistant",
   "coordinator",
+  "mainagent",
 ]);
 const runtimeRunStateDetachedRoleCache = new WeakMap<
   RuntimeRunState,
@@ -222,28 +223,6 @@ export function MessageTimeline({
     () => terminalRunIdOverrideSet(latestTerminalRunId, latestTerminalRunStatus),
     [latestTerminalRunId, latestTerminalRunStatus],
   );
-  const [freshTerminalRevealRunIds, setFreshTerminalRevealRunIds] = useState<
-    ReadonlySet<string>
-  >(() => new Set());
-  const previousTerminalRunIdRef = useRef(latestTerminalRunId?.trim() ?? "");
-  useEffect(() => {
-    const nextTerminalRunId = latestTerminalRunId?.trim() ?? "";
-    const previousTerminalRunId = previousTerminalRunIdRef.current;
-    previousTerminalRunIdRef.current = nextTerminalRunId;
-    if (
-      nextTerminalRunId.length === 0 ||
-      nextTerminalRunId === previousTerminalRunId ||
-      normalizedTerminalRoundStatus(latestTerminalRunStatus) === null
-    ) {
-      return;
-    }
-    setFreshTerminalRevealRunIds((current) => {
-      if (current.has(nextTerminalRunId)) {
-        return current;
-      }
-      return new Set([...current, nextTerminalRunId]);
-    });
-  }, [latestTerminalRunId, latestTerminalRunStatus]);
   const railRounds = useMemo(
     () => visibleRoundRailRounds(displayRounds, expandedHistorySegmentIds),
     [displayRounds, expandedHistorySegmentIds],
@@ -307,15 +286,6 @@ export function MessageTimeline({
     () => timelineToolStatesByRunId(anchoredPersistedRows),
     [anchoredPersistedRows],
   );
-  const revealedPersistedRows = useMemo(
-    () =>
-      markFreshTerminalHydratedRowsForReveal(
-        anchoredPersistedRows,
-        runtimeState.runs,
-        freshTerminalRevealRunIds,
-      ),
-    [anchoredPersistedRows, freshTerminalRevealRunIds, runtimeState.runs],
-  );
   const runtimeEntries = useMemo(
     () =>
       Object.values(runtimeState.runs)
@@ -353,10 +323,11 @@ export function MessageTimeline({
   const displayPersistedRows = useMemo(
     () =>
       dropPersistedRowsCoveredByTerminalRuntime(
-        revealedPersistedRows,
+        anchoredPersistedRows,
         runtimeRows,
+        runtimeState.runs,
       ),
-    [revealedPersistedRows, runtimeRows],
+    [anchoredPersistedRows, runtimeRows, runtimeState.runs],
   );
   const timelineRowsBeforeGrouping = useMemo(
     () =>
@@ -1237,40 +1208,6 @@ function dropRoundPromptDuplicateUserRows(
   });
 }
 
-function markFreshTerminalHydratedRowsForReveal(
-  rows: TimelineRow[],
-  runStates: Record<string, RuntimeRunState>,
-  freshTerminalRevealRunIds: ReadonlySet<string>,
-): TimelineRow[] {
-  return rows.map((row) => {
-    const runId = row.runId?.trim() ?? "";
-    const runState = runId.length > 0 ? runStates[runId] : undefined;
-    const freshTerminalFromSession = freshTerminalRevealRunIds.has(runId);
-    const freshTerminalFromRuntime = runState !== undefined &&
-      runtimeRunStateClosesText(runState) &&
-      runState.hadVisibleTextStream !== true;
-    if (
-      (!freshTerminalFromRuntime && !freshTerminalFromSession) ||
-      row.source === "runtime" ||
-      !isAnswerRole(row.role)
-    ) {
-      return row;
-    }
-    const nextParts = row.parts.map((part) => {
-      if (part.kind !== "text" || part.text.trim().length === 0) {
-        return part;
-      }
-      return { ...part, reveal: true };
-    });
-    if (nextParts === row.parts || !nextParts.some((part) =>
-      part.kind === "text" && part.reveal === true
-    )) {
-      return row;
-    }
-    return rowWithParts(row, nextParts, "fresh-terminal-reveal");
-  });
-}
-
 function collapseProcessedRows(
   rows: TimelineRow[],
   rounds: SessionRound[],
@@ -1471,7 +1408,7 @@ function timelineRowStaysOutsideProcessedGroup(row: TimelineRow): boolean {
   )) {
     return true;
   }
-  return stableTimelineRole(row.role) === "assistant" && !timelineRowHasWorkPart(row);
+  return timelineRoleIsMainTimelineAgent(row.role) && !timelineRowHasWorkPart(row);
 }
 
 function firstWorkPartLocation(
@@ -1689,6 +1626,9 @@ function mergeTerminalRuntimeTextRowsIntoPersistedAnswers(
       return row;
     }
     consumedRuntimeIndexes.add(candidate.index);
+    if (timelineRowHasRevealContent(candidate.row)) {
+      return persistedRowWithRuntimeRevealParts(row, candidate.row);
+    }
     return persistedRowWithRuntimeTextAnchor(row, candidate.row);
   });
 
@@ -1798,6 +1738,24 @@ function persistedRowWithRuntimeTextAnchor(
   return {
     ...persistedRow,
     key: runtimeRow.key,
+  };
+}
+
+function persistedRowWithRuntimeRevealParts(
+  persistedRow: TimelineRow,
+  runtimeRow: TimelineRow,
+): TimelineRow {
+  const runtimeTextParts = runtimeRow.parts.filter(
+    (part): part is TimelineTextPart => part.kind === "text",
+  );
+  if (runtimeTextParts.length === 0) {
+    return runtimeRow;
+  }
+  const workParts = persistedRow.parts.filter((part) => part.kind !== "text");
+  return {
+    ...runtimeRow,
+    parts: [...workParts, ...runtimeTextParts],
+    text: runtimeRow.text,
   };
 }
 
@@ -2303,8 +2261,10 @@ function timelineRowNonToolContentDedupeKey(row: TimelineRow): string | null {
 function dropPersistedRowsCoveredByTerminalRuntime(
   persistedRows: TimelineRow[],
   runtimeRows: TimelineRow[],
+  runStates: Record<string, RuntimeRunState>,
 ): TimelineRow[] {
   const terminalRuntimeTextsByRunId = new Map<string, Set<string>>();
+  const openRuntimeTextRunIds = new Set<string>();
   for (const row of runtimeRows) {
     const runId = row.runId?.trim() ?? "";
     if (runId.length === 0 || row.source !== "runtime") {
@@ -2314,6 +2274,7 @@ function dropPersistedRowsCoveredByTerminalRuntime(
       (part) => part.kind === "text" && part.streaming,
     );
     if (hasOpenText) {
+      openRuntimeTextRunIds.add(runId);
       continue;
     }
     const text = normalizedTimelineText(rowCopyText(row.parts));
@@ -2324,13 +2285,20 @@ function dropPersistedRowsCoveredByTerminalRuntime(
     texts.add(text);
     terminalRuntimeTextsByRunId.set(runId, texts);
   }
-  if (terminalRuntimeTextsByRunId.size === 0) {
+  if (terminalRuntimeTextsByRunId.size === 0 && openRuntimeTextRunIds.size === 0) {
     return persistedRows;
   }
   return persistedRows.filter((row) => {
     const runId = row.runId?.trim() ?? "";
     if (runId.length === 0) {
       return true;
+    }
+    if (
+      openRuntimeTextRunIds.has(runId) &&
+      runStates[runId]?.status !== "closed" &&
+      persistedAnswerRowCanHydrateRuntimeText(row)
+    ) {
+      return false;
     }
     if (row.parts.some((part) => part.kind !== "text")) {
       return true;
@@ -3624,7 +3592,7 @@ function runtimeEntriesAfterHydration(
   }
   const hydratedEntries: TimelineEntry[] = [];
   const safeHydratedText = hydratedText ?? "";
-  let suppressCoveredText = true;
+  let suppressCoveredText = runState.hadVisibleTextStream !== true;
   for (const entry of scopedEntries) {
     const nextEntry = runtimeEntryAfterThinkingHydration(
       entry,
@@ -5193,10 +5161,8 @@ function closeRuntimeTextAccumulator(
     }
     return;
   }
+  existing.part.reveal = true;
   existing.part.streaming = false;
-  if (existing.part.reveal !== true) {
-    delete existing.part.reveal;
-  }
 }
 
 function timelineTextPart(
@@ -7128,6 +7094,10 @@ function timelineRowHasStreamingContent(row: TimelineRow): boolean {
     (part.kind === "text" || part.kind === "thinking") &&
     part.streaming
   ));
+}
+
+function timelineRowHasRevealContent(row: TimelineRow): boolean {
+  return row.parts.some((part) => part.kind === "text" && part.reveal === true);
 }
 
 function shouldShowRoleLabel(

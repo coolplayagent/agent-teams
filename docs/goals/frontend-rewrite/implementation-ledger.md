@@ -2,6 +2,24 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-02 Final Frontend Python UI Harness Retirement
+
+### Scope
+- Re-audited the remaining frontend Python UI harness inventory. The only remaining UI proof path was `tests/integration_tests/frontend/test_project_view_ui.py`, plus its integration/unit CSS helper shims.
+- Retired `test_project_view_ui.py` instead of preserving the old fake-DOM/source-copy runner. The file mixed Project View, Automation, GitHub, Skills, Connectors, Gateway accounts, Board, Memory, Runtime Tools, and feature-switch assertions against retired `frontend/dist/js` modules.
+- Removed the now-unused `tests/integration_tests/frontend/css_helpers.py` and `tests/unit_tests/frontend/css_helpers.py` helper files.
+- Left package marker files in place so the test directory structure remains importable.
+
+### Verification
+- `rg --files tests/integration_tests/frontend tests/unit_tests/frontend` now returns only `__init__.py` package marker files.
+- `uv run --extra dev ruff check tests/integration_tests/frontend tests/unit_tests/frontend` passed.
+- `npm test -- src/test/WorkspaceProjectView.test.tsx src/test/AutomationView.test.tsx src/test/SkillsView.test.tsx src/test/ConnectorsView.test.tsx src/test/RuntimeSettingsSections.test.tsx src/test/BoardTodosView.test.tsx src/test/MemoryView.test.tsx src/test/GitHubSettingsSection.test.tsx --testTimeout=20000` passed with 52 tests.
+- `npm run test:browser -- v2-project-view.spec.ts --project=chromium` passed.
+- Current V2 ownership for the retired assertions is split across TypeScript component and browser suites, including `WorkspaceProjectView.test.tsx`, `AutomationView.test.tsx`, `GitHubSettingsSection.test.tsx`, `SkillsView.test.tsx`, `ConnectorsView.test.tsx`, `RuntimeSettingsSections.test.tsx`, `BoardTodosView.test.tsx`, `MemoryView.test.tsx`, `v2-project-view.spec.ts`, `v2-skills-view.spec.ts`, `v2-connectors-view.spec.ts`, `v2-board-actions.spec.ts`, `v2-memory-view.spec.ts`, `v2-shell-parity.spec.ts`, and `v2-settings-actions.spec.ts`.
+
+### Reviewer
+- Main-agent decision: this completes the old frontend Python UI harness retirement portion of `CLEAN-01`. It does not mark `CLEAN-01` or the full V2 frontend rewrite complete; promoted-route naming, migration-only naming decisions, final browser screenshot sweep, subsystem reviewer sign-off, and remaining parity rows still need closure.
+
 ## 2026-07-02 Stream Hydration Anchor And Processed Fold Tightening
 
 ### Scope

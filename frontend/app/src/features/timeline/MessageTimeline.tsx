@@ -4915,7 +4915,6 @@ function closeRuntimeTextAccumulator(
     return;
   }
   existing.part.streaming = false;
-  existing.part.reveal = true;
 }
 
 function timelineTextPart(

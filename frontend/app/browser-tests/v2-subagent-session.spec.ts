@@ -40,6 +40,7 @@ const PARENT_MARKER_ROLE_ONLY_TOOL_PATH = "LEAK_PARENT_RUN_ROLE_ONLY_TOOL.md";
 interface SubagentSessionMockState {
   completed: boolean;
   delayFinalMessages: boolean;
+  finalMessageContent?: string;
   releaseFinalMessages: Array<() => void>;
   messageRequestCount: number;
   parentNormalRootRoleId?: string | null;
@@ -568,6 +569,86 @@ test("continues typewriter reveal after terminal close before history refill", a
     );
   } finally {
     releaseFinalSubagentMessages(state);
+    await appServer.close();
+  }
+});
+
+test("does not replay an already complete subagent stream during terminal hydration", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const terminalText = Array.from(
+    { length: 18 },
+    (_, index) => `HYDRATED_STREAM_${index}`,
+  ).join(" ");
+  const state: SubagentSessionMockState = {
+    completed: false,
+    delayFinalMessages: false,
+    finalMessageContent: terminalText,
+    releaseFinalMessages: [],
+    messageRequestCount: 0,
+  };
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await installMockEventSource(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleSubagentSessionApi(context, state),
+      sessionTitle: "TS parent session",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    await openSubagentPanelFromToolCard(page, "Explorer review");
+    await waitForEventSourceUrl(
+      page,
+      new RegExp(
+        `/api/sessions/${SESSION_ID}/subagents/events\\?after_event_id=0$`,
+      ),
+    );
+    await waitForEventSourceOpenCount(page, 1);
+
+    await dispatchSubagentRunEvent(page, {
+      eventId: 42,
+      payload: { text: terminalText },
+      relayEventType: "text_delta",
+      type: "message.text.delta",
+    });
+    const panel = page.locator(".at-subagent-session-view");
+    const liveRow = panel
+      .locator(`.at-timeline-row[data-run-id="${SUBAGENT_RUN_ID}"]`)
+      .filter({ hasText: "HYDRATED_STREAM_" });
+    await expect(liveRow.locator(".at-message-streaming-text")).toBeVisible();
+    await expect(liveRow).toContainText(terminalText);
+
+    state.completed = true;
+    await dispatchSubagentRunEvent(page, {
+      eventId: 43,
+      payload: { status: "completed" },
+      relayEventType: "run_completed",
+      type: "run.completed",
+    });
+    await waitForEventSourceOpenCount(page, 0);
+    await expect.poll(() => state.messageRequestCount).toBeGreaterThanOrEqual(2);
+
+    await expect(panel.locator(".at-message-streaming-text")).toHaveCount(0);
+    await expect(panel.locator(".streaming-cursor")).toHaveCount(0);
+    await expect.poll(() => panelVisibleTextOccurrences(page, terminalText))
+      .toBe(1);
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-subagent-complete-stream-terminal-hydration.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "complete subagent stream hydration should not replay finished text",
+    );
+  } finally {
     await appServer.close();
   }
 });
@@ -2077,7 +2158,7 @@ function subagentMessages(state: SubagentSessionMockState): Record<string, unkno
   if (state.completed) {
     return [
       {
-        content: "Final persisted subagent answer",
+        content: state.finalMessageContent ?? "Final persisted subagent answer",
         created_at: "2026-06-26T09:08:00Z",
         message_id: "subagent-final-message",
         role_id: "explorer",
@@ -2289,6 +2370,19 @@ async function sampleTextLengths(
     await locator.page().waitForTimeout(intervalMs);
   }
   return lengths;
+}
+
+async function panelVisibleTextOccurrences(
+  page: Page,
+  needle: string,
+): Promise<number> {
+  return page.locator(".at-subagent-session-view").evaluate((panel, text) => {
+    const haystack = panel.textContent ?? "";
+    if (text.length === 0) {
+      return 0;
+    }
+    return haystack.split(text).length - 1;
+  }, needle);
 }
 
 interface SubagentPromptLayout {

@@ -328,6 +328,17 @@ export function AppShell() {
   const visibleActiveSubagent = activeSubagentForSelectedSession;
 
   useEffect(() => {
+    if (
+      selectedSessionId === null ||
+      activeSubagent === null ||
+      activeSubagent.sessionId === selectedSessionId
+    ) {
+      return;
+    }
+    setActiveSubagent(null);
+  }, [activeSubagent, selectedSessionId]);
+
+  useEffect(() => {
     const savedLanguage = uiLanguageQuery.data?.language;
     if (savedLanguage === undefined) {
       return;

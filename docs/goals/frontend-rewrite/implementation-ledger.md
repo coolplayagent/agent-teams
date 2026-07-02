@@ -20,6 +20,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 ### Reviewer
 - Main-agent decision: this tightens `MSG-01`, `MSG-02`, `MSG-05`, `STREAM-02`, `REC-01`, and `SUB-01` for the specific terminal hydration/remount and processed-fold duplication bugs. It does not mark streaming/replay/subagents complete; live from-start cadence observation, interrupted recovery, broader orchestration variants, and final V1 paired visual sign-off remain open.
 
+## 2026-07-02 Completed Stream No-Replay And Subagent Session Race Closure
+
+### Scope
+- Removed the permanent terminal `reveal` flag from closed runtime text rows. A mounted live row still finishes its typewriter catch-up after EventSource close, but terminal history, session switches, or remounts no longer replay text that was already fully displayed.
+- Added packed-browser coverage for the exact finished-stream failure class: a right-panel subagent stream is allowed to reveal a long final child answer completely, then `run.completed` and matching persisted history arrive; the panel must show that answer once, with no `.at-message-streaming-text`, no cursor, and no replay rebuild.
+- Fixed stale subagent-panel state across session changes. When the selected session changes away from the active subagent's owning session, `AppShell` now clears the active panel instead of keeping old child context visible while the new parent hydrates.
+- Rebuilt the packed app so `frontend/dist/app` reflects both runtime and shell state changes.
+
+### Verification
+- `npm test -- src/test/AppShell.test.tsx -t "subagent"` passed with 9 selected tests.
+- `npm test -- src/test/MessageTimeline.test.tsx` passed with 174 tests.
+- `npm run build` passed and regenerated `frontend/dist/app`.
+- `npm run test:browser -- browser-tests/v2-subagent-session.spec.ts` passed with 12 Chromium scenarios, including incremental child streaming, terminal catch-up, complete-stream terminal hydration no-replay, hard refresh restoration, live orchestration child streaming, sidebar pressure, and parent hydration race.
+- Screenshot evidence: `.tmp/frontend-v2-ts-subagent-session/v2-subagent-complete-stream-terminal-hydration.png`.
+
+### Reviewer
+- Main-agent decision: this tightens `MSG-02`, `SESS-03`, `STREAM-02`, and `SUB-01` for completed-stream no-replay and stale subagent session switching. It does not mark streaming/replay/subagents complete; real backend orchestration variants, broader interrupted recovery, V1 paired visual checks, and final reviewer sign-off remain open.
+
 ## 2026-07-02 Terminal Stream Catch-Up Identity Closure
 
 ### Scope

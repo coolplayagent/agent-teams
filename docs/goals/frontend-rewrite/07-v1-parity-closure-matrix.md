@@ -122,6 +122,14 @@ For every row moved to `Verified`, record:
 - Evidence: `npm test -- src/test/MessageTimeline.test.tsx`, `npm run typecheck`, `npm run lint`, `npm run build`, DevTools snapshot of `http://127.0.0.1:8000/app/?codex_verify=final_subagent_clean_1782842576308`, screenshot `tmp/v2-stream-hydration-check.png`.
 - This does not move `MSG-01`, `MSG-02`, `MSG-05`, `STREAM-02`, `REC-01`, or `SUB-01` to `Verified`; from-start live cadence observation, interrupted recovery, broader orchestration/subagent variants, and final V1 paired visual sign-off remain open.
 
+### 2026-07-02 Completed Stream No-Replay And Subagent Session Race Closure
+
+- `MSG-02` and `STREAM-02` tightened: closed runtime text rows no longer carry a permanent terminal `reveal` flag. A mounted row can still finish visual catch-up after EventSource close, but already-complete text is not replayed from the beginning when terminal history or remounts arrive.
+- `SUB-01` tightened: the right subagent panel now has packed-browser coverage for a complete child stream followed by matching terminal history; the child answer appears exactly once, with no streaming container and no stale cursor.
+- `SESS-03` and `SUB-01` tightened: switching away from a session clears the active right-side subagent panel instead of showing stale child context while another parent session hydrates.
+- Evidence: `npm test -- src/test/AppShell.test.tsx -t "subagent"`, `npm test -- src/test/MessageTimeline.test.tsx`, `npm run build`, `npm run test:browser -- browser-tests/v2-subagent-session.spec.ts`; screenshot `.tmp/frontend-v2-ts-subagent-session/v2-subagent-complete-stream-terminal-hydration.png`.
+- This does not move `MSG-02`, `SESS-03`, `STREAM-02`, or `SUB-01` to `Verified`; live real-backend orchestration variants, broader interrupted recovery, final V1 paired visual sign-off, and reviewer sign-off remain open.
+
 ### 2026-07-02 Terminal Stream Catch-Up Identity Closure
 
 - `MSG-02`, `STREAM-02`, and `REC-01` tightened: terminal persisted history catch-up no longer rebuilds a fully revealed live answer row. When the closed runtime deltas exactly match the hydrated final answer, the runtime row remains the display anchor, partial/stale prefixes still yield to persisted history, and the terminal view has no stale cursor or duplicate answer text.

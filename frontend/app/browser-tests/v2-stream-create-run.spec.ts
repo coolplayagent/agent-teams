@@ -124,7 +124,7 @@ test("creates a run from the V2 composer and renders live stream output", async 
   }
 });
 
-test("reveals live stream text progressively and does not replay after terminal output", async ({
+test("renders received live stream text immediately and does not replay after terminal output", async ({
   page,
 }) => {
   const appServer = await serveFrontendDist();
@@ -180,11 +180,9 @@ test("reveals live stream text progressively and does not replay after terminal 
 
     const streamingText = page.locator(".at-message-streaming-text").first();
     await expect(streamingText).toBeVisible();
-    const initialText = await streamingText.textContent();
-    expect(initialText?.length ?? 0).toBeGreaterThan(0);
-    expect(initialText).not.toBe(finalAnswer);
-    expect(initialText?.length ?? 0).toBeLessThan(finalAnswer.length);
-    await expect(page.getByText(finalAnswer)).toBeVisible({ timeout: 12_000 });
+    await expect(streamingText).toHaveText(finalAnswer);
+    await expect(page.getByText(finalAnswer)).toHaveCount(1);
+    await expect(page.locator(".streaming-cursor")).toHaveCount(1);
     await page.locator(".at-message-streaming-text").evaluate((element) => {
       element.setAttribute("data-stream-stable-node", "before-terminal");
     });

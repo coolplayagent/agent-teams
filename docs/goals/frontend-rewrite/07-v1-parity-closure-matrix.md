@@ -121,6 +121,12 @@ For every row moved to `Verified`, record:
 - Evidence target: `AGENT_TEAMS_REAL_LIVE_STREAM=1 npm run test:browser -- v2-real-backend-live-stream.spec.ts --project=chromium -g "real backend orchestration tool stream"`.
 - This does not move `SESS-03`, `MSG-04`, or `STREAM-02` to `Verified`; terminal orchestration replay, broader tool-heavy variants, and final V1 visual sign-off remain open.
 
+### 2026-07-03 Stream Create Immediate Delta Browser Pass
+
+- `MSG-02` tightened: the packed browser `v2-stream-create-run.spec.ts` no longer accepts the old fake progressive reveal expectation for a complete received SSE delta. The live row must display the received text immediately, keep exactly one cursor while the stream is open, then settle the same DOM row after terminal output without replaying or rebuilding the already visible answer.
+- Evidence target: `npm run test:browser -- v2-stream-create-run.spec.ts --project=chromium -g "renders received live stream text immediately"`.
+- This is still scoped evidence. Complex production tool/orchestration streams, subagent live cadence, and final V1/V2 visual sign-off remain open.
+
 ### 2026-07-02 Direct Delta Rendering Closure
 
 - `MSG-02` tightened: the frontend no longer simulates typewriter reveal for live text rows or terminal catch-up. Timeline text now shows the exact received delta text immediately, with the cursor only indicating that the stream remains open.

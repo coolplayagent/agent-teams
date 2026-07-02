@@ -778,6 +778,88 @@ describe("MessageTimeline", () => {
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
   });
 
+  it("reveals terminal structured output from the already displayed runtime prefix", async () => {
+    vi.stubEnv("MODE", "production");
+    vi.useFakeTimers();
+    const streamedPrefix = "LI";
+    const finalAnswer = [
+      streamedPrefix,
+      "LIVE_STREAM_ALPHA",
+      "LIVE_STREAM_BETA",
+      "LIVE_STREAM_GAMMA",
+      "LIVE_STREAM_DELTA",
+      "LIVE_STREAM_EPSILON",
+    ].join(" ");
+    const prefixEvent = relayRunEvent({
+      event_id: 1,
+      event_type: "text_delta",
+      payload_json: JSON.stringify({ text: streamedPrefix }),
+      run_id: "run-terminal-reveal-from-prefix",
+      trace_id: "run-terminal-reveal-from-prefix",
+    });
+    setRuntimeStateFromEvents([prefixEvent]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    expect(screen.getByText(streamedPrefix)).toBeVisible();
+    const rowBefore = container.querySelector<HTMLElement>("article.at-message");
+    expect(rowBefore).not.toBeNull();
+
+    await act(async () => {
+      setRuntimeStateFromEvents([
+        prefixEvent,
+        relayRunEvent({
+          event_id: 2,
+          event_type: "run_completed",
+          payload_json: JSON.stringify({
+            output: [{ kind: "text", text: finalAnswer }],
+          }),
+          run_id: "run-terminal-reveal-from-prefix",
+          trace_id: "run-terminal-reveal-from-prefix",
+        }),
+      ]);
+    });
+
+    const rowAfterTerminal = container.querySelector<HTMLElement>("article.at-message");
+    expect(rowAfterTerminal).toBe(rowBefore);
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+    expect(screen.queryByText(finalAnswer)).not.toBeInTheDocument();
+    expect(
+      container.querySelector<HTMLElement>(".at-message-streaming-text"),
+    )?.toHaveTextContent(streamedPrefix);
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    for (let frame = 0; frame < 8; frame += 1) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(36);
+      });
+    }
+    expect(screen.queryByText(finalAnswer)).not.toBeInTheDocument();
+    const midRevealText = container.querySelector<HTMLElement>(
+      ".at-message-streaming-text",
+    )?.textContent ?? "";
+    expect(midRevealText.startsWith(streamedPrefix)).toBe(true);
+    expect(midRevealText.length).toBeGreaterThan(streamedPrefix.length);
+
+    for (let frame = 0; frame < 140; frame += 1) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(36);
+      });
+    }
+    expect(screen.getByText(finalAnswer)).toBeVisible();
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+    expect(container.querySelector<HTMLElement>("article.at-message")).toBe(rowBefore);
+    expect(container.querySelector(".at-message-streaming-text")).toBeNull();
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
+  });
+
   it("keeps the runtime answer mounted when processed hydration splits thinking from final text", async () => {
     const finalAnswer = [
       "LIVE_STREAM_ALPHA",

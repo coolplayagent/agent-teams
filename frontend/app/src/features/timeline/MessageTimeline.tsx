@@ -2507,7 +2507,10 @@ function mergeRuntimeCompletedOutputIntoActiveText(
   ) {
     return false;
   }
+  const shouldRevealTerminalOutput =
+    currentText.length > 0 && currentText !== normalizedOutputText;
   existing.part.text = outputText;
+  existing.part.reveal = shouldRevealTerminalOutput;
   existing.row.text = outputText;
   existing.placeholder = false;
   closeRuntimeTextAccumulator(rows, existing);
@@ -2547,7 +2550,9 @@ function mergeRuntimeCompletedOutputIntoPreviousTextRow(
     if (currentText.length === 0 || !outputComparisonText.includes(currentText)) {
       return false;
     }
+    const shouldRevealTerminalOutput = currentText !== outputComparisonText;
     textParts[0].text = outputText;
+    textParts[0].reveal = shouldRevealTerminalOutput;
     textParts[0].streaming = false;
     row.text = outputText;
     row.copyable = true;
@@ -5088,6 +5093,9 @@ function closeRuntimeTextAccumulator(
     return;
   }
   existing.part.streaming = false;
+  if (existing.part.reveal !== true) {
+    delete existing.part.reveal;
+  }
 }
 
 function timelineTextPart(
@@ -5951,6 +5959,7 @@ function useStreamingDisplayText(
   const revealActive =
     smoothEnabled &&
     shouldReveal &&
+    displayedText.length < targetText.length &&
     targetText.startsWith(displayedText);
 
   useEffect(() => {

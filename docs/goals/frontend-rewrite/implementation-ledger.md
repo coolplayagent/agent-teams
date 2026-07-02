@@ -2,6 +2,24 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-02 Terminal Catch-Up Reveal Closure
+
+### Scope
+- Fixed terminal structured output that extends an already visible runtime text prefix so it continues revealing from the displayed prefix instead of jumping straight to the full final answer.
+- Tightened the streaming display hook so a reveal row stops being visually streaming once the displayed text reaches the target; this removes stale `.at-message-streaming-text` wrappers after terminal catch-up finishes.
+- Kept the no-replay boundary from the previous pass: refreshed or hydrated history still renders as settled text instead of retyping the completed answer.
+- Rebuilt the packed app so `frontend/dist/app` reflects the terminal catch-up behavior.
+
+### Verification
+- `npm test -- src/test/MessageTimeline.test.tsx -t "terminal structured output|terminal structured output from the already displayed|previous runtime text" --testTimeout=30000` passed with 4 selected tests.
+- `npm test -- src/test/MessageTimeline.test.tsx --testTimeout=30000` passed with 182 tests.
+- `npm run build` passed and regenerated `frontend/dist/app`.
+- `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium -g "settles terminal subagent output immediately before history refill|does not replay an already complete subagent stream"` passed with 2 Chromium scenarios.
+- `npm run lint` passed.
+
+### Reviewer
+- Main-agent decision: this closes the narrower terminal catch-up jump/stale-wrapper defect for runtime text rows. It does not mark `MSG-02`, `STREAM-02`, or `SUB-01` verified; real production-backend orchestration variants, interrupted recovery, and V1/V2 visual sign-off remain open.
+
 ## 2026-07-02 Runtime Terminal Output Anchor Closure
 
 ### Scope

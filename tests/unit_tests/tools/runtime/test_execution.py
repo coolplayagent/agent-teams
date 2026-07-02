@@ -8,7 +8,6 @@ import asyncio
 import sqlite3
 import threading
 import time
-from dataclasses import dataclass
 from pathlib import Path
 from tempfile import mkdtemp
 from types import SimpleNamespace
@@ -173,10 +172,15 @@ class _FakeApprovalManager:
         _ = kwargs
 
 
-@dataclass(frozen=True)
 class _FakePolicy:
-    needs_approval: bool
-    timeout_seconds: float = 0.01
+    def __init__(
+        self,
+        *,
+        needs_approval: bool,
+        timeout_seconds: float = 0.01,
+    ) -> None:
+        self.needs_approval = needs_approval
+        self.timeout_seconds = timeout_seconds
 
     def requires_approval(self, tool_name: str) -> bool:
         _ = tool_name
@@ -510,6 +514,54 @@ def test_execute_tool_marks_reported_failed_result_event_as_error() -> None:
     assert tool_result_payloads[0]["result"] == result
 
 
+@pytest.mark.timeout(10)
+def test_tool_runtime_limits_can_be_configured_from_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(execution_module.TOOL_ACTION_WORKER_COUNT_ENV, "23")
+    monkeypatch.setenv(execution_module.PER_RUN_TOOL_ACTION_CONCURRENCY_ENV, "11")
+    monkeypatch.setenv(execution_module.GLOBAL_TOOL_ACTION_CONCURRENCY_ENV, "29")
+    monkeypatch.setenv(execution_module.WAIT_TOOL_ACTION_CONCURRENCY_ENV, "97")
+
+    assert execution_module._resolve_tool_runtime_limits() == (
+        23,
+        11,
+        29,
+        97,
+    )
+
+
+def test_tool_runtime_env_resolver_ignores_invalid_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RELAY_TEAMS_TEST_TOOL_LIMIT", "many")
+    assert (
+        execution_module._resolve_positive_int_env(
+            "RELAY_TEAMS_TEST_TOOL_LIMIT",
+            8,
+        )
+        == 8
+    )
+
+    monkeypatch.setenv("RELAY_TEAMS_TEST_TOOL_LIMIT", "0")
+    assert (
+        execution_module._resolve_positive_int_env(
+            "RELAY_TEAMS_TEST_TOOL_LIMIT",
+            8,
+        )
+        == 8
+    )
+
+    monkeypatch.setenv("RELAY_TEAMS_TEST_TOOL_LIMIT", "12")
+    assert (
+        execution_module._resolve_positive_int_env(
+            "RELAY_TEAMS_TEST_TOOL_LIMIT",
+            8,
+        )
+        == 12
+    )
+
+
 def test_tool_action_limits_live_unpersisted_batch_per_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -631,6 +683,137 @@ def test_tool_action_run_gate_waiters_do_not_hold_global_capacity(
 
         assert run_b_started_before_first_a_released is True
         assert results == ["a1", "a2", "b1"]
+        assert execution_module._RUN_TOOL_ACTION_GATES == {}
+
+    asyncio.run(_run())
+
+
+def test_wait_tool_action_capacity_does_not_hold_standard_capacity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _run() -> None:
+        monkeypatch.setattr(execution_module, "PER_RUN_TOOL_ACTION_CONCURRENCY", 1)
+        monkeypatch.setattr(
+            execution_module,
+            "_GLOBAL_TOOL_ACTION_SEMAPHORE",
+            asyncio.Semaphore(1),
+        )
+        monkeypatch.setattr(
+            execution_module,
+            "_WAIT_TOOL_ACTION_SEMAPHORE",
+            asyncio.Semaphore(1),
+        )
+        execution_module._RUN_TOOL_ACTION_GATES.clear()
+
+        ctx = SimpleNamespace(
+            deps=SimpleNamespace(run_id="run-wait", session_id="session-wait"),
+            tool_call_id="tool-wait",
+        )
+        wait_started = asyncio.Event()
+        release_wait = asyncio.Event()
+        standard_started = asyncio.Event()
+
+        async def wait_action() -> str:
+            wait_started.set()
+            await release_wait.wait()
+            return "wait"
+
+        async def standard_action() -> str:
+            standard_started.set()
+            return "standard"
+
+        wait_task = asyncio.create_task(
+            execution_module._invoke_tool_action_with_limits(
+                ctx=cast(ToolContext, cast(object, ctx)),
+                action=wait_action,
+                tool_input={},
+                action_capacity=execution_module.ToolActionCapacity.WAIT,
+            )
+        )
+        await wait_started.wait()
+        standard_task = asyncio.create_task(
+            execution_module._invoke_tool_action_with_limits(
+                ctx=cast(ToolContext, cast(object, ctx)),
+                action=standard_action,
+                tool_input={},
+            )
+        )
+
+        try:
+            await asyncio.wait_for(standard_started.wait(), timeout=0.1)
+            standard_started_before_wait_released = True
+        except TimeoutError:
+            standard_started_before_wait_released = False
+        finally:
+            release_wait.set()
+
+        results = await asyncio.gather(wait_task, standard_task)
+
+        assert standard_started_before_wait_released is True
+        assert results == ["wait", "standard"]
+        assert execution_module._RUN_TOOL_ACTION_GATES == {}
+
+    asyncio.run(_run())
+
+
+def test_wait_tool_action_capacity_is_bounded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _run() -> None:
+        monkeypatch.setattr(
+            execution_module,
+            "_WAIT_TOOL_ACTION_SEMAPHORE",
+            asyncio.Semaphore(1),
+        )
+        execution_module._RUN_TOOL_ACTION_GATES.clear()
+
+        ctx = SimpleNamespace(
+            deps=SimpleNamespace(run_id="run-wait-limit", session_id="session-wait"),
+            tool_call_id="tool-wait-limit",
+        )
+        first_started = asyncio.Event()
+        release_first = asyncio.Event()
+        second_started = asyncio.Event()
+
+        async def first_wait_action() -> str:
+            first_started.set()
+            await release_first.wait()
+            return "first"
+
+        async def second_wait_action() -> str:
+            second_started.set()
+            return "second"
+
+        first_task = asyncio.create_task(
+            execution_module._invoke_tool_action_with_limits(
+                ctx=cast(ToolContext, cast(object, ctx)),
+                action=first_wait_action,
+                tool_input={},
+                action_capacity=execution_module.ToolActionCapacity.WAIT,
+            )
+        )
+        await first_started.wait()
+        second_task = asyncio.create_task(
+            execution_module._invoke_tool_action_with_limits(
+                ctx=cast(ToolContext, cast(object, ctx)),
+                action=second_wait_action,
+                tool_input={},
+                action_capacity=execution_module.ToolActionCapacity.WAIT,
+            )
+        )
+
+        try:
+            await asyncio.wait_for(second_started.wait(), timeout=0.05)
+            second_started_before_first_released = True
+        except TimeoutError:
+            second_started_before_first_released = False
+        finally:
+            release_first.set()
+
+        results = await asyncio.gather(first_task, second_task)
+
+        assert second_started_before_first_released is False
+        assert results == ["first", "second"]
         assert execution_module._RUN_TOOL_ACTION_GATES == {}
 
     asyncio.run(_run())

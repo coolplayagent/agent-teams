@@ -3777,6 +3777,7 @@ def test_fast_prompt_stream_events_reads_sse_until_completion(
             self.closed = True
 
     monkeypatch.setattr(http.client, "HTTPConnection", FakeConnection)
+    monkeypatch.delenv(cli_app.FAST_PROMPT_STREAM_TIMEOUT_SECONDS_ENV, raising=False)
 
     _STREAM_FAST_PROMPT_EVENTS(base_url="http://0.0.0.0:8000/root", run_id="run 1")
 
@@ -3798,6 +3799,67 @@ def test_fast_prompt_stream_events_reads_sse_until_completion(
     ]
     assert connection.closed is True
     assert capsys.readouterr().out == "hi"
+
+
+def test_fast_prompt_stream_events_uses_configured_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeSseResponse:
+        status = 200
+
+        def readline(self) -> bytes:
+            return b'data: {"event_type":"run_completed","payload_json":"{}"}\n'
+
+        def read(self) -> bytes:
+            return b""
+
+    class FakeConnection:
+        instances: list[FakeConnection] = []
+
+        def __init__(self, address: str, port: int, timeout: float) -> None:
+            self.address = address
+            self.port = port
+            self.timeout = timeout
+            self.requests: list[tuple[str, str, dict[str, str]]] = []
+            FakeConnection.instances.append(self)
+
+        def request(
+            self,
+            method: str,
+            path: str,
+            *,
+            headers: dict[str, str],
+        ) -> None:
+            self.requests.append((method, path, headers))
+
+        def getresponse(self) -> FakeSseResponse:
+            return FakeSseResponse()
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(http.client, "HTTPConnection", FakeConnection)
+    monkeypatch.setenv(cli_app.FAST_PROMPT_STREAM_TIMEOUT_SECONDS_ENV, "1800")
+
+    _STREAM_FAST_PROMPT_EVENTS(base_url="http://127.0.0.1:8000", run_id="run-1")
+
+    assert FakeConnection.instances[0].timeout == 1800.0
+
+
+@pytest.mark.parametrize(
+    "raw_value",
+    [" ", "not-a-number", "0", "-1", "nan", "inf"],
+)
+def test_fast_prompt_stream_timeout_defaults_when_invalid(
+    raw_value: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(cli_app.FAST_PROMPT_STREAM_TIMEOUT_SECONDS_ENV, raw_value)
+
+    assert (
+        cli_app._resolve_fast_prompt_stream_timeout_seconds()
+        == cli_app.DEFAULT_FAST_PROMPT_STREAM_TIMEOUT_SECONDS
+    )
 
 
 def test_fast_prompt_stream_events_delegates_when_proxy_required(

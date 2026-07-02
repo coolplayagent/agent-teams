@@ -4,6 +4,8 @@ from __future__ import annotations
 import http.client
 import ipaddress
 import json
+import logging
+import math
 import os
 from pathlib import Path
 import re
@@ -30,6 +32,7 @@ from relay_teams.interfaces.cli.manifest import (
     CLI_ROOT_HELP,
     CliCommandSpec,
 )
+from relay_teams.logger import get_logger, log_event
 
 try:
     import keyring
@@ -37,6 +40,11 @@ except ImportError:  # pragma: no cover - import availability depends on environ
     keyring = None
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8000"
+DEFAULT_FAST_PROMPT_STREAM_TIMEOUT_SECONDS = 600.0
+FAST_PROMPT_STREAM_TIMEOUT_SECONDS_ENV = (
+    "RELAY_TEAMS_FAST_PROMPT_STREAM_TIMEOUT_SECONDS"
+)
+LOGGER = get_logger(__name__)
 _APP_ENV_SECRET_NAMESPACE = "app_env"
 _KEYRING_SERVICE_NAME = "agent-teams"
 _SECRETS_FILE_NAME = "secrets.json"
@@ -1547,7 +1555,11 @@ def _stream_fast_prompt_events(*, base_url: str, run_id: str) -> None:
         if parsed.scheme == "https"
         else http.client.HTTPConnection
     )
-    connection = connection_class(address, port, timeout=600.0)
+    connection = connection_class(
+        address,
+        port,
+        timeout=_resolve_fast_prompt_stream_timeout_seconds(),
+    )
     try:
         connection.request(
             "GET",
@@ -1572,6 +1584,32 @@ def _stream_fast_prompt_events(*, base_url: str, run_id: str) -> None:
                 return
     finally:
         connection.close()
+
+
+def _resolve_fast_prompt_stream_timeout_seconds() -> float:
+    raw_value = os.environ.get(FAST_PROMPT_STREAM_TIMEOUT_SECONDS_ENV)
+    if raw_value is None or not raw_value.strip():
+        return DEFAULT_FAST_PROMPT_STREAM_TIMEOUT_SECONDS
+    normalized = raw_value.strip()
+    try:
+        timeout_seconds = float(normalized)
+    except ValueError:
+        _log_invalid_fast_prompt_stream_timeout(raw_value)
+        return DEFAULT_FAST_PROMPT_STREAM_TIMEOUT_SECONDS
+    if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+        _log_invalid_fast_prompt_stream_timeout(raw_value)
+        return DEFAULT_FAST_PROMPT_STREAM_TIMEOUT_SECONDS
+    return timeout_seconds
+
+
+def _log_invalid_fast_prompt_stream_timeout(raw_value: str) -> None:
+    log_event(
+        LOGGER,
+        logging.WARNING,
+        event="cli.fast_prompt.stream_timeout.invalid_env",
+        message="Ignoring invalid fast prompt stream timeout",
+        payload={FAST_PROMPT_STREAM_TIMEOUT_SECONDS_ENV: raw_value},
+    )
 
 
 def _handle_fast_prompt_stream_line(line: str) -> bool:

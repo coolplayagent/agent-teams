@@ -2,6 +2,19 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-02 Migration Naming Boundary Guard
+
+### Scope
+- Tightened `UserFacingNamingParity.test.ts` so the naming cleanup is no longer only a visible-text check.
+- Runtime UI source under `frontend/app/src` plus `frontend/app/index.html` still rejects user-facing `V2/v2`, except the documented non-UI MaaS `/api/v2/` endpoint.
+- Added a file-path guard that scans the frontend source, entry point, and browser proof specs. `v2-*` file names are allowed only under `frontend/app/browser-tests` as migration proof specs; the rule fails if those temporary names leak into runtime source or the app entry.
+
+### Verification
+- `npm test -- src/test/UserFacingNamingParity.test.ts` passed with both content and path-boundary checks.
+
+### Reviewer
+- Main-agent decision: this closes the migration-only test/file naming decision portion of `CLEAN-01`. It does not mark cleanup or the full frontend rewrite complete; promoted-route naming, final browser screenshot sweep, reviewer sign-off, and the remaining parity rows still need closure.
+
 ## 2026-07-02 Final Frontend Python UI Harness Retirement
 
 ### Scope
@@ -18,7 +31,7 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - Current V2 ownership for the retired assertions is split across TypeScript component and browser suites, including `WorkspaceProjectView.test.tsx`, `AutomationView.test.tsx`, `GitHubSettingsSection.test.tsx`, `SkillsView.test.tsx`, `ConnectorsView.test.tsx`, `RuntimeSettingsSections.test.tsx`, `BoardTodosView.test.tsx`, `MemoryView.test.tsx`, `v2-project-view.spec.ts`, `v2-skills-view.spec.ts`, `v2-connectors-view.spec.ts`, `v2-board-actions.spec.ts`, `v2-memory-view.spec.ts`, `v2-shell-parity.spec.ts`, and `v2-settings-actions.spec.ts`.
 
 ### Reviewer
-- Main-agent decision: this completes the old frontend Python UI harness retirement portion of `CLEAN-01`. It does not mark `CLEAN-01` or the full V2 frontend rewrite complete; promoted-route naming, migration-only naming decisions, final browser screenshot sweep, subsystem reviewer sign-off, and remaining parity rows still need closure.
+- Main-agent decision: this completes the old frontend Python UI harness retirement portion of `CLEAN-01`. It does not mark `CLEAN-01` or the full V2 frontend rewrite complete; promoted-route naming, final browser screenshot sweep, subsystem reviewer sign-off, and remaining parity rows still need closure.
 
 ## 2026-07-02 Stream Hydration Anchor And Processed Fold Tightening
 

@@ -5,13 +5,20 @@ import { extname, join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const runtimeRoots = ["index.html", "src"];
+const migrationBoundaryRoots = ["index.html", "src", "browser-tests"];
 const runtimeExtensions = new Set([".css", ".html", ".ts", ".tsx"]);
 const skippedRuntimeSegments = new Set(["test"]);
 const userFacingV2Pattern = /\bV2\b|\bv2\b/;
+const pathV2Pattern = /(^|[-_/])v2($|[-_.\\/])|V2/;
+const migrationBrowserSpecPathPattern = /^browser-tests\/v2-[a-z0-9-]+\.spec\.ts$/;
 
 describe("user-facing naming parity", () => {
   it("keeps temporary V2 names out of runtime UI source", () => {
     expect(userFacingV2Findings()).toEqual([]);
+  });
+
+  it("keeps migration-only V2 file names isolated to browser proof specs", () => {
+    expect(filePathV2Findings()).toEqual([]);
   });
 });
 
@@ -36,27 +43,49 @@ function userFacingV2Findings(): string[] {
 function runtimeSourceFiles(): string[] {
   const files: string[] = [];
   for (const root of runtimeRoots) {
-    collectRuntimeSourceFiles(root, files);
+    collectSourceFiles(root, files, { skipTestSegments: true });
   }
   return files.sort((left, right) => left.localeCompare(right));
 }
 
-function collectRuntimeSourceFiles(currentPath: string, files: string[]): void {
+function migrationBoundaryFiles(): string[] {
+  const files: string[] = [];
+  for (const root of migrationBoundaryRoots) {
+    collectSourceFiles(root, files, { skipTestSegments: false });
+  }
+  return files.sort((left, right) => left.localeCompare(right));
+}
+
+function collectSourceFiles(
+  currentPath: string,
+  files: string[],
+  options: { skipTestSegments: boolean },
+): void {
   const stats = statSync(currentPath);
   if (stats.isDirectory()) {
     const relativePath = normalizePath(relative(".", currentPath));
     const segments = relativePath.split("/");
-    if (segments.some((segment) => skippedRuntimeSegments.has(segment))) {
+    if (
+      options.skipTestSegments
+      && segments.some((segment) => skippedRuntimeSegments.has(segment))
+    ) {
       return;
     }
     for (const entry of readdirSync(currentPath)) {
-      collectRuntimeSourceFiles(join(currentPath, entry), files);
+      collectSourceFiles(join(currentPath, entry), files, options);
     }
     return;
   }
   if (runtimeExtensions.has(extname(currentPath))) {
     files.push(currentPath);
   }
+}
+
+function filePathV2Findings(): string[] {
+  return migrationBoundaryFiles()
+    .map((filePath) => normalizePath(relative(".", filePath)))
+    .filter((relativePath) => pathV2Pattern.test(relativePath))
+    .filter((relativePath) => !migrationBrowserSpecPathPattern.test(relativePath));
 }
 
 function isAllowedMigrationBoundary(relativePath: string, line: string): boolean {

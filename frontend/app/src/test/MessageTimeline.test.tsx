@@ -443,8 +443,105 @@ describe("MessageTimeline", () => {
       expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
     });
     const messageRow = container.querySelector<HTMLElement>("article.at-message");
-    expect(messageRow?.dataset.rowKey).toBe("message:assistant-reveal-upgrade-final");
-    expect(messageRow?.dataset.rowKey).not.toContain("runtime-reveal");
+    expect(messageRow?.dataset.rowKey).toBe(
+      "runtime-text:run-reveal-upgrade:MainAgent:0",
+    );
+    expect(messageRow?.dataset.rowKey).not.toBe("message:assistant-reveal-upgrade-final");
+  });
+
+  it("keeps the runtime row mounted when terminal hydration replaces an active stream", async () => {
+    const finalAnswer = [
+      "LIVE_STREAM_ALPHA",
+      "LIVE_STREAM_BETA",
+      "LIVE_STREAM_GAMMA",
+      "LIVE_STREAM_DELTA",
+    ].join(" ");
+    const streamEntry: TimelineEntry = {
+      eventId: 8,
+      id: "run-live-hydrate:8:0",
+      kind: "text_delta",
+      occurredAt: "2026-06-23T00:00:00Z",
+      payload: { text: finalAnswer },
+      roleId: "MainAgent",
+      runId: "run-live-hydrate",
+      sessionId: "session-1",
+      text: finalAnswer,
+    };
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: ["run-live-hydrate"],
+        runs: {
+          "run-live-hydrate": {
+            entries: [streamEntry],
+            hadVisibleTextStream: true,
+            lastEventId: 8,
+            runId: "run-live-hydrate",
+            seenEventKeys: [],
+            status: "open",
+            terminalEventType: null,
+          },
+        },
+      },
+    });
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container, queryClient } = renderTimeline();
+
+    expect(await screen.findByText(finalAnswer)).toBeVisible();
+    const rowBefore = container.querySelector<HTMLElement>("article.at-message");
+    expect(rowBefore).not.toBeNull();
+    expect(rowBefore?.dataset.rowKey).toBe(
+      "runtime-text:run-live-hydrate:MainAgent:0",
+    );
+
+    act(() => {
+      queryClient.setQueryData(["sessions", "session-1", "messages"], [
+        {
+          content: finalAnswer,
+          message_id: "assistant-live-hydrate-final",
+          role_id: "MainAgent",
+          run_id: "run-live-hydrate",
+        },
+      ]);
+      useRuntimeStore.setState({
+        runtimeState: {
+          activeRunIds: [],
+          runs: {
+            "run-live-hydrate": {
+              entries: [
+                streamEntry,
+                {
+                  eventId: 9,
+                  id: "run-live-hydrate:9:1",
+                  kind: "run_completed",
+                  occurredAt: "2026-06-23T00:00:01Z",
+                  payload: { status: "completed" },
+                  roleId: "MainAgent",
+                  runId: "run-live-hydrate",
+                  sessionId: "session-1",
+                  text: "completed",
+                },
+              ],
+              hadVisibleTextStream: true,
+              lastEventId: 9,
+              runId: "run-live-hydrate",
+              seenEventKeys: [],
+              status: "closed",
+              terminalEventType: "run_completed",
+            },
+          },
+        },
+      });
+    });
+
+    await waitForSingleVisibleText(finalAnswer);
+    const rowAfter = container.querySelector<HTMLElement>("article.at-message");
+    expect(rowAfter).toBe(rowBefore);
+    expect(rowAfter?.dataset.rowKey).toBe(
+      "runtime-text:run-live-hydrate:MainAgent:0",
+    );
+    expect(rowAfter).not.toHaveClass("is-streaming");
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
   });
 
   it("merges terminal structured output into the active runtime text reveal", async () => {
@@ -8799,7 +8896,8 @@ function renderTimeline(
       },
     },
   });
-  return render(
+  return {
+    ...render(
     <QueryClientProvider client={queryClient}>
       <ConfigProvider>
         <AntApp>
@@ -8816,7 +8914,9 @@ function renderTimeline(
         </AntApp>
       </ConfigProvider>
     </QueryClientProvider>,
-  );
+    ),
+    queryClient,
+  };
 }
 
 function deferredSessionRounds(): {

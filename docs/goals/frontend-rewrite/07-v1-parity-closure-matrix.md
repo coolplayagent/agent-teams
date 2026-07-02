@@ -114,6 +114,14 @@ For every row moved to `Verified`, record:
 
 ## Verification Ledger
 
+### 2026-07-02 Stream Hydration Anchor And Processed Fold Tightening
+
+- `MSG-02`, `STREAM-02`, and `REC-01` tightened: persisted terminal history for the same run now inherits the covered runtime text row key, so a live answer that has already rendered is not remounted and re-revealed from the beginning when replay data catches up.
+- `MSG-01` and `MSG-05` tightened: completed-run processed folding keeps tool/thinking work under one `已处理` affordance while leaving user-facing injection notices and MainAgent narration visible, reducing repeated text when processed details are expanded.
+- `SUB-01` tightened by browser observation on the current `/app/` page: the parent timeline shows only subagent summary answers, while the right subagent panel owns the child prompt/tool/stdout transcript.
+- Evidence: `npm test -- src/test/MessageTimeline.test.tsx`, `npm run typecheck`, `npm run lint`, `npm run build`, DevTools snapshot of `http://127.0.0.1:8000/app/?codex_verify=final_subagent_clean_1782842576308`, screenshot `tmp/v2-stream-hydration-check.png`.
+- This does not move `MSG-01`, `MSG-02`, `MSG-05`, `STREAM-02`, `REC-01`, or `SUB-01` to `Verified`; from-start live cadence observation, interrupted recovery, broader orchestration/subagent variants, and final V1 paired visual sign-off remain open.
+
 ### 2026-07-02 Terminal Stream Catch-Up Identity Closure
 
 - `MSG-02`, `STREAM-02`, and `REC-01` tightened: terminal persisted history catch-up no longer rebuilds a fully revealed live answer row. When the closed runtime deltas exactly match the hydrated final answer, the runtime row remains the display anchor, partial/stale prefixes still yield to persisted history, and the terminal view has no stale cursor or duplicate answer text.

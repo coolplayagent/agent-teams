@@ -253,21 +253,25 @@ export function MessageTimeline({
       ),
     [displayRounds, fallbackRunId, messageRoundLookup, persistedMessages, workspaceId],
   );
+  const anchoredPersistedRows = useMemo(
+    () => persistedRowsWithRuntimeTextAnchors(persistedRows, runtimeState.runs),
+    [persistedRows, runtimeState.runs],
+  );
   const hydratedOutputTextByRunId = useMemo(
-    () => timelineOutputTextByRunId(persistedRows),
-    [persistedRows],
+    () => timelineOutputTextByRunId(anchoredPersistedRows),
+    [anchoredPersistedRows],
   );
   const hydratedOutputSourcesByRunId = useMemo(
-    () => timelineOutputSourcesByRunId(persistedRows),
-    [persistedRows],
+    () => timelineOutputSourcesByRunId(anchoredPersistedRows),
+    [anchoredPersistedRows],
   );
   const hydratedThinkingTextByRunId = useMemo(
-    () => timelineThinkingTextByRunId(persistedRows),
-    [persistedRows],
+    () => timelineThinkingTextByRunId(anchoredPersistedRows),
+    [anchoredPersistedRows],
   );
   const hydratedToolStatesByRunId = useMemo(
-    () => timelineToolStatesByRunId(persistedRows),
-    [persistedRows],
+    () => timelineToolStatesByRunId(anchoredPersistedRows),
+    [anchoredPersistedRows],
   );
   const runtimeEntries = useMemo(
     () =>
@@ -304,10 +308,10 @@ export function MessageTimeline({
   const displayPersistedRows = useMemo(
     () =>
       dropPersistedRowsCoveredByTerminalRuntime(
-        persistedRows,
+        anchoredPersistedRows,
         runtimeRows,
       ),
-    [persistedRows, runtimeRows],
+    [anchoredPersistedRows, runtimeRows],
   );
   const timelineRowsBeforeGrouping = useMemo(
     () =>
@@ -1254,11 +1258,46 @@ function collapseProcessedSegment(
   segment: TimelineRow[],
   runId: string,
 ): TimelineRow[] {
-  const firstGroupableIndex = segment.findIndex((row) => !timelineRowIsUserPrompt(row));
-  if (firstGroupableIndex < 0) {
+  const surfacedRows = segment.filter(timelineRowStaysOutsideProcessedGroup);
+  const processableSegment = segment.filter(
+    (row) => !timelineRowStaysOutsideProcessedGroup(row),
+  );
+  if (surfacedRows.length > 0 && processableSegment.length > 0) {
+    return [
+      ...surfacedRows,
+      ...collapseProcessedSegmentCore(processableSegment, runId),
+    ];
+  }
+  return collapseProcessedSegmentCore(segment, runId);
+}
+
+function collapseProcessedSegmentCore(
+  segment: TimelineRow[],
+  runId: string,
+): TimelineRow[] {
+  const firstWork = firstWorkPartLocation(segment);
+  if (firstWork === null) {
     return segment;
   }
-  const groupableRows = segment.slice(firstGroupableIndex);
+  const firstWorkSourceRow = segment[firstWork.rowIndex];
+  if (firstWorkSourceRow === undefined) {
+    return segment;
+  }
+  const leadingRows = segment.slice(0, firstWork.rowIndex);
+  const leadingParts = firstWorkSourceRow.parts.slice(0, firstWork.partIndex);
+  if (leadingParts.length > 0) {
+    const leadingRow = rowWithParts(firstWorkSourceRow, leadingParts, "before-processed");
+    if (timelineRowHasRenderableContent(leadingRow)) {
+      leadingRows.push(leadingRow);
+    }
+  }
+  const firstGroupedRow = rowWithParts(
+    firstWorkSourceRow,
+    firstWorkSourceRow.parts.slice(firstWork.partIndex),
+    "processed-start",
+  );
+  const groupableRows = [firstGroupedRow, ...segment.slice(firstWork.rowIndex + 1)]
+    .filter(timelineRowHasRenderableContent);
   const lastWork = lastWorkPartLocation(groupableRows);
   if (lastWork === null) {
     return segment;
@@ -1269,7 +1308,6 @@ function collapseProcessedSegment(
     rowIndex: groupableRows.length,
   };
 
-  const leadingRows = segment.slice(0, firstGroupableIndex);
   const groupedRows: TimelineRow[] = [];
   const finalSourceRow = finalStart === null ? undefined : groupableRows[finalStart.rowIndex];
   if (finalStart !== null && finalSourceRow === undefined) {
@@ -1309,8 +1347,38 @@ function collapseProcessedSegment(
   return collapsedRows;
 }
 
-function timelineRowIsUserPrompt(row: TimelineRow): boolean {
-  return normalizedRole(row.role) === "user";
+function timelineRowStaysOutsideProcessedGroup(row: TimelineRow): boolean {
+  const textParts = row.parts.filter((part): part is TimelineTextPart =>
+    part.kind === "text" && part.text.trim().length > 0
+  );
+  if (textParts.length === 0) {
+    return false;
+  }
+  if (textParts.some((part) =>
+    part.text.trim().startsWith("Injection applied:") ||
+    part.text.trim().startsWith("Injection queued:")
+  )) {
+    return true;
+  }
+  return stableTimelineRole(row.role) === "assistant";
+}
+
+function firstWorkPartLocation(
+  rows: TimelineRow[],
+): { rowIndex: number; partIndex: number } | null {
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+    const row = rows[rowIndex];
+    if (row === undefined || normalizedRole(row.role) === "user") {
+      continue;
+    }
+    for (let partIndex = 0; partIndex < row.parts.length; partIndex += 1) {
+      const part = row.parts[partIndex];
+      if (part !== undefined && timelinePartIsWork(part)) {
+        return { rowIndex, partIndex };
+      }
+    }
+  }
+  return null;
 }
 
 function lastWorkPartLocation(
@@ -1486,13 +1554,104 @@ function mergeTerminalRuntimeTextRowsIntoPersistedAnswers(
       return row;
     }
     consumedRuntimeIndexes.add(candidate.index);
-    return row;
+    return persistedRowWithRuntimeTextAnchor(row, candidate.row);
   });
 
   if (consumedRuntimeIndexes.size === 0) {
     return rows;
   }
   return mergedRows.filter((_, index) => !consumedRuntimeIndexes.has(index));
+}
+
+function persistedRowsWithRuntimeTextAnchors(
+  persistedRows: TimelineRow[],
+  runStates: Record<string, RuntimeRunState>,
+): TimelineRow[] {
+  let changed = false;
+  const nextRows = persistedRows.map((row) => {
+    const runtimeAnchorKey = runtimeTextAnchorKeyForPersistedRow(row, runStates);
+    if (runtimeAnchorKey === null || runtimeAnchorKey === row.key) {
+      return row;
+    }
+    changed = true;
+    return {
+      ...row,
+      key: runtimeAnchorKey,
+    };
+  });
+  return changed ? nextRows : persistedRows;
+}
+
+function runtimeTextAnchorKeyForPersistedRow(
+  row: TimelineRow,
+  runStates: Record<string, RuntimeRunState>,
+): string | null {
+  if (!persistedAnswerRowCanHydrateRuntimeText(row)) {
+    return null;
+  }
+  const runId = row.runId?.trim() ?? "";
+  if (runId.length === 0) {
+    return null;
+  }
+  const runState = runStates[runId];
+  if (
+    runState === undefined ||
+    !runtimeRunStateClosesText(runState) ||
+    runState.hadVisibleTextStream !== true
+  ) {
+    return null;
+  }
+  return latestCoveredRuntimeTextAnchorKey(
+    runState.entries,
+    normalizedTimelineText(rowCopyText(row.parts)),
+  );
+}
+
+function latestCoveredRuntimeTextAnchorKey(
+  entries: TimelineEntry[],
+  hydratedText: string,
+): string | null {
+  if (hydratedText.length === 0) {
+    return null;
+  }
+  let latestAnchorKey: string | null = null;
+  let textSegmentSequence = 0;
+  const activeGroupSequences = new Map<string, number>();
+  for (const entry of entries) {
+    if (entry.kind === "text_delta" || entry.kind === "output_delta") {
+      const comparisonTexts = runtimeHydrationComparisonTexts(entry);
+      if (comparisonTexts.length === 0) {
+        continue;
+      }
+      const groupKey = runtimeTextGroupKey(entry);
+      let sequence = activeGroupSequences.get(groupKey);
+      if (sequence === undefined) {
+        sequence = textSegmentSequence;
+        textSegmentSequence += 1;
+        activeGroupSequences.set(groupKey, sequence);
+      }
+      if (comparisonTexts.some((entryText) => hydratedText.includes(entryText))) {
+        latestAnchorKey = runtimeTextRowKey(entry, sequence);
+      }
+      continue;
+    }
+    if (runtimeHiddenEntryClosesText(entry)) {
+      activeGroupSequences.delete(runtimeTextGroupKey(entry));
+      continue;
+    }
+    activeGroupSequences.delete(runtimeTextGroupKey(entry));
+  }
+  return latestAnchorKey;
+}
+
+function persistedRowWithRuntimeTextAnchor(
+  persistedRow: TimelineRow,
+  runtimeRow: TimelineRow,
+): TimelineRow {
+  return {
+    ...persistedRow,
+    key: runtimeRow.key,
+  };
 }
 
 function terminalRuntimeTextCandidate(row: TimelineRow, text: string): boolean {
@@ -4713,7 +4872,7 @@ function createRuntimeTextAccumulator(
     part,
     placeholder,
     row: {
-      key: `runtime-text:${entry.runId}:${runtimeStreamKey(entry)}:${sequence}`,
+      key: runtimeTextRowKey(entry, sequence),
       role: entry.roleId,
       instanceId: entry.instanceId || null,
       text,
@@ -4725,6 +4884,10 @@ function createRuntimeTextAccumulator(
       copyable: isAnswerRole(entry.roleId) && text.trim().length > 0,
     },
   };
+}
+
+function runtimeTextRowKey(entry: TimelineEntry, sequence: number): string {
+  return `runtime-text:${entry.runId}:${runtimeStreamKey(entry)}:${sequence}`;
 }
 
 function closeRuntimeTextSegment(

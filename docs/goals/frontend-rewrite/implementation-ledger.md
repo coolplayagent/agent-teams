@@ -2,6 +2,24 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-02 Stream Hydration Anchor And Processed Fold Tightening
+
+### Scope
+- Fixed the live-stream to replay handoff that could remount the final answer row when persisted history arrived for the same run. Hydrated answer rows now inherit the covered runtime text anchor, so a fully rendered live answer is not rebuilt from the first character after terminal catch-up.
+- Added a transition test that starts with an open runtime text stream, injects terminal persisted history for the same run, and verifies the same DOM row remains mounted, the answer appears once, and the streaming cursor is gone.
+- Tightened completed-run processed folding so tool/thinking work stays under the single processed affordance while user-facing injection notices and MainAgent narration remain visible. This reduces duplicate text inside expanded processed groups without flattening tool details into the main timeline.
+- Rebuilt the packed app so `frontend/dist/app` reflects the timeline behavior.
+
+### Verification
+- `npm test -- src/test/MessageTimeline.test.tsx` passed with 174 tests.
+- `npm run typecheck` passed.
+- `npm run lint` passed.
+- `npm run build` passed and regenerated `frontend/dist/app`.
+- DevTools browser snapshot reviewed the current `/app/` page: parent timeline shows subagent summaries without child stdout replay, processed groups remain collapsed, the right subagent panel shows prompt/tool/output, and no stale streaming cursor was present. Screenshot: `tmp/v2-stream-hydration-check.png`.
+
+### Reviewer
+- Main-agent decision: this tightens `MSG-01`, `MSG-02`, `MSG-05`, `STREAM-02`, `REC-01`, and `SUB-01` for the specific terminal hydration/remount and processed-fold duplication bugs. It does not mark streaming/replay/subagents complete; live from-start cadence observation, interrupted recovery, broader orchestration variants, and final V1 paired visual sign-off remain open.
+
 ## 2026-07-02 Terminal Stream Catch-Up Identity Closure
 
 ### Scope

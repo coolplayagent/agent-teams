@@ -46,7 +46,9 @@ afterEach(() => {
   cleanup();
   delete document.documentElement.dataset.diagnosticsVisible;
   useRuntimeStore.getState().resetRuntimeState();
+  vi.useRealTimers();
   vi.clearAllMocks();
+  vi.unstubAllEnvs();
   vi.unstubAllGlobals();
 });
 
@@ -542,6 +544,107 @@ describe("MessageTimeline", () => {
     );
     expect(rowAfter).not.toHaveClass("is-streaming");
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
+  });
+
+  it("does not type the terminal hydrated answer a second time after stream close", async () => {
+    vi.stubEnv("MODE", "production");
+    vi.useFakeTimers();
+    const streamedPrefix = "LI";
+    const finalAnswer = [
+      streamedPrefix,
+      "LIVE_STREAM_ALPHA",
+      "LIVE_STREAM_BETA",
+      "LIVE_STREAM_GAMMA",
+      "LIVE_STREAM_DELTA",
+      "LIVE_STREAM_EPSILON",
+    ].join(" ");
+    const streamEntry: TimelineEntry = {
+      eventId: 8,
+      id: "run-live-terminal-no-replay:8:0",
+      kind: "text_delta",
+      occurredAt: "2026-06-23T00:00:00Z",
+      payload: { text: streamedPrefix },
+      roleId: "MainAgent",
+      runId: "run-live-terminal-no-replay",
+      sessionId: "session-1",
+      text: streamedPrefix,
+    };
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: ["run-live-terminal-no-replay"],
+        runs: {
+          "run-live-terminal-no-replay": {
+            entries: [streamEntry],
+            hadVisibleTextStream: true,
+            lastEventId: 8,
+            runId: "run-live-terminal-no-replay",
+            seenEventKeys: [],
+            status: "open",
+            terminalEventType: null,
+          },
+        },
+      },
+    });
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container, queryClient } = renderTimeline();
+
+    const streamingText = container.querySelector<HTMLElement>(
+      ".at-message-streaming-text",
+    );
+    expect(streamingText).not.toBeNull();
+    expect(streamingText).not.toHaveTextContent(streamedPrefix);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    expect(screen.getByText(streamedPrefix)).toBeVisible();
+
+    await act(async () => {
+      queryClient.setQueryData(["sessions", "session-1", "messages"], [
+        {
+          content: finalAnswer,
+          message_id: "assistant-live-terminal-no-replay-final",
+          role_id: "MainAgent",
+          run_id: "run-live-terminal-no-replay",
+        },
+      ]);
+      useRuntimeStore.setState({
+        runtimeState: {
+          activeRunIds: [],
+          runs: {
+            "run-live-terminal-no-replay": {
+              entries: [
+                streamEntry,
+                {
+                  eventId: 9,
+                  id: "run-live-terminal-no-replay:9:1",
+                  kind: "run_completed",
+                  occurredAt: "2026-06-23T00:00:01Z",
+                  payload: { status: "completed" },
+                  roleId: "MainAgent",
+                  runId: "run-live-terminal-no-replay",
+                  sessionId: "session-1",
+                  text: "completed",
+                },
+              ],
+              hadVisibleTextStream: true,
+              lastEventId: 9,
+              runId: "run-live-terminal-no-replay",
+              seenEventKeys: [],
+              status: "closed",
+              terminalEventType: "run_completed",
+            },
+          },
+        },
+      });
+    });
+
+    expect(screen.getByText(finalAnswer)).toBeVisible();
+    expect(screen.queryByText(streamedPrefix)).not.toBeInTheDocument();
+    expect(container.querySelector(".at-message-streaming-text")).toBeNull();
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
   });
 
   it("keeps the runtime answer mounted when processed hydration splits thinking from final text", async () => {

@@ -33,7 +33,6 @@ const TIMELINE_BOTTOM_FOLLOW_THRESHOLD_PX = 96;
 const LONG_STREAM_TEXT_THRESHOLD = 12000;
 const STREAM_TYPEWRITER_DELAY_MS = 36;
 const STREAM_TYPEWRITER_MIN_STEP = 1;
-const STREAM_TYPEWRITER_CATCHUP_MIN_STEP = 8;
 const ROUND_RAIL_PAGE_LIMIT = 100;
 const ROUND_RAIL_MAX_PAGES = 10;
 const TOOL_RESULT_MAX_LINES = 200;
@@ -5731,7 +5730,6 @@ function useStreamingDisplayText(
 ): StreamingDisplayText {
   const smoothEnabled = import.meta.env.MODE !== "test";
   const shouldReveal = streaming || reveal;
-  const sawStreamingRef = useRef(smoothEnabled && shouldReveal);
   const [displayedText, setDisplayedText] = useState(() =>
     smoothEnabled && shouldReveal ? initialStreamingText(targetText) : targetText,
   );
@@ -5741,16 +5739,8 @@ function useStreamingDisplayText(
       setDisplayedText(targetText);
       return;
     }
-    if (shouldReveal) {
-      sawStreamingRef.current = true;
-    }
     setDisplayedText((current) => {
-      const canContinueTerminalReveal =
-        !shouldReveal &&
-        sawStreamingRef.current &&
-        targetText.startsWith(current) &&
-        current.length < targetText.length;
-      if (shouldReveal || canContinueTerminalReveal) {
+      if (shouldReveal) {
         if (current.length === 0) {
           return initialStreamingText(targetText);
         }
@@ -5759,41 +5749,20 @@ function useStreamingDisplayText(
         }
         return initialStreamingText(targetText);
       }
-      sawStreamingRef.current = false;
       return targetText;
     });
   }, [shouldReveal, smoothEnabled, targetText]);
 
-  useEffect(() => {
-    if (
-      !smoothEnabled ||
-      streaming ||
-      displayedText.length < targetText.length
-    ) {
-      return;
-    }
-    sawStreamingRef.current = false;
-  }, [displayedText, smoothEnabled, streaming, targetText]);
-
   const revealActive =
     smoothEnabled &&
-    (
-      streaming ||
-      (
-        sawStreamingRef.current &&
-        targetText.startsWith(displayedText) &&
-        displayedText.length < targetText.length
-      )
-    );
+    shouldReveal &&
+    targetText.startsWith(displayedText);
 
   useEffect(() => {
     if (!revealActive) {
       return;
     }
     if (displayedText.length >= targetText.length) {
-      if (!streaming) {
-        sawStreamingRef.current = false;
-      }
       return;
     }
     if (!targetText.startsWith(displayedText)) {
@@ -5801,11 +5770,11 @@ function useStreamingDisplayText(
     }
     const timer = window.setTimeout(() => {
       setDisplayedText((current) =>
-        revealNextStreamingText(current, targetText, !streaming),
+        revealNextStreamingText(current, targetText),
       );
     }, STREAM_TYPEWRITER_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [displayedText, revealActive, streaming, targetText]);
+  }, [displayedText, revealActive, targetText]);
 
   if (!smoothEnabled) {
     return {
@@ -5831,7 +5800,6 @@ function initialStreamingText(text: string): string {
 function revealNextStreamingText(
   current: string,
   target: string,
-  terminalCatchUp = false,
 ): string {
   if (!target.startsWith(current)) {
     return initialStreamingText(target);
@@ -5840,20 +5808,8 @@ function revealNextStreamingText(
   if (remaining <= 0) {
     return target;
   }
-  let step = terminalCatchUp
-    ? STREAM_TYPEWRITER_CATCHUP_MIN_STEP
-    : STREAM_TYPEWRITER_MIN_STEP;
-  if (terminalCatchUp) {
-    if (remaining > 1200) {
-      step = 48;
-    } else if (remaining > 520) {
-      step = 32;
-    } else if (remaining > 220) {
-      step = 20;
-    } else if (remaining > 96) {
-      step = 12;
-    }
-  } else if (remaining > 1200) {
+  let step = STREAM_TYPEWRITER_MIN_STEP;
+  if (remaining > 1200) {
     step = 6;
   } else if (remaining > 520) {
     step = 4;

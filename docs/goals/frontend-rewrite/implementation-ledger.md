@@ -9553,3 +9553,26 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent browser inspection, production timeline collapse fix, subagent terminal replay wiring, focused component coverage, full timeline component suite, packed dist rebuild, and browser stream-refresh verification completed for this slice. This does not claim final V2 frontend completion, full Project View migration, full Settings parity, or reviewer-subagent sign-off.
+
+## 2026-07-02 Project View Diff Empty State Harness Migration Slice
+
+### Scope
+- Re-checked the active frontend rewrite goal and the remaining Project View Python UI harness before editing. `tests/integration_tests/frontend/test_project_view_ui.py` remains the broad old UI harness to retire incrementally.
+- Migrated three still-current Project View behaviors from the old fake-DOM Python harness into V2-native React coverage:
+  - non-git mounts show the V1-friendly empty state, `This mount is not a Git repository.`;
+  - backend `diff_message` takes precedence over the generic non-git message;
+  - reload invalidates the currently selected file preview and refetches the active file.
+- Fixed the V2 Project View parity gap found during migration: an empty non-git diff listing previously fell through to generic `No workspace changes.`. It now uses the backend message when present, then the explicit non-git message, then the ordinary no-changes message.
+- Removed the three migrated Python harness functions from `test_project_view_ui.py`. The file still remains with many unmigrated scenarios, so `CLEAN-01` stays in progress.
+
+### Verification
+- `npm test -- src/test/WorkspaceProjectView.test.tsx -t "friendly non-git|backend non-git|reloads the selected file"` passed with 3 focused tests.
+- `npm test -- src/test/WorkspaceProjectView.test.tsx` passed with 10 tests.
+- `uv run --extra dev ruff check tests/integration_tests/frontend/test_project_view_ui.py` passed.
+- `npm run typecheck` passed.
+- `npm run lint` passed.
+- `npm run build` passed and regenerated the packed `frontend/dist/app` bundle.
+- `rg -n "^def test_project_view_" tests\integration_tests\frontend\test_project_view_ui.py | Measure-Object | Select-Object -ExpandProperty Count` returned 121 remaining Project View Python harness functions.
+
+### Reviewer
+- Main-agent V1 harness mapping, V2 non-git diff empty-state fix, focused React component coverage, partial Python harness retirement, and packed dist rebuild completed for this slice. This does not claim full Project View parity, full old-harness retirement, browser visual sign-off, reviewer-subagent sign-off, or final V2 frontend completion.

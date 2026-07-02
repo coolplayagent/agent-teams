@@ -47,6 +47,7 @@ import type {
   SshProfileRecord,
   WorkspaceDiffFile,
   WorkspaceDiffFileSummary,
+  WorkspaceDiffListing,
   WorkspaceFileContent,
   WorkspaceLocalMountConfig,
   WorkspaceMountProvider,
@@ -468,7 +469,7 @@ export function WorkspaceProjectView({
               ) : null}
               {diffsQuery.data !== undefined && diffFiles.length === 0 ? (
                 <div className="at-project-state">
-                  {diffsQuery.data.diff_message ?? t("workspaceNoChanges")}
+                  {workspaceDiffEmptyMessage(diffsQuery.data, t)}
                 </div>
               ) : null}
               {diffFiles.map((file) => (
@@ -919,6 +920,20 @@ function WorkspaceFilePreview({
       ))}
     </div>
   );
+}
+
+function workspaceDiffEmptyMessage(
+  listing: WorkspaceDiffListing,
+  t: Translate,
+): string {
+  const backendMessage = listing.diff_message?.trim() ?? "";
+  if (backendMessage.length > 0) {
+    return backendMessage;
+  }
+  if (listing.is_git_repository === false) {
+    return t("workspaceNotGitRepository");
+  }
+  return t("workspaceNoChanges");
 }
 
 function WorkspaceFileExplorer({

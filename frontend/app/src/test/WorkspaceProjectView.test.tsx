@@ -282,6 +282,209 @@ describe("WorkspaceProjectView", () => {
     );
   });
 
+  it("shows a friendly non-git changes empty state", async () => {
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/Users/yex/Desktop",
+        display_name: "Desktop",
+      },
+    ]);
+    getWorkspaceSnapshotMock.mockResolvedValue({
+      workspace_id: "workspace-1",
+      default_mount_name: "default",
+      default_mount_root: "C:/Users/yex/Desktop",
+      tree: {
+        name: ".",
+        path: ".",
+        kind: "directory",
+        children: [
+          {
+            name: "Firefox.exe",
+            path: "Firefox.exe",
+            kind: "file",
+            has_children: false,
+          },
+        ],
+      },
+    });
+    getWorkspaceTreeMock.mockResolvedValue({
+      workspace_id: "workspace-1",
+      mount_name: "default",
+      directory_path: ".",
+      children: [
+        {
+          name: "Firefox.exe",
+          path: "Firefox.exe",
+          kind: "file",
+          has_children: false,
+        },
+      ],
+    });
+    getWorkspaceDiffsMock.mockResolvedValue({
+      workspace_id: "workspace-1",
+      mount_name: "default",
+      root_path: "C:/Users/yex/Desktop",
+      is_git_repository: false,
+      git_root_path: null,
+      diff_message: null,
+      diff_files: [],
+    });
+    getWorkspaceFileContentMock.mockResolvedValue({
+      workspace_id: "workspace-1",
+      mount_name: "default",
+      path: "Firefox.exe",
+      content: "",
+      encoding: "binary",
+      is_binary: true,
+      truncated: false,
+      size_bytes: 100,
+    });
+
+    renderProjectView();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open file Firefox.exe" }));
+    expect(await screen.findByText("Binary file preview unavailable")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Changes 0" }));
+
+    expect(await screen.findByText("This mount is not a Git repository.")).toBeVisible();
+    expect(screen.queryByText("No workspace changes.")).not.toBeInTheDocument();
+    expect(screen.getByText("No changed file selected.")).toBeVisible();
+  });
+
+  it("prefers the backend non-git diff message", async () => {
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/alpha-project",
+        display_name: "Alpha",
+      },
+    ]);
+    getWorkspaceSnapshotMock.mockResolvedValue({
+      workspace_id: "workspace-1",
+      default_mount_name: "default",
+      default_mount_root: "C:/work/alpha-project",
+      tree: {
+        name: ".",
+        path: ".",
+        kind: "directory",
+        children: [],
+      },
+    });
+    getWorkspaceTreeMock.mockResolvedValue({
+      workspace_id: "workspace-1",
+      mount_name: "default",
+      directory_path: ".",
+      children: [],
+    });
+    getWorkspaceDiffsMock.mockResolvedValue({
+      workspace_id: "workspace-1",
+      mount_name: "default",
+      root_path: "C:/work/alpha-project",
+      is_git_repository: false,
+      git_root_path: null,
+      diff_message: "Git command timed out while inspecting changes.",
+      diff_files: [],
+    });
+
+    renderProjectView();
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Changes 0" }));
+
+    expect(
+      await screen.findByText("Git command timed out while inspecting changes."),
+    ).toBeVisible();
+    expect(screen.queryByText("This mount is not a Git repository.")).not.toBeInTheDocument();
+  });
+
+  it("reloads the selected file preview", async () => {
+    let snapshotRequests = 0;
+    let fileRequests = 0;
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+    ]);
+    getWorkspaceSnapshotMock.mockImplementation(() => {
+      snapshotRequests += 1;
+      return Promise.resolve({
+        workspace_id: "workspace-1",
+        default_mount_name: "default",
+        default_mount_root: "C:/work/agent-teams",
+        tree: {
+          name: ".",
+          path: ".",
+          kind: "directory",
+          children: [
+            {
+              name: "README.md",
+              path: "README.md",
+              kind: "file",
+              has_children: false,
+            },
+          ],
+        },
+      });
+    });
+    getWorkspaceTreeMock.mockResolvedValue({
+      workspace_id: "workspace-1",
+      mount_name: "default",
+      directory_path: ".",
+      children: [
+        {
+          name: "README.md",
+          path: "README.md",
+          kind: "file",
+          has_children: false,
+        },
+      ],
+    });
+    getWorkspaceDiffsMock.mockResolvedValue({
+      workspace_id: "workspace-1",
+      mount_name: "default",
+      root_path: "C:/work/agent-teams",
+      is_git_repository: true,
+      git_root_path: "C:/work/agent-teams",
+      diff_message: null,
+      diff_files: [],
+    });
+    getWorkspaceFileContentMock.mockImplementation((_workspaceId, path, mountName) => {
+      fileRequests += 1;
+      return Promise.resolve({
+        workspace_id: "workspace-1",
+        mount_name: mountName ?? "default",
+        path,
+        content: `file version ${fileRequests}`,
+        encoding: "utf-8",
+        is_binary: false,
+        truncated: false,
+        size_bytes: 14,
+      });
+    });
+
+    renderProjectView();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open file README.md" }));
+
+    expect(await screen.findByText("file version 1")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Reload workspace view" }));
+
+    await waitFor(() => {
+      expect(fileRequests).toBeGreaterThanOrEqual(2);
+    });
+    expect(await screen.findByText(`file version ${fileRequests}`)).toBeVisible();
+    expect(snapshotRequests).toBeGreaterThanOrEqual(2);
+    expect(getWorkspaceFileContentMock).toHaveBeenLastCalledWith(
+      "workspace-1",
+      "README.md",
+      "default",
+    );
+  });
+
   it("filters the workspace file tree and opens a changed result", async () => {
     listWorkspacesMock.mockResolvedValue([
       {

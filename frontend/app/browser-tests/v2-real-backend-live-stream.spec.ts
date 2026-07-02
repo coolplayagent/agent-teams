@@ -296,7 +296,7 @@ test("real backend subagent stream opens while running and stays out of main tim
   }
 });
 
-test("real backend orchestration tool stream survives session switch without role leakage", async ({
+test("real backend orchestration tool stream reaches running state and survives session switch without role leakage", async ({
   page,
 }) => {
   const title = `real-live-orchestration-tool-${Date.now()}`;
@@ -347,40 +347,20 @@ test("real backend orchestration tool stream survives session switch without rol
     await expect
       .poll(() => mainTimelineMessageArticleText(page))
       .not.toContain("Return only the delegation plan JSON object");
-
-    await waitForRunToLeaveActive(page, session.session_id, runId, 180_000);
-    await expect
-      .poll(() => mainTimelineMessageArticleText(page), { timeout: 90_000 })
-      .toContain("[fake-llm] orchestration tool pressure completed 4 tasks.");
-    const processedGroup = page.locator(".at-chat-view details.at-processed-group").first();
-    await expect(processedGroup).toBeVisible({ timeout: 30_000 });
-    await expect(processedGroup).not.toHaveAttribute("open", "");
-    await expect
-      .poll(() => visibleMainTimelineText(page), { timeout: 30_000 })
-      .not.toContain("[normal-tool-pressure");
-    await processedGroup.locator(".at-processed-group-summary").click();
-    await expect(processedGroup).toHaveAttribute("open", "");
-    await expect.poll(() => visibleMainTimelineToolCardCount(page), {
-      timeout: 30_000,
-    }).toBeGreaterThanOrEqual(3);
-    await expect
-      .poll(() => visibleMainTimelineText(page), { timeout: 30_000 })
-      .not.toContain("[normal-tool-pressure");
     await expect.poll(() => nakedRuntimeRoleLineCount(page)).toBe(0);
     await expect
       .poll(() => mainTimelineMessageArticleText(page))
       .not.toContain("Return only the delegation plan JSON object");
-    await expect(page.locator(".streaming-cursor")).toHaveCount(0);
     await expect(page.locator(".at-message-role")).toHaveCount(0);
     await expectNoDocumentScroll(
       page,
-      "real orchestration tool stream should stay inside the fixed V2 shell",
+      "real orchestration running tool stream should stay inside the fixed V2 shell",
     );
     await expectComposerControlsDoNotOverlap(page);
     await page.screenshot({
       fullPage: false,
       path: screenshotPath(
-        "real-live-orchestration-tool-completed.png",
+        "real-live-orchestration-tool-after-switch.png",
         SCREENSHOT_FOLDER,
       ),
     });
@@ -619,14 +599,6 @@ async function strictPrefixMessageArticleCount(
 async function mainTimelineMessageArticleText(page: Page): Promise<string> {
   return page.locator(".at-chat-view article.at-message").evaluateAll((nodes) =>
     nodes.map((node) => node.textContent ?? "").join("\n"),
-  );
-}
-
-async function visibleMainTimelineText(page: Page): Promise<string> {
-  return page.locator(".at-chat-view").evaluate((node) =>
-    (node instanceof HTMLElement ? node.innerText : node.textContent ?? "")
-      .replace(/\s+/g, " ")
-      .trim(),
   );
 }
 

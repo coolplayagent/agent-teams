@@ -20,6 +20,7 @@ from relay_teams.sessions.runs.background_tasks.models import (
     BackgroundTaskStatus,
 )
 from relay_teams.tools.runtime.context import ToolDeps
+from relay_teams.tools.runtime.execution import ToolActionCapacity
 from relay_teams.tools.runtime.models import (
     ToolExecutionError,
     ToolResultProjection,
@@ -648,6 +649,7 @@ async def test_wait_background_task_waits_without_optional_timeout_argument(
         ),
     )
     captured_args: dict[str, object] = {}
+    captured_action_capacity: list[ToolActionCapacity] = []
 
     async def _fake_execute_tool(
         ctx,
@@ -655,10 +657,12 @@ async def test_wait_background_task_waits_without_optional_timeout_argument(
         tool_name: str,
         args_summary: dict[str, object],
         action: Callable[[], Awaitable[ToolResultProjection]],
+        action_capacity: ToolActionCapacity = ToolActionCapacity.STANDARD,
         approval_request=None,
     ) -> dict[str, object]:
         del ctx, tool_name, approval_request
         captured_args.update(args_summary)
+        captured_action_capacity.append(action_capacity)
         return cast(dict[str, object], (await action()).visible_data)
 
     from relay_teams.tools.workspace_tools import (
@@ -674,6 +678,7 @@ async def test_wait_background_task_waits_without_optional_timeout_argument(
         "background_task_id": "subagent_123",
     }
     assert captured_args == {"background_task_id": "subagent_123"}
+    assert captured_action_capacity == [ToolActionCapacity.WAIT]
     assert result["background_task_id"] == "subagent_123"
     assert result["completed"] is True
 

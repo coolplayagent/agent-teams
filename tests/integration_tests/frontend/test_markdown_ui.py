@@ -79,6 +79,74 @@ console.log(JSON.stringify({ stripped, html }));
     assert "description: Create skills." not in payload["html"]
 
 
+def test_marked_renderer_escapes_raw_html_without_breaking_markdown(
+    tmp_path: Path,
+) -> None:
+    payload = _run_markdown_script(
+        tmp_path=tmp_path,
+        include_marked=True,
+        runner_source="""
+const { renderMarkdownToHtml, parseMarkdown } = await import("./markdown.mjs");
+
+globalThis.document = {
+    addEventListener() {
+        return undefined;
+    },
+    createElement(tagName) {
+        if (tagName !== "template") {
+            throw new Error(`unexpected element ${tagName}`);
+        }
+        return {
+            _innerHTML: "",
+            content: {
+                querySelectorAll() {
+                    return [];
+                },
+            },
+            set innerHTML(value) {
+                this._innerHTML = value;
+            },
+            get innerHTML() {
+                return this._innerHTML;
+            },
+        };
+    },
+};
+
+const html = renderMarkdownToHtml([
+    "Model returned <a/> ok.",
+    "Raw pair: <review>xxx</review>.",
+    "Custom self tags: <div/> and <foo/>.",
+    "Markdown link: [docs](/docs).",
+    "Autolink: <https://example.com>.",
+    "",
+    "```",
+    "<a/>",
+    "```",
+].join("\\n"));
+const thinkingHtml = parseMarkdown("<think>plan</think>Visible");
+
+console.log(JSON.stringify({ html, thinkingHtml }));
+""".strip(),
+    )
+
+    html = payload["html"]
+    assert "&lt;a/&gt;" in html
+    assert "&lt;review&gt;xxx&lt;/review&gt;" in html
+    assert "&lt;div/&gt;" in html
+    assert "&lt;foo/&gt;" in html
+    assert "<review>" not in html
+    assert "<foo" not in html
+    assert '<a href="/docs">docs</a>' in html
+    assert '<a href="https://example.com">https://example.com</a>' in html
+    assert "<code>&lt;a/&gt;\n</code>" in html
+
+    thinking_html = payload["thinkingHtml"]
+    assert 'class="thinking-block"' in thinking_html
+    assert "plan" in thinking_html
+    assert "&lt;think&gt;" not in thinking_html
+
+
 def test_frontend_index_avoids_external_markdown_and_font_cdns() -> None:
     repo_root = Path(__file__).resolve().parents[3]
     index_html = (repo_root / "frontend" / "dist" / "index.html").read_text(
@@ -90,7 +158,11 @@ def test_frontend_index_avoids_external_markdown_and_font_cdns() -> None:
     assert "cdnjs.cloudflare.com/ajax/libs/highlight.js" not in index_html
 
 
-def _run_markdown_script(tmp_path: Path, runner_source: str) -> dict[str, str]:
+def _run_markdown_script(
+    tmp_path: Path,
+    runner_source: str,
+    include_marked: bool = False,
+) -> dict[str, str]:
     repo_root = Path(__file__).resolve().parents[3]
     source_path = repo_root / "frontend" / "dist" / "js" / "utils" / "markdown.js"
 
@@ -129,6 +201,25 @@ export function t(key) {
         .replace("./i18n.js", "./mockI18n.mjs")
     )
     module_under_test_path.write_text(source_text, encoding="utf-8")
+
+    if include_marked:
+        marked_runtime_path = tmp_path / "marked.cjs"
+        marked_source_path = (
+            repo_root / "frontend" / "dist" / "js" / "vendor" / "marked.min.js"
+        )
+        marked_runtime_path.write_text(
+            marked_source_path.read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+        runner_source = f"""
+import {{ createRequire }} from "node:module";
+
+const require = createRequire(import.meta.url);
+globalThis.marked = require("./{marked_runtime_path.name}");
+
+{runner_source}
+""".strip()
+
     runner_path.write_text(runner_source, encoding="utf-8")
 
     completed = subprocess.run(

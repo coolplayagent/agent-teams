@@ -541,10 +541,10 @@ class SessionSupportMixin(AgentLlmSessionMixinBase):
             conversation_id=self._conversation_id,
             workspace_id=self._workspace_id,
             publish_tool_call_events_from_messages=(
-                self._publish_tool_call_events_from_messages
+                self._publish_tool_call_events_from_messages_async
             ),
             publish_committed_tool_outcome_events_from_messages=(
-                self._publish_committed_tool_outcome_events_from_messages
+                self._publish_committed_tool_outcome_events_from_messages_async
             ),
             raise_assistant_run_error=self._raise_assistant_run_error,
             generate_async=self._generate_async,

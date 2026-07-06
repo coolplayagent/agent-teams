@@ -1860,15 +1860,23 @@ async def test_generate_async_does_not_emit_retry_exhausted_after_fallback_exhau
         retry_scheduled_calls.append(kwargs)
 
     session.__dict__["_handle_retry_scheduled"] = _capture_retry_scheduled
-    session.__dict__["_handle_retry_exhausted"] = lambda **kwargs: (
+
+    async def _handle_retry_exhausted_async(**kwargs: object) -> None:
         retry_exhausted_calls.append(kwargs)
-    )
-    session.__dict__["_handle_fallback_exhausted"] = lambda **kwargs: (
+
+    async def _handle_fallback_exhausted_async(**kwargs: object) -> None:
         fallback_exhausted_calls.append(kwargs)
+
+    session.__dict__["_handle_retry_exhausted_async"] = _handle_retry_exhausted_async
+    session.__dict__["_handle_fallback_exhausted_async"] = (
+        _handle_fallback_exhausted_async
     )
-    session.__dict__["_raise_assistant_run_error"] = lambda **kwargs: (
-        _ for _ in ()
-    ).throw(RuntimeError("stop after fallback exhaustion"))
+
+    async def _raise_assistant_run_error(**kwargs: object) -> None:
+        _ = kwargs
+        raise RuntimeError("stop after fallback exhaustion")
+
+    session.__dict__["_raise_assistant_run_error"] = _raise_assistant_run_error
 
     class _FailingAgentContext:
         async def __aenter__(self) -> object:

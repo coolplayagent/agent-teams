@@ -114,6 +114,28 @@ For every row moved to `Verified`, record:
 
 ## Verification Ledger
 
+### 2026-07-10 Cursor-Only Hydrated Active Text Guard
+
+- `MSG-02`, `STREAM-02`, and `REC-01` tightened for active recovery/hydration
+  where a complete persisted answer is already known while the run is still
+  open. V2 now distinguishes "show a live cursor at the end" from "reveal this
+  text with the typewriter", so hydrated complete answers keep their full text
+  visible immediately after refresh or replay while true runtime deltas still
+  reveal progressively.
+- The packed browser guard now samples the answer row as soon as it appears,
+  before waiting for the text to settle, and requires `.at-message-text` to
+  already equal the full answer. The existing create-run stream test was rerun
+  to prove ordinary live deltas still start shorter than the final buffer and
+  grow over time.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx`,
+  `npm run build`,
+  `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium -g "does not replay when persisted history renders before live replay arrives"`,
+  `npm run test:browser -- v2-stream-create-run.spec.ts --project=chromium -g "reveals live stream text progressively"`,
+  and `npm run lint`.
+- This does not move `MSG-02`, `STREAM-02`, or `REC-01` to `Verified`; broader
+  production-backend orchestration/tool recovery, interrupted real-provider
+  recovery, and final V1/V2 visual sign-off remain open.
+
 ### 2026-07-10 History-First Stream Replay Guard
 
 - `MSG-02` and `STREAM-02` tightened for the race where `/messages` or

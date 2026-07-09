@@ -623,7 +623,7 @@ describe("MessageTimeline", () => {
     expect(textAfterReplay).not.toBeNull();
     expect(textAfterReplay).toHaveClass("at-message-streaming-text");
     expect(textAfterReplay).toHaveTextContent(finalAnswer);
-    expect(textAfterReplay?.textContent).not.toBe("L");
+    expect(textAfterReplay?.textContent).toBe(finalAnswer);
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
     expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
 

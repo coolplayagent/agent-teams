@@ -676,6 +676,7 @@ type TimelineRenderPart =
   | TimelineToolPart;
 
 interface TimelineTextPart {
+  cursorOnly?: boolean;
   kind: "text";
   reveal?: boolean;
   streaming: boolean;
@@ -1900,6 +1901,7 @@ function persistedRowWithOpenRuntimeStreaming(row: TimelineRow): TimelineRow {
     changed = true;
     return {
       ...part,
+      cursorOnly: true,
       streaming: true,
     };
   });
@@ -6487,6 +6489,7 @@ function MessageText({
     part.text,
     part.streaming,
     part.reveal === true,
+    part.cursorOnly === true,
     streamIdentity,
   );
   const visuallyStreaming = part.streaming || streamingDisplay.revealing;
@@ -6522,10 +6525,17 @@ function useStreamingDisplayText(
   targetText: string,
   streaming: boolean,
   reveal: boolean,
+  cursorOnly: boolean,
   streamIdentity: string,
 ): StreamingDisplayText {
   const [displayState, setDisplayState] = useState<StreamingDisplayState>(() =>
-    initialStreamingDisplayState(targetText, streaming, reveal, streamIdentity),
+    initialStreamingDisplayState(
+      targetText,
+      streaming,
+      reveal,
+      cursorOnly,
+      streamIdentity,
+    ),
   );
 
   useEffect(() => {
@@ -6535,10 +6545,11 @@ function useStreamingDisplayText(
         targetText,
         streaming,
         reveal,
+        cursorOnly,
         streamIdentity,
       ),
     );
-  }, [reveal, streamIdentity, streaming, targetText]);
+  }, [cursorOnly, reveal, streamIdentity, streaming, targetText]);
 
   useEffect(() => {
     if (!displayState.active || displayState.text === displayState.targetText) {
@@ -6585,9 +6596,15 @@ function initialStreamingDisplayState(
   targetText: string,
   streaming: boolean,
   reveal: boolean,
+  cursorOnly: boolean,
   identity: string,
 ): StreamingDisplayState {
-  const active = shouldRevealStreamingText(targetText, streaming, reveal);
+  const active = shouldRevealStreamingText(
+    targetText,
+    streaming,
+    reveal,
+    cursorOnly,
+  );
   const restoredText = restoredStreamingDisplayText(identity, targetText, active);
   return {
     active,
@@ -6602,9 +6619,15 @@ function nextStreamingDisplayState(
   targetText: string,
   streaming: boolean,
   reveal: boolean,
+  cursorOnly: boolean,
   identity: string,
 ): StreamingDisplayState {
-  const active = shouldRevealStreamingText(targetText, streaming, reveal);
+  const active = shouldRevealStreamingText(
+    targetText,
+    streaming,
+    reveal,
+    cursorOnly,
+  );
   if (current.identity !== identity) {
     if (current.targetText === targetText && current.text === targetText) {
       return {
@@ -6614,7 +6637,13 @@ function nextStreamingDisplayState(
         text: targetText,
       };
     }
-    return initialStreamingDisplayState(targetText, streaming, reveal, identity);
+    return initialStreamingDisplayState(
+      targetText,
+      streaming,
+      reveal,
+      cursorOnly,
+      identity,
+    );
   }
   if (!active) {
     return {
@@ -6673,8 +6702,10 @@ function shouldRevealStreamingText(
   targetText: string,
   streaming: boolean,
   reveal: boolean,
+  cursorOnly: boolean,
 ): boolean {
   return (
+    !cursorOnly &&
     targetText.length > 0 &&
     targetText.length < LONG_STREAM_TEXT_THRESHOLD &&
     (streaming || reveal)

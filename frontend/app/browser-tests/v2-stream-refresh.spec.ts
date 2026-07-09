@@ -336,6 +336,8 @@ test("does not replay when persisted history renders before live replay arrives"
       `.at-timeline-row.at-message[data-run-id="${RUN_ID}"]`,
     );
     await expect(answerRow).toHaveCount(1);
+    expect(await answerRow.locator(".at-message-text").textContent())
+      .toBe(finalText);
     await expect(answerRow).toContainText(finalText);
     await expect(answerRow.locator(".at-message-streaming-text")).toHaveText(finalText);
     await expect(answerRow.locator(".streaming-cursor")).toHaveCount(1);

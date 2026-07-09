@@ -93,6 +93,7 @@ export function ChatWorkspace({
       className={switching ? "at-chat-view is-session-switching" : "at-chat-view"}
     >
       <MessageTimeline
+        fallbackRunId={runStreamController.activeRunId}
         latestTerminalRunId={latestTerminalRunId}
         latestTerminalRunStatus={latestTerminalRunStatus}
         onSubagentOpen={onSubagentOpen}

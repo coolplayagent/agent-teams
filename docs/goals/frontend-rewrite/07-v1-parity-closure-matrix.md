@@ -140,6 +140,14 @@ For every row moved to `Verified`, record:
 - The same browser flow drills from General into Speech, Notifications, and Appearance through those related route entries, preserving the V1 second-level-page logic requested for Settings.
 - Evidence: `npm run test:browser -- v2-settings-parity.spec.ts --project=chromium -g "General related settings"` and screenshot `.tmp/frontend-v2-ts-settings-parity/v2-general-related-routes.png`.
 
+### 2026-07-09 Managed Active Refresh Stream Hydration Pass
+
+- `MSG-02`, `STREAM-02`, `REC-01`, and `SESS-03` tightened: active hard refresh now keeps reconstructed running-round output in the same streaming row while the runtime SSE state is still reconnecting, instead of rendering it once as completed replay and then rebuilding a separate stream row.
+- Hydrated text matching now consumes runtime text in event order, so repeated text after a tool boundary is not incorrectly anchored to the later live segment.
+- `ChatWorkspace` now passes the active run id as a fallback timeline run id, keeping partial active messages associated with the active stream when explicit message run metadata is not yet available.
+- Evidence: `npm test -- src/test/MessageTimeline.test.tsx`, `npm run build`, `npm run lint`, `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium`, and `git diff --check`.
+- This does not move `MSG-02`, `STREAM-02`, `REC-01`, or `SESS-03` to `Verified`; true real-provider normal stream proof, complex orchestration/subagent recovery variants, and final V1/V2 visual sign-off remain open.
+
 ### 2026-07-09 Runtime Text Reveal Pass
 
 - `MSG-02` corrected: live text deltas no longer render the full received buffer immediately. The timeline now reveals a stable stream row progressively while keeping the cursor at the next character position.

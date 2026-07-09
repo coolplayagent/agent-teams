@@ -3602,6 +3602,54 @@ describe("MessageTimeline", () => {
       .toHaveLength(1);
   });
 
+  it("keeps running reconstructed round output in the streaming row", async () => {
+    listSessionMessagesMock.mockResolvedValue([]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          coordinator_messages: [
+            {
+              created_at: "2026-06-23T12:42:30Z",
+              instance_id: "main-instance",
+              role: "assistant",
+              role_id: "MainAgent",
+              message: {
+                parts: [
+                  {
+                    content: "partial reconstructed stream",
+                    part_kind: "text",
+                  },
+                ],
+              },
+            },
+          ],
+          created_at: "2026-06-23T12:42:00Z",
+          primary_role_id: "MainAgent",
+          run_id: "run-reconstructed-running",
+          run_phase: "running",
+          run_status: "running",
+          run_user_message: "Streaming task",
+        },
+      ],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline();
+
+    await waitForSingleVisibleText("partial reconstructed stream");
+    const article = container.querySelector<HTMLElement>("article.at-message");
+    expect(article).not.toBeNull();
+    expect(article).toHaveClass("is-streaming");
+    expect(article).toHaveAttribute("data-run-id", "run-reconstructed-running");
+    const streamingText = container.querySelector<HTMLElement>(
+      ".at-message-streaming-text",
+    );
+    expect(streamingText).not.toBeNull();
+    expect(streamingText).toHaveTextContent("partial reconstructed stream");
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
+  });
+
   it("keeps the round rail visible for single-round sessions like V1", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {
@@ -3699,7 +3747,7 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText("final chunk only")).not.toBeInTheDocument();
   });
 
-  it("keeps only a live cursor when open runtime text is already hydrated", async () => {
+  it("keeps hydrated open runtime text in the streaming row instead of adding an empty cursor", async () => {
     useRuntimeStore.setState({
       runtimeState: {
         activeRunIds: ["run-1"],
@@ -3707,6 +3755,7 @@ describe("MessageTimeline", () => {
           "run-1": {
             runId: "run-1",
             status: "open",
+            hadVisibleTextStream: true,
             lastEventId: 3,
             seenEventKeys: [],
             terminalEventType: null,
@@ -3744,12 +3793,62 @@ describe("MessageTimeline", () => {
     );
     expect(streamingText).not.toBeNull();
     expect(streamingText).toHaveAttribute("data-streaming", "true");
-    expect(streamingText).not.toHaveTextContent("already persisted");
+    expect(streamingText).toHaveTextContent("already persisted");
+    expect(container.querySelectorAll(".at-message-streaming-text")).toHaveLength(1);
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
-    const copyButton = await screen.findByRole("button", {
-      name: "Copy last answer",
+    expect(screen.queryByRole("button", { name: "Copy last answer" }))
+      .not.toBeInTheDocument();
+  });
+
+  it("keeps hydrated open runtime text streaming before replayed deltas arrive", async () => {
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: ["run-1"],
+        runs: {
+          "run-1": {
+            runId: "run-1",
+            status: "open",
+            lastEventId: 3,
+            seenEventKeys: [],
+            terminalEventType: null,
+            entries: [
+              {
+                id: "run-1:1:0",
+                sessionId: "session-1",
+                runId: "run-1",
+                roleId: "MainAgent",
+                kind: "run_started",
+                text: "",
+                payload: {},
+                eventId: 1,
+                occurredAt: "2026-06-23T00:00:00Z",
+              },
+            ],
+          },
+        },
+      },
     });
-    expect(copyButton).toBeDisabled();
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message_id: "assistant-1",
+        role_id: "MainAgent",
+        run_id: "run-1",
+        content: "partial persisted answer",
+      },
+    ]);
+
+    const { container } = renderTimeline();
+
+    await waitForSingleVisibleText("partial persisted answer");
+    const streamingText = container.querySelector<HTMLElement>(
+      ".at-message-streaming-text",
+    );
+    expect(streamingText).not.toBeNull();
+    expect(streamingText).toHaveTextContent("partial persisted answer");
+    expect(container.querySelectorAll(".at-message-streaming-text")).toHaveLength(1);
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Copy last answer" }))
+      .not.toBeInTheDocument();
   });
 
   it("does not replay hydrated thinking from a closed runtime stream", async () => {

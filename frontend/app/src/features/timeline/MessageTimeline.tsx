@@ -268,8 +268,13 @@ export function MessageTimeline({
     [displayRounds, fallbackRunId, messageRoundLookup, persistedMessages, workspaceId],
   );
   const anchoredPersistedRows = useMemo(
-    () => persistedRowsWithRuntimeTextAnchors(persistedRows, runtimeState.runs),
-    [persistedRows, runtimeState.runs],
+    () =>
+      persistedRowsWithRuntimeTextAnchors(
+        persistedRows,
+        runtimeState.runs,
+        displayRounds,
+      ),
+    [displayRounds, persistedRows, runtimeState.runs],
   );
   const hydratedOutputTextByRunId = useMemo(
     () => timelineOutputTextByRunId(anchoredPersistedRows),
@@ -1656,26 +1661,46 @@ function mergeTerminalRuntimeTextRowsIntoPersistedAnswers(
 function persistedRowsWithRuntimeTextAnchors(
   persistedRows: TimelineRow[],
   runStates: Record<string, RuntimeRunState>,
+  rounds: SessionRound[],
 ): TimelineRow[] {
+  const openRoundRunIds = openRoundRunIdSet(rounds);
   let changed = false;
   const nextRows = persistedRows.map((row) => {
-    const runtimeAnchorKey = runtimeTextAnchorKeyForPersistedRow(row, runStates);
+    const runtimeHydration = runtimeTextHydrationForPersistedRow(
+      row,
+      runStates,
+      openRoundRunIds,
+    );
+    const runtimeAnchorKey = runtimeHydration?.key ?? null;
     if (runtimeAnchorKey === null || runtimeAnchorKey === row.key) {
+      if (runtimeHydration?.streaming === true) {
+        changed = true;
+        return persistedRowWithOpenRuntimeStreaming(row);
+      }
       return row;
     }
     changed = true;
-    return {
+    const anchoredRow = {
       ...row,
       key: runtimeAnchorKey,
     };
+    return runtimeHydration?.streaming === true
+      ? persistedRowWithOpenRuntimeStreaming(anchoredRow)
+      : anchoredRow;
   });
   return changed ? nextRows : persistedRows;
 }
 
-function runtimeTextAnchorKeyForPersistedRow(
+interface RuntimeTextHydration {
+  key: string | null;
+  streaming: boolean;
+}
+
+function runtimeTextHydrationForPersistedRow(
   row: TimelineRow,
   runStates: Record<string, RuntimeRunState>,
-): string | null {
+  openRoundRunIds: ReadonlySet<string>,
+): RuntimeTextHydration | null {
   if (!persistedAnswerRowCanHydrateRuntimeText(row)) {
     return null;
   }
@@ -1684,17 +1709,141 @@ function runtimeTextAnchorKeyForPersistedRow(
     return null;
   }
   const runState = runStates[runId];
-  if (
-    runState === undefined ||
-    !runtimeRunStateClosesText(runState) ||
-    runState.hadVisibleTextStream !== true
-  ) {
+  if (runState === undefined) {
+    return openRoundRunIds.has(runId)
+      ? {
+          key: null,
+          streaming: true,
+        }
+      : null;
+  }
+  const streaming = !runtimeRunStateClosesText(runState);
+  const hydratedText = normalizedTimelineText(rowCopyText(row.parts));
+  const key = sequentialCoveredRuntimeTextAnchorKey(
+    runState.entries,
+    hydratedText,
+  );
+  if (streaming) {
+    const openText = openRuntimeTextAnchorForHydration(runState.entries);
+    if (openText.key !== null) {
+      return key === openText.key
+        ? {
+            key,
+            streaming: true,
+          }
+        : key === null
+          ? null
+          : {
+              key,
+              streaming: false,
+            };
+    }
+    if (!openText.hasVisibleContent) {
+      return {
+        key: null,
+        streaming: true,
+      };
+    }
+    if (key !== null) {
+      return {
+        key,
+        streaming: false,
+      };
+    }
     return null;
   }
-  return latestCoveredRuntimeTextAnchorKey(
-    runState.entries,
-    normalizedTimelineText(rowCopyText(row.parts)),
-  );
+  if (runState.hadVisibleTextStream !== true || key === null) {
+    return null;
+  }
+  return {
+    key,
+    streaming: false,
+  };
+}
+
+function openRoundRunIdSet(rounds: SessionRound[]): ReadonlySet<string> {
+  const runIds = new Set<string>();
+  for (const round of rounds) {
+    const runId = round.run_id.trim();
+    if (runId.length > 0 && !roundHasTerminalStatus(round)) {
+      runIds.add(runId);
+    }
+  }
+  return runIds;
+}
+
+interface OpenRuntimeTextAnchor {
+  hasVisibleContent: boolean;
+  key: string | null;
+}
+
+function openRuntimeTextAnchorForHydration(
+  entries: TimelineEntry[],
+): OpenRuntimeTextAnchor {
+  let hasVisibleContent = false;
+  let openKey: string | null = null;
+  let textSegmentSequence = 0;
+  const activeGroupSequences = new Map<string, number>();
+  for (const entry of entries) {
+    if (entry.kind === "text_delta" || entry.kind === "output_delta") {
+      const comparisonTexts = runtimeHydrationComparisonTexts(entry);
+      if (comparisonTexts.length === 0) {
+        continue;
+      }
+      hasVisibleContent = true;
+      const groupKey = runtimeTextGroupKey(entry);
+      let sequence = activeGroupSequences.get(groupKey);
+      if (sequence === undefined) {
+        sequence = textSegmentSequence;
+        textSegmentSequence += 1;
+        activeGroupSequences.set(groupKey, sequence);
+      }
+      openKey = runtimeTextRowKey(entry, sequence);
+      continue;
+    }
+    if (runtimeEntryShouldRenderChatContent(entry)) {
+      hasVisibleContent = true;
+      openKey = null;
+    }
+    if (runtimeHiddenEntryClosesText(entry)) {
+      activeGroupSequences.delete(runtimeTextGroupKey(entry));
+      continue;
+    }
+    activeGroupSequences.delete(runtimeTextGroupKey(entry));
+  }
+  return {
+    hasVisibleContent,
+    key: openKey,
+  };
+}
+
+function persistedRowWithOpenRuntimeStreaming(row: TimelineRow): TimelineRow {
+  let changed = false;
+  const parts = row.parts.map((part) => {
+    if (part.kind !== "text") {
+      return part;
+    }
+    if (part.streaming) {
+      return part;
+    }
+    changed = true;
+    return {
+      ...part,
+      streaming: true,
+    };
+  });
+  if (!changed) {
+    return {
+      ...row,
+      copyable: false,
+    };
+  }
+  return {
+    ...row,
+    copyable: false,
+    parts,
+    text: rowCopyText(parts),
+  };
 }
 
 function latestCoveredRuntimeTextAnchorKey(
@@ -1738,6 +1887,53 @@ function latestCoveredRuntimeTextAnchorKey(
       continue;
     }
     if (runtimeHiddenEntryClosesText(entry)) {
+      activeGroupSequences.delete(runtimeTextGroupKey(entry));
+      continue;
+    }
+    activeGroupSequences.delete(runtimeTextGroupKey(entry));
+  }
+  return latestAnchorKey;
+}
+
+function sequentialCoveredRuntimeTextAnchorKey(
+  entries: TimelineEntry[],
+  hydratedText: string,
+): string | null {
+  if (hydratedText.length === 0) {
+    return null;
+  }
+  const hydratedCursor = runtimeHydratedTextCursor(hydratedText);
+  let latestAnchorKey: string | null = null;
+  let textSegmentSequence = 0;
+  const activeGroupSequences = new Map<string, number>();
+  for (const entry of entries) {
+    if (entry.kind === "text_delta" || entry.kind === "output_delta") {
+      const comparisonTexts = runtimeHydrationComparisonTexts(entry);
+      if (comparisonTexts.length === 0) {
+        continue;
+      }
+      const groupKey = runtimeTextGroupKey(entry);
+      let sequence = activeGroupSequences.get(groupKey);
+      if (sequence === undefined) {
+        sequence = textSegmentSequence;
+        textSegmentSequence += 1;
+        activeGroupSequences.set(groupKey, sequence);
+      }
+      if (openRuntimeTextCoveredByHydration(entry, hydratedCursor)) {
+        latestAnchorKey = runtimeTextRowKey(entry, sequence);
+      }
+      continue;
+    }
+    if (entry.kind === "run_completed" && runtimeEntryHasStructuredOutput(entry)) {
+      const outputText = normalizedTimelineText(runtimeCompletedOutputText(entry));
+      const normalizedHydratedText = normalizedTimelineText(hydratedText);
+      if (
+        latestAnchorKey === null &&
+        outputText.length > 0 &&
+        normalizedHydratedText.startsWith(outputText)
+      ) {
+        latestAnchorKey = `runtime:${entry.id}`;
+      }
       activeGroupSequences.delete(runtimeTextGroupKey(entry));
       continue;
     }
@@ -3671,7 +3867,8 @@ function runtimeEntriesAfterHydration(
   const hydratedEntries: TimelineEntry[] = [];
   const safeHydratedText = hydratedText ?? "";
   const hydratedCursor = runtimeHydratedTextCursor(safeHydratedText);
-  let suppressCoveredText = runState.hadVisibleTextStream !== true;
+  let suppressCoveredText =
+    safeHydratedText.trim().length > 0 || runState.hadVisibleTextStream !== true;
   for (const entry of scopedEntries) {
     const nextEntry = runtimeEntryAfterThinkingHydration(
       entry,
@@ -3684,19 +3881,27 @@ function runtimeEntriesAfterHydration(
       suppressCoveredText &&
       openRuntimeTextCoveredByHydration(nextEntry, hydratedCursor)
     ) {
-      hydratedEntries.push(runtimeHydrationCursorEntry(nextEntry));
+      if (safeHydratedText.trim().length === 0) {
+        hydratedEntries.push(runtimeHydrationCursorEntry(nextEntry));
+      }
       continue;
     }
     hydratedEntries.push(nextEntry);
     suppressCoveredText = false;
   }
-  return openRuntimeEntriesWithIdleCursor(runState, hydratedEntries, variant);
+  return openRuntimeEntriesWithIdleCursor(
+    runState,
+    hydratedEntries,
+    variant,
+    safeHydratedText.trim().length > 0,
+  );
 }
 
 function openRuntimeEntriesWithIdleCursor(
   runState: RuntimeRunState,
   entries: TimelineEntry[],
   variant: "session" | "subagent-panel",
+  suppressPendingCursor = false,
 ): TimelineEntry[] {
   if (runState.status === "closed" || entries.length === 0) {
     return entries;
@@ -3726,6 +3931,9 @@ function openRuntimeEntriesWithIdleCursor(
   }
   const latestEntry = entries.at(-1);
   if (latestEntry !== undefined) {
+    if (suppressPendingCursor) {
+      return rowPipelineEntries;
+    }
     return [...rowPipelineEntries, runtimePendingCursorEntry(latestEntry, runState)];
   }
   return rowPipelineEntries;

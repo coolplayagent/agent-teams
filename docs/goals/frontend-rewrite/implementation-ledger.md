@@ -2,6 +2,26 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-09 Managed Active Refresh Stream Hydration Fix
+
+### Scope
+- Fixed the active hard-refresh path where a running round's reconstructed `coordinator_messages` output was rendered as a plain replay row after reload, while the active SSE/runtime state had not yet rebuilt a matching `RuntimeRunState`.
+- `MessageTimeline` now treats non-terminal round output as live hydration input even before runtime deltas replay. The reconstructed/persisted text stays in one streaming row with the cursor at the end instead of appearing as a completed row followed by a second rebuilt stream.
+- Runtime text hydration now matches covered text in event order rather than by whole-answer substring search, so repeated text after tool boundaries does not bind persisted history to the wrong later live segment.
+- `ChatWorkspace` passes the current active run id as a fallback timeline run id, so active messages without explicit `run_id`/`trace_id` can still associate with the live run.
+- Added managed-browser coverage for hard refresh during an active backend stream, plus TS coverage for reconstructed running round output, open persisted text before replayed deltas arrive, and repeated text around tool boundaries.
+- Rebuilt `frontend/dist/app` so the Python `/app/` server uses the fixed bundle.
+
+### Verification
+- `npm run test -- src/test/MessageTimeline.test.tsx` passed with 190 tests.
+- `npm run lint` passed.
+- `npm run build` passed and regenerated `frontend/dist/app`.
+- `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium` passed with 3 Chromium scenarios, including active hard refresh while the stream continued.
+- `git diff --check` passed.
+
+### Reviewer
+- Main-agent decision: this tightens `MSG-02`, `STREAM-02`, `REC-01`, and `SESS-03` for managed real-backend/fake-LLM active refresh. It does not mark those rows `Verified`; true real-provider normal-stream proof, complex orchestration/subagent recovery variants, and final V1/V2 visual sign-off remain open.
+
 ## 2026-07-09 Active Stream Close Reconnect Guard
 
 ### Scope

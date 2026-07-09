@@ -86,7 +86,8 @@ test("managed backend normal stream reveals incrementally and survives session s
 
     const runResponse = waitForRunCreateResponse(page);
     await submitPrompt(page, promptText);
-    runId = await runIdFromResponse(await runResponse);
+    const createdRunId = await runIdFromResponse(await runResponse);
+    runId = createdRunId;
     await expect(page.getByRole("button", { name: /停止|Stop/ })).toBeVisible({
       timeout: 20_000,
     });
@@ -157,7 +158,8 @@ test("managed backend normal stream survives terminal hard refresh without dupli
 
     const runResponse = waitForRunCreateResponse(page);
     await submitPrompt(page, promptText);
-    runId = await runIdFromResponse(await runResponse);
+    const createdRunId = await runIdFromResponse(await runResponse);
+    runId = createdRunId;
     await expect(page.getByRole("button", { name: /停止|Stop/ })).toBeVisible({
       timeout: 20_000,
     });
@@ -198,6 +200,88 @@ test("managed backend normal stream survives terminal hard refresh without dupli
       fullPage: false,
       path: screenshotPath(
         "managed-live-normal-terminal-after-refresh.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+  } finally {
+    await stopRunIfPresent(runId);
+    await deleteSession(session.session_id);
+  }
+});
+
+test("managed backend active stream stays in one streaming row after hard refresh", async ({
+  page,
+}) => {
+  const title = `managed-live-active-refresh-${Date.now()}`;
+  const session = await createSession(title);
+  let runId: string | null = null;
+  try {
+    await openManagedSession(page, session, title);
+    await expectManagedShellReady(page);
+
+    const streamTag = streamTagFromTitle(title);
+    const expectedText = slowStreamExpectedText(streamTag, 64);
+    const firstToken = slowStreamToken(streamTag, 0);
+    const lastToken = slowStreamToken(streamTag, 63);
+    const promptText = [
+      `${title}: [slow-stream tag=${streamTag} repeat=64 delay=100 chunk=8]`,
+      "请只输出 fake LLM 返回的慢速文本。",
+    ].join("\n");
+
+    const runResponse = waitForRunCreateResponse(page);
+    await submitPrompt(page, promptText);
+    const createdRunId = await runIdFromResponse(await runResponse);
+    runId = createdRunId;
+    await expect(page.getByRole("button", { name: /停止|Stop/ })).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect
+      .poll(() => latestLiveStreamText(page), { timeout: 90_000 })
+      .toContain(firstToken);
+    await expect
+      .poll(() => currentRunStatus(session.session_id, createdRunId))
+      .toBe("active");
+
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expectManagedShellReady(page);
+    await expect
+      .poll(() => currentRunStatus(session.session_id, createdRunId))
+      .toBe("active");
+    await expect
+      .poll(() => latestLiveStreamText(page), { timeout: 45_000 })
+      .toContain(firstToken);
+    await expect.poll(() => messageArticleContainingCount(page, firstToken)).toBe(1);
+
+    const samples = await collectLiveStreamTextLengthSamples(page, 90_000, 90);
+    expect(increasingSampleCount(samples)).toBeGreaterThanOrEqual(3);
+    expect(Math.max(...samples)).toBeLessThan(expectedText.length);
+    await page.screenshot({
+      fullPage: false,
+      path: screenshotPath(
+        "managed-live-active-refresh-streaming.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+
+    await waitForRunToLeaveActive(session.session_id, createdRunId, 180_000);
+    await expect
+      .poll(() => mainTimelineMessageArticleText(page), { timeout: 60_000 })
+      .toContain(lastToken);
+    await expect.poll(() => messageArticleTextOccurrenceCount(page, firstToken))
+      .toBe(1);
+    await expect
+      .poll(() => strictPrefixMessageArticleCount(page, expectedText))
+      .toBe(0);
+    await expect(page.locator(".streaming-cursor")).toHaveCount(0);
+    await expectNoDocumentScroll(
+      page,
+      "managed active hard refresh should stay inside the fixed shell",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.screenshot({
+      fullPage: false,
+      path: screenshotPath(
+        "managed-live-active-refresh-terminal.png",
         SCREENSHOT_FOLDER,
       ),
     });

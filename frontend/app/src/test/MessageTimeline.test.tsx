@@ -3999,6 +3999,49 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText("final chunk only")).not.toBeInTheDocument();
   });
 
+  it("does not restart reveal when closed runtime text matches a hydrated answer", async () => {
+    const finalText =
+      "LIVE_STREAM_ALPHA LIVE_STREAM_BETA LIVE_STREAM_GAMMA LIVE_STREAM_DELTA";
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: [],
+        runs: {
+          "run-output": {
+            runId: "run-output",
+            status: "closed",
+            hadVisibleTextStream: true,
+            lastEventId: 1,
+            seenEventKeys: [],
+            terminalEventType: "run_completed",
+            entries: [
+              runtimeTextDeltaEntry({
+                eventId: 1,
+                id: "run-output:1:0",
+                text: finalText,
+              }),
+            ],
+          },
+        },
+      },
+    });
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: finalText,
+        message_id: "assistant-hydrated-final",
+        role_id: "MainAgent",
+        run_id: "run-output",
+      },
+    ]);
+
+    const { container } = renderTimeline();
+
+    await waitForSingleVisibleText(finalText);
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+    expect(container.querySelector(".at-message-streaming-text")).toBeNull();
+    expect(container.querySelector(".streaming-cursor")).toBeNull();
+    expect(container.querySelector("[data-streaming='true']")).toBeNull();
+  });
+
   it("keeps hydrated open runtime text in the streaming row instead of adding an empty cursor", async () => {
     useRuntimeStore.setState({
       runtimeState: {
@@ -7703,6 +7746,44 @@ describe("MessageTimeline", () => {
     expect(copyButton).toBeDisabled();
   });
 
+  it("does not reveal existing streaming text from the beginning after remount", async () => {
+    vi.stubEnv("MODE", "production");
+    vi.useFakeTimers();
+    const streamingText =
+      "HYDRATED_STREAM_ALPHA HYDRATED_STREAM_BETA HYDRATED_STREAM_GAMMA";
+    setRuntimeEntries([
+      runtimeTextDeltaEntry({
+        eventId: 1,
+        id: "run-output:1:0",
+        text: streamingText,
+      }),
+    ], "open");
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const firstRender = renderTimeline();
+
+    expect(firstRender.container.querySelector(".at-message-streaming-text"))
+      .not.toBeNull();
+    for (let frame = 0; frame < 80; frame += 1) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(28);
+      });
+    }
+    expect(screen.getByText(streamingText)).toBeVisible();
+    firstRender.unmount();
+
+    const secondRender = renderTimeline();
+
+    expect(secondRender.container.querySelector(".at-message-streaming-text"))
+      .not.toBeNull();
+    const streamingBlock = secondRender.container.querySelector(
+      ".at-message-streaming-text",
+    );
+    expect(streamingBlock).toHaveTextContent(streamingText);
+    expect(secondRender.container.querySelectorAll(".streaming-cursor"))
+      .toHaveLength(1);
+  });
+
   it("turns off the runtime text cursor when a subagent stream is finalized", async () => {
     setRuntimeEntries([
       {
@@ -8099,8 +8180,8 @@ describe("MessageTimeline", () => {
     const { container } = renderTimeline();
 
     expect(await screen.findByText("before tool lifecycle")).toBeVisible();
-    expect(screen.getByText("during tool lifecycle")).toBeVisible();
-    expect(screen.getByText("after tool lifecycle")).toBeVisible();
+    expect(await screen.findByText("during tool lifecycle")).toBeVisible();
+    expect(await screen.findByText("after tool lifecycle")).toBeVisible();
     expect(screen.queryByText("Tool call: execute_command")).not.toBeInTheDocument();
     expect(screen.getByText("Tool result: execute_command")).toBeVisible();
     const rowTexts = Array.from(container.querySelectorAll("article.at-message"))

@@ -6488,6 +6488,10 @@ function useStreamingDisplayText(
     return () => window.clearTimeout(timeoutId);
   }, [displayState]);
 
+  useEffect(() => {
+    rememberStreamingDisplayState(displayState);
+  }, [displayState]);
+
   const revealing = displayState.active && displayState.text !== displayState.targetText;
   return {
     cursorVisible: streaming || revealing,
@@ -6507,6 +6511,14 @@ interface StreamingDisplayState {
   text: string;
 }
 
+interface StreamingDisplaySnapshot {
+  targetText: string;
+  text: string;
+}
+
+const STREAMING_DISPLAY_SNAPSHOT_LIMIT = 500;
+const streamingDisplaySnapshots = new Map<string, StreamingDisplaySnapshot>();
+
 function initialStreamingDisplayState(
   targetText: string,
   streaming: boolean,
@@ -6514,11 +6526,12 @@ function initialStreamingDisplayState(
   identity: string,
 ): StreamingDisplayState {
   const active = shouldRevealStreamingText(targetText, streaming, reveal);
+  const restoredText = restoredStreamingDisplayText(identity, targetText, active);
   return {
     active,
     identity,
     targetText,
-    text: active ? initialRevealedText(targetText) : targetText,
+    text: restoredText ?? (active ? initialRevealedText(targetText) : targetText),
   };
 }
 
@@ -6600,6 +6613,47 @@ function shouldRevealStreamingText(
 
 function initialRevealedText(text: string): string {
   return sliceByCodePoints(text, Math.min(STREAM_REVEAL_INITIAL_CHARS, codePointLength(text)));
+}
+
+function restoredStreamingDisplayText(
+  identity: string,
+  targetText: string,
+  active: boolean,
+): string | null {
+  if (!active) {
+    return null;
+  }
+  const snapshot = streamingDisplaySnapshots.get(identity);
+  if (snapshot === undefined || snapshot.text.length === 0) {
+    return null;
+  }
+  if (!targetText.startsWith(snapshot.text)) {
+    return null;
+  }
+  if (
+    snapshot.text.length <= initialRevealedText(targetText).length &&
+    snapshot.text !== targetText
+  ) {
+    return null;
+  }
+  return snapshot.text;
+}
+
+function rememberStreamingDisplayState(state: StreamingDisplayState): void {
+  if (state.text.length === 0) {
+    return;
+  }
+  streamingDisplaySnapshots.set(state.identity, {
+    targetText: state.targetText,
+    text: state.text,
+  });
+  if (streamingDisplaySnapshots.size <= STREAMING_DISPLAY_SNAPSHOT_LIMIT) {
+    return;
+  }
+  const oldestKey = streamingDisplaySnapshots.keys().next().value;
+  if (typeof oldestKey === "string") {
+    streamingDisplaySnapshots.delete(oldestKey);
+  }
 }
 
 function commonPrefixCodePointLength(left: string, right: string): number {

@@ -114,6 +114,13 @@ For every row moved to `Verified`, record:
 
 ## Verification Ledger
 
+### 2026-07-10 Streaming Initial-Mount Reveal Guard
+
+- `MSG-02` and `STREAM-02` tightened after manual review showed a live answer could be fully visible and then visually restart from the beginning when the streaming text component remounted during terminal/history or session recovery. The typewriter hook no longer treats initial `streaming=true` as permission to replay existing text. Initial streaming mounts now show the already-known text immediately with the cursor at the end; only later target-text growth reveals incrementally.
+- Explicit terminal `reveal` behavior remains available for genuine prefix catch-up, so this closes the fake second typewriter pass without removing real incremental streaming from subsequent deltas.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx src/test/SubagentSessionView.test.tsx`, `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "managed backend normal stream reveals incrementally|managed backend keeps a fully displayed live answer stable"`, `npm run build`, `npm run lint`, `git diff --check`.
+- This does not move `MSG-02` or `STREAM-02` to `Verified`; true real-provider normal-stream proof, broader orchestration/tool-heavy stream variants, interrupted recovery, and final V1/V2 visual sign-off remain open.
+
 ### 2026-07-10 Terminal Reveal Rebuild Guard
 
 - `MSG-02` and `STREAM-02` tightened after manual review showed a fully rendered live answer could still be visually rebuilt when terminal/history state arrived. Terminal processed-row splitting and persisted-answer hydration now strip text `streaming`/`reveal` flags, so completed transcript rows cannot re-enter the typewriter path during processed folding or terminal runtime-to-history takeover.

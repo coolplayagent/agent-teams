@@ -1064,6 +1064,17 @@ async function expectTerminalAnswerDoesNotReplay(
   expectedText: string,
   expectedRowKey?: string,
 ): Promise<void> {
+  await expect
+    .poll(async () => {
+      const snapshot = await terminalAnswerSnapshot(page, expectedText);
+      return [
+        snapshot.answerCount,
+        snapshot.cursorCount,
+        snapshot.prefixRowCount,
+        snapshot.streamingCount,
+      ].join("|");
+    }, { timeout: 20_000 })
+    .toBe("1|0|0|0");
   const baseline = await terminalAnswerSnapshot(page, expectedText);
   expect(baseline.answerCount).toBe(1);
   expect(baseline.answerLength).toBeGreaterThanOrEqual(expectedText.length);

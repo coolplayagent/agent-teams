@@ -191,16 +191,16 @@ test("real backend subagent stream opens while running and stays out of main tim
     await expectRealShellReady(page);
 
     const childTag = streamTagFromTitle(title);
-    const childTokenCount = 32;
+    const childTokenCount = 10;
     const childFirstToken = subagentStreamToken(childTag, 0);
     const childLastToken = subagentStreamToken(childTag, childTokenCount - 1);
+    const shellCommand = subagentStreamingShellCommand(childTag, childTokenCount);
     const promptText = [
-      `${title}: 请启动一个 Explorer 子代理验证右侧面板流式显示。`,
-      "子代理任务：不要调用任何工具。",
-      `请输出 ${childTokenCount} 个按规则生成的 token：前缀 SUBAGENT_STREAM，标签 ${childTag}，序号从 00 到 ${String(childTokenCount - 1).padStart(2, "0")}。`,
-      "每个 token 的格式是 SUBAGENT_STREAM_<标签>_<两位序号>，用单个空格分隔。",
-      "不要解释，不要添加额外内容。",
-      "子代理完成后，主代理只用一句中文总结子代理已完成。",
+      `${title}: 请启动一个 Crafter 子代理验证右侧面板真实流式显示。`,
+      "子代理只允许调用 shell 工具执行下面这个命令，不要改写命令，不要自己输出 token，不要调用其它工具：",
+      shellCommand,
+      "子代理执行完成后只需报告 shell stdout 已输出完成。",
+      "主代理不要复述子代理 stdout，只用一句中文总结子代理已完成。",
     ].join("\n");
 
     const runResponse = waitForRunCreateResponse(page);
@@ -437,6 +437,17 @@ function subagentStreamToken(tag: string, index: number): string {
   return `SUBAGENT_STREAM_${tag}_${String(index).padStart(2, "0")}`;
 }
 
+function subagentStreamingShellCommand(tag: string, count: number): string {
+  const script = [
+    "import time",
+    `tag=${JSON.stringify(tag)}`,
+    `count=${count}`,
+    "[print(f'SUBAGENT_STREAM_{tag}_{index:02d}', flush=True) " +
+      "or time.sleep(0.45) for index in range(count)]",
+  ].join("; ");
+  return `python -c ${JSON.stringify(script)}`;
+}
+
 async function expectRealShellReady(page: Page): Promise<void> {
   await waitForV2Shell(page);
   await expect(page.locator(".at-chat-view")).toBeVisible();
@@ -583,7 +594,9 @@ async function collectSubagentPanelTextLengthSamples(
 
 async function latestSubagentPanelRuntimeText(panel: Locator): Promise<string> {
   return panel
-    .locator(".at-message-streaming-text, .at-message-plain-stream, article.at-message")
+    .locator(
+      ".at-message-tool, .at-message-streaming-text, .at-message-plain-stream, article.at-message",
+    )
     .evaluateAll((nodes) => {
       const ignored = new Set(["思考", "Thinking"]);
       return nodes

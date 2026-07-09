@@ -2,6 +2,20 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-09 Real Backend Stream Audit Correction
+
+### Scope
+- Re-ran the live backend stream proof path instead of relying on a terminal screenshot. The full `v2-real-backend-live-stream.spec.ts` run produced a mixed result: the right-panel subagent stream and orchestration tool stream passed, while the two normal assistant stream scenarios failed because the real model did not emit the requested deterministic token text before the test stopped the run.
+- Tightened the subagent live-backend test so it no longer accepts a child answer that appears all at once. The child run now executes a slow stdout command that emits `SUBAGENT_STREAM_*` tokens over time; the test samples the right-panel text growth, asserts the last token is not present immediately after the first token appears, refreshes while the panel is open, and checks that child stdout does not leak into the parent timeline.
+- Cleaned up a local verification issue where multiple stale backend processes were holding the same SQLite database open; the live backend was restarted as a single `uvicorn` process before the passing subagent/orchestration evidence was collected.
+
+### Verification
+- `AGENT_TEAMS_REAL_LIVE_STREAM=1 npm run test:browser -- v2-real-backend-live-stream.spec.ts --project=chromium -g "real backend subagent stream"` passed with 1 Chromium scenario.
+- `AGENT_TEAMS_REAL_LIVE_STREAM=1 npm run test:browser -- v2-real-backend-live-stream.spec.ts --project=chromium` ran all 4 Chromium scenarios: subagent stream and orchestration tool stream passed; normal stream increment/switch and terminal hard-refresh normal stream failed. The failures are tracked as unresolved stream-proof work, not as verified closure.
+
+### Reviewer
+- Main-agent decision: the previous "real backend live stream" evidence was too broad. This pass only closes the subagent right-panel incremental-output proof and confirms orchestration tool-stream coverage still passes. It does not close normal assistant text streaming, terminal refresh replay, interrupted recovery, final V1/V2 visual sign-off, or the overall V2 frontend goal.
+
 ## 2026-07-02 Live Typewriter And Terminal Settlement Correction
 
 ### Scope

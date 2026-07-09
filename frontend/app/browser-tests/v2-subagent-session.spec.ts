@@ -92,6 +92,14 @@ test("opens a nested subagent session and refreshes history after terminal strea
       .toBeVisible();
     await expect(page.getByText("Read-only subagent session")).toBeVisible();
     await expect(page.getByText("Persisted subagent checkpoint")).toBeVisible();
+    const initialPanelWidth = await subagentPanelWidth(page);
+    await dragSubagentPanelResizer(page, -80);
+    await expect.poll(() => subagentPanelWidth(page)).toBeGreaterThan(
+      initialPanelWidth + 48,
+    );
+    await expect.poll(() => storedSubagentPanelWidth(page)).toBeGreaterThan(
+      initialPanelWidth + 48,
+    );
     await expect.poll(() => state.messageRequestCount).toBe(1);
     await waitForEventSourceUrl(
       page,
@@ -1499,6 +1507,36 @@ async function openSubagentPanelFromToolCard(
     .first();
   await expect(card).toBeVisible();
   await card.locator(".at-message-tool-summary").click();
+}
+
+async function dragSubagentPanelResizer(
+  page: Page,
+  deltaX: number,
+): Promise<void> {
+  const resizer = page.getByRole("separator", { name: "Resize subagent panel" });
+  await expect(resizer).toBeVisible();
+  const box = await resizer.boundingBox();
+  if (box === null) {
+    throw new Error("Subagent panel resizer has no browser box.");
+  }
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + deltaX, y, { steps: 4 });
+  await page.mouse.up();
+}
+
+async function subagentPanelWidth(page: Page): Promise<number> {
+  return page.locator(".at-subagent-side-panel").evaluate((panel) =>
+    panel.getBoundingClientRect().width,
+  );
+}
+
+async function storedSubagentPanelWidth(page: Page): Promise<number> {
+  return page.evaluate(() =>
+    Number(window.localStorage.getItem("agentTeams.subagentPanelWidth") ?? "0"),
+  );
 }
 
 async function handleSubagentRaceApi(

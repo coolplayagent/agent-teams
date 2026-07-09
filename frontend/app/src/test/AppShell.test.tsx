@@ -1438,6 +1438,43 @@ describe("AppShell", () => {
     }
   });
 
+  it("resizes the subagent panel from pointer drag using the workspace right edge", async () => {
+    const restoreClientWidth = mockClientWidthForClass(
+      "at-workspace-chat-shell",
+      1200,
+    );
+    const restoreShellRect = mockBoundingRectForClass("at-workspace-chat-shell", {
+      height: 720,
+      left: 100,
+      top: 0,
+      width: 1000,
+    });
+    try {
+      renderShell();
+
+      expect(await screen.findByTestId("timeline")).toBeVisible();
+      fireEvent.click(screen.getByTestId("open-subagent-from-timeline"));
+      expect(await screen.findByTestId("subagent-session-view")).toBeVisible();
+      const panelResizer = screen.getByRole("separator", {
+        name: "Resize subagent panel",
+      });
+      expect(panelResizer).toHaveAttribute("aria-valuenow", "560");
+
+      fireEvent.pointerDown(panelResizer, { button: 0, clientX: 540 });
+      fireEvent.pointerMove(window, { clientX: 460 });
+
+      expect(panelResizer).toHaveAttribute("aria-valuenow", "640");
+      expect(window.localStorage.getItem("agentTeams.subagentPanelWidth"))
+        .toBe("640");
+
+      fireEvent.pointerUp(window);
+      expect(panelResizer).not.toHaveClass("is-resizing");
+    } finally {
+      restoreShellRect();
+      restoreClientWidth();
+    }
+  });
+
   it("opens running subagent timeline cards before backend ids hydrate", async () => {
     let resolveSubagents: ((records: SessionSubagentRecord[]) => void) | undefined;
     listSessionSubagentsMock.mockReturnValue(
@@ -1837,6 +1874,64 @@ function mockClientWidthForClass(className: string, width: number): () => void {
       return;
     }
     Object.defineProperty(HTMLElement.prototype, "clientWidth", descriptor);
+  };
+}
+
+function mockBoundingRectForClass(
+  className: string,
+  rect: Pick<DOMRect, "height" | "left" | "top" | "width">,
+): () => void {
+  const descriptor = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    "getBoundingClientRect",
+  );
+  const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
+  Object.defineProperty(HTMLElement.prototype, "getBoundingClientRect", {
+    configurable: true,
+    value(this: HTMLElement) {
+      if (this instanceof HTMLElement && this.classList.contains(className)) {
+        return testDomRect(rect.left, rect.top, rect.width, rect.height);
+      }
+      return originalGetBoundingClientRect.call(this);
+    },
+  });
+  return () => {
+    if (descriptor === undefined) {
+      delete (HTMLElement.prototype as { getBoundingClientRect?: () => DOMRect })
+        .getBoundingClientRect;
+      return;
+    }
+    Object.defineProperty(HTMLElement.prototype, "getBoundingClientRect", descriptor);
+  };
+}
+
+function testDomRect(
+  left: number,
+  top: number,
+  width: number,
+  height: number,
+): DOMRect {
+  return {
+    bottom: top + height,
+    height,
+    left,
+    right: left + width,
+    top,
+    width,
+    x: left,
+    y: top,
+    toJSON() {
+      return {
+        bottom: top + height,
+        height,
+        left,
+        right: left + width,
+        top,
+        width,
+        x: left,
+        y: top,
+      };
+    },
   };
 }
 

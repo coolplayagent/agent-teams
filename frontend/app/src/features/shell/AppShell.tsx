@@ -681,7 +681,7 @@ export function AppShell() {
     }
 
     const handlePointerMove = (event: globalThis.PointerEvent) => {
-      setSubagentPanelWidth(window.innerWidth - event.clientX);
+      setSubagentPanelWidth(subagentPanelWidthFromClientX(event.clientX));
     };
     const handlePointerUp = () => {
       setSubagentPanelResizing(false);
@@ -986,7 +986,7 @@ export function AppShell() {
     }
     event.preventDefault();
     setSubagentPanelResizing(true);
-    setSubagentPanelWidth(window.innerWidth - event.clientX);
+    setSubagentPanelWidth(subagentPanelWidthFromClientX(event.clientX));
   }
 
   function handleSubagentPanelResizeKeyDown(event: KeyboardEvent<HTMLDivElement>) {
@@ -1008,6 +1008,15 @@ export function AppShell() {
     );
     window.localStorage.setItem(subagentPanelWidthStorageKey, String(nextWidth));
     setSubagentPanelWidthState(nextWidth);
+  }
+
+  function subagentPanelWidthFromClientX(clientX: number): number {
+    const shellRight = chatShellRef.current?.getBoundingClientRect().right;
+    const rightEdge =
+      shellRight !== undefined && Number.isFinite(shellRight) && shellRight > 0
+        ? shellRight
+        : window.innerWidth;
+    return rightEdge - clientX;
   }
 
   function handleSearchSessionSelected(session: SessionSidebarRecord) {

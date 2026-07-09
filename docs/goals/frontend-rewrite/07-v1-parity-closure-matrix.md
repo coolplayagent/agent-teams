@@ -839,6 +839,14 @@ For every row moved to `Verified`, record:
 - Automated evidence: `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "managed backend keeps a fully displayed live answer stable"`, `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium`.
 - This does not mark `MSG-02`, `STREAM-02`, or `SUB-01` as `Verified`; live production-backend orchestration variants, interrupted real-provider recovery, true real-provider normal-stream proof, and final V1/V2 visual sign-off remain open.
 
+## 2026-07-10 Subagent Panel Resize Boundary
+
+- `SUB-01` tightened for the right-side subagent panel readability issue. Pointer resizing now calculates panel width from the chat workspace right edge instead of `window.innerWidth`, so dragging the divider remains correct when the left sidebar or workspace frame shifts the chat shell away from the viewport origin.
+- Component coverage now simulates a chat workspace with a non-zero left offset and verifies pointer dragging changes the panel from 560px to 640px, persists `agentTeams.subagentPanelWidth`, and clears the resizing state on pointer up. This catches the prior window-width based calculation.
+- Browser coverage now opens a real packed subagent panel from the timeline tool card, drags the visible separator, verifies the side panel width and persisted localStorage width both grow, and continues through live child output plus terminal history refresh inside the fixed shell.
+- Automated evidence: `npm test -- src/test/AppShell.test.tsx -t "subagent panel|subagent sessions|subagent"`, `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium -g "opens a nested subagent session"`, `npm run lint`, `npm run build`.
+- This does not mark `SUB-01` as `Verified`; live production-backend variants, final V1/V2 visual sign-off, and broader subagent replay/streaming closure remain open.
+
 ## Immediate P0 Batch
 
 The current batch closes these rows first:

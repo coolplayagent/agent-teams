@@ -93,11 +93,6 @@ const IMAGE_BARE_PATH_PATTERN =
   /((?:\/|\.{1,2}\/|[A-Za-z]:[\\/])[^"'`\s<>]+?\.(?:avif|bmp|gif|jpe?g|png|webp))/gi;
 const TRAILING_PATH_PUNCTUATION_PATTERN = /[),.:;!?\\\]}>，。！？；：）】》]+$/u;
 const LIVE_ROUND_REFETCH_MS = 1500;
-const STREAM_REVEAL_INTERVAL_MS = 28;
-const STREAM_REVEAL_INITIAL_CHARS = 2;
-const STREAM_REVEAL_SMALL_STEP = 2;
-const STREAM_REVEAL_MEDIUM_STEP = 4;
-const STREAM_REVEAL_LARGE_STEP = 8;
 interface MessageTimelineProps {
   emptyDescription?: string;
   emptyFallback?: ReactNode;
@@ -277,13 +272,17 @@ export function MessageTimeline({
       ),
     [displayRounds, fallbackRunId, messageRoundLookup, persistedMessages, workspaceId],
   );
+  const roundStreamedPersistedRows = useMemo(
+    () => persistedRowsWithOpenRoundStreaming(persistedRows, displayRounds),
+    [displayRounds, persistedRows],
+  );
   const anchoredPersistedRows = useMemo(
     () =>
       persistedRowsWithRuntimeTextAnchors(
-        persistedRows,
+        roundStreamedPersistedRows,
         runtimeState.runs,
       ),
-    [persistedRows, runtimeState.runs],
+    [roundStreamedPersistedRows, runtimeState.runs],
   );
   const hydratedOutputTextByRunId = useMemo(
     () => timelineOutputTextByRunId(anchoredPersistedRows),
@@ -1755,6 +1754,41 @@ function persistedRowsWithRuntimeTextAnchors(
   return changed ? nextRows : persistedRows;
 }
 
+function persistedRowsWithOpenRoundStreaming(
+  persistedRows: TimelineRow[],
+  rounds: SessionRound[],
+): TimelineRow[] {
+  const openRunIds = new Set(
+    rounds.flatMap((round) => {
+      const runId = round.run_id.trim();
+      if (
+        runId.length > 0 &&
+        !roundHasTerminalStatus(round) &&
+        (
+          isLiveRoundStatus(round.run_status) ||
+          isLiveRoundStatus(round.run_phase)
+        )
+      ) {
+        return [runId];
+      }
+      return [];
+    }),
+  );
+  if (openRunIds.size === 0) {
+    return persistedRows;
+  }
+  let changed = false;
+  const streamedRows = persistedRows.map((row) => {
+    const runId = row.runId?.trim() ?? "";
+    if (!openRunIds.has(runId) || !persistedAnswerRowCanHydrateRuntimeText(row)) {
+      return row;
+    }
+    changed = true;
+    return persistedRowWithOpenRuntimeStreaming(row);
+  });
+  return changed ? streamedRows : persistedRows;
+}
+
 function runtimeTextIsStrictPrefixOfPersistedAnswer(
   runtimeText: string,
   persistedText: string,
@@ -1808,7 +1842,10 @@ function runtimeTextHydrationForPersistedRow(
             };
     }
     if (!openText.hasVisibleContent) {
-      return null;
+      return {
+        key,
+        streaming: true,
+      };
     }
     if (key !== null) {
       return {
@@ -2782,10 +2819,7 @@ function timelineRowHasVisibleRuntimeContent(row: TimelineRow): boolean {
     if (part.kind === "text") {
       return part.cursorOnly !== true && part.text.trim().length > 0;
     }
-    if (part.kind === "thinking") {
-      return part.text.trim().length > 0;
-    }
-    return true;
+    return false;
   });
 }
 
@@ -6626,19 +6660,15 @@ function MessageText({
   part: TimelineTextPart;
   streamIdentity: string;
 }) {
-  const streamingDisplay = useStreamingDisplayText(
-    part.text,
-    part.streaming,
-    part.reveal === true,
-    part.cursorOnly === true,
-    streamIdentity,
-  );
-  const visuallyStreaming = part.streaming || streamingDisplay.revealing;
-  if (visuallyStreaming && part.text.length >= LONG_STREAM_TEXT_THRESHOLD) {
+  void streamIdentity;
+  const visuallyStreaming = part.streaming;
+  const cursorVisible = part.streaming;
+  const text = part.text;
+  if (visuallyStreaming && text.length >= LONG_STREAM_TEXT_THRESHOLD) {
     return (
       <pre className="at-message-plain-stream" data-render-mode="plain-stream">
-        {streamingDisplay.text}
-        {streamingDisplay.cursorVisible ? <StreamingCursor /> : null}
+        {text}
+        {cursorVisible ? <StreamingCursor /> : null}
       </pre>
     );
   }
@@ -6650,152 +6680,25 @@ function MessageText({
       ].filter(Boolean).join(" ")}
       data-streaming={visuallyStreaming ? "true" : undefined}
     >
-      {visuallyStreaming && timelineStreamingTextCanRenderInline(streamingDisplay.text)
+      {visuallyStreaming && timelineStreamingTextCanRenderInline(text)
         ? (
             <span className="at-message-streaming-inline">
-              {streamingDisplay.text}
-              {streamingDisplay.cursorVisible ? <StreamingCursor /> : null}
+              {text}
+              {cursorVisible ? <StreamingCursor /> : null}
             </span>
           )
         : (
             <>
-              <MarkdownMessage text={visuallyStreaming ? streamingDisplay.text : part.text} />
-              {streamingDisplay.cursorVisible ? <StreamingCursor /> : null}
+              <MarkdownMessage text={text} />
+              {cursorVisible ? <StreamingCursor /> : null}
             </>
           )}
     </div>
   );
 }
 
-interface StreamingDisplayText {
-  cursorVisible: boolean;
-  revealing: boolean;
-  text: string;
-}
-
-function useStreamingDisplayText(
-  targetText: string,
-  streaming: boolean,
-  reveal: boolean,
-  cursorOnly: boolean,
-  streamIdentity: string,
-): StreamingDisplayText {
-  const activeStream = streaming || reveal;
-  const [displayState, setDisplayState] = useState<StreamingDisplayState>(() => ({
-    streamIdentity,
-    text: initialStreamingDisplayText(targetText, activeStream, cursorOnly),
-  }));
-  const displayText =
-    displayState.streamIdentity === streamIdentity ? displayState.text : targetText;
-  const revealing =
-    !cursorOnly &&
-    displayState.streamIdentity === streamIdentity &&
-    displayText !== targetText &&
-    targetText.startsWith(displayText);
-
-  useEffect(() => {
-    setDisplayState((current) => {
-      if (cursorOnly) {
-        return streamingDisplayState(current, streamIdentity, "");
-      }
-      if (current.streamIdentity !== streamIdentity) {
-        return {
-          streamIdentity,
-          text: initialStreamingDisplayText(targetText, activeStream, false),
-        };
-      }
-      if (current.text === targetText) {
-        return current;
-      }
-      if (targetText.startsWith(current.text)) {
-        return current;
-      }
-      return {
-        streamIdentity,
-        text: initialStreamingDisplayText(targetText, activeStream, false),
-      };
-    });
-  }, [activeStream, cursorOnly, streamIdentity, streaming, targetText]);
-
-  useEffect(() => {
-    if (!revealing) {
-      return undefined;
-    }
-    const timer = window.setTimeout(() => {
-      setDisplayState((current) => {
-        if (
-          current.streamIdentity !== streamIdentity ||
-          current.text === targetText ||
-          !targetText.startsWith(current.text)
-        ) {
-          return current;
-        }
-        return {
-          streamIdentity,
-          text: nextStreamingDisplayText(current.text, targetText),
-        };
-      });
-    }, STREAM_REVEAL_INTERVAL_MS);
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [revealing, streamIdentity, targetText, displayText]);
-
-  return {
-    cursorVisible: streaming || revealing,
-    revealing,
-    text: displayText,
-  };
-}
-
 function timelineStreamingTextCanRenderInline(text: string): boolean {
   return !/[\r\n`*#[\]<>|]/u.test(text);
-}
-
-interface StreamingDisplayState {
-  streamIdentity: string;
-  text: string;
-}
-
-function streamingDisplayState(
-  current: StreamingDisplayState,
-  streamIdentity: string,
-  text: string,
-): StreamingDisplayState {
-  return current.streamIdentity === streamIdentity && current.text === text
-    ? current
-    : { streamIdentity, text };
-}
-
-function initialStreamingDisplayText(
-  targetText: string,
-  activeStream: boolean,
-  cursorOnly: boolean,
-): string {
-  if (cursorOnly || targetText.length === 0) {
-    return "";
-  }
-  if (!activeStream) {
-    return targetText;
-  }
-  return targetText.slice(
-    0,
-    Math.min(STREAM_REVEAL_INITIAL_CHARS, targetText.length),
-  );
-}
-
-function nextStreamingDisplayText(currentText: string, targetText: string): string {
-  const remaining = targetText.length - currentText.length;
-  if (remaining <= 0) {
-    return targetText;
-  }
-  const step =
-    remaining > 96
-      ? STREAM_REVEAL_LARGE_STEP
-      : remaining > 32
-        ? STREAM_REVEAL_MEDIUM_STEP
-        : STREAM_REVEAL_SMALL_STEP;
-  return targetText.slice(0, currentText.length + step);
 }
 
 function StreamingCursor() {

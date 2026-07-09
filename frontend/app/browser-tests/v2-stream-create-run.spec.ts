@@ -152,18 +152,21 @@ test("renders received stream text incrementally and does not replay after termi
     );
     await waitForEventSourceOpenCount(page, 1);
 
-    const finalAnswer = [
+    const firstDelta = [
       "LIVE_STREAM_ALPHA",
       "LIVE_STREAM_BETA",
       "LIVE_STREAM_GAMMA",
       "LIVE_STREAM_DELTA",
       "LIVE_STREAM_EPSILON",
+    ].join(" ");
+    const secondDelta = [
       "LIVE_STREAM_ZETA",
       "LIVE_STREAM_ETA",
       "LIVE_STREAM_THETA",
       "LIVE_STREAM_IOTA",
       "LIVE_STREAM_KAPPA",
     ].join(" ");
+    const finalAnswer = `${firstDelta} ${secondDelta}`;
 
     await dispatchRunEvent(page, {
       eventId: 1,
@@ -173,29 +176,28 @@ test("renders received stream text incrementally and does not replay after termi
     });
     await dispatchRunEvent(page, {
       eventId: 2,
-      payload: { text: finalAnswer },
+      payload: { text: firstDelta },
       relayEventType: "text_delta",
       type: "message.text.delta",
     });
 
     const streamingText = page.locator(".at-message-streaming-text").first();
     await expect(streamingText).toBeVisible();
-    await expect.poll(async () => {
-      const text = (await streamingText.textContent()) ?? "";
-      return {
-        isNonEmptyPrefix:
-          text.length > 0 &&
-          text.length < finalAnswer.length &&
-          finalAnswer.startsWith(text),
-        text,
-      };
-    }).toMatchObject({ isNonEmptyPrefix: true });
+    await expect(streamingText).toHaveText(firstDelta);
     await expect(page.locator(".at-chat-view .at-message-streaming-text"))
       .toHaveCount(1);
     await expect.poll(() => emptyStreamingTextCount(page.locator(".at-chat-view")))
       .toBe(0);
     await expect(page.getByText(finalAnswer)).toHaveCount(0);
     await expect(page.locator(".streaming-cursor")).toHaveCount(1);
+
+    await dispatchRunEvent(page, {
+      eventId: 3,
+      payload: { text: ` ${secondDelta}` },
+      relayEventType: "text_delta",
+      type: "message.text.delta",
+    });
+    await expect(streamingText).toHaveText(finalAnswer);
     await page.locator(".at-message-streaming-text").evaluate((element) => {
       element.setAttribute("data-stream-stable-node", "before-terminal");
     });
@@ -205,7 +207,7 @@ test("renders received stream text incrementally and does not replay after termi
       .first()
       .getAttribute("data-row-key");
     await dispatchRunEvent(page, {
-      eventId: 3,
+      eventId: 4,
       payload: {
         output: [{ kind: "text", text: finalAnswer }],
         status: "completed",

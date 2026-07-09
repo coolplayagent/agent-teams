@@ -420,16 +420,7 @@ test("streams subagent deltas incrementally before terminal history refill", asy
     const liveStreamText = liveRow.locator(".at-message-streaming-text");
     await expect(liveRow).toHaveCount(1);
     await expect(liveStreamText).toBeVisible();
-    await expect.poll(async () => {
-      const text = (await liveStreamText.textContent()) ?? "";
-      return {
-        isNonEmptyPrefix:
-          text.length > 0 &&
-          text.length < firstStreamText.length &&
-          firstStreamText.startsWith(text),
-        text,
-      };
-    }).toMatchObject({ isNonEmptyPrefix: true });
+    await expect(liveStreamText).toHaveText(firstStreamText);
     await expect(panel.locator(".at-message-streaming-text")).toHaveCount(1);
     await expect.poll(() => emptyStreamingTextCount(panel)).toBe(0);
     await page.screenshot({

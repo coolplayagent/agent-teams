@@ -1,4 +1,4 @@
-# Frontend Rewrite Implementation Ledger
+﻿# Frontend Rewrite Implementation Ledger
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
@@ -10056,4 +10056,25 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - This closes the specific complex replay duplication and final-action placement gap for `MSG-01`/`MSG-05`.
-- `npm test -- src/test/MessageTimeline.test.tsx` was also run and is not green: 19 existing runtime typewriter/cursor tests still fail because the current UI intentionally renders only a partial live buffer or removes idle cursors where those tests still expect full text/cursor behavior. This slice does not claim full timeline closure, broader stream correctness, or final V1/V2 visual sign-off.
+- `npm test -- src/test/MessageTimeline.test.tsx` is now green in the later Exact SSE Stream Rendering slice. This earlier slice did not claim full timeline closure, broader stream correctness, or final V1/V2 visual sign-off.
+
+## 2026-07-10 Exact SSE Stream Rendering Slice
+
+### Scope
+- Re-centered the streaming work on the reported false-stream defect: the UI could already have the complete answer, then rebuild or replay it through a frontend presentation buffer.
+- Removed the remaining `MessageTimeline` presentation-layer reveal/timer path. Runtime message text now renders exactly the text currently received from SSE; if the backend sends a full chunk, the UI shows that full chunk, and additional visible growth requires later SSE events.
+- Preserved hydrated persisted answers for open rounds without clearing or replaying them. Those rows can show one live cursor at the end while the run is open, then settle without duplicate rows, stale cursor, or row-key churn.
+- Changed browser stream tests to validate real event-by-event progression instead of frontend-generated character ticks. Main chat and subagent panel coverage now dispatch first/second deltas separately and assert the visible text changes only when those events arrive.
+- Rebuilt `frontend/dist/app` so the served `/app/` bundle contains the corrected stream semantics.
+
+### Verification
+- `npm test -- src/test/MessageTimeline.test.tsx` passed with 200 tests.
+- `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium` passed with 6 Chromium tests.
+- `npm run test:browser -- v2-stream-create-run.spec.ts --project=chromium` passed with 4 Chromium tests.
+- `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium -g "streams subagent deltas incrementally"` passed.
+- `npm run lint` passed.
+- `npm run build` passed and regenerated the packed `/app/` bundle.
+- Screenshot inspection reviewed `.tmp/frontend-v2-ts-stream/v2-stream-received-delta-no-replay.png`, `.tmp/frontend-v2-ts-stream/v2-stream-history-first-live-replay.png`, and `.tmp/frontend-v2-ts-subagent-session/v2-subagent-delta-visible.png`.
+
+### Reviewer
+- Main-agent decision: this supersedes the previous frontend typewriter-cadence direction for `MSG-02`/`STREAM-02`/`SUB-01`. The correct invariant is exact SSE-buffer rendering plus stable terminal/hydration behavior. This does not claim full V2 completion, true real-provider normal-stream proof, interrupted recovery, broader production-backend orchestration/tool variants, or final V1/V2 visual sign-off.

@@ -227,18 +227,13 @@ test("does not rebuild a fully displayed live answer when persisted history catc
     await expect(liveAnswerRow).toHaveCount(1);
     const streamingText = liveAnswerRow.locator(".at-message-streaming-text");
     await expect(streamingText).toBeVisible();
-    const streamSamples = await sampleLocatorTextLengths(streamingText, 7, 80);
-    expect(streamSamples[0] ?? 0).toBeGreaterThan(0);
-    expect(streamSamples[0] ?? finalText.length).toBeLessThan(finalText.length);
-    expect(new Set(streamSamples).size).toBeGreaterThanOrEqual(3);
-    expect(Math.max(...streamSamples)).toBeLessThan(finalText.length);
+    await expect(streamingText).toHaveText(finalText);
     await page.screenshot({
       path: screenshotPath(
-        "v2-stream-terminal-catchup-during-reveal.png",
+        "v2-stream-terminal-catchup-live-complete.png",
         SCREENSHOT_FOLDER,
       ),
     });
-    await expect(streamingText).toHaveText(finalText, { timeout: 8_000 });
     await expect(liveAnswerRow.locator(".streaming-cursor")).toHaveCount(1);
     const liveRowKey = await liveAnswerRow.first().getAttribute("data-row-key");
     expect(liveRowKey).toContain("runtime-text:");
@@ -476,18 +471,13 @@ test("does not replay a completed live answer when terminal round history catche
     await expect(liveAnswerRow).toHaveCount(1);
     const streamingText = liveAnswerRow.locator(".at-message-streaming-text");
     await expect(streamingText).toBeVisible();
-    const streamSamples = await sampleLocatorTextLengths(streamingText, 8, 80);
-    expect(streamSamples[0] ?? 0).toBeGreaterThan(0);
-    expect(streamSamples[0] ?? finalText.length).toBeLessThan(finalText.length);
-    expect(new Set(streamSamples).size).toBeGreaterThanOrEqual(4);
-    expect(Math.max(...streamSamples)).toBeLessThan(finalText.length);
+    await expect(streamingText).toHaveText(finalText);
     await page.screenshot({
       path: screenshotPath(
-        "v2-stream-terminal-round-catchup-during-reveal.png",
+        "v2-stream-terminal-round-catchup-live-complete.png",
         SCREENSHOT_FOLDER,
       ),
     });
-    await expect(streamingText).toHaveText(finalText, { timeout: 10_000 });
     const liveRowKey = await liveAnswerRow.first().getAttribute("data-row-key");
     expect(liveRowKey).toContain("runtime-text:");
 
@@ -1177,22 +1167,6 @@ async function expectSettledAnswerDoesNotReplay(
     );
     expect(visibleCount).toBe(1);
   }
-}
-
-async function sampleLocatorTextLengths(
-  locator: Locator,
-  count: number,
-  intervalMs: number,
-): Promise<number[]> {
-  const samples: number[] = [];
-  for (let index = 0; index < count; index += 1) {
-    if (index > 0) {
-      await locator.page().waitForTimeout(intervalMs);
-    }
-    await expect(locator).toHaveCount(1);
-    samples.push(((await locator.textContent()) ?? "").length);
-  }
-  return samples;
 }
 
 interface BrowserRunEvent {

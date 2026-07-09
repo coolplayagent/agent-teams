@@ -9978,3 +9978,18 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - This closes the packed-browser Board loading/error/narrow evidence gap for `PAGE-03`. It does not mark Board as `Verified`, because formal V1 screenshot/DOM pairing and reviewer sign-off remain open.
+
+## 2026-07-10 Search Loading State Browser Slice
+
+### Scope
+- Continued primary page closure on `PAGE-04` and targeted the remaining Search loading-state browser review gap.
+- Added a packed `/app/` browser scenario that delays `/sessions/sidebar`, opens Search while the session inventory is still loading, verifies the search input remains focused, and captures the skeleton state with no result rows.
+- The scenario then releases the pending request and verifies Search hydrates into the recent-session list without leaving stale skeleton content.
+
+### Verification
+- `npm run test:browser -- v2-search-view.spec.ts --project=chromium -g "loading state"` passed.
+- `npm run test:browser -- v2-search-view.spec.ts --project=chromium` passed with 2 Chromium tests.
+- Screenshot inspection reviewed `.tmp/frontend-v2-ts-search/v2-session-search-loading.png`; it shows the Search surface and sidebar inventory in a loading state inside the fixed shell.
+
+### Reviewer
+- This closes the packed-browser Search loading-state evidence gap for `PAGE-04`. It does not mark Search as `Verified`, because formal V1 screenshot/DOM pairing and reviewer sign-off remain open.

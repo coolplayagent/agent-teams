@@ -102,7 +102,9 @@ test("searches sessions across workspaces and opens the selected session", async
 });
 
 interface SearchViewState {
+  releaseInitialLoadRequests: Array<() => void>;
   readonly sessions: SearchSessionRecord[];
+  slowInitialLoad: boolean;
   readonly workspaces: SearchWorkspaceRecord[];
   selectedSessionRequests: string[];
 }
@@ -126,7 +128,9 @@ interface SearchWorkspaceRecord {
 
 function searchViewState(): SearchViewState {
   return {
+    releaseInitialLoadRequests: [],
     selectedSessionRequests: [],
+    slowInitialLoad: false,
     sessions: [
       {
         created_at: "2026-06-25T08:00:00Z",
@@ -172,6 +176,53 @@ function searchViewState(): SearchViewState {
   };
 }
 
+test("shows the Search loading state inside the fixed shell", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state = searchViewState();
+  state.slowInitialLoad = true;
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleSearchApi(context, state),
+      sessionTitle: "Search loading evidence",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    await page
+      .getByRole("navigation", { name: "Primary navigation" })
+      .getByRole("button", { name: "Search" })
+      .click();
+
+    const searchView = page.getByTestId("session-search-view");
+    await expect(searchView).toBeVisible();
+    await expect(searchView.getByRole("searchbox", { name: "Search sessions" }))
+      .toBeFocused();
+    await expect(searchView.locator(".ant-skeleton")).toBeVisible();
+    await expect(searchView.getByRole("option")).toHaveCount(0);
+    await expectNoDocumentScroll(
+      page,
+      "search loading state should stay inside the fixed shell",
+    );
+    await page.screenshot({
+      path: screenshotPath("v2-session-search-loading.png", SCREENSHOT_FOLDER),
+    });
+
+    releasePendingInitialLoadRequests(state);
+    await expect(searchView.getByText("Recent sessions")).toBeVisible();
+    await expect(searchView.locator(".ant-skeleton")).toHaveCount(0);
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+  } finally {
+    releasePendingInitialLoadRequests(state);
+    await appServer.close();
+  }
+});
+
 async function handleSearchApi(
   context: MockApiRouteContext,
   state: SearchViewState,
@@ -184,6 +235,12 @@ async function handleSearchApi(
     return true;
   }
   if (context.path === "/sessions/sidebar") {
+    if (state.slowInitialLoad) {
+      state.slowInitialLoad = false;
+      await new Promise<void>((resolve) => {
+        state.releaseInitialLoadRequests.push(resolve);
+      });
+    }
     await context.fulfillJson(state.sessions);
     return true;
   }
@@ -235,6 +292,12 @@ async function handleSearchApi(
     return true;
   }
   return false;
+}
+
+function releasePendingInitialLoadRequests(state: SearchViewState): void {
+  for (const release of state.releaseInitialLoadRequests.splice(0)) {
+    release();
+  }
 }
 
 function sessionDetail(session: SearchSessionRecord): Record<string, unknown> {

@@ -5330,6 +5330,15 @@ body {
   max-width: 100%;
 }
 
+.at-message-streaming-text .at-message-markdown,
+.at-message-streaming-text .at-message-markdown > p:only-child {
+  display: inline;
+}
+
+.at-message-streaming-text .at-message-markdown > p:only-child {
+  margin: 0;
+}
+
 .streaming-cursor {
   display: inline-block;
   width: 6px;

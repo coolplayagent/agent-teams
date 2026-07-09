@@ -9874,3 +9874,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent matrix scan, System status loading/error browser coverage, screenshot inspection, and matrix update completed for this slice. This does not claim `SET-14` Verified, formal V1 visual/DOM pairing, reviewer-subagent sign-off, or final V2 frontend completion.
+
+## 2026-07-10 Live Stream Typewriter And Terminal Hydration Slice
+
+### Scope
+- Reproduced the reported completed-stream weakness as a test-quality gap: earlier browser coverage waited until a full `text_delta` had already rendered, so it did not prove visible typewriter cadence or guard against a delayed-frame full jump.
+- Capped per-frame reveal progress, slowed long live text reveal, skipped animation for short fragments, and rendered plain live text plus cursor in one inline span so the dot stays at the next-character position.
+- Strengthened terminal catch-up coverage so live output must produce multiple partial-length samples before the full answer, then terminal/history hydration must preserve one row key and remove streaming chrome without replaying or rebuilding.
+- Rebuilt `frontend/dist/app` so the packed `/app/` bundle matches the changed source.
+
+### Verification
+- `npm run test -- MessageTimeline` passed with 199 tests.
+- `npm run build` passed.
+- `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium` passed with 6 Chromium tests.
+- `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium -g "streams a live orchestration subagent|does not replay an already complete subagent stream|recovers a settled subagent stream"` passed with 3 Chromium tests.
+- `npm run lint` passed.
+- Screenshot inspection reviewed `.tmp/frontend-v2-ts-stream/v2-stream-terminal-catchup-during-reveal.png` and `.tmp/frontend-v2-ts-stream/v2-stream-terminal-round-catchup-during-reveal.png`; both show partial live text with the cursor at the current text tail, not a completed answer rebuilt after rendering.
+
+### Reviewer
+- This closes the specific packed-browser streaming cadence and terminal hydration replay gap for `MSG-02`/`STREAM-02`. It does not claim full real-provider normal-stream closure, interrupted recovery, all complex orchestration/tool variants, V1 visual sign-off, or final V2 frontend completion.

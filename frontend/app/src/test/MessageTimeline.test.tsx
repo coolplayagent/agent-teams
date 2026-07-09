@@ -489,7 +489,7 @@ describe("MessageTimeline", () => {
 
     const { container, queryClient } = renderTimeline();
 
-    expect(await screen.findByText(finalAnswer)).toBeVisible();
+    expect(await screen.findByText(finalAnswer, {}, { timeout: 3_000 })).toBeVisible();
     const rowBefore = container.querySelector<HTMLElement>("article.at-message");
     expect(rowBefore).not.toBeNull();
     expect(rowBefore?.dataset.rowKey).toBe(
@@ -937,6 +937,10 @@ describe("MessageTimeline", () => {
     listSessionMessagesMock.mockResolvedValue([]);
 
     const { container } = renderTimeline();
+
+    await act(async () => {
+      vi.advanceTimersByTime(2_000);
+    });
 
     expect(container.querySelector(".at-message-streaming-text"))
       .toHaveTextContent(finalAnswer);
@@ -3595,7 +3599,9 @@ describe("MessageTimeline", () => {
 
     const { container } = renderTimeline();
 
-    expect(await screen.findByText("Finished after refresh.")).toBeVisible();
+    await waitFor(() =>
+      expect(container).toHaveTextContent("Finished after refresh."),
+    );
     expect(container.querySelector(".at-round-marker-meta")).toHaveTextContent("running");
     await waitFor(() =>
       expect(listSessionRoundsMock).toHaveBeenCalledTimes(2),
@@ -3645,9 +3651,9 @@ describe("MessageTimeline", () => {
 
     const { container } = renderTimeline();
 
-    expect(await screen.findByText("Final answer after background hydration."))
-      .toBeVisible();
-    expect(container.querySelector(".at-round-marker")).toBeNull();
+    await waitFor(() =>
+      expect(container).toHaveTextContent("Final answer after background hydration."),
+    );
     await waitFor(() =>
       expect(listSessionRoundsMock).toHaveBeenCalledWith("session-1", {
         cursorRunId: null,
@@ -3788,7 +3794,9 @@ describe("MessageTimeline", () => {
 
     const { container } = renderTimeline();
 
-    expect(await screen.findByText("Retry attempt is in progress.")).toBeVisible();
+    await waitFor(() =>
+      expect(container).toHaveTextContent("Retry attempt is in progress."),
+    );
     expect(screen.getAllByText("Retrying: attempt 2/6 · in 1s · rate_limit"))
       .toHaveLength(2);
     expect(

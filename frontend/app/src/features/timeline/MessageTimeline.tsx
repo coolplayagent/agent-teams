@@ -93,8 +93,10 @@ const IMAGE_BARE_PATH_PATTERN =
   /((?:\/|\.{1,2}\/|[A-Za-z]:[\\/])[^"'`\s<>]+?\.(?:avif|bmp|gif|jpe?g|png|webp))/gi;
 const TRAILING_PATH_PUNCTUATION_PATTERN = /[),.:;!?\\\]}>，。！？；：）】》]+$/u;
 const LIVE_ROUND_REFETCH_MS = 1500;
-const STREAMING_REVEAL_CHARS_PER_SECOND = 120;
+const STREAMING_REVEAL_CHARS_PER_SECOND = 72;
 const STREAMING_REVEAL_INITIAL_CHARS = 2;
+const STREAMING_REVEAL_MAX_FRAME_MS = 50;
+const STREAMING_REVEAL_MIN_TEXT_LENGTH = 32;
 
 const streamingDisplayTextCache = new Map<string, string>();
 
@@ -6510,8 +6512,19 @@ function MessageText({
       ].filter(Boolean).join(" ")}
       data-streaming={visuallyStreaming ? "true" : undefined}
     >
-      <MarkdownMessage text={visuallyStreaming ? streamingDisplay.text : part.text} />
-      {streamingDisplay.cursorVisible ? <StreamingCursor /> : null}
+      {visuallyStreaming && timelineStreamingTextCanRenderInline(streamingDisplay.text)
+        ? (
+            <span className="at-message-streaming-inline">
+              {streamingDisplay.text}
+              {streamingDisplay.cursorVisible ? <StreamingCursor /> : null}
+            </span>
+          )
+        : (
+            <>
+              <MarkdownMessage text={visuallyStreaming ? streamingDisplay.text : part.text} />
+              {streamingDisplay.cursorVisible ? <StreamingCursor /> : null}
+            </>
+          )}
     </div>
   );
 }
@@ -6531,7 +6544,10 @@ function useStreamingDisplayText(
 ): StreamingDisplayText {
   void reveal;
   const shouldReveal =
-    streaming && !cursorOnly && targetText.length < LONG_STREAM_TEXT_THRESHOLD;
+    streaming &&
+    !cursorOnly &&
+    targetText.length >= STREAMING_REVEAL_MIN_TEXT_LENGTH &&
+    targetText.length < LONG_STREAM_TEXT_THRESHOLD;
   const initialText = shouldReveal
     ? initialStreamingDisplayText(streamIdentity, targetText)
     : targetText;
@@ -6567,7 +6583,10 @@ function useStreamingDisplayText(
         streamingDisplayTextCache.set(streamIdentity, targetText);
         return;
       }
-      const elapsedMs = Math.max(16, frameTime - lastFrameTime);
+      const elapsedMs = Math.min(
+        STREAMING_REVEAL_MAX_FRAME_MS,
+        Math.max(16, frameTime - lastFrameTime),
+      );
       lastFrameTime = frameTime;
       const nextLength = Math.min(
         targetText.length,
@@ -6625,6 +6644,10 @@ function commonPrefixLength(left: string, right: string): number {
     }
   }
   return maxLength;
+}
+
+function timelineStreamingTextCanRenderInline(text: string): boolean {
+  return !/[\r\n`*#[\]<>|]/u.test(text);
 }
 
 function StreamingCursor() {

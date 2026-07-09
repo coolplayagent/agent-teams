@@ -263,6 +263,74 @@ test("pairs V1 General notification controls with the V2 Notifications page", as
   }
 });
 
+test("keeps General related settings as routed pages instead of flattened controls", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state = settingsParityState();
+  try {
+    await installShellState(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleSettingsParityApi(context, state),
+      sessionTitle: "TS settings general related routes",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    const settings = await openSettingsDialog(page);
+    const sections = settings.getByRole("navigation", {
+      name: "Settings sections",
+    });
+
+    await sections.getByRole("button", { name: "General" }).click();
+    await expect(settings.getByRole("heading", { name: "General" }))
+      .toBeVisible();
+    await expect(settings.getByText("Shell policy")).toBeVisible();
+    await expect(settings.getByRole("switch", { name: "Shell safety policy" }))
+      .toBeVisible();
+
+    const related = settings.getByRole("region", { name: "Related settings" });
+    await expect(related.getByRole("button", {
+      name: /Show diagnostic information/,
+    })).toBeVisible();
+    await expect(related.getByRole("button", { name: /Speech/ })).toBeVisible();
+    await expect(related.getByRole("button", { name: /Notifications/ }))
+      .toBeVisible();
+    await expect(settings.locator(".at-notification-row")).toHaveCount(0);
+    await expect(settings.getByText("Tool approval requested")).toHaveCount(0);
+
+    await related.getByRole("button", { name: /Speech/ }).click();
+    await expect(settings.getByRole("heading", { name: "Speech" })).toBeVisible();
+
+    await sections.getByRole("button", { name: "General" }).click();
+    await settings
+      .getByRole("region", { name: "Related settings" })
+      .getByRole("button", { name: /Notifications/ })
+      .click();
+    await expect(settings.getByRole("heading", { name: "Notifications" }))
+      .toBeVisible();
+    await expect(settings.locator(".at-notification-row")).toHaveCount(4);
+
+    await sections.getByRole("button", { name: "General" }).click();
+    await settings
+      .getByRole("region", { name: "Related settings" })
+      .getByRole("button", { name: /Show diagnostic information/ })
+      .click();
+    await expect(settings.getByRole("heading", { name: "Appearance" }))
+      .toBeVisible();
+
+    await expectNoDocumentScroll(page, "v2 general related routes should stay framed");
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await page.screenshot({
+      path: screenshotPath("v2-general-related-routes.png", SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
 test("saves Notifications and Proxy settings through real V2 controls", async ({
   page,
 }) => {

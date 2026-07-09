@@ -134,6 +134,12 @@ For every row moved to `Verified`, record:
 - Evidence: `AGENT_TEAMS_REAL_LIVE_STREAM=1 npm run test:browser -- v2-real-backend-live-stream.spec.ts --project=chromium -g "real backend subagent stream"` passed in Chromium against the live local backend.
 - This still does not close all live production-backend subagent/orchestration variants or final V1/V2 visual sign-off.
 
+### 2026-07-09 General Settings Related-Route Browser Pass
+
+- `SET-03` evidence tightened without changing its `Verified` status: packed-browser coverage now opens General, verifies only the shell policy control is rendered there, verifies Appearance/Speech/Notifications remain related route entries, and proves Notifications rows are not flattened into General.
+- The same browser flow drills from General into Speech, Notifications, and Appearance through those related route entries, preserving the V1 second-level-page logic requested for Settings.
+- Evidence: `npm run test:browser -- v2-settings-parity.spec.ts --project=chromium -g "General related settings"` and screenshot `.tmp/frontend-v2-ts-settings-parity/v2-general-related-routes.png`.
+
 ### 2026-07-02 Direct Delta Rendering Closure
 
 - `MSG-02` tightened: the frontend no longer simulates typewriter reveal for live text rows or terminal catch-up. Timeline text now shows the exact received delta text immediately, with the cursor only indicating that the stream remains open.

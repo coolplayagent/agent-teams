@@ -627,8 +627,25 @@ test("does not replay an already complete subagent stream during terminal hydrat
     const liveRow = panel
       .locator(`.at-timeline-row[data-run-id="${SUBAGENT_RUN_ID}"]`)
       .filter({ hasText: "HYDRATED_STREAM_" });
-    await expect(liveRow.locator(".at-message-streaming-text")).toBeVisible();
-    await expect(liveRow).toContainText(terminalText);
+    const liveText = liveRow.locator(".at-message-streaming-text");
+    await expect(liveText).toBeVisible();
+    const streamSamples = await sampleLocatorTextLengths(liveText, 7, 80);
+    expect(streamSamples[0] ?? 0).toBeGreaterThan(0);
+    expect(streamSamples[0] ?? terminalText.length).toBeLessThan(terminalText.length);
+    expect(new Set(streamSamples).size).toBeGreaterThanOrEqual(3);
+    expect(Math.max(...streamSamples)).toBeLessThan(terminalText.length);
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-subagent-complete-stream-during-reveal.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+    await expect(liveText).toHaveText(terminalText, { timeout: 10_000 });
+    const liveRowKey = await liveRow.first().getAttribute("data-row-key");
+    expect(liveRowKey).toContain("runtime-text:");
+    await expect(
+      page.locator(".at-chat-view").getByText("HYDRATED_STREAM_"),
+    ).toHaveCount(0);
 
     state.completed = true;
     await dispatchSubagentRunEvent(page, {
@@ -640,10 +657,19 @@ test("does not replay an already complete subagent stream during terminal hydrat
     await waitForEventSourceOpenCount(page, 0);
     await expect.poll(() => state.messageRequestCount).toBeGreaterThanOrEqual(2);
 
+    const settledRow = panel
+      .locator(`.at-timeline-row[data-run-id="${SUBAGENT_RUN_ID}"]`)
+      .filter({ hasText: "HYDRATED_STREAM_" });
+    await expect(settledRow).toHaveCount(1);
+    await expect.poll(() => settledRow.first().getAttribute("data-row-key"))
+      .toBe(liveRowKey);
     await expect(panel.locator(".at-message-streaming-text")).toHaveCount(0);
     await expect(panel.locator(".streaming-cursor")).toHaveCount(0);
     await expect.poll(() => panelVisibleTextOccurrences(page, terminalText))
       .toBe(1);
+    await expect(
+      page.locator(".at-chat-view").getByText("HYDRATED_STREAM_"),
+    ).toHaveCount(0);
     await page.screenshot({
       path: screenshotPath(
         "v2-subagent-complete-stream-terminal-hydration.png",

@@ -9893,3 +9893,19 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - This closes the specific packed-browser streaming cadence and terminal hydration replay gap for `MSG-02`/`STREAM-02`. It does not claim full real-provider normal-stream closure, interrupted recovery, all complex orchestration/tool variants, V1 visual sign-off, or final V2 frontend completion.
+
+## 2026-07-10 Subagent Right-Panel Hydration Sampling Slice
+
+### Scope
+- Continued the P1 runtime work on `SUB-01` instead of treating main-timeline streaming fixes as sufficient for child sessions.
+- Tightened the completed subagent stream browser scenario so the right-side panel must show multiple partial text lengths before the final child output appears.
+- Locked terminal hydration to the same runtime row key and asserted the child stream text stays absent from `.at-chat-view` before and after settlement.
+- Captured a mid-reveal right-panel screenshot to prove the evidence is not a terminal-only or replay-only check.
+
+### Verification
+- `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium -g "does not replay an already complete subagent stream"` passed.
+- `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium -g "does not replay an already complete subagent stream|streams a live orchestration subagent|recovers a settled subagent stream"` passed with 3 Chromium tests.
+- Screenshot inspection reviewed `.tmp/frontend-v2-ts-subagent-session/v2-subagent-complete-stream-during-reveal.png`; it shows partial `HYDRATED_STREAM_*` text with the cursor in the right panel and no child text in the parent chat.
+
+### Reviewer
+- This improves `SUB-01` and `STREAM-02` evidence for child-session terminal hydration. It does not claim live real-backend orchestration variants, full interrupted recovery, final V1 visual sign-off, or final V2 frontend completion.

@@ -783,6 +783,15 @@ For every row moved to `Verified`, record:
 - Automated evidence: `npm test -- src/test/RunStreamController.test.tsx -t "refreshes timeline|waits for terminal round history"`, `npm test -- src/test/RunStreamController.test.tsx`, `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium -g "does not rebuild a fully displayed live answer"`, `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium`, `npm run build`, `npm run lint`.
 - This still does not mark `MSG-02` or `STREAM-02` as `Verified`; true real-provider normal-stream proof, interrupted recovery, broader production-backend orchestration/tool-heavy variants, and final V1 visual sign-off remain open.
 
+## 2026-07-09 Orchestration Subagent Cadence Guard
+
+- `MSG-02`/`SUB-01` tightened after reviewing the live orchestration subagent browser proof: the test previously accepted the full first child-output chunk appearing at once, which would not catch the right-panel "no real typewriter cadence" failure.
+- The live orchestration subagent scenario now samples `.at-message-streaming-text` in the right-side panel immediately after a large child delta arrives. It requires visible partial text, multiple increasing samples, and no complete first chunk during the sampled window before later waiting for the full text plus tail to settle.
+- The same scenario still asserts the prompt/header context is visible, raw `Crafter` role labels are not rendered in the panel body, child output stays out of `.at-chat-view`, terminal delayed history refill does not duplicate the child answer, and no stale cursor remains after completion.
+- `SUB-01`/`SESS-03` tightened for the session-switch race exposed by the full subagent browser run: after a user leaves a session with an open right-side subagent panel, returning to that parent session no longer auto-restores the old panel while the main timeline hydrates. The saved panel context is retained for same-session hard refresh, but cross-session return requires clicking the current timeline's subagent tool card again.
+- Automated evidence: `npm test -- src/test/AppShell.test.tsx -t "subagent"`, `npm run build`, `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium`.
+- This does not mark `MSG-02`, `STREAM-02`, or `SUB-01` as `Verified`; production-backend orchestration stream variants, interrupted recovery, and final V1 visual sign-off remain open.
+
 ## Immediate P0 Batch
 
 The current batch closes these rows first:

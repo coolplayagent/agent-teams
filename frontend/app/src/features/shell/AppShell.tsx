@@ -120,6 +120,10 @@ export function AppShell() {
   const [activeSubagent, setActiveSubagent] = useState<ActiveSubagentSession | null>(
     readActiveSubagentPanel,
   );
+  const [
+    activeSubagentAutoRestoreBlocked,
+    setActiveSubagentAutoRestoreBlocked,
+  ] = useState(false);
   const [subagentPanelWidth, setSubagentPanelWidthState] = useState(
     readSubagentPanelWidth,
   );
@@ -137,6 +141,7 @@ export function AppShell() {
   const themeMode = useUiStore((state) => state.themeMode);
   const language = useUiStore((state) => state.language);
   const selectedSessionId = useUiStore((state) => state.selectedSessionId);
+  const previousSelectedSessionIdRef = useRef(selectedSessionId);
   const selectedWorkspaceId = useUiStore((state) => state.selectedWorkspaceId);
   const setSidebarCollapsed = useUiStore((state) => state.setSidebarCollapsed);
   const setSidebarWidth = useUiStore((state) => state.setSidebarWidth);
@@ -194,6 +199,7 @@ export function AppShell() {
   const handleTimelineSubagentOpen = useCallback(
     (reference: TimelineSubagentReference) => {
       const provisionalSubagent = activeSubagentFromTimelineReference(reference);
+      setActiveSubagentAutoRestoreBlocked(false);
       if (provisionalSubagent !== null) {
         setActiveSubagent(provisionalSubagent);
       }
@@ -325,7 +331,10 @@ export function AppShell() {
       ) ?? null,
     [selectedSessionId, sidebarSessionsQuery.data],
   );
-  const visibleActiveSubagent = activeSubagentForSelectedSession;
+  const visibleActiveSubagent =
+    activeSubagentAutoRestoreBlocked
+      ? null
+      : activeSubagentForSelectedSession;
 
   useEffect(() => {
     const savedLanguage = uiLanguageQuery.data?.language;
@@ -385,6 +394,23 @@ export function AppShell() {
     setSelectedWorkspaceId,
     sidebarSessionsQuery.data,
   ]);
+
+  useEffect(() => {
+    if (activeSubagent === null) {
+      setActiveSubagentAutoRestoreBlocked(false);
+      previousSelectedSessionIdRef.current = selectedSessionId;
+      return;
+    }
+    const previousSelectedSessionId = previousSelectedSessionIdRef.current;
+    previousSelectedSessionIdRef.current = selectedSessionId;
+    if (
+      previousSelectedSessionId !== selectedSessionId &&
+      previousSelectedSessionId === activeSubagent.sessionId &&
+      selectedSessionId !== activeSubagent.sessionId
+    ) {
+      setActiveSubagentAutoRestoreBlocked(true);
+    }
+  }, [activeSubagent, selectedSessionId]);
 
   useEffect(() => {
     if (selectedSession === null || selectedSession.has_unread_terminal_run !== true) {

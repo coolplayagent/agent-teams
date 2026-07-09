@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import {
   dispatchEventSourceMessage,
@@ -1072,7 +1072,14 @@ test("streams a live orchestration subagent with right-panel delta cadence", asy
         exact: true,
       }),
     ).toHaveCount(0);
-    await expect(liveText).toContainText(firstStreamText);
+    await expect.poll(async () => ((await liveText.textContent()) ?? "").length)
+      .toBeGreaterThan(0);
+    const firstStreamSamples = await sampleLocatorTextLengths(liveText, 6, 80);
+    expect(firstStreamSamples[0] ?? 0).toBeGreaterThan(0);
+    expect(firstStreamSamples[0] ?? firstStreamText.length)
+      .toBeLessThan(firstStreamText.length);
+    expect(new Set(firstStreamSamples).size).toBeGreaterThanOrEqual(3);
+    expect(Math.max(...firstStreamSamples)).toBeLessThan(firstStreamText.length);
     await expect(
       page.locator(".at-chat-view").getByText("ORCH_LIVE_"),
     ).toHaveCount(0);
@@ -1084,7 +1091,9 @@ test("streams a live orchestration subagent with right-panel delta cadence", asy
       roleId: "Crafter",
       type: "message.output.delta",
     });
-    await expect(liveRow).toContainText(`${firstStreamText} ORCH_LIVE_TAIL`);
+    await expect(liveRow).toContainText(`${firstStreamText} ORCH_LIVE_TAIL`, {
+      timeout: 20_000,
+    });
     await expect(
       panel.locator(`.at-timeline-row[data-run-id="${SUBAGENT_RUN_ID}"]`)
         .filter({ hasText: "ORCH_LIVE_" }),
@@ -2348,6 +2357,19 @@ async function panelVisibleTextOccurrences(
     }
     return haystack.split(text).length - 1;
   }, needle);
+}
+
+async function sampleLocatorTextLengths(
+  locator: Locator,
+  count: number,
+  intervalMs: number,
+): Promise<number[]> {
+  const lengths: number[] = [];
+  for (let index = 0; index < count; index += 1) {
+    lengths.push(((await locator.textContent()) ?? "").length);
+    await locator.page().waitForTimeout(intervalMs);
+  }
+  return lengths;
 }
 
 interface SubagentPromptLayout {

@@ -324,14 +324,16 @@ class AttemptRecoveryService:
         ],
         commit_all_safe_messages: Callable[
             ...,
-            tuple[
-                list[ModelRequest | ModelResponse],
-                list[ModelRequest | ModelResponse],
-                bool,
-                bool,
+            Awaitable[
+                tuple[
+                    list[ModelRequest | ModelResponse],
+                    list[ModelRequest | ModelResponse],
+                    bool,
+                    bool,
+                ]
             ],
         ],
-        publish_synthetic_tool_results_for_pending_calls: Callable[..., int],
+        publish_synthetic_tool_results_for_pending_calls: Callable[..., Awaitable[int]],
         generate_async: Callable[..., Awaitable[str]],
     ) -> str:
         next_retry_number = retry_number + 1
@@ -347,13 +349,13 @@ class AttemptRecoveryService:
             remaining_pending_messages,
             _committed_tool_events_published,
             _committed_tool_validation_failures,
-        ) = commit_all_safe_messages(
+        ) = await commit_all_safe_messages(
             request=request,
             history=history,
             pending_messages=recovered_pending_messages,
         )
         closed_pending_tool_call_count = (
-            publish_synthetic_tool_results_for_pending_calls(
+            await publish_synthetic_tool_results_for_pending_calls(
                 request=request,
                 pending_messages=remaining_pending_messages,
                 error_code=RESUME_SUPERSEDED_TOOL_CALL_ERROR_CODE,
@@ -439,8 +441,8 @@ class AttemptRecoveryService:
         attempt_messages_committed: bool,
         skip_initial_user_prompt_persist: bool,
         clone_with_config: Callable[..., object],
-        handle_fallback_activated: Callable[..., None],
-        handle_fallback_exhausted: Callable[..., None],
+        handle_fallback_activated: Callable[..., Awaitable[None]],
+        handle_fallback_exhausted: Callable[..., Awaitable[None]],
     ) -> FallbackAttemptOutcome:
         if not self.can_attempt_fallback(
             retry_error=retry_error,
@@ -461,7 +463,7 @@ class AttemptRecoveryService:
             hop=fallback_state.hop,
         )
         if decision is None:
-            handle_fallback_exhausted(
+            await handle_fallback_exhausted(
                 request=request,
                 retry_number=retry_number,
                 total_attempts=total_attempts,
@@ -469,7 +471,7 @@ class AttemptRecoveryService:
                 fallback_state=fallback_state,
             )
             return FallbackAttemptOutcome.exhausted()
-        handle_fallback_activated(
+        await handle_fallback_activated(
             request=request,
             retry_number=retry_number,
             total_attempts=total_attempts,

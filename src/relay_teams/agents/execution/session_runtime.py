@@ -1670,7 +1670,7 @@ class SessionRuntimeMixin(AgentLlmSessionMixinBase):
                 )
                 if recovery_outcome.response is not None:
                     return recovery_outcome.response
-                self._raise_terminal_model_api_failure(
+                await self._raise_terminal_model_api_failure(
                     request=request,
                     error=exc,
                     retry_error=retry_error,
@@ -1708,7 +1708,7 @@ class SessionRuntimeMixin(AgentLlmSessionMixinBase):
                 )
                 if recovery_outcome.response is not None:
                     return recovery_outcome.response
-                self._raise_terminal_generic_failure(
+                await self._raise_terminal_generic_failure(
                     request=request,
                     error=exc,
                     retry_error=retry_error,

@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import Coroutine
 import sqlite3
 from pathlib import Path
+from threading import Thread
 from typing import cast
 
 import aiosqlite
@@ -238,6 +239,40 @@ def test_cross_write_coordinator_allows_sync_reentry() -> None:
     coordinator.release(first_token)
 
 
+def test_cross_write_coordinator_sync_acquire_times_out(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coordinator = db_module.CrossModeWriteCoordinator()
+    monkeypatch.setattr(db_module, "SQLITE_CROSS_WRITE_ACQUIRE_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(db_module, "SQLITE_CROSS_WRITE_SLOW_WAIT_SECONDS", 0.0)
+    owner_token = coordinator.acquire_sync(
+        repository_name="owner_repo",
+        operation_name="hold",
+    )
+    errors: list[db_module.SqliteWriteCoordinatorTimeoutError] = []
+
+    def _wait_for_lock() -> None:
+        with pytest.raises(
+            db_module.SqliteWriteCoordinatorTimeoutError,
+            match="waiter_repo.blocked",
+        ) as exc_info:
+            coordinator.acquire_sync(
+                repository_name="waiter_repo",
+                operation_name="blocked",
+            )
+        errors.append(exc_info.value)
+
+    thread = Thread(target=_wait_for_lock)
+    try:
+        thread.start()
+        thread.join(timeout=1.0)
+    finally:
+        coordinator.release(owner_token)
+
+    assert not thread.is_alive()
+    assert len(errors) == 1
+
+
 @pytest.mark.asyncio
 async def test_cross_write_coordinator_allows_async_reentry() -> None:
     coordinator = db_module.CrossModeWriteCoordinator()
@@ -249,14 +284,50 @@ async def test_cross_write_coordinator_allows_async_reentry() -> None:
 
 
 @pytest.mark.asyncio
+async def test_cross_write_coordinator_async_acquire_times_out(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coordinator = db_module.CrossModeWriteCoordinator()
+    monkeypatch.setattr(db_module, "SQLITE_CROSS_WRITE_ACQUIRE_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(db_module, "SQLITE_CROSS_WRITE_SLOW_WAIT_SECONDS", 0.0)
+    owner_token = coordinator.acquire_sync(
+        repository_name="sync_repo",
+        operation_name="hold",
+    )
+    try:
+        with pytest.raises(
+            db_module.SqliteWriteCoordinatorTimeoutError,
+            match="async_repo.blocked",
+        ):
+            await coordinator.acquire_async(
+                repository_name="async_repo",
+                operation_name="blocked",
+            )
+    finally:
+        coordinator.release(owner_token)
+
+
+@pytest.mark.asyncio
 async def test_cross_write_coordinator_releases_cancelled_async_acquire(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     coordinator = db_module.CrossModeWriteCoordinator()
     original_try_acquire = coordinator._try_acquire
 
-    def _cancel_after_acquire(token: tuple[str, int]) -> bool:
-        assert original_try_acquire(token) is True
+    def _cancel_after_acquire(
+        token: tuple[str, int],
+        *,
+        repository_name: str = "",
+        operation_name: str = "",
+    ) -> bool:
+        assert (
+            original_try_acquire(
+                token,
+                repository_name=repository_name,
+                operation_name=operation_name,
+            )
+            is True
+        )
         raise asyncio.CancelledError
 
     monkeypatch.setattr(coordinator, "_try_acquire", _cancel_after_acquire)
@@ -276,8 +347,20 @@ async def test_cross_write_coordinator_cancelled_reentry_preserves_outer_lock(
     first_token = await coordinator.acquire_async()
     original_try_acquire = coordinator._try_acquire
 
-    def _cancel_after_reentry(token: tuple[str, int]) -> bool:
-        assert original_try_acquire(token) is True
+    def _cancel_after_reentry(
+        token: tuple[str, int],
+        *,
+        repository_name: str = "",
+        operation_name: str = "",
+    ) -> bool:
+        assert (
+            original_try_acquire(
+                token,
+                repository_name=repository_name,
+                operation_name=operation_name,
+            )
+            is True
+        )
         raise asyncio.CancelledError
 
     monkeypatch.setattr(coordinator, "_try_acquire", _cancel_after_reentry)
@@ -384,6 +467,53 @@ def test_run_sqlite_write_with_retry_rolls_back_failed_operation(
         assert [row[0] for row in stored] == ["ok"]
     finally:
         run_async_blocking(repo.close_async())
+
+
+@pytest.mark.asyncio
+async def test_run_sqlite_write_with_retry_rejects_event_loop_wait(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "event_loop_guard.db"
+    conn = sqlite3.connect(db_path)
+    owner_token = await db_module._cross_write_coordinator_for(db_path).acquire_async(
+        repository_name="AsyncOwnerRepo",
+        operation_name="hold",
+    )
+    try:
+        with pytest.raises(RuntimeError, match="async repository API"):
+            run_sqlite_write_with_retry(
+                conn=cast(db_module.BlockingSqliteConnection, conn),
+                db_path=db_path,
+                operation=lambda: None,
+                repository_name="EventLoopRepo",
+                operation_name="sync_write",
+            )
+    finally:
+        db_module._cross_write_coordinator_for(db_path).release(owner_token)
+        conn.close()
+
+
+@pytest.mark.asyncio
+async def test_run_sqlite_write_with_retry_allows_uncontended_event_loop_write(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "event_loop_init_tables.db"
+    conn = sqlite3.connect(db_path)
+    try:
+        run_sqlite_write_with_retry(
+            conn=cast(db_module.BlockingSqliteConnection, conn),
+            db_path=db_path,
+            operation=lambda: conn.execute("CREATE TABLE items (value TEXT NOT NULL)"),
+            repository_name="EventLoopRepo",
+            operation_name="sync_write",
+        )
+
+        rows = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'items'"
+        ).fetchall()
+        assert len(rows) == 1
+    finally:
+        conn.close()
 
 
 @pytest.mark.asyncio

@@ -11,7 +11,7 @@ from typing import Awaitable, Callable, Protocol, TypeVar
 from weakref import WeakKeyDictionary
 
 import aiosqlite
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, JsonValue
 
 from relay_teams.logger import get_logger, log_event
 
@@ -21,6 +21,10 @@ SQLITE_BUSY_TIMEOUT_MS = 30_000
 SQLITE_WRITE_RETRY_ATTEMPTS = 8
 SQLITE_WRITE_RETRY_INITIAL_DELAY_SECONDS = 0.01
 SQLITE_WRITE_RETRY_MAX_DELAY_SECONDS = 0.2
+SQLITE_CROSS_WRITE_SLOW_WAIT_SECONDS = 5.0
+SQLITE_CROSS_WRITE_ACQUIRE_TIMEOUT_SECONDS = 30.0
+SQLITE_CROSS_WRITE_SYNC_WAIT_SLICE_SECONDS = 0.25
+SQLITE_CROSS_WRITE_ASYNC_WAIT_SLICE_SECONDS = 0.001
 
 LOGGER = get_logger(__name__)
 type _WriteOwnerToken = tuple[str, int]
@@ -48,6 +52,20 @@ class SqliteWriteMetrics(BaseModel):
     sqlite_lock_timeout_count: int = 0
     total_wait_ms: int = 0
     total_duration_ms: int = 0
+
+
+class SqliteWriteCoordinatorTimeoutError(RuntimeError):
+    pass
+
+
+class _WriteOwnerInfo(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    token_kind: str
+    token_id: int
+    repository: str
+    operation: str
+    acquired_at: float
 
 
 def sqlite_write_metrics() -> SqliteWriteMetrics:
@@ -158,27 +176,113 @@ class CrossModeWriteCoordinator:
     def __init__(self) -> None:
         self._condition = Condition()
         self._owner: _WriteOwnerToken | None = None
+        self._owner_info: _WriteOwnerInfo | None = None
         self._depth = 0
 
-    def acquire_sync(self) -> _WriteOwnerToken:
+    def acquire_sync(
+        self,
+        *,
+        repository_name: str = "",
+        operation_name: str = "",
+    ) -> _WriteOwnerToken:
         token = ("thread", get_ident())
+        wait_started = time.perf_counter()
+        next_slow_log_at = (
+            wait_started + SQLITE_CROSS_WRITE_SLOW_WAIT_SECONDS
+            if SQLITE_CROSS_WRITE_SLOW_WAIT_SECONDS > 0
+            else wait_started
+        )
+        deadline = wait_started + SQLITE_CROSS_WRITE_ACQUIRE_TIMEOUT_SECONDS
         with self._condition:
             while self._owner is not None and self._owner != token:
-                self._condition.wait()
-            self._owner = token
+                if _running_event_loop_in_current_thread() is not None:
+                    raise self._build_event_loop_wait_error(
+                        waiter=token,
+                        repository_name=repository_name,
+                        operation_name=operation_name,
+                        wait_started=wait_started,
+                    )
+                now = time.perf_counter()
+                if now >= deadline:
+                    raise self._build_timeout_error(
+                        waiter=token,
+                        repository_name=repository_name,
+                        operation_name=operation_name,
+                        wait_started=wait_started,
+                    )
+                if now >= next_slow_log_at:
+                    self._log_slow_wait(
+                        waiter=token,
+                        repository_name=repository_name,
+                        operation_name=operation_name,
+                        wait_started=wait_started,
+                    )
+                    next_slow_log_at = (
+                        now + SQLITE_CROSS_WRITE_SLOW_WAIT_SECONDS
+                        if SQLITE_CROSS_WRITE_SLOW_WAIT_SECONDS > 0
+                        else deadline
+                    )
+                self._condition.wait(
+                    self._sync_wait_timeout(
+                        now=now,
+                        deadline=deadline,
+                        next_slow_log_at=next_slow_log_at,
+                    )
+                )
+            self._mark_owner(
+                token,
+                repository_name=repository_name,
+                operation_name=operation_name,
+            )
             self._depth += 1
         return token
 
-    async def acquire_async(self) -> _WriteOwnerToken:
+    async def acquire_async(
+        self,
+        *,
+        repository_name: str = "",
+        operation_name: str = "",
+    ) -> _WriteOwnerToken:
         task = asyncio.current_task()
         token = (
             "async",
             id(task) if task is not None else id(asyncio.get_running_loop()),
         )
         initial_depth = self._owned_depth(token)
+        wait_started = time.perf_counter()
+        next_slow_log_at = (
+            wait_started + SQLITE_CROSS_WRITE_SLOW_WAIT_SECONDS
+            if SQLITE_CROSS_WRITE_SLOW_WAIT_SECONDS > 0
+            else wait_started
+        )
+        deadline = wait_started + SQLITE_CROSS_WRITE_ACQUIRE_TIMEOUT_SECONDS
         try:
-            while not self._try_acquire(token):
-                await asyncio.sleep(0.001)
+            while not self._try_acquire(
+                token,
+                repository_name=repository_name,
+                operation_name=operation_name,
+            ):
+                now = time.perf_counter()
+                if now >= deadline:
+                    raise self._build_timeout_error(
+                        waiter=token,
+                        repository_name=repository_name,
+                        operation_name=operation_name,
+                        wait_started=wait_started,
+                    )
+                if now >= next_slow_log_at:
+                    self._log_slow_wait(
+                        waiter=token,
+                        repository_name=repository_name,
+                        operation_name=operation_name,
+                        wait_started=wait_started,
+                    )
+                    next_slow_log_at = (
+                        now + SQLITE_CROSS_WRITE_SLOW_WAIT_SECONDS
+                        if SQLITE_CROSS_WRITE_SLOW_WAIT_SECONDS > 0
+                        else deadline
+                    )
+                await asyncio.sleep(SQLITE_CROSS_WRITE_ASYNC_WAIT_SLICE_SECONDS)
         except asyncio.CancelledError:
             self._release_cancelled_acquire(token, initial_depth)
             raise
@@ -192,15 +296,43 @@ class CrossModeWriteCoordinator:
             if self._depth > 0:
                 return
             self._owner = None
+            self._owner_info = None
             self._condition.notify_all()
 
-    def _try_acquire(self, token: _WriteOwnerToken) -> bool:
+    def _try_acquire(
+        self,
+        token: _WriteOwnerToken,
+        *,
+        repository_name: str = "",
+        operation_name: str = "",
+    ) -> bool:
         with self._condition:
             if self._owner is not None and self._owner != token:
                 return False
-            self._owner = token
+            self._mark_owner(
+                token,
+                repository_name=repository_name,
+                operation_name=operation_name,
+            )
             self._depth += 1
             return True
+
+    def _mark_owner(
+        self,
+        token: _WriteOwnerToken,
+        *,
+        repository_name: str,
+        operation_name: str,
+    ) -> None:
+        if self._owner != token:
+            self._owner_info = _WriteOwnerInfo(
+                token_kind=token[0],
+                token_id=token[1],
+                repository=repository_name,
+                operation=operation_name,
+                acquired_at=time.perf_counter(),
+            )
+        self._owner = token
 
     def _owned_depth(self, token: _WriteOwnerToken) -> int:
         with self._condition:
@@ -215,6 +347,122 @@ class CrossModeWriteCoordinator:
             if self._owner != token or self._depth <= initial_depth:
                 return
         self.release(token)
+
+    @staticmethod
+    def _sync_wait_timeout(
+        *,
+        now: float,
+        deadline: float,
+        next_slow_log_at: float,
+    ) -> float:
+        wait_until = min(
+            deadline,
+            next_slow_log_at,
+            now + SQLITE_CROSS_WRITE_SYNC_WAIT_SLICE_SECONDS,
+        )
+        return max(0.001, wait_until - now)
+
+    def _build_timeout_error(
+        self,
+        *,
+        waiter: _WriteOwnerToken,
+        repository_name: str,
+        operation_name: str,
+        wait_started: float,
+    ) -> SqliteWriteCoordinatorTimeoutError:
+        payload = self._wait_payload(
+            waiter=waiter,
+            repository_name=repository_name,
+            operation_name=operation_name,
+            wait_started=wait_started,
+        )
+        log_event(
+            LOGGER,
+            logging.ERROR,
+            event="sqlite.cross_write.wait.timeout",
+            message="Timed out waiting for SQLite cross-mode write coordinator",
+            payload=payload,
+        )
+        return SqliteWriteCoordinatorTimeoutError(
+            "Timed out waiting for SQLite cross-mode write coordinator "
+            f"for {repository_name}.{operation_name}"
+        )
+
+    def _build_event_loop_wait_error(
+        self,
+        *,
+        waiter: _WriteOwnerToken,
+        repository_name: str,
+        operation_name: str,
+        wait_started: float,
+    ) -> RuntimeError:
+        log_event(
+            LOGGER,
+            logging.ERROR,
+            event="sqlite.sync_write.wait_on_event_loop",
+            message="Synchronous SQLite write would block a running event loop",
+            payload=self._wait_payload(
+                waiter=waiter,
+                repository_name=repository_name,
+                operation_name=operation_name,
+                wait_started=wait_started,
+            ),
+        )
+        return RuntimeError(
+            "Synchronous SQLite write would block a running event loop; "
+            f"use the async repository API for {repository_name}.{operation_name}"
+        )
+
+    def _log_slow_wait(
+        self,
+        *,
+        waiter: _WriteOwnerToken,
+        repository_name: str,
+        operation_name: str,
+        wait_started: float,
+    ) -> None:
+        log_event(
+            LOGGER,
+            logging.WARNING,
+            event="sqlite.cross_write.wait.slow",
+            message="Still waiting for SQLite cross-mode write coordinator",
+            payload=self._wait_payload(
+                waiter=waiter,
+                repository_name=repository_name,
+                operation_name=operation_name,
+                wait_started=wait_started,
+            ),
+        )
+
+    def _wait_payload(
+        self,
+        *,
+        waiter: _WriteOwnerToken,
+        repository_name: str,
+        operation_name: str,
+        wait_started: float,
+    ) -> dict[str, JsonValue]:
+        owner_info = self._owner_info
+        now = time.perf_counter()
+        payload: dict[str, JsonValue] = {
+            "waiter_kind": waiter[0],
+            "waiter_id": waiter[1],
+            "repository": repository_name,
+            "operation": operation_name,
+            "wait_ms": int((now - wait_started) * 1000),
+            "depth": self._depth,
+        }
+        if owner_info is not None:
+            payload.update(
+                {
+                    "owner_kind": owner_info.token_kind,
+                    "owner_id": owner_info.token_id,
+                    "owner_repository": owner_info.repository,
+                    "owner_operation": owner_info.operation,
+                    "owner_held_ms": int((now - owner_info.acquired_at) * 1000),
+                }
+            )
+        return payload
 
 
 async def _configure_async_connection(
@@ -271,6 +519,13 @@ def _async_blocking_runner() -> _AsyncBlockingRunner:
         return _ASYNC_BLOCKING_RUNNER
 
 
+def _running_event_loop_in_current_thread() -> asyncio.AbstractEventLoop | None:
+    try:
+        return asyncio.get_running_loop()
+    except RuntimeError:
+        return None
+
+
 def sqlite_compile_options(conn: BlockingSqliteConnection) -> frozenset[str]:
     rows = conn.execute("PRAGMA compile_options").fetchall()
     return frozenset(str(row[0]) for row in rows)
@@ -323,7 +578,10 @@ async def run_async_sqlite_write_with_retry(
         operation_started = False
         try:
             wait_started = time.perf_counter()
-            cross_write_token = await cross_write_lock.acquire_async()
+            cross_write_token = await cross_write_lock.acquire_async(
+                repository_name=repository_name,
+                operation_name=operation_name,
+            )
             accumulated_wait_ms += int((time.perf_counter() - wait_started) * 1000)
             try:
                 async with write_lock:
@@ -419,7 +677,10 @@ def run_sqlite_write_with_retry(
         operation_started = False
         try:
             wait_started = time.perf_counter()
-            cross_write_token = cross_write_lock.acquire_sync()
+            cross_write_token = cross_write_lock.acquire_sync(
+                repository_name=repository_name,
+                operation_name=operation_name,
+            )
             accumulated_wait_ms += int((time.perf_counter() - wait_started) * 1000)
             try:
                 with write_lock:

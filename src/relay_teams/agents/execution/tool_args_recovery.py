@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Protocol
 
 from pydantic_ai.messages import (
@@ -23,12 +23,13 @@ LOGGER = get_logger(__name__)
 
 
 class ToolArgsRecoveryMessageRepository(Protocol):
-    def prune_conversation_history_to_safe_boundary(
+    async def prune_conversation_history_to_safe_boundary_async(
         self,
         conversation_id: str,
-    ) -> None: ...
+    ) -> None:
+        pass
 
-    def append(
+    async def append_async(
         self,
         *,
         session_id: str,
@@ -38,8 +39,20 @@ class ToolArgsRecoveryMessageRepository(Protocol):
         instance_id: str,
         task_id: str,
         trace_id: str,
-        messages: list[ModelRequest | ModelResponse],
-    ) -> None: ...
+        messages: Sequence[ModelRequest | ModelResponse],
+    ) -> None:
+        pass
+
+
+class ToolArgsAssistantRunErrorRaiser(Protocol):
+    async def __call__(
+        self,
+        *,
+        request: LLMRequest,
+        error_code: str | None,
+        error_message: str | None,
+    ) -> None:
+        pass
 
 
 class ToolArgsRecoveryService:
@@ -64,9 +77,11 @@ class ToolArgsRecoveryService:
         error_message: str,
         conversation_id: Callable[[LLMRequest], str],
         workspace_id: Callable[[LLMRequest], str],
-        publish_tool_call_events_from_messages: Callable[..., object],
-        publish_committed_tool_outcome_events_from_messages: Callable[..., object],
-        raise_assistant_run_error: Callable[..., None],
+        publish_tool_call_events_from_messages: Callable[..., Awaitable[bool]],
+        publish_committed_tool_outcome_events_from_messages: Callable[
+            ..., Awaitable[bool]
+        ],
+        raise_assistant_run_error: ToolArgsAssistantRunErrorRaiser,
         generate_async: Callable[..., Awaitable[str]],
     ) -> str | None:
         if not self._stream_event_service.looks_like_tool_args_parse_failure(
@@ -104,10 +119,10 @@ class ToolArgsRecoveryService:
         ]
         tool_error_request = ModelRequest(parts=tool_error_parts)
         resolved_conversation_id = conversation_id(request)
-        self._message_repo.prune_conversation_history_to_safe_boundary(
+        await self._message_repo.prune_conversation_history_to_safe_boundary_async(
             resolved_conversation_id
         )
-        self._message_repo.append(
+        await self._message_repo.append_async(
             session_id=request.session_id,
             workspace_id=workspace_id(request),
             conversation_id=resolved_conversation_id,
@@ -117,12 +132,12 @@ class ToolArgsRecoveryService:
             trace_id=request.trace_id,
             messages=[assistant_response, tool_error_request],
         )
-        publish_tool_call_events_from_messages(
+        await publish_tool_call_events_from_messages(
             request=request,
             messages=[assistant_response],
             published_tool_call_ids=published_tool_call_ids,
         )
-        publish_committed_tool_outcome_events_from_messages(
+        await publish_committed_tool_outcome_events_from_messages(
             request=request,
             messages=[tool_error_request],
         )
@@ -155,7 +170,7 @@ class ToolArgsRecoveryService:
                     "total_attempts": total_attempts,
                 },
             )
-            raise_assistant_run_error(
+            await raise_assistant_run_error(
                 request=request,
                 error_code="model_tool_args_invalid_json",
                 error_message=error_message,

@@ -388,7 +388,7 @@ async def test_resume_after_tool_outcomes_commits_backfilled_tool_results(
 
     captured_pending_messages: list[ModelRequest | ModelResponse] = []
 
-    def _capture_commit_all_safe_messages(**kwargs: object):
+    async def _capture_commit_all_safe_messages_async(**kwargs: object):
         pending_messages = kwargs["pending_messages"]
         assert isinstance(pending_messages, list)
         captured_pending_messages.extend(
@@ -403,9 +403,17 @@ async def test_resume_after_tool_outcomes_commits_backfilled_tool_results(
         assert recovered_part.tool_call_id == "call-dispatch-1"
         return [], [], False, False
 
-    session.__dict__["_commit_all_safe_messages"] = _capture_commit_all_safe_messages
-    session.__dict__["_publish_synthetic_tool_results_for_pending_calls"] = (
-        lambda **kwargs: 0
+    async def _publish_synthetic_tool_results_for_pending_calls_async(
+        **kwargs: object,
+    ) -> int:
+        _ = kwargs
+        return 0
+
+    session.__dict__["_commit_all_safe_messages_async"] = (
+        _capture_commit_all_safe_messages_async
+    )
+    session.__dict__["_publish_synthetic_tool_results_for_pending_calls_async"] = (
+        _publish_synthetic_tool_results_for_pending_calls_async
     )
 
     async def _generate_async(*args: object, **kwargs: object) -> str:
@@ -479,10 +487,19 @@ async def test_maybe_fallback_after_retry_exhausted_switches_profile() -> None:
 
     activated: list[LlmFallbackDecision] = []
     session.__dict__["_fallback_middleware"] = _FallbackMiddleware()
-    session.__dict__["_handle_fallback_activated"] = lambda **kwargs: activated.append(
-        cast(LlmFallbackDecision, kwargs["decision"])
+
+    async def _handle_fallback_activated_async(**kwargs: object) -> None:
+        activated.append(cast(LlmFallbackDecision, kwargs["decision"]))
+
+    async def _handle_fallback_exhausted_async(**kwargs: object) -> None:
+        _ = kwargs
+
+    session.__dict__["_handle_fallback_activated_async"] = (
+        _handle_fallback_activated_async
     )
-    session.__dict__["_handle_fallback_exhausted"] = lambda **kwargs: None
+    session.__dict__["_handle_fallback_exhausted_async"] = (
+        _handle_fallback_exhausted_async
+    )
 
     captured_generate_kwargs: list[dict[str, object]] = []
 
@@ -569,8 +586,19 @@ async def test_maybe_fallback_after_non_retryable_quota_error_switches_profile()
             )
 
     session.__dict__["_fallback_middleware"] = _FallbackMiddleware()
-    session.__dict__["_handle_fallback_activated"] = lambda **kwargs: None
-    session.__dict__["_handle_fallback_exhausted"] = lambda **kwargs: None
+
+    async def _handle_fallback_activated_async(**kwargs: object) -> None:
+        _ = kwargs
+
+    async def _handle_fallback_exhausted_async(**kwargs: object) -> None:
+        _ = kwargs
+
+    session.__dict__["_handle_fallback_activated_async"] = (
+        _handle_fallback_activated_async
+    )
+    session.__dict__["_handle_fallback_exhausted_async"] = (
+        _handle_fallback_exhausted_async
+    )
 
     class _FallbackSession:
         async def _generate_async(
@@ -607,7 +635,73 @@ async def test_maybe_fallback_after_non_retryable_quota_error_switches_profile()
     assert result.status == _FallbackAttemptStatus.RECOVERED
 
 
-def test_raise_assistant_run_error_persists_error_response_and_publishes_delta() -> (
+@pytest.mark.asyncio
+async def test_async_fallback_wrappers_delegate_to_failure_handling_service() -> None:
+    session = object.__new__(AgentLlmSession)
+    primary_config = ModelEndpointConfig(
+        model="primary-model",
+        base_url="https://example.test/v1",
+        api_key="primary-key",
+    )
+    fallback_config = ModelEndpointConfig(
+        model="fallback-model",
+        base_url="https://fallback.test/v1",
+        api_key="fallback-key",
+    )
+    decision = LlmFallbackDecision(
+        policy_id="policy-1",
+        from_profile_name="primary",
+        to_profile_name="secondary",
+        from_provider=primary_config.provider,
+        to_provider=fallback_config.provider,
+        from_model=primary_config.model,
+        to_model=fallback_config.model,
+        hop=1,
+        reason="rate_limited",
+        cooldown_until=datetime.now(UTC),
+        target_config=fallback_config,
+    )
+    retry_error = LlmRetryErrorInfo(
+        message="slow down",
+        status_code=429,
+        error_code="rate_limited",
+        retryable=True,
+        rate_limited=True,
+    )
+    calls: list[str] = []
+
+    class _FailureHandlingService:
+        async def handle_fallback_activated_async(self, **kwargs: object) -> None:
+            assert kwargs["decision"] == decision
+            calls.append("activated")
+
+        async def handle_fallback_exhausted_async(self, **kwargs: object) -> None:
+            assert kwargs["error"] == retry_error
+            calls.append("exhausted")
+
+    session.__dict__["_failure_handling_service"] = lambda: _FailureHandlingService()
+
+    await AgentLlmSession._handle_fallback_activated_async(
+        session,
+        request=_build_request(),
+        retry_number=1,
+        total_attempts=2,
+        decision=decision,
+    )
+    await AgentLlmSession._handle_fallback_exhausted_async(
+        session,
+        request=_build_request(),
+        retry_number=1,
+        total_attempts=2,
+        error=retry_error,
+        fallback_state=_FallbackAttemptState.initial("primary"),
+    )
+
+    assert calls == ["activated", "exhausted"]
+
+
+@pytest.mark.asyncio
+async def test_raise_assistant_run_error_persists_error_response_and_publishes_delta() -> (
     None
 ):
     session = object.__new__(AgentLlmSession)
@@ -616,12 +710,16 @@ def test_raise_assistant_run_error_persists_error_response_and_publishes_delta()
     message_repo = _FakeMessageRepo(history=[])
     published_text: list[str] = []
     session.__dict__["_message_repo"] = cast(MessageRepository, message_repo)
-    session.__dict__["_publish_text_delta_event"] = lambda **kwargs: (
+
+    async def _publish_text_delta_event_async(**kwargs: object) -> None:
         published_text.append(cast(str, kwargs["text"]))
+
+    session.__dict__["_publish_text_delta_event_async"] = (
+        _publish_text_delta_event_async
     )
 
     with pytest.raises(AssistantRunError) as exc_info:
-        AgentLlmSession._raise_assistant_run_error(
+        await AgentLlmSession._raise_assistant_run_error(
             session,
             request=_build_request(),
             error_code="network_timeout",
@@ -638,25 +736,30 @@ def test_raise_assistant_run_error_persists_error_response_and_publishes_delta()
     assert "timed out" in exc_info.value.payload.assistant_message
 
 
-def test_raise_terminal_model_api_failure_emits_retry_exhausted_before_terminal_error() -> (
+@pytest.mark.asyncio
+async def test_raise_terminal_model_api_failure_emits_retry_exhausted_before_terminal_error() -> (
     None
 ):
     session = object.__new__(AgentLlmSession)
     session.__dict__["_retry_config"] = LlmRetryConfig(max_retries=1)
     retry_exhausted_calls: list[dict[str, object]] = []
     raised_errors: list[dict[str, object]] = []
-    session.__dict__["_handle_retry_exhausted"] = lambda **kwargs: (
+
+    async def _handle_retry_exhausted_async(**kwargs: object) -> None:
         retry_exhausted_calls.append(kwargs)
-    )
-    session.__dict__["_raise_assistant_run_error"] = lambda **kwargs: (
-        raised_errors.append(kwargs),
-        (_ for _ in ()).throw(RuntimeError("terminal")),
-    )
+
+    session.__dict__["_handle_retry_exhausted_async"] = _handle_retry_exhausted_async
+
+    async def _raise_assistant_run_error(**kwargs: object) -> None:
+        raised_errors.append(kwargs)
+        raise RuntimeError("terminal")
+
+    session.__dict__["_raise_assistant_run_error"] = _raise_assistant_run_error
 
     error = ModelAPIError("gpt-test", "rate limited")
 
     with pytest.raises(RuntimeError, match="terminal"):
-        AgentLlmSession._raise_terminal_model_api_failure(
+        await AgentLlmSession._raise_terminal_model_api_failure(
             session,
             request=_build_request(),
             error=error,
@@ -678,25 +781,30 @@ def test_raise_terminal_model_api_failure_emits_retry_exhausted_before_terminal_
     assert raised_errors[0]["error_code"] == "rate_limited"
 
 
-def test_raise_terminal_model_api_failure_skips_retry_exhausted_after_fallback_exhausted() -> (
+@pytest.mark.asyncio
+async def test_raise_terminal_model_api_failure_skips_retry_exhausted_after_fallback_exhausted() -> (
     None
 ):
     session = object.__new__(AgentLlmSession)
     session.__dict__["_retry_config"] = LlmRetryConfig(max_retries=1)
     retry_exhausted_calls: list[dict[str, object]] = []
     raised_errors: list[dict[str, object]] = []
-    session.__dict__["_handle_retry_exhausted"] = lambda **kwargs: (
+
+    async def _handle_retry_exhausted_async(**kwargs: object) -> None:
         retry_exhausted_calls.append(kwargs)
-    )
-    session.__dict__["_raise_assistant_run_error"] = lambda **kwargs: (
-        raised_errors.append(kwargs),
-        (_ for _ in ()).throw(RuntimeError("terminal")),
-    )
+
+    session.__dict__["_handle_retry_exhausted_async"] = _handle_retry_exhausted_async
+
+    async def _raise_assistant_run_error(**kwargs: object) -> None:
+        raised_errors.append(kwargs)
+        raise RuntimeError("terminal")
+
+    session.__dict__["_raise_assistant_run_error"] = _raise_assistant_run_error
 
     error = ModelAPIError("gpt-test", "rate limited")
 
     with pytest.raises(RuntimeError, match="terminal"):
-        AgentLlmSession._raise_terminal_model_api_failure(
+        await AgentLlmSession._raise_terminal_model_api_failure(
             session,
             request=_build_request(),
             error=error,

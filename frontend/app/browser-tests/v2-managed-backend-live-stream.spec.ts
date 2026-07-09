@@ -362,6 +362,103 @@ test("managed backend normal tool pressure streams compact lifecycle cards", asy
   }
 });
 
+test("managed backend subagent stream reveals incrementally in the right panel", async ({
+  page,
+}) => {
+  const title = `managed-live-subagent-${Date.now()}`;
+  const session = await createSession(title);
+  let runId: string | null = null;
+  try {
+    await openManagedSession(page, session, title);
+    await expectManagedShellReady(page);
+
+    const childTag = streamTagFromTitle(title);
+    const childTokenCount = 14;
+    const firstToken = subagentStreamToken(childTag, 0);
+    const lastToken = subagentStreamToken(childTag, childTokenCount - 1);
+    const finalText = "[fake-llm] subagent lifecycle completed";
+    const promptText = [
+      `${title}: [hook-subagent-lifecycle tag=${childTag}]`,
+      "请通过 spawn_subagent 启动 Explorer 子代理，并让子代理流式输出确定性 token。",
+      "主代理不要复述子代理 token，子代理完成后只输出 fake LLM 的最终完成句。",
+    ].join("\n");
+
+    const runResponse = waitForRunCreateResponse(page);
+    await submitPrompt(page, promptText);
+    const createdRunId = await runIdFromResponse(await runResponse);
+    runId = createdRunId;
+    await expect(page.getByRole("button", { name: /停止|Stop/ })).toBeVisible({
+      timeout: 20_000,
+    });
+
+    const subagentCard = page.locator(".at-chat-view .at-message-tool.is-openable-subagent")
+      .first();
+    await expect(subagentCard).toBeVisible({ timeout: 90_000 });
+    await subagentCard.click();
+
+    const panel = page.locator(".at-subagent-session-view");
+    await expect(panel).toBeVisible({ timeout: 20_000 });
+    await expect
+      .poll(() => panel.locator(".at-subagent-session-prompt").textContent())
+      .toContain(childTag);
+    await expect
+      .poll(() => latestSubagentPanelRuntimeText(panel), { timeout: 90_000 })
+      .toContain(firstToken);
+    expect(await latestSubagentPanelRuntimeText(panel)).not.toContain(lastToken);
+
+    const tokenSamples = await collectSubagentPanelTokenProgressSamples(
+      panel,
+      childTag,
+      childTokenCount,
+      90_000,
+      45,
+    );
+    expect(increasingSampleCount(tokenSamples)).toBeGreaterThanOrEqual(3);
+    expect(Math.max(...tokenSamples)).toBeLessThan(childTokenCount - 1);
+    await expect.poll(() => mainTimelineMessageArticleText(page))
+      .not.toContain(firstToken);
+    await expect.poll(() => mainTimelineMessageArticleText(page))
+      .not.toContain(lastToken);
+
+    await page.screenshot({
+      fullPage: false,
+      path: screenshotPath(
+        "managed-live-subagent-panel-streaming.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+
+    await waitForRunToLeaveActive(session.session_id, createdRunId, 180_000);
+    await expect
+      .poll(() => panel.textContent(), { timeout: 60_000 })
+      .toContain(lastToken);
+    await expect
+      .poll(() => mainTimelineMessageArticleText(page), { timeout: 60_000 })
+      .toContain(finalText);
+    await expect.poll(() => mainTimelineMessageArticleText(page))
+      .not.toContain(firstToken);
+    await expect.poll(() => mainTimelineMessageArticleText(page))
+      .not.toContain(lastToken);
+    await expect(panel.locator(".streaming-cursor")).toHaveCount(0);
+    await expect(page.locator(".streaming-cursor")).toHaveCount(0);
+    await expectNoDocumentScroll(
+      page,
+      "managed subagent live stream should stay inside the fixed shell",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.screenshot({
+      fullPage: false,
+      path: screenshotPath(
+        "managed-live-subagent-panel-terminal.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+  } finally {
+    await stopRunIfPresent(runId);
+    await deleteSession(session.session_id);
+  }
+});
+
 async function startManagedBackend(): Promise<ManagedBackend> {
   const fakeLlmPort = await findFreePort();
   const backendPort = await findFreePort();
@@ -616,7 +713,10 @@ async function openManagedSession(
     window.localStorage.setItem("agentTeams.selectedSessionId", sessionId);
     window.localStorage.setItem("agentTeams.selectedWorkspaceId", workspaceId);
     window.localStorage.setItem("agentTeams.shellView", "chat");
-    window.localStorage.removeItem("agentTeams.activeSubagentPanel");
+    if (window.sessionStorage.getItem("agentTeams.managedBackendLiveState") !== "1") {
+      window.localStorage.removeItem("agentTeams.activeSubagentPanel");
+      window.sessionStorage.setItem("agentTeams.managedBackendLiveState", "1");
+    }
   }, {
     sessionId: session.session_id,
     workspaceId: session.workspace_id ?? "default",
@@ -716,6 +816,58 @@ async function stableLiveStreamSnippet(page: Page): Promise<string> {
     .toBe(true);
   const text = await latestLiveStreamText(page);
   return stableSnippetFromText(text);
+}
+
+async function latestSubagentPanelRuntimeText(panel: Locator): Promise<string> {
+  return panel
+    .locator(
+      ".at-message-tool, .at-message-streaming-text, .at-message-plain-stream, article.at-message",
+    )
+    .evaluateAll((nodes) => {
+      const ignored = new Set(["思考", "Thinking"]);
+      return nodes
+        .map((node) => (node.textContent ?? "").replace(/\s+/g, " ").trim())
+        .filter((candidate) => candidate.length > 0 && !ignored.has(candidate))
+        .at(-1) ?? "";
+    });
+}
+
+async function collectSubagentPanelTokenProgressSamples(
+  panel: Locator,
+  tag: string,
+  count: number,
+  timeoutMs: number,
+  delayMs: number,
+): Promise<number[]> {
+  const samples: number[] = [];
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    samples.push(await highestVisibleSubagentTokenIndex(panel, tag, count));
+    if (
+      increasingSampleCount(samples) >= 3 &&
+      Math.max(...samples) > 1 &&
+      Math.max(...samples) < count - 1
+    ) {
+      return samples;
+    }
+    await panel.page().waitForTimeout(delayMs);
+  }
+  return samples;
+}
+
+async function highestVisibleSubagentTokenIndex(
+  panel: Locator,
+  tag: string,
+  count: number,
+): Promise<number> {
+  const text = await latestSubagentPanelRuntimeText(panel);
+  let highest = -1;
+  for (let index = 0; index < count; index += 1) {
+    if (text.includes(subagentStreamToken(tag, index))) {
+      highest = index;
+    }
+  }
+  return highest;
 }
 
 function stableSnippetFromText(text: string): string {
@@ -995,6 +1147,10 @@ function slowStreamExpectedText(tag: string, count: number): string {
 
 function slowStreamToken(tag: string, index: number): string {
   return `SLOW_STREAM_${tag}_${String(index).padStart(2, "0")}`;
+}
+
+function subagentStreamToken(tag: string, index: number): string {
+  return `SUBAGENT_STREAM_${tag}_${String(index).padStart(2, "0")}`;
 }
 
 function apiBaseUrl(): string {

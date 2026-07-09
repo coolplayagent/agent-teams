@@ -800,6 +800,14 @@ For every row moved to `Verified`, record:
 - Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx -t "hides internal coordination"`, `npm test -- src/test/MessageTimeline.test.tsx`, `npm run build`, `npm run test:browser -- v2-real-sse-stale-recovery.spec.ts --project=chromium -g "preserves rich real SSE replay"`, `npm run test:browser -- v2-real-sse-stale-recovery.spec.ts --project=chromium`, `npm run lint`.
 - This does not mark `MSG-02`, `STREAM-02`, or `SUB-01` as `Verified`; live production-backend stream variants and final V1/V2 visual sign-off remain open.
 
+## 2026-07-09 Managed Subagent Cadence Proof
+
+- `SUB-01`/`MSG-02` tightened with a deterministic real-backend/fake-LLM subagent stream proof. The managed browser spec now triggers `spawn_subagent`, opens the completed/running subagent tool card into the right panel, and samples numbered `SUBAGENT_STREAM_*` tokens from the panel body.
+- The new cadence assertion checks more than visible text: the first child token must appear before the last child token, sampled token indexes must increase at least three times, and the sampled window must not already contain the last token. This catches the false pass where a panel shows one or two characters and then jumps to a full answer.
+- The same scenario asserts child tokens never leak into the parent timeline, the parent final answer is still visible, stale cursors are gone after terminal state, and the fixed shell/composer geometry remains stable.
+- Automated evidence: `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "managed backend subagent stream reveals"`, `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium`, `npm run lint`.
+- This does not mark `SUB-01`, `MSG-02`, or `STREAM-02` as `Verified`; live production-backend orchestration variants and final V1/V2 visual sign-off remain open.
+
 ## Immediate P0 Batch
 
 The current batch closes these rows first:

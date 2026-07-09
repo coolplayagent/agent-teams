@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import {
   dispatchEventSourceMessage,
@@ -124,7 +124,7 @@ test("creates a run from the V2 composer and renders live stream output", async 
   }
 });
 
-test("renders received live stream text immediately and does not replay after terminal output", async ({
+test("reveals live stream text progressively and does not replay after terminal output", async ({
   page,
 }) => {
   const appServer = await serveFrontendDist();
@@ -180,7 +180,13 @@ test("renders received live stream text immediately and does not replay after te
 
     const streamingText = page.locator(".at-message-streaming-text").first();
     await expect(streamingText).toBeVisible();
-    await expect(streamingText).toHaveText(finalAnswer);
+    const lengthSamples = await collectStreamingTextLengthSamples(
+      streamingText,
+      finalAnswer.length,
+    );
+    expect(lengthSamples[0] ?? finalAnswer.length).toBeLessThan(finalAnswer.length);
+    expect(increasingSampleCount(lengthSamples)).toBeGreaterThanOrEqual(1);
+    await expect(streamingText).toHaveText(finalAnswer, { timeout: 10_000 });
     await expect(page.getByText(finalAnswer)).toHaveCount(1);
     await expect(page.locator(".streaming-cursor")).toHaveCount(1);
     await page.locator(".at-message-streaming-text").evaluate((element) => {
@@ -215,7 +221,7 @@ test("renders received live stream text immediately and does not replay after te
     );
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await page.screenshot({
-      path: screenshotPath("v2-stream-immediate-delta-no-replay.png", SCREENSHOT_FOLDER),
+      path: screenshotPath("v2-stream-progressive-delta-no-replay.png", SCREENSHOT_FOLDER),
     });
   } finally {
     await appServer.close();
@@ -649,6 +655,34 @@ async function expectCopiedText(
       ),
     )
     .toBe(expectedText);
+}
+
+async function collectStreamingTextLengthSamples(
+  locator: Locator,
+  finalLength: number,
+): Promise<number[]> {
+  const samples: number[] = [];
+  for (let index = 0; index < 8; index += 1) {
+    const text = (await locator.textContent()) ?? "";
+    samples.push(text.length);
+    if (text.length >= finalLength && increasingSampleCount(samples) >= 1) {
+      return samples;
+    }
+    await locator.page().waitForTimeout(35);
+  }
+  return samples;
+}
+
+function increasingSampleCount(samples: number[]): number {
+  let increases = 0;
+  for (let index = 1; index < samples.length; index += 1) {
+    const previous = samples[index - 1] ?? 0;
+    const current = samples[index] ?? 0;
+    if (current > previous) {
+      increases += 1;
+    }
+  }
+  return increases;
 }
 
 interface BrowserRunEvent {

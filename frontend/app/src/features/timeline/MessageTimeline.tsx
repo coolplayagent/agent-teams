@@ -36,6 +36,9 @@ const ROUND_RAIL_MAX_PAGES = 10;
 const TOOL_RESULT_MAX_LINES = 200;
 const TOOL_RESULT_MAX_CHARS = 12000;
 const TIMELINE_SUBAGENT_MARKER_MAX_DEPTH = 8;
+const STREAM_REVEAL_INTERVAL_MS = 28;
+const STREAM_REVEAL_INITIAL_CHARS = 1;
+const STREAM_REVEAL_MAX_CHARS_PER_TICK = 6;
 const IMAGE_PATH_PATTERN = /\.(?:avif|bmp|gif|jpe?g|png|webp)$/i;
 const THINKING_DELTA_TEXT_KEYS = [
   "text",
@@ -6095,18 +6098,170 @@ interface StreamingDisplayText {
 function useStreamingDisplayText(
   targetText: string,
   streaming: boolean,
-  _reveal: boolean,
-  _streamIdentity: string,
+  reveal: boolean,
+  streamIdentity: string,
 ): StreamingDisplayText {
+  const [displayState, setDisplayState] = useState<StreamingDisplayState>(() =>
+    initialStreamingDisplayState(targetText, streaming, reveal, streamIdentity),
+  );
+
+  useEffect(() => {
+    setDisplayState((current) =>
+      nextStreamingDisplayState(
+        current,
+        targetText,
+        streaming,
+        reveal,
+        streamIdentity,
+      ),
+    );
+  }, [reveal, streamIdentity, streaming, targetText]);
+
+  useEffect(() => {
+    if (!displayState.active || displayState.text === displayState.targetText) {
+      return;
+    }
+    const timeoutId = window.setTimeout(() => {
+      setDisplayState((current) => advanceStreamingDisplayState(current));
+    }, STREAM_REVEAL_INTERVAL_MS);
+    return () => window.clearTimeout(timeoutId);
+  }, [displayState]);
+
+  const revealing = displayState.active && displayState.text !== displayState.targetText;
   return {
-    cursorVisible: streaming,
-    revealing: false,
-    text: targetText,
+    cursorVisible: streaming || revealing,
+    revealing,
+    text: displayState.text,
   };
 }
 
 function StreamingCursor() {
   return <span aria-hidden="true" className="streaming-cursor" />;
+}
+
+interface StreamingDisplayState {
+  active: boolean;
+  identity: string;
+  targetText: string;
+  text: string;
+}
+
+function initialStreamingDisplayState(
+  targetText: string,
+  streaming: boolean,
+  reveal: boolean,
+  identity: string,
+): StreamingDisplayState {
+  const active = shouldRevealStreamingText(targetText, streaming, reveal);
+  return {
+    active,
+    identity,
+    targetText,
+    text: active ? initialRevealedText(targetText) : targetText,
+  };
+}
+
+function nextStreamingDisplayState(
+  current: StreamingDisplayState,
+  targetText: string,
+  streaming: boolean,
+  reveal: boolean,
+  identity: string,
+): StreamingDisplayState {
+  const active = shouldRevealStreamingText(targetText, streaming, reveal);
+  if (current.identity !== identity) {
+    return initialStreamingDisplayState(targetText, streaming, reveal, identity);
+  }
+  if (!active) {
+    return {
+      active: false,
+      identity,
+      targetText,
+      text: targetText,
+    };
+  }
+  if (targetText.startsWith(current.text)) {
+    return {
+      active,
+      identity,
+      targetText,
+      text: current.text,
+    };
+  }
+  const prefixLength = commonPrefixCodePointLength(current.text, targetText);
+  return {
+    active,
+    identity,
+    targetText,
+    text: sliceByCodePoints(
+      targetText,
+      Math.max(STREAM_REVEAL_INITIAL_CHARS, prefixLength),
+    ),
+  };
+}
+
+function advanceStreamingDisplayState(
+  current: StreamingDisplayState,
+): StreamingDisplayState {
+  if (!current.active || current.text === current.targetText) {
+    return current;
+  }
+  const currentLength = codePointLength(current.text);
+  const targetLength = codePointLength(current.targetText);
+  const remaining = targetLength - currentLength;
+  if (remaining <= 0) {
+    return {
+      ...current,
+      text: current.targetText,
+    };
+  }
+  const nextLength = Math.min(
+    targetLength,
+    currentLength + Math.min(STREAM_REVEAL_MAX_CHARS_PER_TICK, remaining),
+  );
+  return {
+    ...current,
+    text: sliceByCodePoints(current.targetText, nextLength),
+  };
+}
+
+function shouldRevealStreamingText(
+  targetText: string,
+  streaming: boolean,
+  reveal: boolean,
+): boolean {
+  return (
+    targetText.length > 0 &&
+    targetText.length < LONG_STREAM_TEXT_THRESHOLD &&
+    (streaming || reveal)
+  );
+}
+
+function initialRevealedText(text: string): string {
+  return sliceByCodePoints(text, Math.min(STREAM_REVEAL_INITIAL_CHARS, codePointLength(text)));
+}
+
+function commonPrefixCodePointLength(left: string, right: string): number {
+  const leftParts = Array.from(left);
+  const rightParts = Array.from(right);
+  const limit = Math.min(leftParts.length, rightParts.length);
+  for (let index = 0; index < limit; index += 1) {
+    if (leftParts[index] !== rightParts[index]) {
+      return index;
+    }
+  }
+  return limit;
+}
+
+function codePointLength(text: string): number {
+  return Array.from(text).length;
+}
+
+function sliceByCodePoints(text: string, length: number): string {
+  if (length <= 0) {
+    return "";
+  }
+  return Array.from(text).slice(0, length).join("");
 }
 
 function MessageRowActions({

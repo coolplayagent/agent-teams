@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import {
   dispatchEventSourceMessage,
@@ -215,12 +215,19 @@ test("does not rebuild a fully displayed live answer when persisted history catc
     });
     recoveryState.lastEventId = 2;
 
-    const liveAnswerRow = page.locator(".at-timeline-row.at-message").filter({
-      hasText: finalText,
-    });
+    const liveAnswerRow = page.locator(
+      `.at-timeline-row.at-message[data-run-id="${RUN_ID}"]`,
+    );
     await expect(liveAnswerRow).toHaveCount(1);
-    await expect(liveAnswerRow.locator(".at-message-streaming-text"))
-      .toHaveText(finalText);
+    const streamingText = liveAnswerRow.locator(".at-message-streaming-text");
+    await expect(streamingText).toBeVisible();
+    const lengthSamples = await collectStreamingTextLengthSamples(
+      streamingText,
+      finalText.length,
+    );
+    expect(lengthSamples[0] ?? finalText.length).toBeLessThan(finalText.length);
+    expect(increasingSampleCount(lengthSamples)).toBeGreaterThanOrEqual(1);
+    await expect(streamingText).toHaveText(finalText, { timeout: 10_000 });
     await expect(liveAnswerRow.locator(".streaming-cursor")).toHaveCount(1);
     const liveRowKey = await liveAnswerRow.first().getAttribute("data-row-key");
     expect(liveRowKey).toContain("runtime-text:");
@@ -837,6 +844,34 @@ function readRunCreateRequest(body: string | null): CapturedRunCreateRequest {
     return {};
   }
   return parsed as CapturedRunCreateRequest;
+}
+
+async function collectStreamingTextLengthSamples(
+  locator: Locator,
+  finalLength: number,
+): Promise<number[]> {
+  const samples: number[] = [];
+  for (let index = 0; index < 8; index += 1) {
+    const text = (await locator.textContent()) ?? "";
+    samples.push(text.length);
+    if (text.length >= finalLength && increasingSampleCount(samples) >= 1) {
+      return samples;
+    }
+    await locator.page().waitForTimeout(35);
+  }
+  return samples;
+}
+
+function increasingSampleCount(samples: number[]): number {
+  let increases = 0;
+  for (let index = 1; index < samples.length; index += 1) {
+    const previous = samples[index - 1] ?? 0;
+    const current = samples[index] ?? 0;
+    if (current > previous) {
+      increases += 1;
+    }
+  }
+  return increases;
 }
 
 interface BrowserRunEvent {

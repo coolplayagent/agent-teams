@@ -686,8 +686,9 @@ describe("MessageTimeline", () => {
     expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
   });
 
-  it("renders received live runtime text directly instead of faking a second typewriter pass", async () => {
+  it("reveals received live runtime text progressively without pre-rendering the full delta", async () => {
     vi.stubEnv("MODE", "production");
+    vi.useFakeTimers();
     const finalAnswer = [
       "LIVE_STREAM_ALPHA",
       "LIVE_STREAM_BETA",
@@ -712,7 +713,20 @@ describe("MessageTimeline", () => {
       ".at-message-streaming-text",
     );
     expect(streamingText).not.toBeNull();
-    expect(streamingText).toHaveTextContent(finalAnswer);
+    expect(streamingText).toHaveTextContent("L");
+    expect(screen.queryByText(finalAnswer)).not.toBeInTheDocument();
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(56);
+    });
+    expect(streamingText?.textContent?.length ?? 0).toBeGreaterThan(1);
+
+    for (let frame = 0; frame < 80; frame += 1) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(28);
+      });
+    }
     expect(screen.getByText(finalAnswer)).toBeVisible();
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
   });
@@ -799,8 +813,8 @@ describe("MessageTimeline", () => {
 
     const { container } = renderTimeline();
 
-    expect(screen.getByText(finalAnswer)).toBeVisible();
-    expect(container.querySelector(".at-message-streaming-text")).toHaveTextContent(finalAnswer);
+    expect(container.querySelector(".at-message-streaming-text")).toHaveTextContent("L");
+    expect(screen.queryByText(finalAnswer)).not.toBeInTheDocument();
     const rowBefore = container.querySelector<HTMLElement>("article.at-message");
     const textNodeBefore = container.querySelector<HTMLElement>(".at-message-text");
 
@@ -7699,7 +7713,8 @@ describe("MessageTimeline", () => {
 
     expect(await screen.findByText("Tool call: execute_command")).toBeVisible();
     expect(screen.queryByText(/Injection applied:/)).not.toBeInTheDocument();
-    expect(screen.getByText("Switching the search target to OpenAI.")).toBeVisible();
+    expect(await screen.findByText("Switching the search target to OpenAI."))
+      .toBeVisible();
     const rowTexts = Array.from(container.querySelectorAll("article.at-message"))
       .map((row) => row.textContent ?? "");
     expect(rowTexts).toHaveLength(2);
@@ -7737,7 +7752,7 @@ describe("MessageTimeline", () => {
     const { container } = renderTimeline();
 
     expect(await screen.findByText("draft answer")).toBeVisible();
-    expect(screen.getByText("refined answer")).toBeVisible();
+    expect(await screen.findByText("refined answer")).toBeVisible();
     expect(screen.queryByText(/Injection applied:/)).not.toBeInTheDocument();
     const rowTexts = Array.from(container.querySelectorAll("article.at-message"))
       .map((row) => row.textContent ?? "");

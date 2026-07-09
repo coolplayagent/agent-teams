@@ -114,6 +114,13 @@ For every row moved to `Verified`, record:
 
 ## Verification Ledger
 
+### 2026-07-10 Terminal Reveal Rebuild Guard
+
+- `MSG-02` and `STREAM-02` tightened after manual review showed a fully rendered live answer could still be visually rebuilt when terminal/history state arrived. Terminal processed-row splitting and persisted-answer hydration now strip text `streaming`/`reveal` flags, so completed transcript rows cannot re-enter the typewriter path during processed folding or terminal runtime-to-history takeover.
+- Managed-backend browser coverage now drives the exact order that caused the false positive: `[slow-stream-hold ms=5000]` renders the full answer while the run is still active, then the run reaches terminal status. The test records the live answer row key before terminal close and samples the terminal state for 20 frames, requiring one answer row, the same row key, no strict-prefix row, no `.at-message-streaming-text`, and no `.streaming-cursor`.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx src/test/SubagentSessionView.test.tsx`, `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "managed backend keeps a fully displayed live answer stable"`, `npm run build`, `npm run lint`.
+- This does not move `MSG-02` or `STREAM-02` to `Verified`; true real-provider normal-stream proof, broader orchestration/tool-heavy stream variants, interrupted recovery, and final V1/V2 visual sign-off remain open.
+
 ### 2026-07-03 Real Backend Orchestration Running-State Honesty Pass
 
 - `SESS-03`, `MSG-04`, and `STREAM-02` tightened: the live-backend orchestration browser scenario no longer waits for deterministic fake terminal text on a backend that may keep the orchestration run active. It now verifies the real running phase that current backend state can prove: orchestration mode is selected, a visible tool card appears, switching away and back restores that tool stream, internal delegation prompts stay hidden, naked role labels stay absent, and the fixed shell/composer layout remains stable.

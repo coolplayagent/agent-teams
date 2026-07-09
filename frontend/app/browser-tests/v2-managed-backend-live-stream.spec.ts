@@ -211,6 +211,49 @@ test("managed backend normal stream survives terminal hard refresh without dupli
   }
 });
 
+test("managed backend keeps a fully displayed live answer stable when terminal status arrives", async ({
+  page,
+}) => {
+  const title = `managed-live-hold-${Date.now()}`;
+  const session = await createSession(title);
+  let runId: string | null = null;
+  const expectedText = "[fake-llm] Holding slow stream for concurrency validation.";
+  try {
+    await openManagedSession(page, session, title);
+    await expectManagedShellReady(page);
+
+    const runResponse = waitForRunCreateResponse(page);
+    await submitPrompt(page, `${title}: [slow-stream-hold ms=5000]`);
+    const createdRunId = await runIdFromResponse(await runResponse);
+    runId = createdRunId;
+    await expect(page.getByRole("button", { name: /停止|Stop/ })).toBeVisible({
+      timeout: 20_000,
+    });
+
+    await expect
+      .poll(() => mainTimelineMessageArticleText(page), { timeout: 45_000 })
+      .toContain(expectedText);
+    const liveSnapshot = await terminalAnswerSnapshot(page, expectedText);
+    expect(liveSnapshot.answerCount).toBe(1);
+    expect(liveSnapshot.answerLength).toBeGreaterThanOrEqual(expectedText.length);
+    expect(liveSnapshot.rowKey).not.toBe("");
+
+    await waitForRunToLeaveActive(session.session_id, runId, 90_000);
+    await expectTerminalAnswerDoesNotReplay(page, expectedText, liveSnapshot.rowKey);
+    await expectNoDocumentScroll(
+      page,
+      "managed held live stream should not rebuild when terminal status arrives",
+    );
+    await page.screenshot({
+      fullPage: false,
+      path: screenshotPath("managed-live-hold-terminal-stable.png", SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await stopRunIfPresent(runId);
+    await deleteSession(session.session_id);
+  }
+});
+
 test("managed backend active stream stays in one streaming row after hard refresh", async ({
   page,
 }) => {
@@ -1019,6 +1062,7 @@ async function nakedRuntimeRoleLineCount(page: Page): Promise<number> {
 async function expectTerminalAnswerDoesNotReplay(
   page: Page,
   expectedText: string,
+  expectedRowKey?: string,
 ): Promise<void> {
   const baseline = await terminalAnswerSnapshot(page, expectedText);
   expect(baseline.answerCount).toBe(1);
@@ -1026,6 +1070,9 @@ async function expectTerminalAnswerDoesNotReplay(
   expect(baseline.cursorCount).toBe(0);
   expect(baseline.prefixRowCount).toBe(0);
   expect(baseline.streamingCount).toBe(0);
+  if (expectedRowKey !== undefined) {
+    expect(baseline.rowKey).toBe(expectedRowKey);
+  }
   for (let sampleIndex = 0; sampleIndex < 20; sampleIndex += 1) {
     await page.waitForTimeout(120);
     const sample = await terminalAnswerSnapshot(page, expectedText);

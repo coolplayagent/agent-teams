@@ -1556,21 +1556,24 @@ function rowWithParts(
   parts: TimelineRenderPart[],
   keySuffix: string,
 ): TimelineRow {
-  const text = rowCopyText(parts);
+  const stableParts = parts.map((part) =>
+    part.kind === "text" ? terminalTextPartWithoutReveal(part) : part,
+  );
+  const text = rowCopyText(stableParts);
   return {
     key: `${row.key}:${keySuffix}`,
     role: row.role,
     instanceId: row.instanceId,
     text,
     kind: row.kind,
-    parts,
+    parts: stableParts,
     historyDivider: row.historyDivider,
     roundMarker: row.roundMarker,
     runId: row.runId,
     source: row.source,
     copyable: isAnswerRole(row.role) &&
       text.trim().length > 0 &&
-      parts.every((part) => part.kind === "text"),
+      stableParts.every((part) => part.kind === "text"),
   };
 }
 
@@ -2031,11 +2034,11 @@ function persistedRowWithRuntimeRevealParts(
     return runtimeRow;
   }
   const workParts = persistedRow.parts.filter((part) => part.kind !== "text");
-  return {
+  return rowWithoutTextReveal({
     ...runtimeRow,
     parts: [...workParts, ...runtimeTextParts],
     text: runtimeRow.text,
-  };
+  });
 }
 
 function rowWithoutTextReveal(row: TimelineRow): TimelineRow {
@@ -2061,6 +2064,17 @@ function rowWithoutTextReveal(row: TimelineRow): TimelineRow {
         text: rowCopyText(parts),
       }
     : row;
+}
+
+function terminalTextPartWithoutReveal(part: TimelineTextPart): TimelineTextPart {
+  if (part.reveal !== true && part.streaming !== true) {
+    return part;
+  }
+  return {
+    kind: "text",
+    text: part.text,
+    streaming: false,
+  };
 }
 
 function terminalRuntimeTextCandidate(row: TimelineRow, text: string): boolean {

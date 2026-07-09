@@ -1228,10 +1228,12 @@ class _SlowStreamConfig:
         *,
         chunk_size: int,
         content: str,
+        delay_after_content_ms: int,
         delay_between_chunks_ms: int,
     ) -> None:
         self.chunk_size = chunk_size
         self.content = content
+        self.delay_after_content_ms = delay_after_content_ms
         self.delay_between_chunks_ms = delay_between_chunks_ms
 
 
@@ -1241,6 +1243,7 @@ def _extract_slow_stream_config(messages: list[object]) -> _SlowStreamConfig:
     repeat_match = re.search(r"\[slow-stream[^\]]*\brepeat=(\d+)", user_text)
     delay_match = re.search(r"\[slow-stream[^\]]*\bdelay=(\d+)", user_text)
     chunk_match = re.search(r"\[slow-stream[^\]]*\bchunk=(\d+)", user_text)
+    hold_match = re.search(r"\[slow-stream[^\]]*\bhold=(\d+)", user_text)
     tag = tag_match.group(1) if tag_match is not None else ""
     repeat = int(repeat_match.group(1)) if repeat_match is not None else 0
     if tag:
@@ -1257,9 +1260,11 @@ def _extract_slow_stream_config(messages: list[object]) -> _SlowStreamConfig:
         int(delay_match.group(1)) if delay_match is not None else 120
     )
     chunk_size = int(chunk_match.group(1)) if chunk_match is not None else 12
+    delay_after_content_ms = int(hold_match.group(1)) if hold_match is not None else 0
     return _SlowStreamConfig(
         chunk_size=max(1, min(80, chunk_size)),
         content=content,
+        delay_after_content_ms=max(0, min(15_000, delay_after_content_ms)),
         delay_between_chunks_ms=max(0, min(2_000, delay_between_chunks_ms)),
     )
 
@@ -1271,6 +1276,7 @@ def _plan_slow_stream_response(messages: list[object]) -> dict[str, object]:
         "content": config.content,
         "chunk_size": config.chunk_size,
         "delay_before_ms": 200,
+        "delay_after_content_ms": config.delay_after_content_ms,
         "delay_between_chunks_ms": config.delay_between_chunks_ms,
     }
 

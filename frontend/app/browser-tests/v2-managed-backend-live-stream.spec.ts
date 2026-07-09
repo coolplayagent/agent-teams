@@ -153,7 +153,7 @@ test("managed backend normal stream survives terminal hard refresh without dupli
     const firstToken = slowStreamToken(streamTag, 0);
     const lastToken = slowStreamToken(streamTag, 31);
     const promptText = [
-      `${title}: [slow-stream tag=${streamTag} repeat=32 delay=80 chunk=8]`,
+      `${title}: [slow-stream tag=${streamTag} repeat=32 delay=80 chunk=8 hold=2500]`,
       "请只输出 fake LLM 返回的慢速文本。",
     ].join("\n");
 
@@ -167,12 +167,29 @@ test("managed backend normal stream survives terminal hard refresh without dupli
     await expect
       .poll(() => latestLiveStreamText(page), { timeout: 90_000 })
       .toContain(firstToken);
+    await expect
+      .poll(() => mainTimelineMessageArticleText(page), { timeout: 90_000 })
+      .toContain(lastToken);
+    await expect
+      .poll(() => currentRunStatus(session.session_id, createdRunId))
+      .toBe("active");
+    const liveCompleteSnapshot = await terminalAnswerSnapshot(page, expectedText);
+    expect(liveCompleteSnapshot.answerCount).toBe(1);
+    expect(liveCompleteSnapshot.answerLength).toBeGreaterThanOrEqual(expectedText.length);
+    expect(liveCompleteSnapshot.rowKey).not.toBe("");
+    const liveCompleteProbeId = await markTerminalAnswerProbe(page, expectedText);
 
     await waitForRunToLeaveActive(session.session_id, runId, 120_000);
     await expect
       .poll(() => mainTimelineMessageArticleText(page), { timeout: 45_000 })
       .toContain(lastToken);
     await expect(page.locator(".streaming-cursor")).toHaveCount(0);
+    await expectTerminalAnswerDoesNotReplay(
+      page,
+      expectedText,
+      liveCompleteSnapshot.rowKey,
+      liveCompleteProbeId,
+    );
     await page.screenshot({
       fullPage: false,
       path: screenshotPath(

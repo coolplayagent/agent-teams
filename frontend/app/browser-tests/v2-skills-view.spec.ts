@@ -18,6 +18,7 @@ interface SkillsViewState {
   failDetailSlugs: Set<string>;
   failInstallSlugs: Set<string>;
   failInstalledStatus: boolean;
+  failProbe: boolean;
   includeMarketFailureItems: boolean;
   installPayloads: Record<string, unknown>[];
   marketUninstallRequests: string[];
@@ -257,11 +258,94 @@ test("shows Skills loading, paging, and failure states inside the fixed shell", 
   }
 });
 
+test("shows ClawHub probe failures without breaking narrow Skills layout", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state = skillsViewState();
+  state.failProbe = true;
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await page.setViewportSize({ height: 720, width: 760 });
+    await installShellState(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleSkillsApi(context, state),
+      sessionTitle: "TS skills narrow probe",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    await page
+      .getByRole("navigation", { name: "Primary navigation" })
+      .getByRole("button", { name: "Skills" })
+      .click();
+
+    const skillsView = page.getByTestId("skills-view");
+    await expect(skillsView).toBeVisible();
+    await expect(
+      skillsView.getByRole("button", { name: "Open skill Writer" }),
+    ).toBeVisible();
+
+    await skillsView.getByRole("button", { name: "ClawHub settings" }).click();
+    const settings = page.getByRole("dialog", {
+      name: "ClawHub settings",
+    });
+    await expect(settings).toBeVisible();
+    const tokenInput = settings.getByPlaceholder("************");
+    await tokenInput.fill("expired-token");
+    await settings.getByRole("button", { name: "Test connection" }).click();
+    await expect
+      .poll(() => state.probePayloads)
+      .toEqual([{ token: "expired-token" }]);
+    await expect(
+      settings.getByText("ClawHub test failed: ClawHub token rejected."),
+    ).toBeVisible();
+
+    const layoutMetrics = await page.evaluate(() => {
+      const skills = document.querySelector<HTMLElement>(
+        '[data-testid="skills-view"]',
+      );
+      const toolbar = document.querySelector<HTMLElement>(".at-skills-toolbar");
+      return {
+        documentOverflowsX:
+          document.documentElement.scrollWidth > window.innerWidth + 1,
+        skillsOverflowsX: skills
+          ? skills.scrollWidth > skills.clientWidth + 1
+          : true,
+        toolbarOverflowsX: toolbar
+          ? toolbar.scrollWidth > toolbar.clientWidth + 1
+          : true,
+      };
+    });
+    expect(layoutMetrics).toEqual({
+      documentOverflowsX: false,
+      skillsOverflowsX: false,
+      toolbarOverflowsX: false,
+    });
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-skills-clawhub-probe-failed-narrow.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "v2 skills ClawHub probe failure should remain framed at narrow width",
+    );
+  } finally {
+    await appServer.close();
+  }
+});
+
 function skillsViewState(): SkillsViewState {
   return {
     failDetailSlugs: new Set(),
     failInstallSlugs: new Set(),
     failInstalledStatus: false,
+    failProbe: false,
     includeMarketFailureItems: false,
     installPayloads: [],
     marketUninstallRequests: [],
@@ -457,6 +541,25 @@ async function handleSkillsApi(
   }
   if (context.method === "POST" && context.path === "/system/configs/clawhub:probe") {
     state.probePayloads.push(readRecordPayload(context));
+    if (state.failProbe) {
+      await context.fulfillJson({
+        checked_at: "2026-06-24T00:00:00Z",
+        clawhub_path: null,
+        clawhub_version: null,
+        diagnostics: {
+          binary_available: true,
+          endpoint_fallback_used: false,
+          installation_attempted: false,
+          installed_during_probe: false,
+          token_configured: true,
+        },
+        error_message: "ClawHub token rejected.",
+        latency_ms: 18,
+        ok: false,
+        retryable: true,
+      });
+      return true;
+    }
     await context.fulfillJson({
       checked_at: "2026-06-24T00:00:00Z",
       clawhub_path: "C:/bin/clawhub.exe",

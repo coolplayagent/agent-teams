@@ -9946,3 +9946,19 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - This fixes the specific fake-stream/rebuild failure path for `MSG-02`/`STREAM-02` and tightens `SUB-01` right-panel evidence. It does not claim final V2 frontend completion, full interrupted recovery, true real-provider normal assistant-stream proof, or final V1/V2 visual sign-off.
+
+## 2026-07-10 Skills ClawHub Probe Failure And Narrow Layout Slice
+
+### Scope
+- Continued `PAGE-02` from the closure matrix and targeted the remaining Skills page browser gaps instead of changing the page IA.
+- Added a packed `/app/` browser scenario for ClawHub probe failure from the Skills ClawHub settings drawer.
+- The scenario uses a 760px-wide viewport, verifies the failure payload, checks the inline failure alert, asserts no document/sidebar page overflow, and proves the Skills toolbar stays within its container.
+- Captured a narrow-width failure screenshot for visual review.
+
+### Verification
+- `npm run test:browser -- v2-skills-view.spec.ts --project=chromium -g "probe failures"` passed.
+- `npm run test:browser -- v2-skills-view.spec.ts --project=chromium` passed with 3 Chromium tests.
+- Screenshot inspection reviewed `.tmp/frontend-v2-ts-skills/v2-skills-clawhub-probe-failed-narrow.png`.
+
+### Reviewer
+- This closes the packed-browser ClawHub probe failure and narrow-density evidence gap for `PAGE-02`. It does not mark Skills as `Verified`, because formal V1 screenshot/DOM pairing and reviewer sign-off remain open.

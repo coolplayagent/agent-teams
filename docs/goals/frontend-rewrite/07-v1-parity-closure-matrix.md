@@ -831,6 +831,14 @@ For every row moved to `Verified`, record:
 - Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx src/test/SubagentSessionView.test.tsx`, `npm run build`, `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium`, `npm run lint`.
 - This does not mark `MSG-02`, `STREAM-02`, or `SUB-01` as `Verified`; live production-backend orchestration variants, interrupted real-provider recovery, and final V1/V2 visual sign-off remain open.
 
+## 2026-07-10 Terminal Answer DOM Stability Probe
+
+- `MSG-02`/`STREAM-02` tightened for the false-pass class where the final answer text appears correct but the UI still unmounts and rebuilds the already-visible answer after terminal status or history hydration. The managed browser terminal-answer helper now marks the live answer DOM node before terminal close and requires the same node marker to survive the settled 20-frame sample window.
+- The focused held-stream scenario now proves three things at once: the full answer is already visible while the run is still active, the terminal status transition keeps the same `data-row-key`, and the exact same DOM node remains mounted with no prefix row, no streaming wrapper, and no cursor. This catches the visible "rendered once, then retyped/rebuilt" regression instead of only counting final text.
+- The full managed-backend live stream spec was rerun after the probe change, covering normal stream switch-back, terminal hard refresh, held full-answer terminal transition, active-stream hard refresh, normal tool pressure, and right-panel subagent streaming.
+- Automated evidence: `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "managed backend keeps a fully displayed live answer stable"`, `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium`.
+- This does not mark `MSG-02`, `STREAM-02`, or `SUB-01` as `Verified`; live production-backend orchestration variants, interrupted real-provider recovery, true real-provider normal-stream proof, and final V1/V2 visual sign-off remain open.
+
 ## Immediate P0 Batch
 
 The current batch closes these rows first:

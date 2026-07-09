@@ -237,9 +237,15 @@ test("managed backend keeps a fully displayed live answer stable when terminal s
     expect(liveSnapshot.answerCount).toBe(1);
     expect(liveSnapshot.answerLength).toBeGreaterThanOrEqual(expectedText.length);
     expect(liveSnapshot.rowKey).not.toBe("");
+    const liveProbeId = await markTerminalAnswerProbe(page, expectedText);
 
     await waitForRunToLeaveActive(session.session_id, runId, 90_000);
-    await expectTerminalAnswerDoesNotReplay(page, expectedText, liveSnapshot.rowKey);
+    await expectTerminalAnswerDoesNotReplay(
+      page,
+      expectedText,
+      liveSnapshot.rowKey,
+      liveProbeId,
+    );
     await expectNoDocumentScroll(
       page,
       "managed held live stream should not rebuild when terminal status arrives",
@@ -1063,6 +1069,7 @@ async function expectTerminalAnswerDoesNotReplay(
   page: Page,
   expectedText: string,
   expectedRowKey?: string,
+  expectedProbeId?: string,
 ): Promise<void> {
   await expect
     .poll(async () => {
@@ -1084,6 +1091,8 @@ async function expectTerminalAnswerDoesNotReplay(
   if (expectedRowKey !== undefined) {
     expect(baseline.rowKey).toBe(expectedRowKey);
   }
+  const probeId = expectedProbeId ?? (await markTerminalAnswerProbe(page, expectedText));
+  expect(baseline.probeId).toBe(expectedProbeId ?? "");
   for (let sampleIndex = 0; sampleIndex < 20; sampleIndex += 1) {
     await page.waitForTimeout(120);
     const sample = await terminalAnswerSnapshot(page, expectedText);
@@ -1093,7 +1102,27 @@ async function expectTerminalAnswerDoesNotReplay(
     expect(sample.prefixRowCount).toBe(0);
     expect(sample.rowKey).toBe(baseline.rowKey);
     expect(sample.streamingCount).toBe(0);
+    expect(sample.probeId).toBe(probeId);
   }
+}
+
+async function markTerminalAnswerProbe(
+  page: Page,
+  expectedText: string,
+): Promise<string> {
+  const probeId = `terminal-answer-probe-${Date.now()}`;
+  await page.locator(".at-chat-view").evaluate((root, payload) => {
+    const normalizedExpected = payload.expectedText.replace(/\s+/g, " ").trim();
+    const answer = Array.from(root.querySelectorAll("article.at-message"))
+      .find((node) => {
+        const text = (node.textContent ?? "").replace(/\s+/g, " ").trim();
+        return text.includes(normalizedExpected);
+      });
+    if (answer instanceof HTMLElement) {
+      answer.dataset.terminalAnswerProbe = payload.probeId;
+    }
+  }, { expectedText, probeId });
+  return probeId;
 }
 
 async function terminalAnswerSnapshot(
@@ -1104,6 +1133,7 @@ async function terminalAnswerSnapshot(
   answerLength: number;
   cursorCount: number;
   prefixRowCount: number;
+  probeId: string;
   rowKey: string;
   streamingCount: number;
 }> {
@@ -1128,6 +1158,9 @@ async function terminalAnswerSnapshot(
       answerLength: (answer?.textContent ?? "").replace(/\s+/g, " ").trim().length,
       cursorCount: root.querySelectorAll(".streaming-cursor").length,
       prefixRowCount: prefixRows.length,
+      probeId: answer instanceof HTMLElement
+        ? answer.dataset.terminalAnswerProbe ?? ""
+        : "",
       rowKey: answer?.getAttribute("data-row-key") ?? "",
       streamingCount: root.querySelectorAll(".at-message-streaming-text, .at-message-plain-stream")
         .length,

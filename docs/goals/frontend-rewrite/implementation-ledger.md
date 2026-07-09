@@ -9802,3 +9802,26 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent V1 harness mapping, V2 non-git diff empty-state fix, focused React component coverage, partial Python harness retirement, and packed dist rebuild completed for this slice. This does not claim full Project View parity, full old-harness retirement, browser visual sign-off, reviewer-subagent sign-off, or final V2 frontend completion.
+
+## 2026-07-09 Terminal Stream Reveal Hardening Slice
+
+### Scope
+- Re-checked the frontend rewrite goal after the reported live-stream rebuild issue and narrowed this slice to `MSG-02`/`STREAM-02` terminal reveal consistency.
+- Found a remaining unsafe merge branch in `MessageTimeline`: a persisted history answer could inherit a runtime row's `reveal` state whenever the runtime candidate had `reveal=true`, even if that runtime text already matched the full persisted answer. That can restart the typewriter reveal after the answer was already rendered.
+- Tightened the merge rule so history hydration only inherits runtime `reveal` when the runtime text is a strict prefix of the persisted answer. Fully rendered runtime answers now only keep the stable runtime row key.
+- Added component regression coverage for two concrete terminal paths:
+  - full text-delta answer is already rendered, `run_completed` has no structured output, then persisted history arrives;
+  - a tool boundary leaves a completed runtime answer with stale `reveal=true`, then persisted history contains the same answer.
+- Strengthened managed backend browser coverage so terminal hard-refresh and active hard-refresh streams sample the settled answer for multiple frames after completion and fail on row-key changes, prefix rows, cursors, or renewed streaming wrappers.
+
+### Verification
+- `npm test -- src/test/MessageTimeline.test.tsx -t "fully streamed text answer|completed runtime row"` passed.
+- `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "terminal hard refresh"` passed before the implementation hardening and again as part of the combined post-fix browser run.
+- `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "active stream stays"` passed before the implementation hardening and again as part of the combined post-fix browser run.
+- `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "terminal hard refresh|active stream stays"` passed with 2 Chromium scenarios.
+- `npm test -- src/test/MessageTimeline.test.tsx` passed with 192 tests.
+- `npm run lint` passed.
+- `npm run build` passed and regenerated the packed `frontend/dist/app` bundle.
+
+### Reviewer
+- Main-agent stream failure-path analysis, production timeline reveal hardening, focused component coverage, managed real-backend/fake-LLM browser verification, packed dist rebuild, matrix update, and ledger update completed for this slice. This does not claim `MSG-02`, `STREAM-02`, `SUB-01`, or final V2 frontend completion as verified.

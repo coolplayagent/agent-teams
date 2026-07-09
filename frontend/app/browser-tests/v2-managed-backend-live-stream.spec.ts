@@ -116,6 +116,7 @@ test("managed backend normal stream reveals incrementally and survives session s
     await expect
       .poll(() => mainTimelineMessageArticleText(page), { timeout: 45_000 })
       .toContain(lastToken);
+    await expectTerminalAnswerDoesNotReplay(page, expectedText);
     await expect.poll(() => messageArticleContainingCount(page, firstToken))
       .toBe(1);
     await expect
@@ -185,6 +186,7 @@ test("managed backend normal stream survives terminal hard refresh without dupli
     await expect
       .poll(() => mainTimelineMessageArticleText(page), { timeout: 60_000 })
       .toContain(lastToken);
+    await expectTerminalAnswerDoesNotReplay(page, expectedText);
     await expect.poll(() => messageArticleTextOccurrenceCount(page, firstToken))
       .toBe(1);
     await expect
@@ -700,6 +702,67 @@ async function mainTimelineMessageArticleText(page: Page): Promise<string> {
   return page.locator(".at-chat-view article.at-message").evaluateAll((nodes) =>
     nodes.map((node) => node.textContent ?? "").join("\n"),
   );
+}
+
+async function expectTerminalAnswerDoesNotReplay(
+  page: Page,
+  expectedText: string,
+): Promise<void> {
+  const baseline = await terminalAnswerSnapshot(page, expectedText);
+  expect(baseline.answerCount).toBe(1);
+  expect(baseline.answerLength).toBeGreaterThanOrEqual(expectedText.length);
+  expect(baseline.cursorCount).toBe(0);
+  expect(baseline.prefixRowCount).toBe(0);
+  expect(baseline.streamingCount).toBe(0);
+  for (let sampleIndex = 0; sampleIndex < 20; sampleIndex += 1) {
+    await page.waitForTimeout(120);
+    const sample = await terminalAnswerSnapshot(page, expectedText);
+    expect(sample.answerCount).toBe(1);
+    expect(sample.answerLength).toBeGreaterThanOrEqual(expectedText.length);
+    expect(sample.cursorCount).toBe(0);
+    expect(sample.prefixRowCount).toBe(0);
+    expect(sample.rowKey).toBe(baseline.rowKey);
+    expect(sample.streamingCount).toBe(0);
+  }
+}
+
+async function terminalAnswerSnapshot(
+  page: Page,
+  expectedText: string,
+): Promise<{
+  answerCount: number;
+  answerLength: number;
+  cursorCount: number;
+  prefixRowCount: number;
+  rowKey: string;
+  streamingCount: number;
+}> {
+  return page.locator(".at-chat-view").evaluate((root, expected) => {
+    const normalizedExpected = expected.replace(/\s+/g, " ").trim();
+    const articles = Array.from(root.querySelectorAll("article.at-message"));
+    const matchingArticles = articles.filter((node) => {
+      const text = (node.textContent ?? "").replace(/\s+/g, " ").trim();
+      return text.includes(normalizedExpected);
+    });
+    const prefixRows = articles.filter((node) => {
+      const text = (node.textContent ?? "").replace(/\s+/g, " ").trim();
+      return (
+        text.length > 0 &&
+        text.length < normalizedExpected.length &&
+        normalizedExpected.startsWith(text)
+      );
+    });
+    const answer = matchingArticles[0];
+    return {
+      answerCount: matchingArticles.length,
+      answerLength: (answer?.textContent ?? "").replace(/\s+/g, " ").trim().length,
+      cursorCount: root.querySelectorAll(".streaming-cursor").length,
+      prefixRowCount: prefixRows.length,
+      rowKey: answer?.getAttribute("data-row-key") ?? "",
+      streamingCount: root.querySelectorAll(".at-message-streaming-text, .at-message-plain-stream")
+        .length,
+    };
+  }, expectedText);
 }
 
 async function waitForRunToLeaveActive(

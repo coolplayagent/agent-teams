@@ -749,6 +749,15 @@ For every row moved to `Verified`, record:
 - Automated evidence: `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium` passed with 2 Chromium scenarios.
 - This does not move `MSG-02`, `SESS-03`, or `STREAM-02` to `Verified`; true real-provider normal-stream proof, interrupted recovery, complex tool/orchestration variants, and final V1 visual sign-off remain open.
 
+## 2026-07-09 Terminal Stream Reveal Hardening
+
+- `MSG-02`/`STREAM-02` tightened for the completed-stream rebuild complaint: terminal history hydration now only inherits runtime `reveal` state when the runtime text is a strict prefix of the persisted answer. If the already-rendered runtime row already equals the persisted answer, hydration only preserves the runtime row key and cannot restart the typewriter/reveal cycle.
+- Added component coverage for the pure text-delta path where the full answer is visible before terminal and persisted history arrives without structured `run_completed.output`; the same DOM row and text node must remain mounted, with no `.at-message-streaming-text` or cursor after terminal/history catch-up.
+- Added component coverage for the tool-boundary path where a completed runtime row can carry stale `reveal=true`; when history later contains the same final answer, it must settle as one non-streaming row keyed to `runtime-text:*` instead of replaying from the first character.
+- Strengthened managed-backend browser coverage: terminal hard-refresh and active hard-refresh cases now continuously sample the settled answer for 20 frames after completion and assert one answer row, no prefix row, no cursor, no streaming wrapper, and stable row key.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx -t "fully streamed text answer|completed runtime row"`, `npm test -- src/test/MessageTimeline.test.tsx`, `npm run lint`, `npm run build`, `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "terminal hard refresh|active stream stays"`.
+- This still does not mark `MSG-02`, `STREAM-02`, or `SUB-01` as `Verified`; true real-provider normal-stream proof, interrupted recovery, broader production-backend orchestration/tool-heavy variants, and final V1 visual sign-off remain open.
+
 ## Immediate P0 Batch
 
 The current batch closes these rows first:

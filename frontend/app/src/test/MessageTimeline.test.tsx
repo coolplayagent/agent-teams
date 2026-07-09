@@ -914,6 +914,137 @@ describe("MessageTimeline", () => {
     expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
   });
 
+  it("does not replay a fully streamed text answer when history catches up without terminal output", async () => {
+    vi.stubEnv("MODE", "production");
+    vi.useFakeTimers();
+    const finalAnswer = [
+      "LIVE_STREAM_ALPHA",
+      "LIVE_STREAM_BETA",
+      "LIVE_STREAM_GAMMA",
+      "LIVE_STREAM_DELTA",
+      "LIVE_STREAM_EPSILON",
+      "LIVE_STREAM_ZETA",
+      "LIVE_STREAM_ETA",
+      "LIVE_STREAM_THETA",
+      "LIVE_STREAM_IOTA",
+      "LIVE_STREAM_KAPPA",
+    ].join(" ");
+    const textEvent = relayRunEvent({
+      event_id: 1,
+      event_type: "text_delta",
+      payload_json: JSON.stringify({ text: finalAnswer }),
+      run_id: "run-live-text-history-catchup",
+      trace_id: "run-live-text-history-catchup",
+    });
+    const completedEvent = relayRunEvent({
+      event_id: 2,
+      event_type: "run_completed",
+      payload_json: JSON.stringify({ status: "completed" }),
+      run_id: "run-live-text-history-catchup",
+      trace_id: "run-live-text-history-catchup",
+    });
+    setRuntimeStateFromEvents([textEvent]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container, queryClient } = renderTimeline();
+
+    for (let frame = 0; frame < 260; frame += 1) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(36);
+      });
+    }
+    expect(screen.getByText(finalAnswer)).toBeVisible();
+    const rowBeforeTerminal = container.querySelector<HTMLElement>("article.at-message");
+    const textNodeBeforeTerminal = container.querySelector<HTMLElement>(".at-message-text");
+    expect(rowBeforeTerminal).not.toBeNull();
+    expect(textNodeBeforeTerminal).not.toBeNull();
+    expect(container.querySelector(".at-message-streaming-text")).not.toBeNull();
+
+    await act(async () => {
+      setRuntimeStateFromEvents([textEvent, completedEvent]);
+    });
+    expect(screen.getByText(finalAnswer)).toBeVisible();
+    const rowBeforeHistory = container.querySelector<HTMLElement>("article.at-message");
+    const textNodeBeforeHistory = container.querySelector<HTMLElement>(".at-message-text");
+    expect(rowBeforeHistory).toBe(rowBeforeTerminal);
+    expect(textNodeBeforeHistory).toBe(textNodeBeforeTerminal);
+    expect(container.querySelector(".at-message-streaming-text")).toBeNull();
+
+    await act(async () => {
+      queryClient.setQueryData(["sessions", "session-1", "messages"], [
+        {
+          content: finalAnswer,
+          message_id: "assistant-live-text-history-catchup-final",
+          role_id: "MainAgent",
+          run_id: "run-live-text-history-catchup",
+        },
+      ]);
+    });
+
+    const rowAfterHistory = container.querySelector<HTMLElement>("article.at-message");
+    const textNodeAfterHistory = container.querySelector<HTMLElement>(".at-message-text");
+    expect(rowAfterHistory).toBe(rowBeforeHistory);
+    expect(textNodeAfterHistory).toBe(textNodeBeforeHistory);
+    expect(screen.getByText(finalAnswer)).toBeVisible();
+    expect(container.querySelector(".at-message-streaming-text")).toBeNull();
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+  });
+
+  it("does not inherit reveal from a completed runtime row that already matches history", async () => {
+    const finalAnswer = [
+      "LIVE_STREAM_ALPHA",
+      "LIVE_STREAM_BETA",
+      "LIVE_STREAM_GAMMA",
+      "LIVE_STREAM_DELTA",
+      "LIVE_STREAM_EPSILON",
+    ].join(" ");
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "text_delta",
+        payload_json: JSON.stringify({ text: finalAnswer }),
+        run_id: "run-live-reveal-boundary",
+        trace_id: "run-live-reveal-boundary",
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "tool_call",
+        payload_json: JSON.stringify({
+          args: { cmd: "echo ok" },
+          tool_call_id: "call-live-reveal-boundary",
+          tool_name: "shell",
+        }),
+        run_id: "run-live-reveal-boundary",
+        trace_id: "run-live-reveal-boundary",
+      }),
+      relayRunEvent({
+        event_id: 3,
+        event_type: "run_completed",
+        payload_json: JSON.stringify({ status: "completed" }),
+        run_id: "run-live-reveal-boundary",
+        trace_id: "run-live-reveal-boundary",
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: finalAnswer,
+        message_id: "assistant-live-reveal-boundary-final",
+        role_id: "MainAgent",
+        run_id: "run-live-reveal-boundary",
+      },
+    ]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText(finalAnswer)).toBeVisible();
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+    expect(container.querySelector(".at-message-streaming-text")).toBeNull();
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
+    expect(container.querySelector<HTMLElement>("article.at-message")?.dataset.rowKey)
+      .toBe("runtime-text:run-live-reveal-boundary:MainAgent:0");
+  });
+
   it("keeps terminal structured output mounted when history hydrates the answer", async () => {
     const finalAnswer = [
       "LIVE_STREAM_ALPHA",

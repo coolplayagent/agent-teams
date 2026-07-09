@@ -1646,7 +1646,11 @@ function mergeTerminalRuntimeTextRowsIntoPersistedAnswers(
       return row;
     }
     consumedRuntimeIndexes.add(candidate.index);
-    if (timelineRowHasRevealContent(candidate.row)) {
+    const persistedText = normalizedTimelineText(rowCopyText(row.parts));
+    if (
+      timelineRowHasRevealContent(candidate.row) &&
+      runtimeTextIsStrictPrefixOfPersistedAnswer(candidate.text, persistedText)
+    ) {
       return persistedRowWithRuntimeRevealParts(row, candidate.row);
     }
     return persistedRowWithRuntimeTextAnchor(row, candidate.row);
@@ -1689,6 +1693,17 @@ function persistedRowsWithRuntimeTextAnchors(
       : anchoredRow;
   });
   return changed ? nextRows : persistedRows;
+}
+
+function runtimeTextIsStrictPrefixOfPersistedAnswer(
+  runtimeText: string,
+  persistedText: string,
+): boolean {
+  return (
+    runtimeText.length > 0 &&
+    runtimeText.length < persistedText.length &&
+    persistedText.startsWith(runtimeText)
+  );
 }
 
 interface RuntimeTextHydration {

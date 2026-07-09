@@ -23,7 +23,7 @@ import {
   type RunStreamHandle,
 } from "../../runtime/streamClient";
 import type { RunStreamController } from "../../runtime/useRunStreamController";
-import { useTranslations } from "../../i18n";
+import { useTranslations, type Translate } from "../../i18n";
 import { MarkdownMessage } from "../timeline/MarkdownMessage";
 import { MessageTimeline } from "../timeline/MessageTimeline";
 import {
@@ -267,8 +267,11 @@ export function SubagentSessionView({
           <Typography.Title className="at-subagent-session-title" level={2}>
             {title}
           </Typography.Title>
-          <span className={subagentBadgeClassName(displayedSubagent)}>
-            {displayedSubagent.runStatus || displayedSubagent.status || "idle"}
+          <span
+            className={subagentBadgeClassName(displayedSubagent)}
+            data-status={subagentRawStatus(displayedSubagent)}
+          >
+            {subagentBadgeLabel(displayedSubagent, t)}
           </span>
         </div>
         <div className="at-subagent-session-meta">
@@ -798,7 +801,7 @@ function subagentHasStreamingStatus(subagent: ActiveSubagentSession): boolean {
 }
 
 function subagentBadgeClassName(subagent: ActiveSubagentSession): string {
-  const status = (subagent.runStatus || subagent.status).toLowerCase();
+  const status = subagentRawStatus(subagent);
   if (status === "running" || status === "queued" || status === "stopping") {
     return "at-subagent-session-badge is-running";
   }
@@ -814,6 +817,40 @@ function subagentBadgeClassName(subagent: ActiveSubagentSession): string {
     return "at-subagent-session-badge is-stopped";
   }
   return "at-subagent-session-badge";
+}
+
+function subagentBadgeLabel(
+  subagent: ActiveSubagentSession,
+  t: Translate,
+): string {
+  const status = subagentRawStatus(subagent);
+  switch (status) {
+    case "queued":
+      return t("subagentSessionStatusQueued");
+    case "running":
+      return t("subagentSessionStatusRunning");
+    case "stopping":
+      return t("subagentSessionStatusStopping");
+    case "completed":
+      return t("subagentSessionStatusCompleted");
+    case "failed":
+    case "error":
+      return t("subagentSessionStatusFailed");
+    case "paused":
+      return t("subagentSessionStatusPaused");
+    case "cancelled":
+    case "canceled":
+    case "stopped":
+      return t("subagentSessionStatusStopped");
+    case "idle":
+      return t("subagentSessionStatusIdle");
+    default:
+      return status;
+  }
+}
+
+function subagentRawStatus(subagent: ActiveSubagentSession): string {
+  return (subagent.runStatus || subagent.status || "idle").trim().toLowerCase();
 }
 
 function humanizeRoleId(roleId: string): string {

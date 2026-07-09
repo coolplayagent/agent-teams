@@ -1473,7 +1473,18 @@ describe("MessageTimeline", () => {
   it("keeps a fully streamed answer mounted when processed hydration arrives", async () => {
     vi.stubEnv("MODE", "production");
     vi.useFakeTimers();
-    const finalAnswer = "LIVE_STREAM_ALPHA";
+    const finalAnswer = [
+      "LIVE_STREAM_ALPHA",
+      "LIVE_STREAM_BETA",
+      "LIVE_STREAM_GAMMA",
+      "LIVE_STREAM_DELTA",
+      "LIVE_STREAM_EPSILON",
+      "LIVE_STREAM_ZETA",
+      "LIVE_STREAM_ETA",
+      "LIVE_STREAM_THETA",
+      "LIVE_STREAM_IOTA",
+      "LIVE_STREAM_KAPPA",
+    ].join(" ");
     const thinkingText = "The user wants me to output the same text again.";
     const streamEntry: TimelineEntry = {
       eventId: 8,
@@ -1506,7 +1517,7 @@ describe("MessageTimeline", () => {
 
     const { container, queryClient } = renderTimeline();
 
-    for (let frame = 0; frame < 40; frame += 1) {
+    for (let frame = 0; frame < 80; frame += 1) {
       await act(async () => {
         await vi.advanceTimersByTimeAsync(36);
       });
@@ -1582,6 +1593,15 @@ describe("MessageTimeline", () => {
     expect(container.querySelector(".at-message-streaming-text")).toBeNull();
     expect(screen.getAllByText(finalAnswer)).toHaveLength(1);
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(36);
+    });
+
+    expect(rowAfter).toBe(rowBefore);
+    expect(container.querySelector(".at-message-streaming-text")).toBeNull();
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
+    expect(screen.getAllByText(finalAnswer)).toHaveLength(1);
   });
 
   it("merges terminal structured output into the active runtime text row", async () => {

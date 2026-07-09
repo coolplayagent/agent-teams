@@ -847,6 +847,15 @@ For every row moved to `Verified`, record:
 - Automated evidence: `npm test -- src/test/AppShell.test.tsx -t "subagent panel|subagent sessions|subagent"`, `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium -g "opens a nested subagent session"`, `npm run lint`, `npm run build`.
 - This does not mark `SUB-01` as `Verified`; live production-backend variants, final V1/V2 visual sign-off, and broader subagent replay/streaming closure remain open.
 
+## 2026-07-10 Terminal Round Hydration Stability
+
+- `MSG-02`/`STREAM-02` tightened for the user-visible failure where the full live answer had already rendered, then terminal `/messages` plus `/rounds` catch-up caused the answer to be treated as a new message shape and visually rebuilt. Timeline message merging now prefers richer hydrated parts, such as `thinking` plus final `text`, when the text content is equivalent to an already-visible runtime row. This preserves the runtime row identity while allowing terminal processed work to appear.
+- Component coverage now uses a long deterministic live answer, advances the reveal until fully visible, injects terminal hydration with processed thinking, and verifies there is still one answer, no streaming wrapper, no cursor, and no later timer tick restarts the reveal.
+- Browser coverage now reproduces terminal round-history catch-up in the packed app: it samples progressive live text, closes the run, serves both persisted `/messages` and richer `/rounds`, then checks the same `data-row-key`, one collapsed `Processed` group, one final-answer occurrence, zero streaming cursors, and no 20-frame replay.
+- Subagent panel status labels were also made user-facing (`Running`, `Completed`, etc.) while retaining raw `data-status` for tests and styling, so the panel no longer exposes raw backend status strings.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx`, `npm test -- src/test/SubagentSessionView.test.tsx`, `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium -g "does not rebuild a fully displayed live answer|terminal round history catches up"`, `npm run test:browser -- v2-stream-create-run.spec.ts --project=chromium -g "reveals live stream text progressively"`, `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium -g "opens a nested subagent session|replays an orchestration subagent panel|streams a live orchestration subagent"`, `npm run lint`, `npm run build`.
+- This does not mark `MSG-02`, `STREAM-02`, or `SUB-01` as `Verified`; interrupted recovery, broader production-backend orchestration/tool variants, and final V1/V2 visual sign-off remain open.
+
 ## Immediate P0 Batch
 
 The current batch closes these rows first:

@@ -92,6 +92,17 @@ test("opens a nested subagent session and refreshes history after terminal strea
       .toBeVisible();
     await expect(page.getByText("Read-only subagent session")).toBeVisible();
     await expect(page.getByText("Persisted subagent checkpoint")).toBeVisible();
+    const panel = page.locator(".at-subagent-session-view");
+    await expect(
+      panel.locator(".at-subagent-session-body").getByText("Explorer", {
+        exact: true,
+      }),
+    ).toHaveCount(0);
+    await expect(
+      panel.locator(".at-subagent-session-body").getByText("explorer", {
+        exact: true,
+      }),
+    ).toHaveCount(0);
     const initialPanelWidth = await subagentPanelWidth(page);
     await dragSubagentPanelResizer(page, -80);
     await expect.poll(() => subagentPanelWidth(page)).toBeGreaterThan(
@@ -141,7 +152,9 @@ test("opens a nested subagent session and refreshes history after terminal strea
     await expect(page.locator(".at-subagent-session-view .ant-skeleton")).toHaveCount(0);
 
     releaseFinalSubagentMessages(state);
-    await expect(page.locator(".at-subagent-session-badge")).toHaveText("completed");
+    await expect(page.locator(".at-subagent-session-badge")).toHaveText("Completed");
+    await expect(page.locator(".at-subagent-session-badge"))
+      .toHaveAttribute("data-status", "completed");
     await expect(page.getByText("Final persisted subagent answer")).toBeVisible();
 
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
@@ -462,7 +475,9 @@ test("streams subagent deltas incrementally before terminal history refill", asy
 
     releaseFinalSubagentMessages(state);
     await expect(panel.getByText("Final persisted subagent answer")).toBeVisible();
-    await expect(panel.locator(".at-subagent-session-badge")).toHaveText("completed");
+    await expect(panel.locator(".at-subagent-session-badge")).toHaveText("Completed");
+    await expect(panel.locator(".at-subagent-session-badge"))
+      .toHaveAttribute("data-status", "completed");
     await expect(
       page.locator(".at-chat-view").getByText("Final persisted subagent answer"),
     ).toHaveCount(0);
@@ -959,7 +974,9 @@ test("replays an orchestration subagent panel without parent leakage after refre
     const panel = page.locator(".at-subagent-session-view");
     await expect(page.getByRole("heading", { name: "Crafter replay review" }))
       .toBeVisible();
-    await expect(panel.locator(".at-subagent-session-badge")).toHaveText("completed");
+    await expect(panel.locator(".at-subagent-session-badge")).toHaveText("Completed");
+    await expect(panel.locator(".at-subagent-session-badge"))
+      .toHaveAttribute("data-status", "completed");
     await expect(panel.locator(".at-subagent-session-prompt")).toContainText(
       "Review the orchestration replay transcript and summarize only the child work.",
     );
@@ -1048,7 +1065,9 @@ test("streams a live orchestration subagent with right-panel delta cadence", asy
     const panel = page.locator(".at-subagent-session-view");
     await expect(page.getByRole("heading", { name: "Crafter live stream review" }))
       .toBeVisible();
-    await expect(panel.locator(".at-subagent-session-badge")).toHaveText("running");
+    await expect(panel.locator(".at-subagent-session-badge")).toHaveText("Running");
+    await expect(panel.locator(".at-subagent-session-badge"))
+      .toHaveAttribute("data-status", "running");
     await expect(panel.locator(".at-subagent-session-prompt"))
       .toContainText(ORCHESTRATION_LIVE_PROMPT);
     await waitForEventSourceUrl(
@@ -1133,7 +1152,9 @@ test("streams a live orchestration subagent with right-panel delta cadence", asy
       .toHaveCount(0);
 
     releaseFinalSubagentMessages(state);
-    await expect(panel.locator(".at-subagent-session-badge")).toHaveText("completed");
+    await expect(panel.locator(".at-subagent-session-badge")).toHaveText("Completed");
+    await expect(panel.locator(".at-subagent-session-badge"))
+      .toHaveAttribute("data-status", "completed");
     await expect(panel.getByText("Final orchestration child answer")).toBeVisible();
     await expect(panel.locator(".streaming-cursor")).toHaveCount(0);
     await expect(

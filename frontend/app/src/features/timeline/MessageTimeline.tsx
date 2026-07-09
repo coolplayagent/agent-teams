@@ -5171,6 +5171,11 @@ function mergeTimelineMessageData(
   }
   if ((merged.parts?.length ?? 0) === 0 && (next.parts?.length ?? 0) > 0) {
     merged.parts = next.parts;
+  } else {
+    const mergedParts = mergeTimelineMessageParts(merged.parts, next.parts);
+    if (mergedParts !== undefined) {
+      merged.parts = mergedParts;
+    }
   }
   const messageBody = mergeTimelineMessageBody(merged.message, next.message);
   if (messageBody !== undefined) {
@@ -5220,8 +5225,65 @@ function mergeTimelineMessageBody(
   }
   if ((merged.parts?.length ?? 0) === 0 && (next.parts?.length ?? 0) > 0) {
     merged.parts = next.parts;
+  } else {
+    const mergedParts = mergeTimelineMessageParts(merged.parts, next.parts);
+    if (mergedParts !== undefined) {
+      merged.parts = mergedParts;
+    }
   }
   return merged;
+}
+
+function mergeTimelineMessageParts(
+  existing: ContentPart[] | undefined,
+  next: ContentPart[] | undefined,
+): ContentPart[] | undefined {
+  if (existing === undefined || existing.length === 0) {
+    return next;
+  }
+  if (next === undefined || next.length === 0) {
+    return existing;
+  }
+  return timelineMessagePartsShouldReplace(existing, next) ? next : existing;
+}
+
+function timelineMessagePartsShouldReplace(
+  existing: ContentPart[],
+  next: ContentPart[],
+): boolean {
+  const existingText = normalizedTimelineText(
+    existing.map(contentPartText).filter((text): text is string => text !== null).join(" "),
+  );
+  const nextText = normalizedTimelineText(
+    next.map(contentPartText).filter((text): text is string => text !== null).join(" "),
+  );
+  if (existingText.length === 0 || nextText.length === 0) {
+    return timelineMessagePartsRichness(next) > timelineMessagePartsRichness(existing);
+  }
+  if (existingText !== nextText && !nextText.includes(existingText)) {
+    return false;
+  }
+  return timelineMessagePartsRichness(next) > timelineMessagePartsRichness(existing);
+}
+
+function timelineMessagePartsRichness(parts: ContentPart[]): number {
+  let score = parts.length;
+  for (const part of parts) {
+    if (contentPartTimelineKind(part) !== "text") {
+      score += 100;
+    }
+  }
+  return score;
+}
+
+function contentPartTimelineKind(part: ContentPart): string {
+  if ("part_kind" in part) {
+    return part.part_kind;
+  }
+  if ("kind" in part) {
+    return part.kind;
+  }
+  return "";
 }
 
 function compareTimelineMessageItems(

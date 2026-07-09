@@ -34,6 +34,9 @@ interface RefreshRecoveryState {
   lastEventId: number;
   messageRequestCount: number;
   persistedAssistantText: string;
+  persistedPromptText?: string;
+  persistedThinkingText?: string;
+  roundHistoryEnabled?: boolean;
   runCreated: boolean;
 }
 
@@ -278,6 +281,133 @@ test("does not rebuild a fully displayed live answer when persisted history catc
     await page.screenshot({
       path: screenshotPath(
         "v2-stream-terminal-catchup-after-history.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("does not replay a completed live answer when terminal round history catches up", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const runCreateRequests: CapturedRunCreateRequest[] = [];
+  const recoveryState: RefreshRecoveryState = {
+    completed: false,
+    lastEventId: 0,
+    messageRequestCount: 0,
+    persistedAssistantText: "",
+    persistedPromptText: "Round hydration should not replay a completed live answer",
+    persistedThinkingText: "The user wants me to output the requested deterministic text.",
+    roundHistoryEnabled: true,
+    runCreated: false,
+  };
+  try {
+    await installShellState(page);
+    await installMockEventSource(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) =>
+        handleRefreshApi(context, runCreateRequests, recoveryState),
+      sessionTitle: "TS stream terminal round catchup",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+
+    await page.getByRole("textbox", { name: "Prompt" }).fill(
+      recoveryState.persistedPromptText ?? "",
+    );
+    await page.getByRole("button", { name: "Send" }).click();
+    await expect.poll(() => runCreateRequests.length).toBe(1);
+    await waitForEventSourceUrl(
+      page,
+      /\/api\/ag-ui\/runs\/run-ts-refresh\/events\?after_event_id=0$/,
+    );
+    await waitForEventSourceOpenCount(page, 1);
+
+    const finalText = [
+      "LIVE_STREAM_ALPHA",
+      "LIVE_STREAM_BETA",
+      "LIVE_STREAM_GAMMA",
+      "LIVE_STREAM_DELTA",
+      "LIVE_STREAM_EPSILON",
+      "LIVE_STREAM_ZETA",
+      "LIVE_STREAM_ETA",
+      "LIVE_STREAM_THETA",
+      "LIVE_STREAM_IOTA",
+      "LIVE_STREAM_KAPPA",
+    ].join(" ");
+    await dispatchRunEvent(page, {
+      eventId: 1,
+      payload: { phase: "streaming" },
+      relayEventType: "run_started",
+      type: "run.started",
+    });
+    await dispatchRunEvent(page, {
+      eventId: 2,
+      payload: { text: finalText },
+      relayEventType: "text_delta",
+      type: "message.text.delta",
+    });
+    recoveryState.lastEventId = 2;
+
+    const liveAnswerRow = page.locator(
+      `.at-timeline-row.at-message[data-run-id="${RUN_ID}"]`,
+    );
+    await expect(liveAnswerRow).toHaveCount(1);
+    const streamingText = liveAnswerRow.locator(".at-message-streaming-text");
+    await expect(streamingText).toBeVisible();
+    const lengthSamples = await collectStreamingTextLengthSamples(
+      streamingText,
+      finalText.length,
+    );
+    expect(lengthSamples[0] ?? finalText.length).toBeLessThan(finalText.length);
+    expect(increasingSampleCount(lengthSamples)).toBeGreaterThanOrEqual(1);
+    await expect(streamingText).toHaveText(finalText, { timeout: 10_000 });
+    const liveRowKey = await liveAnswerRow.first().getAttribute("data-row-key");
+    expect(liveRowKey).toContain("runtime-text:");
+
+    recoveryState.persistedAssistantText = finalText;
+    recoveryState.lastEventId = 3;
+    recoveryState.completed = true;
+    await dispatchRunEvent(page, {
+      eventId: 3,
+      payload: { status: "completed" },
+      relayEventType: "run_completed",
+      type: "run.completed",
+    });
+    await waitForEventSourceOpenCount(page, 0);
+    await expect(page.getByRole("button", { name: "Stop" })).toBeHidden();
+
+    await expect(liveAnswerRow).toHaveCount(1);
+    await expect(liveAnswerRow).toContainText(finalText);
+    await expect(liveAnswerRow.locator(".at-message-streaming-text")).toHaveCount(0);
+    await expect(liveAnswerRow.locator(".streaming-cursor")).toHaveCount(0);
+    await expect.poll(() => liveAnswerRow.first().getAttribute("data-row-key"))
+      .toBe(liveRowKey);
+    await expect(page.locator("details.at-processed-group")).toHaveCount(1);
+    await expect(page.locator("details.at-processed-group")).not.toHaveAttribute("open", "");
+    await expect.poll(() =>
+      page.locator(".at-chat-view").evaluate((element, expectedText) =>
+        (element.textContent ?? "").split(expectedText).length - 1,
+      finalText),
+    ).toBe(1);
+    await expectSettledAnswerDoesNotReplay(page, liveAnswerRow, finalText, liveRowKey);
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "terminal round history catch-up should not rebuild the live answer",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-stream-terminal-round-catchup-no-replay.png",
         SCREENSHOT_FOLDER,
       ),
     });
@@ -669,6 +799,10 @@ async function handleRefreshApi(
     await context.fulfillJson(persistedMessages(recoveryState));
     return true;
   }
+  if (context.method === "GET" && context.path === `/sessions/${SESSION_ID}/rounds`) {
+    await context.fulfillJson(persistedRounds(recoveryState));
+    return true;
+  }
   if (context.method === "GET" && context.path === `/sessions/${SESSION_ID}/recovery`) {
     await context.fulfillJson(recoverySnapshot(recoveryState));
     return true;
@@ -722,6 +856,55 @@ function persistedMessages(recoveryState: RefreshRecoveryState): unknown[] {
       run_id: RUN_ID,
     },
   ];
+}
+
+function persistedRounds(recoveryState: RefreshRecoveryState): Record<string, unknown> {
+  const text = recoveryState.persistedAssistantText.trim();
+  if (recoveryState.roundHistoryEnabled !== true || !text) {
+    return { has_more: false, items: [], next_cursor: null };
+  }
+  return {
+    has_more: false,
+    items: [
+      {
+        clear_marker_before: { cleared_at: "2026-06-26T10:00:00Z" },
+        coordinator_messages: [
+          {
+            created_at: "2026-06-26T10:00:02Z",
+            message: {
+              parts: [
+                ...(recoveryState.persistedThinkingText?.trim()
+                  ? [
+                      {
+                        content: recoveryState.persistedThinkingText,
+                        part_kind: "thinking",
+                      },
+                    ]
+                  : []),
+                {
+                  content: recoveryState.persistedAssistantText,
+                  part_kind: "text",
+                },
+              ],
+            },
+            message_id: "assistant-refresh-hydrated",
+            role_id: "MainAgent",
+          },
+        ],
+        created_at: "2026-06-26T10:00:01Z",
+        has_final_output: true,
+        intent: recoveryState.persistedPromptText ?? "Round hydrated live answer",
+        intent_parts: [
+          { kind: "text", text: recoveryState.persistedPromptText ?? "Round hydrated live answer" },
+        ],
+        run_id: RUN_ID,
+        run_phase: "completed",
+        run_status: "completed",
+        run_user_message: recoveryState.persistedPromptText ?? "Round hydrated live answer",
+      },
+    ],
+    next_cursor: null,
+  };
 }
 
 function recoverySnapshot(recoveryState: RefreshRecoveryState): Record<string, unknown> {

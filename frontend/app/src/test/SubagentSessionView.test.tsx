@@ -694,8 +694,9 @@ describe("SubagentSessionView", () => {
     closeLatestSubagentStream(closedRuntimeState("subagent_run_1"));
 
     await waitFor(() => expect(listAgentMessagesMock).toHaveBeenCalledTimes(2));
-    expect(await screen.findByText("completed")).toBeVisible();
-    expect(screen.queryByText("running")).not.toBeInTheDocument();
+    expect(await screen.findByText("Completed")).toBeVisible();
+    expect(screen.getByText("Completed")).toHaveAttribute("data-status", "completed");
+    expect(screen.queryByText("Running")).not.toBeInTheDocument();
     expect(screen.getByText("Live runtime output before terminal history"))
       .toBeVisible();
     expect(screen.queryByText("Final subagent answer")).not.toBeInTheDocument();
@@ -789,7 +790,8 @@ describe("SubagentSessionView", () => {
       }),
     });
 
-    expect(await screen.findByText("completed")).toBeVisible();
+    expect(await screen.findByText("Completed")).toBeVisible();
+    expect(screen.getByText("Completed")).toHaveAttribute("data-status", "completed");
     expect(container.textContent).toContain(finalText);
     expect(container.querySelector(".at-message-streaming-text")).toBeNull();
     expect(container.querySelector(".streaming-cursor")).toBeNull();
@@ -815,8 +817,9 @@ describe("SubagentSessionView", () => {
     expect(
       await screen.findByText("Closed stream output should render before history refresh."),
     ).toBeVisible();
-    expect(await screen.findByText("completed")).toBeVisible();
-    expect(screen.queryByText("running")).not.toBeInTheDocument();
+    expect(await screen.findByText("Completed")).toBeVisible();
+    expect(screen.getByText("Completed")).toHaveAttribute("data-status", "completed");
+    expect(screen.queryByText("Running")).not.toBeInTheDocument();
     expect(listAgentMessagesMock).toHaveBeenCalledTimes(1);
   });
 
@@ -851,7 +854,8 @@ describe("SubagentSessionView", () => {
     closeLatestSubagentStream(closedRuntimeState("subagent_run_1"));
 
     await waitFor(() => expect(listAgentMessagesMock).toHaveBeenCalledTimes(2));
-    expect(await screen.findByText("completed")).toBeVisible();
+    expect(await screen.findByText("Completed")).toBeVisible();
+    expect(screen.getByText("Completed")).toHaveAttribute("data-status", "completed");
     expect(screen.getByText("Persisted subagent checkpoint")).toBeVisible();
     expect(screen.getByText("Live text delta before terminal history"))
       .toBeVisible();
@@ -966,12 +970,12 @@ describe("SubagentSessionView", () => {
   );
 
   it.each([
-    ["run_completed", "completed"],
-    ["run_paused", "paused"],
-    ["run_stopped", "stopped"],
-  ] satisfies Array<[RunEventType, string]>)(
+    ["run_completed", "Completed", "completed"],
+    ["run_paused", "Paused", "paused"],
+    ["run_stopped", "Stopped", "stopped"],
+  ] satisfies Array<[RunEventType, string, string]>)(
     "uses runtime %s state for the subagent badge",
-    async (terminalEventType, expectedStatus) => {
+    async (terminalEventType, expectedLabel, expectedStatus) => {
       const controller = createRunStreamController();
       setRuntimeTerminalRun("subagent_run_1", terminalEventType);
 
@@ -981,7 +985,10 @@ describe("SubagentSessionView", () => {
       });
 
       expect(await screen.findByText("Explorer review")).toBeVisible();
-      expect(screen.getByText(expectedStatus)).toBeVisible();
+      expect(screen.getByText(expectedLabel)).toHaveAttribute(
+        "data-status",
+        expectedStatus,
+      );
       expect(openSessionSubagentRunStreamMock).not.toHaveBeenCalled();
     },
   );
@@ -1015,8 +1022,9 @@ describe("SubagentSessionView", () => {
     });
 
     expect(await screen.findByText("Final subagent answer")).toBeVisible();
-    expect(await screen.findByText("completed")).toBeVisible();
-    expect(screen.queryByText("running")).not.toBeInTheDocument();
+    expect(await screen.findByText("Completed")).toBeVisible();
+    expect(screen.getByText("Completed")).toHaveAttribute("data-status", "completed");
+    expect(screen.queryByText("Running")).not.toBeInTheDocument();
     expect(listSessionSubagentsMock).toHaveBeenCalledWith(
       "session-parent",
       true,

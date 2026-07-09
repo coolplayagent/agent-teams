@@ -1345,12 +1345,9 @@ async function runRealSseSubagentStdoutScenario(page: Page): Promise<void> {
     await expect(liveText).toBeVisible();
     await expect.poll(async () => ((await liveText.textContent()) ?? "").length)
       .toBeGreaterThan(0);
-    const firstSamples = await sampleLocatorTextLengths(liveText, 5, 80);
-    expect(firstSamples[0] ?? 0).toBeGreaterThan(0);
-    expect(firstSamples[0] ?? REAL_SSE_STDOUT_CHUNKS[0].length)
-      .toBeLessThan(REAL_SSE_STDOUT_CHUNKS[0].length);
-    expect(new Set(firstSamples).size).toBeGreaterThanOrEqual(3);
-    expect(Math.max(...firstSamples)).toBeLessThan(REAL_SSE_STDOUT_CHUNKS[0].length);
+    await expect(liveText).toContainText(REAL_SSE_STDOUT_CHUNKS[0]);
+    await expect(liveText).not.toContainText(REAL_SSE_STDOUT_CHUNKS[1]);
+    await expect(liveText).not.toContainText(REAL_SSE_STDOUT_CHUNKS[2]);
     await page.screenshot({
       path: screenshotPath(
         "v2-real-sse-subagent-stdout-mid-stream.png",
@@ -1366,9 +1363,8 @@ async function runRealSseSubagentStdoutScenario(page: Page): Promise<void> {
     await expect(panel.locator(".streaming-cursor")).toHaveCount(0, {
       timeout: 20_000,
     });
-    await expect(panel.locator(".at-subagent-session-badge")).toHaveText(
-      "completed",
-    );
+    await expect(panel.locator(".at-subagent-session-badge"))
+      .toHaveAttribute("data-status", "completed");
     await expect.poll(() => state.messageRequestCount).toBeGreaterThan(0);
     await expect(
       page.locator(".at-chat-view").getByText("STDOUT_ALPHA"),
@@ -3906,19 +3902,6 @@ async function expandFirstProcessedGroup(page: Page): Promise<void> {
   await expect.poll(() =>
     group.evaluate((element) => (element as HTMLDetailsElement).open),
   ).toBe(true);
-}
-
-async function sampleLocatorTextLengths(
-  locator: Locator,
-  count: number,
-  intervalMs: number,
-): Promise<number[]> {
-  const lengths: number[] = [];
-  for (let index = 0; index < count; index += 1) {
-    lengths.push(((await locator.textContent()) ?? "").length);
-    await locator.page().waitForTimeout(intervalMs);
-  }
-  return lengths;
 }
 
 function countOccurrences(value: string, needle: string): number {

@@ -9926,3 +9926,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - This closes the packed-browser loading/error/pagination evidence gap for `PAGE-02` except ClawHub probe failure and narrow-density/V1 paired review. It does not mark Skills or final V2 frontend completion as verified.
+
+## 2026-07-10 No Synthetic Stream Replay Slice
+
+### Scope
+- Re-centered the runtime work on the reported completed-answer rebuild failure instead of continuing page-surface work.
+- Removed the presentation-layer typewriter/reveal cache from `MessageTimeline`. Streaming text now renders the exact runtime text received so far; a complete SSE delta appears complete, and visible growth only comes from later SSE events.
+- Updated focused timeline tests that had been protecting the old synthetic reveal behavior. The tests now guard immediate current-buffer rendering, stable row identity across terminal history hydration, and no remount/replay after refresh/remount.
+- Updated the real SSE subagent stdout browser assertion from character-frame cadence to chunk-level truth: first delayed stdout chunk appears in the right panel, later chunks are absent until their events arrive, final replay appears once, and child stdout does not enter the parent timeline.
+- Rebuilt `frontend/dist/app` so `/app/` uses the corrected runtime bundle.
+
+### Verification
+- `npm run test -- MessageTimeline.test.tsx` passed with 199 tests.
+- `npm run lint` passed.
+- `npm run build` passed and regenerated the packed `/app/` bundle.
+- `npm run test:browser -- streaming-message-timeline.spec.ts --project=chromium -g "live terminal finalize|subagent live terminal|terminal completed overlay"` passed with 3 Chromium tests.
+- `npm run test:browser -- v2-real-sse-stale-recovery.spec.ts --project=chromium -g "subagent stdout"` passed.
+- Screenshot inspection reviewed `.tmp/frontend-v2-ts-stream/v2-real-sse-subagent-stdout-mid-stream.png` and `.tmp/frontend-v2-ts-stream/v2-real-sse-subagent-stdout-replay.png`.
+
+### Reviewer
+- This fixes the specific fake-stream/rebuild failure path for `MSG-02`/`STREAM-02` and tightens `SUB-01` right-panel evidence. It does not claim final V2 frontend completion, full interrupted recovery, true real-provider normal assistant-stream proof, or final V1/V2 visual sign-off.

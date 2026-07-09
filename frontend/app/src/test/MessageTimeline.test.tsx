@@ -817,9 +817,7 @@ describe("MessageTimeline", () => {
     expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
   });
 
-  it("renders received live runtime text progressively without synthetic replay", async () => {
-    vi.stubEnv("MODE", "production");
-    vi.useFakeTimers();
+  it("renders received live runtime text without synthetic replay", async () => {
     const finalAnswer = [
       "LIVE_STREAM_ALPHA",
       "LIVE_STREAM_BETA",
@@ -844,16 +842,9 @@ describe("MessageTimeline", () => {
       ".at-message-streaming-text",
     );
     expect(streamingText).not.toBeNull();
-    expect(streamingText?.textContent ?? "").not.toBe(finalAnswer);
-    expect((streamingText?.textContent ?? "").length).toBeGreaterThan(0);
-    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(3000);
-    });
     expect(streamingText).toHaveTextContent(finalAnswer);
-    expect(screen.getByText(finalAnswer)).toBeVisible();
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
+    expect(screen.getByText(finalAnswer)).toBeVisible();
   });
 
   it("keeps a fully received live row mounted when terminal output arrives", async () => {
@@ -1734,9 +1725,7 @@ describe("MessageTimeline", () => {
     expect(screen.getAllByText(finalAnswer)).toHaveLength(1);
   });
 
-  it("types a live full-chunk stream and does not replay it after history hydration", async () => {
-    vi.stubEnv("MODE", "production");
-    vi.useFakeTimers();
+  it("keeps a live full-chunk stream mounted after history hydration", async () => {
     const finalAnswer = [
       "LIVE_STREAM_ALPHA",
       "LIVE_STREAM_BETA",
@@ -1751,24 +1740,24 @@ describe("MessageTimeline", () => {
     ].join(" ");
     const streamEntry: TimelineEntry = {
       eventId: 8,
-      id: "run-live-typewriter-hydrate:8:0",
+      id: "run-live-full-chunk-hydrate:8:0",
       kind: "text_delta",
       occurredAt: "2026-06-23T00:00:00Z",
       payload: { text: finalAnswer },
       roleId: "MainAgent",
-      runId: "run-live-typewriter-hydrate",
+      runId: "run-live-full-chunk-hydrate",
       sessionId: "session-1",
       text: finalAnswer,
     };
     useRuntimeStore.setState({
       runtimeState: {
-        activeRunIds: ["run-live-typewriter-hydrate"],
+        activeRunIds: ["run-live-full-chunk-hydrate"],
         runs: {
-          "run-live-typewriter-hydrate": {
+          "run-live-full-chunk-hydrate": {
             entries: [streamEntry],
             hadVisibleTextStream: true,
             lastEventId: 8,
-            runId: "run-live-typewriter-hydrate",
+            runId: "run-live-full-chunk-hydrate",
             seenEventKeys: [],
             status: "open",
             terminalEventType: null,
@@ -1786,24 +1775,11 @@ describe("MessageTimeline", () => {
     if (streamingBlock === null) {
       throw new Error("Expected a streaming text block for the live answer.");
     }
-    expect(streamingBlock.textContent ?? "").not.toBe(finalAnswer);
-    expect((streamingBlock.textContent ?? "").length).toBeGreaterThan(0);
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(220);
-    });
-    const midStreamText = streamingBlock.textContent ?? "";
-    expect(midStreamText.length).toBeGreaterThan(2);
-    expect(midStreamText.length).toBeLessThan(finalAnswer.length);
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(3000);
-    });
     expect(streamingBlock).toHaveTextContent(finalAnswer);
     const rowBeforeHydration = container.querySelector<HTMLElement>("article.at-message");
     expect(rowBeforeHydration).not.toBeNull();
     expect(rowBeforeHydration?.dataset.rowKey).toBe(
-      "runtime-text:run-live-typewriter-hydrate:MainAgent:0",
+      "runtime-text:run-live-full-chunk-hydrate:MainAgent:0",
     );
 
     act(() => {
@@ -1821,33 +1797,33 @@ describe("MessageTimeline", () => {
               },
             ],
           },
-          message_id: "assistant-live-typewriter-hydrate-final",
+          message_id: "assistant-live-full-chunk-hydrate-final",
           role_id: "MainAgent",
-          run_id: "run-live-typewriter-hydrate",
+          run_id: "run-live-full-chunk-hydrate",
         },
       ]);
       useRuntimeStore.setState({
         runtimeState: {
           activeRunIds: [],
           runs: {
-            "run-live-typewriter-hydrate": {
+            "run-live-full-chunk-hydrate": {
               entries: [
                 streamEntry,
                 {
                   eventId: 9,
-                  id: "run-live-typewriter-hydrate:9:1",
+                  id: "run-live-full-chunk-hydrate:9:1",
                   kind: "run_completed",
                   occurredAt: "2026-06-23T00:00:01Z",
                   payload: { status: "completed" },
                   roleId: "MainAgent",
-                  runId: "run-live-typewriter-hydrate",
+                  runId: "run-live-full-chunk-hydrate",
                   sessionId: "session-1",
                   text: "completed",
                 },
               ],
               hadVisibleTextStream: true,
               lastEventId: 9,
-              runId: "run-live-typewriter-hydrate",
+              runId: "run-live-full-chunk-hydrate",
               seenEventKeys: [],
               status: "closed",
               terminalEventType: "run_completed",
@@ -1860,7 +1836,7 @@ describe("MessageTimeline", () => {
     const rowAfterHydration = container.querySelector<HTMLElement>("article.at-message");
     expect(rowAfterHydration).toBe(rowBeforeHydration);
     expect(rowAfterHydration?.dataset.rowKey).toBe(
-      "runtime-text:run-live-typewriter-hydrate:MainAgent:0",
+      "runtime-text:run-live-full-chunk-hydrate:MainAgent:0",
     );
     expect(container.querySelector(".at-message-streaming-text")).toBeNull();
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
@@ -8033,9 +8009,7 @@ describe("MessageTimeline", () => {
     expect(copyButton).toBeDisabled();
   });
 
-  it("does not reveal existing streaming text from the beginning after remount", async () => {
-    vi.stubEnv("MODE", "production");
-    vi.useFakeTimers();
+  it("renders the current streaming delta without frontend replay after remount", async () => {
     const streamingText =
       "HYDRATED_STREAM_ALPHA HYDRATED_STREAM_BETA HYDRATED_STREAM_GAMMA";
     setRuntimeEntries([
@@ -8051,11 +8025,6 @@ describe("MessageTimeline", () => {
 
     expect(firstRender.container.querySelector(".at-message-streaming-text"))
       .not.toBeNull();
-    for (let frame = 0; frame < 80; frame += 1) {
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(28);
-      });
-    }
     expect(screen.getByText(streamingText)).toBeVisible();
     firstRender.unmount();
 
@@ -8070,6 +8039,7 @@ describe("MessageTimeline", () => {
       throw new Error("Expected a streaming text block after remount.");
     }
     expect(streamingBlock).toHaveTextContent(streamingText);
+    expect(streamingBlock.textContent).not.toBe(streamingText.slice(0, 2));
     expect(secondRender.container.querySelectorAll(".streaming-cursor"))
       .toHaveLength(1);
   });

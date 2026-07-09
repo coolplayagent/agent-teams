@@ -251,6 +251,15 @@ For every row moved to `Verified`, record:
 - Test evidence: `npm test -- src/test/MessageTimeline.test.tsx`, `npm run build`, `npm run test:browser -- v2-stream-create-run.spec.ts v2-stream-refresh.spec.ts --project=chromium -g "progressively|terminal catch-up|structured output"`, and `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium -g "fully displayed live answer"`.
 - Browser screenshots: `.tmp/frontend-v2-ts-stream/v2-stream-terminal-catchup-after-history.png`, `.tmp/frontend-v2-ts-stream/v2-stream-terminal-output-prefix-final.png`.
 
+### 2026-07-10 No Synthetic Stream Replay Pass
+
+- `MSG-02`, `STREAM-02`, and `SUB-01` tightened after direct browser review showed the frontend could display an already received answer and then replay/rebuild it through the presentation-layer reveal cache.
+- `MessageTimeline` now renders the exact text currently present in runtime state. A full SSE delta appears as a full delta; visible streaming growth must come from subsequent SSE events, not a frontend `requestAnimationFrame` typewriter.
+- Terminal history hydration keeps the same live row identity, removes the cursor/streaming wrapper, and does not start a second reveal pass. The right-side subagent panel uses the same rule: the first delayed stdout chunk appears completely, later chunks append only when their SSE events arrive, and child stdout remains out of `.at-chat-view`.
+- Evidence: `npm run test -- MessageTimeline.test.tsx`, `npm run lint`, `npm run build`, `npm run test:browser -- streaming-message-timeline.spec.ts --project=chromium -g "live terminal finalize|subagent live terminal|terminal completed overlay"`, and `npm run test:browser -- v2-real-sse-stale-recovery.spec.ts --project=chromium -g "subagent stdout"`.
+- Screenshot inspection reviewed `.tmp/frontend-v2-ts-stream/v2-real-sse-subagent-stdout-mid-stream.png` and `.tmp/frontend-v2-ts-stream/v2-real-sse-subagent-stdout-replay.png`; mid-stream shows only the first child stdout chunk with the cursor at its tail, and replay shows the completed child stdout once with no cursor.
+- This supersedes prior evidence that required frontend-generated partial character frames. It does not mark `MSG-02`, `STREAM-02`, or `SUB-01` as `Verified`; interrupted recovery, broader production-backend orchestration/tool variants, true real-provider normal-stream proof, and final V1/V2 visual sign-off remain open.
+
 ### 2026-07-02 Direct Delta Rendering Closure
 
 - Superseded by the 2026-07-10 No Synthetic Stream Replay pass. This older closure is retained as historical evidence for row identity, terminal catch-up, duplicate prevention, and immediate full-delta visibility.

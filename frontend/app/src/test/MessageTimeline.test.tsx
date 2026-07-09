@@ -856,7 +856,7 @@ describe("MessageTimeline", () => {
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
   });
 
-  it("keeps a fully revealed live row mounted when terminal output arrives", async () => {
+  it("keeps a fully received live row mounted when terminal output arrives", async () => {
     vi.stubEnv("MODE", "production");
     vi.useFakeTimers();
     const finalAnswer = [
@@ -916,7 +916,7 @@ describe("MessageTimeline", () => {
     expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
   });
 
-  it("does not fake-type a completed runtime text segment after the full delta arrives", async () => {
+  it("does not re-render a completed runtime text segment after the full delta arrives", async () => {
     vi.stubEnv("MODE", "production");
     vi.useFakeTimers();
     const finalAnswer = [

@@ -36,7 +36,7 @@ test.skip(
 
 test.setTimeout(240_000);
 
-test("real backend normal stream reveals incrementally and survives session switch", async ({
+test("real backend normal stream receives incremental chunks and survives session switch", async ({
   page,
 }) => {
   const title = `real-live-normal-${Date.now()}`;

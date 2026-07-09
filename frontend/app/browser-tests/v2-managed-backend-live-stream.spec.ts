@@ -65,7 +65,7 @@ test.afterAll(async () => {
   await managedBackend?.close();
 });
 
-test("managed backend normal stream reveals incrementally and survives session switch", async ({
+test("managed backend normal stream receives incremental chunks and survives session switch", async ({
   page,
 }) => {
   const title = `managed-live-normal-${Date.now()}`;
@@ -544,7 +544,7 @@ test("managed backend orchestration tool stream survives active refresh without 
   }
 });
 
-test("managed backend subagent stream reveals incrementally in the right panel", async ({
+test("managed backend subagent stream receives incremental chunks in the right panel", async ({
   page,
 }) => {
   const title = `managed-live-subagent-${Date.now()}`;

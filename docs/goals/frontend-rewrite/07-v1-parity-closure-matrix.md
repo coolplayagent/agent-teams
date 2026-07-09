@@ -864,6 +864,13 @@ For every row moved to `Verified`, record:
 - Automated evidence: `npm test -- src/test/runtimeReducers.test.ts`, `npm test -- src/test/streamClient.test.ts`, `npm run test:browser -- v2-stream-reconnect.spec.ts --project=chromium -g "late unseen stream events|Last-Event-ID"`, `npm run test:browser -- v2-stream-reconnect.spec.ts --project=chromium`, `npm run lint`, `npm run build`.
 - This does not mark `STREAM-02` as `Verified`; active hard-refresh continuation through broader managed/real backend variants and final V1/V2 visual sign-off remain open.
 
+## 2026-07-10 Frontend Python UI Harness Guard
+
+- `CLEAN-01` tightened after confirming the old frontend Python UI harness inventory is currently empty except package marker files. A V2-native TypeScript guard now scans `tests/integration_tests/frontend` and `tests/unit_tests/frontend` and fails if Python UI proof files are reintroduced there.
+- The guard intentionally allows `__init__.py` package markers only; runtime and UI behavior proof remains owned by TypeScript component tests and Playwright browser specs.
+- Automated evidence: `npm test -- src/test/FrontendPythonUiHarnessParity.test.ts src/test/UserFacingNamingParity.test.ts`, `npm run lint`.
+- This does not mark `CLEAN-01` as `Verified`; promoted-route naming, final screenshot sweep, final documentation, and reviewer sign-off remain open.
+
 ## Immediate P0 Batch
 
 The current batch closes these rows first:

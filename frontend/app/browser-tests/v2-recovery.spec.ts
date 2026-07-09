@@ -517,8 +517,12 @@ test("reopens an active recovery stream from the latest checkpoint after refresh
     await waitForV2Shell(page);
 
     await expect(page.locator(".at-recovery")).toHaveCount(0);
-    await expect(page.locator(".at-message").filter({ hasText: firstRecoveredText }))
-      .toHaveCount(1);
+    const checkpointRow = page.locator(".at-message").filter({
+      hasText: firstRecoveredText,
+    });
+    await expect(checkpointRow).toHaveCount(1);
+    expect(await checkpointRow.locator(".at-message-text").textContent())
+      .toBe(firstRecoveredText);
     await waitForEventSourceUrl(
       page,
       new RegExp(`/api/ag-ui/runs/${RUN_ID}/events\\?after_event_id=18$`),
@@ -532,8 +536,26 @@ test("reopens an active recovery stream from the latest checkpoint after refresh
       type: "message.text.delta",
     });
     await expect(page.getByText(secondRecoveredText)).toBeVisible();
-    await expect(page.locator(".at-message").filter({ hasText: firstRecoveredText }))
-      .toHaveCount(1);
+    await expect(checkpointRow).toHaveCount(1);
+    await expect.poll(() =>
+      page.locator(".at-chat-view").evaluate(
+        (element, values) => {
+          const text = element.textContent ?? "";
+          const firstCount = text.split(values.first).length - 1;
+          const secondCount = text.split(values.second).length - 1;
+          return {
+            firstBeforeSecond: text.indexOf(values.first) < text.indexOf(values.second),
+            firstCount,
+            secondCount,
+          };
+        },
+        { first: firstRecoveredText, second: secondRecoveredText },
+      ),
+    ).toEqual({
+      firstBeforeSecond: true,
+      firstCount: 1,
+      secondCount: 1,
+    });
 
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await expectNoDocumentScroll(

@@ -114,6 +114,24 @@ For every row moved to `Verified`, record:
 
 ## Verification Ledger
 
+### 2026-07-10 Active Recovery Order Guard
+
+- `REC-01` and `STREAM-02` tightened for active-run refresh recovery. The
+  packed browser recovery scenario now reloads after event 18 has been
+  persisted, immediately verifies the checkpoint row's `.at-message-text` is
+  the complete checkpoint text, reconnects from `after_event_id=18`, then
+  streams event 19 and asserts the checkpoint and continuation each appear
+  exactly once and in order.
+- This closes a false-positive gap where the recovery test only checked that
+  both strings eventually appeared, without proving no duplicate, missing, or
+  out-of-order rows during the refresh/reconnect handoff.
+- Automated evidence: `npm run build`,
+  `npm run test:browser -- v2-recovery.spec.ts --project=chromium -g "reopens an active recovery stream from the latest checkpoint after refresh"`,
+  `npm run lint`, and `git diff --check`.
+- This does not move `REC-01` or `STREAM-02` to `Verified`; managed/real
+  production-backend orchestration/tool recovery, broader interrupted
+  real-provider recovery, and final V1/V2 visual sign-off remain open.
+
 ### 2026-07-10 Cursor-Only Hydrated Active Text Guard
 
 - `MSG-02`, `STREAM-02`, and `REC-01` tightened for active recovery/hydration

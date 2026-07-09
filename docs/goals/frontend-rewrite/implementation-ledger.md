@@ -9909,3 +9909,20 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - This improves `SUB-01` and `STREAM-02` evidence for child-session terminal hydration. It does not claim live real-backend orchestration variants, full interrupted recovery, final V1 visual sign-off, or final V2 frontend completion.
+
+## 2026-07-10 Skills Loading Error And Pagination Browser Slice
+
+### Scope
+- Continued the page-surface closure work on `PAGE-02` after confirming the old frontend Python UI harness inventory is empty.
+- Added packed `/app/` browser coverage for Skills market loading skeletons, market pagination beyond the first page, install failure feedback, market-detail load failure, and installed-skill status load failure.
+- Kept the new failure fixtures isolated from the existing Skills success-path browser scenario so the primary market/install/detail/uninstall/settings flow stays unchanged.
+- Captured clean page-level screenshots for loading, paged market results, detail error, and installed-list error states inside the fixed shell.
+
+### Verification
+- `npm run test:browser -- v2-skills-view.spec.ts --project=chromium -g "loading, paging, and failure"` passed.
+- `npm run test:browser -- v2-skills-view.spec.ts --project=chromium` passed with 2 Chromium tests.
+- `npm run lint` passed.
+- Screenshot inspection reviewed `.tmp/frontend-v2-ts-skills/v2-skills-market-loading.png`, `.tmp/frontend-v2-ts-skills/v2-skills-market-paged.png`, `.tmp/frontend-v2-ts-skills/v2-skills-detail-error.png`, and `.tmp/frontend-v2-ts-skills/v2-skills-installed-error.png`.
+
+### Reviewer
+- This closes the packed-browser loading/error/pagination evidence gap for `PAGE-02` except ClawHub probe failure and narrow-density/V1 paired review. It does not mark Skills or final V2 frontend completion as verified.

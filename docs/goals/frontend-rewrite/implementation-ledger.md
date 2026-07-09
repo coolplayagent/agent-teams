@@ -9962,3 +9962,19 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - This closes the packed-browser ClawHub probe failure and narrow-density evidence gap for `PAGE-02`. It does not mark Skills as `Verified`, because formal V1 screenshot/DOM pairing and reviewer sign-off remain open.
+
+## 2026-07-10 Board Loading Error And Narrow Layout Slice
+
+### Scope
+- Continued primary page closure on `PAGE-03` and targeted the remaining Board loading/error/narrow evidence gap.
+- Added a packed `/app/` browser scenario that delays `/boards/todos`, captures the loading skeleton, releases the request into a 500 response, and verifies the load failure alert plus backend error detail.
+- Ran the scenario at 620px width and explicitly closed the mobile sidebar before screenshot review so the evidence represents the Board content area rather than a covered workspace.
+- Added layout metrics for the Board frame and controls to catch document-level and content-level horizontal overflow in loading/error states.
+
+### Verification
+- `npm run test:browser -- v2-board-actions.spec.ts --project=chromium -g "loading and load failure"` passed.
+- `npm run test:browser -- v2-board-actions.spec.ts --project=chromium` passed with 6 Chromium tests.
+- Screenshot inspection reviewed `.tmp/frontend-v2-ts-board-actions/v2-board-loading-narrow.png` and `.tmp/frontend-v2-ts-board-actions/v2-board-load-error-narrow.png`; the first screenshot was initially invalid because the sidebar covered the Board, and the test was corrected to close the sidebar before evidence capture.
+
+### Reviewer
+- This closes the packed-browser Board loading/error/narrow evidence gap for `PAGE-03`. It does not mark Board as `Verified`, because formal V1 screenshot/DOM pairing and reviewer sign-off remain open.

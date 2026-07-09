@@ -30,8 +30,11 @@ interface BoardActionState {
   boardSourceEnabled: boolean;
   boardSourceUpdatePayloads: Record<string, unknown>[];
   boardSyncPayloads: Record<string, unknown>[];
+  failBoardLoad: boolean;
+  releaseBoardLoadRequests: Array<() => void>;
   requestedPaths: string[];
   requestedUrls: string[];
+  slowBoardLoad: boolean;
 }
 
 test("filters Board cards and reveals archived status groups", async ({
@@ -366,6 +369,58 @@ test("edits, creates, and deletes Board sources through the real endpoints", asy
   }
 });
 
+test("shows Board loading and load failure states at narrow width", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state = boardActionState();
+  state.failBoardLoad = true;
+  state.slowBoardLoad = true;
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await page.setViewportSize({ height: 720, width: 620 });
+    await installShellState(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleBoardActionApi(context, state),
+      sessionTitle: "TS board narrow failure",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    const boardView = await openBoardView(page);
+    await page.getByRole("button", { name: "Close sidebar" }).click();
+    await expect(page.getByRole("complementary")).toBeHidden();
+    await expect(boardView).toBeVisible();
+
+    await expect(boardView.getByTestId("board-loading")).toBeVisible();
+    await expect(boardView.locator(".ant-skeleton")).toBeVisible();
+    await assertBoardNarrowFrame(page);
+    await page.screenshot({
+      path: screenshotPath("v2-board-loading-narrow.png", SCREENSHOT_FOLDER),
+    });
+
+    releasePendingBoardRequests(state);
+    await expect(boardView.getByText("Could not load board TODOs"))
+      .toBeVisible();
+    await expect(boardView.getByText("board data unavailable")).toBeVisible();
+    await expect(boardView.getByTestId("board-loading")).toHaveCount(0);
+    await assertBoardNarrowFrame(page);
+    await page.screenshot({
+      path: screenshotPath("v2-board-load-error-narrow.png", SCREENSHOT_FOLDER),
+    });
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "v2 board loading and failure states should stay framed at narrow width",
+    );
+  } finally {
+    releasePendingBoardRequests(state);
+    await appServer.close();
+  }
+});
+
 async function openBoardView(page: Page): Promise<Locator> {
   await page
     .getByRole("navigation", { name: "Primary navigation" })
@@ -392,8 +447,11 @@ function boardActionState(): BoardActionState {
     boardSourceEnabled: true,
     boardSourceUpdatePayloads: [],
     boardSyncPayloads: [],
+    failBoardLoad: false,
+    releaseBoardLoadRequests: [],
     requestedPaths: [],
     requestedUrls: [],
+    slowBoardLoad: false,
   };
 }
 
@@ -406,6 +464,16 @@ async function handleBoardActionApi(
   const method = context.method;
   const path = context.path;
   if (method === "GET" && path === "/boards/todos") {
+    if (state.slowBoardLoad) {
+      state.slowBoardLoad = false;
+      await new Promise<void>((resolve) => {
+        state.releaseBoardLoadRequests.push(resolve);
+      });
+    }
+    if (state.failBoardLoad) {
+      await context.fulfillJson({ detail: "board data unavailable" }, 500);
+      return true;
+    }
     await context.fulfillJson(
       boardResponse(
         state,
@@ -480,6 +548,36 @@ async function handleBoardActionApi(
     return true;
   }
   return false;
+}
+
+async function assertBoardNarrowFrame(page: Page): Promise<void> {
+  const layoutMetrics = await page.evaluate(() => {
+    const boardView = document.querySelector<HTMLElement>(
+      '[data-testid="board-todos-view"]',
+    );
+    const controls = document.querySelector<HTMLElement>(".at-board-controls");
+    return {
+      boardOverflowsX: boardView
+        ? boardView.scrollWidth > boardView.clientWidth + 1
+        : true,
+      controlsOverflowsX: controls
+        ? controls.scrollWidth > controls.clientWidth + 1
+        : true,
+      documentOverflowsX:
+        document.documentElement.scrollWidth > window.innerWidth + 1,
+    };
+  });
+  expect(layoutMetrics).toEqual({
+    boardOverflowsX: false,
+    controlsOverflowsX: false,
+    documentOverflowsX: false,
+  });
+}
+
+function releasePendingBoardRequests(state: BoardActionState): void {
+  for (const release of state.releaseBoardLoadRequests.splice(0)) {
+    release();
+  }
 }
 
 function readJsonBody(context: MockApiRouteContext): Record<string, unknown> {

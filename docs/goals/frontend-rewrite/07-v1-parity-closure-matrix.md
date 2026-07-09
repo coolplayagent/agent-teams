@@ -917,6 +917,13 @@ For every row moved to `Verified`, record:
 - Automated evidence: `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "managed backend normal tool pressure streams compact lifecycle cards"`, `npm run lint`, `uv run --extra dev ruff check tests/integration_tests/support/fake_llm_server.py`, `git diff --check`.
 - This does not mark `MSG-04` or `STREAM-02` as `Verified`; broader orchestration variants, interrupted real-provider recovery, and final V1/V2 visual sign-off remain open.
 
+## 2026-07-10 Managed Orchestration Tool Refresh Guard
+
+- `MSG-04`/`STREAM-02` tightened for the orchestration branch of live tool-heavy runs. The managed backend spec now creates a real session, switches it through `/api/sessions/{id}/topology` into orchestration mode, drives `[orch-tool-pressure]` through the actual composer, and hard-refreshes while the backend still reports the orchestration run as active.
+- The browser assertions verify the composer stays in orchestration mode after refresh and after session switch, main timeline tool cards are restored, orchestration prompt scaffolding is not leaked into the transcript, `MainAgent`/`Explorer`/`Crafter` role-only rows stay hidden, the final orchestration answer appears once, and terminal state has no stale cursor or role chrome.
+- Automated evidence: `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "managed backend orchestration tool stream survives active refresh"`, `npm run lint`, `git diff --check`.
+- This does not mark `MSG-04` or `STREAM-02` as `Verified`; interrupted real-provider recovery, broader real-provider coverage, and final V1/V2 visual sign-off remain open.
+
 ## 2026-07-10 Terminal Round Hydration Stability
 
 - `MSG-02`/`STREAM-02` tightened for the user-visible failure where the full live answer had already rendered, then terminal `/messages` plus `/rounds` catch-up caused the answer to be treated as a new message shape and visually rebuilt. Timeline message merging now prefers richer hydrated parts, such as `thinking` plus final `text`, when the text content is equivalent to an already-visible runtime row. This preserves the runtime row identity while allowing terminal processed work to appear.

@@ -447,6 +447,103 @@ test("managed backend normal tool pressure streams compact lifecycle cards", asy
   }
 });
 
+test("managed backend orchestration tool stream survives active refresh without role leakage", async ({
+  page,
+}) => {
+  const title = `managed-live-orchestration-tool-${Date.now()}`;
+  const session = await createSession(title);
+  let runId: string | null = null;
+  try {
+    await updateSessionTopology(session.session_id, {
+      session_mode: "orchestration",
+      orchestration_preset_id: null,
+      normal_root_role_id: null,
+    });
+    await openManagedSession(page, session, title);
+    await expectManagedShellReady(page);
+    await expect(page.locator(".at-composer")).toContainText(/编排模式|Orchestration/);
+
+    const taskCount = 2;
+    const titleTag = streamTagFromTitle(title);
+    const finalText = `[fake-llm] orchestration tool pressure completed ${taskCount} tasks.`;
+    const promptText = [
+      `${title}: [orch-tool-pressure count=${taskCount} tools=2 delay=2500]`,
+      `请以编排模式执行工具压力验证，标记 ${titleTag}。`,
+    ].join("\n");
+
+    const runResponse = waitForRunCreateResponse(page);
+    await submitPrompt(page, promptText);
+    const createdRunId = await runIdFromResponse(await runResponse);
+    runId = createdRunId;
+    await expect(page.getByRole("button", { name: /停止|Stop/ })).toBeVisible({
+      timeout: 20_000,
+    });
+
+    await expect.poll(() => toolCardCount(page), { timeout: 120_000 })
+      .toBeGreaterThanOrEqual(1);
+    await expect.poll(() => nakedRuntimeRoleLineCount(page)).toBe(0);
+    await expect
+      .poll(() => mainTimelineMessageArticleText(page))
+      .not.toContain("Return only the delegation plan JSON object");
+    await expect
+      .poll(() => currentRunStatus(session.session_id, createdRunId))
+      .toBe("active");
+    await page.screenshot({
+      fullPage: false,
+      path: screenshotPath(
+        "managed-live-orchestration-tool-running.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expectManagedShellReady(page);
+    await expect(page.locator(".at-composer")).toContainText(/编排模式|Orchestration/);
+    await expect
+      .poll(() => currentRunStatus(session.session_id, createdRunId))
+      .toBe("active");
+    await expect.poll(() => toolCardCount(page), { timeout: 60_000 })
+      .toBeGreaterThanOrEqual(1);
+    await expect.poll(() => nakedRuntimeRoleLineCount(page)).toBe(0);
+    await expect
+      .poll(() => mainTimelineMessageArticleText(page))
+      .not.toContain("Return only the delegation plan JSON object");
+
+    await switchAwayAndBack(page, title);
+    await expect(page.locator(".at-composer")).toContainText(/编排模式|Orchestration/);
+    await expect.poll(() => toolCardCount(page), { timeout: 60_000 })
+      .toBeGreaterThanOrEqual(1);
+    await expect.poll(() => nakedRuntimeRoleLineCount(page)).toBe(0);
+    await expect
+      .poll(() => mainTimelineMessageArticleText(page))
+      .not.toContain("Return only the delegation plan JSON object");
+
+    await waitForRunToLeaveActive(session.session_id, createdRunId, 240_000);
+    await expect
+      .poll(() => mainTimelineMessageArticleText(page), { timeout: 90_000 })
+      .toContain(finalText);
+    await expect.poll(() => messageArticleContainingCount(page, finalText)).toBe(1);
+    await expect(page.locator(".streaming-cursor")).toHaveCount(0);
+    await expect.poll(() => nakedRuntimeRoleLineCount(page)).toBe(0);
+    await expect(page.locator(".at-message-role")).toHaveCount(0);
+    await expectNoDocumentScroll(
+      page,
+      "managed orchestration tool stream should stay inside the fixed shell",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.screenshot({
+      fullPage: false,
+      path: screenshotPath(
+        "managed-live-orchestration-tool-terminal.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+  } finally {
+    await stopRunIfPresent(runId);
+    await deleteSession(session.session_id);
+  }
+});
+
 test("managed backend subagent stream reveals incrementally in the right panel", async ({
   page,
 }) => {
@@ -1243,6 +1340,20 @@ async function createSession(title: string): Promise<SessionRecord> {
       metadata: { title },
       workspace_id: "default",
     }),
+  });
+}
+
+async function updateSessionTopology(
+  sessionId: string,
+  request: {
+    normal_root_role_id?: string | null;
+    orchestration_preset_id?: string | null;
+    session_mode: "normal" | "orchestration";
+  },
+): Promise<SessionRecord> {
+  return fetchJson<SessionRecord>(`/api/sessions/${encodeURIComponent(sessionId)}/topology`, {
+    method: "PATCH",
+    body: JSON.stringify(request),
   });
 }
 

@@ -9844,3 +9844,18 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent failure reproduction, product fix, focused component coverage, dist rebuild, deterministic browser verification, matrix update, and ledger update completed for this slice. This does not claim final V2 frontend completion, full production-backend stream sign-off, or full V1 visual parity sign-off.
+
+## 2026-07-10 System Secondary Settings Browser Evidence Slice
+
+### Scope
+- Re-checked the frontend rewrite matrix before continuing and selected the open `SET-14` gap for deep System secondary page browser evidence instead of adding or removing Settings entries.
+- Extended the packed Settings action browser scenario to keep MCP, Commands, and GitHub hidden from first-level Settings navigation while exercising them from the System secondary launcher.
+- The scenario now proves Commands edit/create payloads, MCP test/tool-refresh/enable/edit payloads, and GitHub token reveal/probe/save plus webhook/tunnel actions through the current API client paths.
+- Tightened screenshot capture by waiting for transient AntD messages to clear before Commands and MCP evidence screenshots, after rejecting an initial MCP screenshot where stale command toasts covered the page title.
+
+### Verification
+- `npm run test:browser -- v2-settings-actions.spec.ts --project=chromium -g "MCP, Commands, and GitHub"` passed.
+- Screenshot inspection reviewed `.tmp/frontend-v2-ts-settings-actions/v2-commands-secondary-actions.png`, `.tmp/frontend-v2-ts-settings-actions/v2-mcp-secondary-actions.png`, and `.tmp/frontend-v2-ts-settings-actions/v2-github-secondary-actions.png`.
+
+### Reviewer
+- Main-agent matrix scan, System secondary action coverage, screenshot-quality correction, browser verification, screenshot inspection, and matrix update completed for this slice. This does not claim `SET-14` Verified, formal V1 visual/DOM pairing, System loading/error-state coverage, reviewer-subagent sign-off, or final V2 frontend completion.

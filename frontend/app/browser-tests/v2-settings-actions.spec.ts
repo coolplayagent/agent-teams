@@ -25,6 +25,9 @@ interface SettingsActionState {
   clawHubConfig: Record<string, unknown>;
   clawHubProbePayloads: Record<string, unknown>[];
   clawHubSavePayloads: Record<string, unknown>[];
+  commandCatalog: Record<string, unknown>;
+  commandCreatePayloads: Record<string, unknown>[];
+  commandUpdatePayloads: Record<string, unknown>[];
   environmentDeleteRequests: Array<{
     key: string;
     scope: string;
@@ -48,6 +51,21 @@ interface SettingsActionState {
   hooksConfig: Record<string, unknown>;
   hooksSavePayloads: Record<string, unknown>[];
   hooksValidatePayloads: Record<string, unknown>[];
+  githubConfig: Record<string, unknown>;
+  githubProbePayloads: Record<string, unknown>[];
+  githubRevealCount: number;
+  githubSavePayloads: Record<string, unknown>[];
+  githubTunnelStartPayloads: Record<string, unknown>[];
+  githubTunnelStatus: Record<string, unknown>;
+  githubTunnelStopPayloads: Record<string, unknown>[];
+  githubWebhookProbePayloads: Record<string, unknown>[];
+  mcpAddPayloads: Record<string, unknown>[];
+  mcpEnablePayloads: Record<string, unknown>[];
+  mcpRefreshToolRequests: string[];
+  mcpReloadCount: number;
+  mcpServers: Record<string, unknown>[];
+  mcpTestRequests: string[];
+  mcpUpdatePayloads: Array<{ name: string; payload: Record<string, unknown> }>;
   modelCatalogRefreshCount: number;
   modelProfileReloadCount: number;
   modelProfileSavePayloads: Record<string, unknown>[];
@@ -718,6 +736,183 @@ test("manages Gateway accounts from the System secondary settings page", async (
     await expectComposerControlsDoNotOverlap(page);
     await page.screenshot({
       path: screenshotPath("v2-gateway-settings-actions.png", SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("manages MCP, Commands, and GitHub from System secondary settings", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state = settingsActionState();
+  try {
+    await installShellState(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleSettingsActionApi(context, state),
+      sessionTitle: "TS system secondary settings",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    const settings = await openSettingsDialog(page);
+    const sections = settings.getByRole("navigation", {
+      name: "Settings sections",
+    });
+    for (const secondaryName of ["MCP", "Commands", "GitHub"]) {
+      await expect(sections.getByRole("button", { name: secondaryName }))
+        .toHaveCount(0);
+    }
+
+    await openSystemSettingsPage(settings, "Commands");
+    await expect(settings.getByRole("heading", { name: "Commands" }))
+      .toBeVisible();
+    await expect(settings.getByText("/opsx:propose")).toBeVisible();
+    await settings.getByRole("button", { name: "Edit /opsx:propose" }).click();
+    await settings.getByLabel("Description").fill("Updated proposal command");
+    await settings.getByLabel("Allowed modes").fill("normal, orchestration");
+    await settings.getByLabel("Prompt template").fill("Updated {{args}}");
+    await settings.getByRole("button", { name: "Save" }).click();
+    await expect.poll(() => state.commandUpdatePayloads).toEqual([
+      {
+        aliases: ["opsx/propose"],
+        allowed_modes: ["normal", "orchestration"],
+        argument_hint: "<change-id>",
+        description: "Updated proposal command",
+        name: "opsx:propose",
+        source_path: "C:/repo/.claude/commands/opsx/propose.md",
+        template: "Updated {{args}}",
+      },
+    ]);
+
+    await settings.getByRole("button", { name: "Add Command" }).click();
+    await settings.getByLabel("Command name").fill("opsx:review");
+    await expect(settings.getByLabel("File path")).toHaveValue("opsx/review.md");
+    await settings.getByLabel("Description").fill("Created command");
+    await settings.getByLabel("Prompt template").fill("Review {{args}}");
+    await settings.getByRole("button", { name: "Save" }).click();
+    await expect.poll(() => state.commandCreatePayloads).toEqual([
+      {
+        aliases: [],
+        allowed_modes: ["normal"],
+        argument_hint: "",
+        description: "Created command",
+        name: "opsx:review",
+        relative_path: "opsx/review.md",
+        scope: "project",
+        source: "relay_teams",
+        template: "Review {{args}}",
+        workspace_id: "workspace-1",
+      },
+    ]);
+    await expect(settings.getByText("/opsx:review")).toBeVisible();
+    await expect(page.locator(".ant-message-notice")).toHaveCount(0, {
+      timeout: 8000,
+    });
+    await page.screenshot({
+      path: screenshotPath("v2-commands-secondary-actions.png", SCREENSHOT_FOLDER),
+    });
+
+    await openSystemSettingsPage(settings, "MCP");
+    await expect(settings.getByRole("heading", { name: "MCP" })).toBeVisible();
+    await expect(settings.getByText("filesystem")).toBeVisible();
+    await expect(settings.getByText("github")).toBeVisible();
+    await expect(settings.getByText("read_file")).toBeVisible();
+    await settings.getByRole("button", { name: "Test filesystem" }).click();
+    await expect.poll(() => state.mcpTestRequests).toEqual(["filesystem"]);
+    await expect(settings.getByText("filesystem connected with 2 tools."))
+      .toBeVisible();
+    await settings.getByRole("button", { name: "Refresh tools for filesystem" }).click();
+    await expect.poll(() => state.mcpRefreshToolRequests).toEqual(["filesystem"]);
+    await expect(settings.getByText("list_files")).toBeVisible();
+    await settings.getByRole("button", { name: "Disable filesystem" }).click();
+    await expect.poll(() => state.mcpEnablePayloads).toEqual([
+      { enabled: false, name: "filesystem" },
+    ]);
+
+    await settings.getByRole("button", { name: "Edit filesystem" }).click();
+    await expect(settings.getByLabel("Command")).toHaveValue("node");
+    await settings.getByLabel("Command").fill("npx");
+    await settings.getByLabel("Arguments").fill("-y\nserver.js");
+    await settings.getByLabel("Environment").fill("MCP_LOG=debug");
+    await settings.getByRole("button", { name: "Save" }).click();
+    await expect.poll(() => state.mcpUpdatePayloads).toEqual([
+      {
+        name: "filesystem",
+        payload: {
+          config: {
+            args: ["-y", "server.js"],
+            command: "npx",
+            env: { MCP_LOG: "debug" },
+            transport: "stdio",
+          },
+        },
+      },
+    ]);
+    await expect(page.locator(".ant-message-notice")).toHaveCount(0, {
+      timeout: 8000,
+    });
+    await page.screenshot({
+      path: screenshotPath("v2-mcp-secondary-actions.png", SCREENSHOT_FOLDER),
+    });
+
+    await openSystemSettingsPage(settings, "GitHub");
+    await expect(settings.getByRole("heading", { name: "GitHub" })).toBeVisible();
+    await expect(settings.locator("strong", { hasText: "GitHub CLI" }))
+      .toBeVisible();
+    await expect(
+      settings.getByText("https://hooks.example/api/triggers/github/deliveries"),
+    ).toBeVisible();
+    await settings.getByRole("button", { name: "Reveal token" }).click();
+    await expect.poll(() => state.githubRevealCount).toBe(1);
+    await expect(settings.locator("input[value='ghp_saved']")).toBeVisible();
+    await settings.getByLabel("Token").fill("ghp_next");
+    await settings.getByRole("button", { name: "Test GitHub CLI" }).click();
+    await expect.poll(() => state.githubProbePayloads).toEqual([
+      { token: "ghp_next" },
+    ]);
+    await expect(settings.getByText("Connected as octocat in 21 ms."))
+      .toBeVisible();
+    await settings.getByRole("button", { name: "Save token" }).click();
+    await expect.poll(() => state.githubSavePayloads.at(-1)).toEqual({
+      token: "ghp_next",
+    });
+    await settings.getByLabel("Webhook base URL").fill("https://changed.example");
+    await expect(
+      settings.getByText("https://changed.example/api/triggers/github/deliveries"),
+    ).toBeVisible();
+    await settings.getByRole("button", { name: "Test callback" }).click();
+    await expect.poll(() => state.githubWebhookProbePayloads).toEqual([
+      { webhook_base_url: "https://changed.example" },
+    ]);
+    await expect(settings.getByText("Callback returned 200 in 34 ms."))
+      .toBeVisible();
+    await settings.getByRole("button", { name: "Save webhook" }).click();
+    await expect.poll(() => state.githubSavePayloads.at(-1)).toEqual({
+      webhook_base_url: "https://changed.example",
+    });
+    await settings.getByRole("button", { name: "Stop tunnel" }).click();
+    await expect.poll(() => state.githubTunnelStopPayloads).toEqual([
+      { clear_webhook_base_url_if_matching: true },
+    ]);
+    await settings.getByRole("button", { name: "Start tunnel" }).click();
+    await expect.poll(() => state.githubTunnelStartPayloads).toEqual([
+      { auto_save_webhook_base_url: true },
+    ]);
+    await expect(page.locator(".ant-message-notice")).toHaveCount(0, {
+      timeout: 8000,
+    });
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "v2 MCP, Commands, and GitHub settings should stay framed",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.screenshot({
+      path: screenshotPath("v2-github-secondary-actions.png", SCREENSHOT_FOLDER),
     });
   } finally {
     await appServer.close();
@@ -1933,8 +2128,17 @@ async function openSystemSettingsPage(
     .getByRole("navigation", { name: "Settings sections" })
     .getByRole("button", { name: "System" })
     .click();
-  await settings.locator(".at-settings-list-button").filter({ hasText: pageName })
-    .click();
+  const target = settings.locator(".at-settings-list-button")
+    .filter({ hasText: pageName });
+  const visible = await target.first().isVisible().catch(() => false);
+  if (!visible) {
+    const backButton = settings.getByRole("button", { name: "Back" });
+    if (await backButton.isVisible().catch(() => false)) {
+      await backButton.click();
+    }
+  }
+  await expect(target.first()).toBeVisible();
+  await target.first().click();
 }
 
 async function optionPairs(select: Locator): Promise<Array<[string, string]>> {
@@ -1969,6 +2173,9 @@ function settingsActionState(): SettingsActionState {
     clawHubConfig: clawHubConfig(),
     clawHubProbePayloads: [],
     clawHubSavePayloads: [],
+    commandCatalog: commandCatalog(),
+    commandCreatePayloads: [],
+    commandUpdatePayloads: [],
     environmentDeleteRequests: [],
     environmentSavePayloads: [],
     environmentVariables: environmentVariables(),
@@ -1982,6 +2189,21 @@ function settingsActionState(): SettingsActionState {
     hooksConfig: hooksConfig(),
     hooksSavePayloads: [],
     hooksValidatePayloads: [],
+    githubConfig: githubConfig(),
+    githubProbePayloads: [],
+    githubRevealCount: 0,
+    githubSavePayloads: [],
+    githubTunnelStartPayloads: [],
+    githubTunnelStatus: githubTunnelStatus("active"),
+    githubTunnelStopPayloads: [],
+    githubWebhookProbePayloads: [],
+    mcpAddPayloads: [],
+    mcpEnablePayloads: [],
+    mcpRefreshToolRequests: [],
+    mcpReloadCount: 0,
+    mcpServers: mcpServers(),
+    mcpTestRequests: [],
+    mcpUpdatePayloads: [],
     modelCatalogRefreshCount: 0,
     modelProfileReloadCount: 0,
     modelProfileSavePayloads: [],
@@ -2153,6 +2375,120 @@ async function handleSettingsActionApi(
     await context.fulfillJson([
       { root_path: "C:/repo", workspace_id: "workspace-1" },
     ]);
+    return true;
+  }
+  if (method === "GET" && path === "/system/commands:catalog") {
+    await context.fulfillJson(state.commandCatalog);
+    return true;
+  }
+  if (method === "PUT" && path === "/system/commands") {
+    const payload = readJsonBody(context);
+    state.commandUpdatePayloads.push(payload);
+    updateCommandCatalog(state, payload);
+    await context.fulfillJson({ command: payload, status: "ok" });
+    return true;
+  }
+  if (method === "POST" && path === "/system/commands") {
+    const payload = readJsonBody(context);
+    state.commandCreatePayloads.push(payload);
+    createCommandInCatalog(state, payload);
+    await context.fulfillJson({ command: payload, status: "ok" });
+    return true;
+  }
+  if (method === "GET" && path === "/mcp/servers") {
+    await context.fulfillJson(state.mcpServers);
+    return true;
+  }
+  if (method === "POST" && path === "/mcp/servers") {
+    const payload = readJsonBody(context);
+    state.mcpAddPayloads.push(payload);
+    state.mcpServers = [
+      ...state.mcpServers,
+      {
+        discovery_status: "pending",
+        enabled: true,
+        name: String(payload.name ?? "new-server"),
+        source: "app",
+        tool_count: 0,
+        transport: "stdio",
+      },
+    ];
+    await context.fulfillJson({
+      config_path: "C:/config/mcp.json",
+      server: state.mcpServers.at(-1),
+    });
+    return true;
+  }
+  if (method === "POST" && path === "/system/configs/mcp:reload") {
+    state.mcpReloadCount += 1;
+    await context.fulfillJson({ status: "ok" });
+    return true;
+  }
+  if (path.startsWith("/mcp/servers/")) {
+    const handled = await handleMcpApi(context, state, path);
+    if (handled) {
+      return true;
+    }
+  }
+  if (method === "GET" && path === "/system/configs/github") {
+    await context.fulfillJson(state.githubConfig);
+    return true;
+  }
+  if (method === "POST" && path === "/system/configs/github:reveal") {
+    state.githubRevealCount += 1;
+    await context.fulfillJson({ token: "ghp_saved" });
+    return true;
+  }
+  if (method === "PUT" && path === "/system/configs/github") {
+    const payload = readJsonBody(context);
+    state.githubSavePayloads.push(payload);
+    state.githubConfig = { ...state.githubConfig, ...payload };
+    await context.fulfillJson({ status: "ok" });
+    return true;
+  }
+  if (method === "POST" && path === "/system/configs/github:probe") {
+    const payload = readJsonBody(context);
+    state.githubProbePayloads.push(payload);
+    await context.fulfillJson({
+      latency_ms: 21,
+      ok: true,
+      username: "octocat",
+    });
+    return true;
+  }
+  if (method === "POST" && path === "/system/configs/github/webhook:probe") {
+    const payload = readJsonBody(context);
+    state.githubWebhookProbePayloads.push(payload);
+    await context.fulfillJson({
+      callback_url: "https://hooks.example/api/triggers/github/deliveries",
+      latency_ms: 34,
+      ok: true,
+      status_code: 200,
+    });
+    return true;
+  }
+  if (method === "GET" && path === "/system/configs/github/webhook/tunnel") {
+    await context.fulfillJson(state.githubTunnelStatus);
+    return true;
+  }
+  if (
+    method === "POST" &&
+    path === "/system/configs/github/webhook/tunnel:stop"
+  ) {
+    const payload = readJsonBody(context);
+    state.githubTunnelStopPayloads.push(payload);
+    state.githubTunnelStatus = githubTunnelStatus("inactive");
+    await context.fulfillJson(state.githubTunnelStatus);
+    return true;
+  }
+  if (
+    method === "POST" &&
+    path === "/system/configs/github/webhook/tunnel:start"
+  ) {
+    const payload = readJsonBody(context);
+    state.githubTunnelStartPayloads.push(payload);
+    state.githubTunnelStatus = githubTunnelStatus("active");
+    await context.fulfillJson(state.githubTunnelStatus);
     return true;
   }
   if (method === "GET" && path === "/roles/configs") {
@@ -2633,6 +2969,184 @@ function readJsonBody(context: MockApiRouteContext): Record<string, unknown> {
   return parsed as Record<string, unknown>;
 }
 
+async function handleMcpApi(
+  context: MockApiRouteContext,
+  state: SettingsActionState,
+  path: string,
+): Promise<boolean> {
+  const method = context.method;
+  const pathAfterServerPrefix = path.replace("/mcp/servers/", "");
+  if (method === "GET" && pathAfterServerPrefix.endsWith("/tools")) {
+    const serverName = decodeURIComponent(
+      pathAfterServerPrefix.replace("/tools", ""),
+    );
+    await context.fulfillJson(mcpToolsSummary(serverName));
+    return true;
+  }
+  if (method === "POST" && pathAfterServerPrefix.endsWith("/tools:refresh")) {
+    const serverName = decodeURIComponent(
+      pathAfterServerPrefix.replace("/tools:refresh", ""),
+    );
+    state.mcpRefreshToolRequests.push(serverName);
+    await context.fulfillJson({
+      ...mcpToolsSummary(serverName),
+      tools: [
+        { description: "Read a file", name: "read_file" },
+        { description: "Write a file", name: "write_file" },
+        { description: "List files", name: "list_files" },
+      ],
+    });
+    return true;
+  }
+  if (method === "POST" && pathAfterServerPrefix.endsWith("/test")) {
+    const serverName = decodeURIComponent(
+      pathAfterServerPrefix.replace("/test", ""),
+    );
+    state.mcpTestRequests.push(serverName);
+    await context.fulfillJson({
+      enabled: true,
+      ok: true,
+      server: serverName,
+      source: "app",
+      tool_count: 2,
+      tools: [
+        { description: "Read a file", name: "read_file" },
+        { description: "Write a file", name: "write_file" },
+      ],
+      transport: "stdio",
+    });
+    return true;
+  }
+  if (method === "PUT" && pathAfterServerPrefix.endsWith("/enabled")) {
+    const serverName = decodeURIComponent(
+      pathAfterServerPrefix.replace("/enabled", ""),
+    );
+    const payload = readJsonBody(context);
+    const enabled = payload.enabled === true;
+    state.mcpEnablePayloads.push({ enabled, name: serverName });
+    state.mcpServers = state.mcpServers.map((server) =>
+      server.name === serverName
+        ? {
+            ...server,
+            discovery_status: enabled ? "ready" : "disabled",
+            enabled,
+          }
+        : server,
+    );
+    await context.fulfillJson(
+      state.mcpServers.find((server) => server.name === serverName) ?? {},
+    );
+    return true;
+  }
+  if (method === "GET") {
+    const serverName = decodeURIComponent(pathAfterServerPrefix);
+    await context.fulfillJson(mcpServerConfig(serverName, state));
+    return true;
+  }
+  if (method === "PUT") {
+    const serverName = decodeURIComponent(pathAfterServerPrefix);
+    const payload = readJsonBody(context);
+    state.mcpUpdatePayloads.push({ name: serverName, payload });
+    state.mcpServers = state.mcpServers.map((server) =>
+      server.name === serverName
+        ? {
+            ...server,
+            discovery_status: "pending",
+            enabled: true,
+            tool_count: 0,
+          }
+        : server,
+    );
+    await context.fulfillJson(mcpServerConfig(serverName, state, payload.config));
+    return true;
+  }
+  return false;
+}
+
+function updateCommandCatalog(
+  state: SettingsActionState,
+  payload: Record<string, unknown>,
+): void {
+  const sourcePath = String(payload.source_path ?? "");
+  const workspaces = Array.isArray(state.commandCatalog.workspaces)
+    ? state.commandCatalog.workspaces
+    : [];
+  state.commandCatalog = {
+    ...state.commandCatalog,
+    workspaces: workspaces.map((workspace) => {
+      if (
+        workspace === null ||
+        typeof workspace !== "object" ||
+        Array.isArray(workspace)
+      ) {
+        return workspace;
+      }
+      const workspaceRecord = workspace as Record<string, unknown>;
+      const commands = Array.isArray(workspaceRecord.commands)
+        ? workspaceRecord.commands
+        : [];
+      return {
+        ...workspaceRecord,
+        commands: commands.map((command) => {
+          if (
+            command !== null &&
+            typeof command === "object" &&
+            !Array.isArray(command) &&
+            (command as Record<string, unknown>).source_path === sourcePath
+          ) {
+            return { ...command as Record<string, unknown>, ...payload };
+          }
+          return command;
+        }),
+      };
+    }),
+  };
+}
+
+function createCommandInCatalog(
+  state: SettingsActionState,
+  payload: Record<string, unknown>,
+): void {
+  const workspaces = Array.isArray(state.commandCatalog.workspaces)
+    ? state.commandCatalog.workspaces
+    : [];
+  const newCommand = {
+    aliases: payload.aliases ?? [],
+    allowed_modes: payload.allowed_modes ?? ["normal"],
+    argument_hint: payload.argument_hint ?? "",
+    description: payload.description ?? "",
+    discovery_source: "project_relay_teams",
+    name: payload.name,
+    scope: payload.scope ?? "project",
+    source_path: `C:/repo/.relay-teams/commands/${String(
+      payload.relative_path ?? "new-command.md",
+    )}`,
+    template: payload.template ?? "",
+  };
+  state.commandCatalog = {
+    ...state.commandCatalog,
+    workspaces: workspaces.map((workspace) => {
+      if (
+        workspace === null ||
+        typeof workspace !== "object" ||
+        Array.isArray(workspace)
+      ) {
+        return workspace;
+      }
+      const workspaceRecord = workspace as Record<string, unknown>;
+      if (workspaceRecord.workspace_id !== payload.workspace_id) {
+        return workspace;
+      }
+      return {
+        ...workspaceRecord,
+        commands: [...(Array.isArray(workspaceRecord.commands)
+          ? workspaceRecord.commands
+          : []), newCommand],
+      };
+    }),
+  };
+}
+
 function systemConfigResponse(): Record<string, unknown> {
   return {
     skills: {
@@ -2963,6 +3477,128 @@ function webConfig(): Record<string, unknown> {
 function clawHubConfig(): Record<string, unknown> {
   return {
     token: "saved-clawhub-browser-token",
+  };
+}
+
+function commandCatalog(): Record<string, unknown> {
+  return {
+    app_commands: [
+      {
+        aliases: ["g"],
+        allowed_modes: ["normal"],
+        argument_hint: "",
+        description: "Global command",
+        discovery_source: "app",
+        name: "global",
+        scope: "app",
+        source_path: "C:/config/commands/global.md",
+        template: "Global {{args}}",
+      },
+    ],
+    workspaces: [
+      {
+        can_create_commands: true,
+        commands: [
+          {
+            aliases: ["opsx/propose"],
+            allowed_modes: ["normal"],
+            argument_hint: "<change-id>",
+            description: "Create an OpenSpec proposal",
+            discovery_source: "project_claude",
+            name: "opsx:propose",
+            scope: "project",
+            source_path: "C:/repo/.claude/commands/opsx/propose.md",
+            template: "Propose {{args}}",
+          },
+        ],
+        root_path: "C:/repo",
+        workspace_id: "workspace-1",
+      },
+    ],
+  };
+}
+
+function mcpServers(): Record<string, unknown>[] {
+  return [
+    {
+      discovery_status: "ready",
+      enabled: true,
+      last_checked_at: "2026-06-24T00:00:00Z",
+      name: "filesystem",
+      source: "app",
+      tool_count: 2,
+      transport: "stdio",
+    },
+    {
+      discovery_status: "disabled",
+      enabled: false,
+      name: "github",
+      source: "plugin",
+      tool_count: 0,
+      transport: "streamable-http",
+    },
+  ];
+}
+
+function mcpToolsSummary(serverName: string): Record<string, unknown> {
+  return {
+    enabled: serverName === "filesystem",
+    last_checked_at: "2026-06-24T00:00:00Z",
+    server: serverName,
+    source: serverName === "filesystem" ? "app" : "plugin",
+    status: serverName === "filesystem" ? "ready" : "disabled",
+    tools:
+      serverName === "filesystem"
+        ? [
+            { description: "Read a file", name: "read_file" },
+            { description: "Write a file", name: "write_file" },
+          ]
+        : [],
+    transport: serverName === "filesystem" ? "stdio" : "streamable-http",
+  };
+}
+
+function mcpServerConfig(
+  serverName: string,
+  state: SettingsActionState,
+  configOverride?: unknown,
+): Record<string, unknown> {
+  const server =
+    state.mcpServers.find((candidate) => candidate.name === serverName) ??
+    {
+      discovery_status: "ready",
+      enabled: true,
+      name: serverName,
+      source: "app",
+      tool_count: 0,
+      transport: "stdio",
+    };
+  const config =
+    configOverride !== undefined
+      ? configOverride
+      : {
+          args: ["server.js"],
+          command: "node",
+          env: {
+            MCP_LOG: "info",
+          },
+          transport: "stdio",
+        };
+  return { config, server };
+}
+
+function githubConfig(): Record<string, unknown> {
+  return {
+    token_configured: true,
+    webhook_base_url: "https://hooks.example",
+  };
+}
+
+function githubTunnelStatus(status: "active" | "inactive"): Record<string, unknown> {
+  return {
+    provider: "localhost.run",
+    public_url: status === "active" ? "https://relay.localhost.run" : null,
+    status,
   };
 }
 

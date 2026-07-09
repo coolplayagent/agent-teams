@@ -39,6 +39,11 @@ interface SettingsActionState {
     system: Record<string, unknown>[];
   };
   failNextWebSave: boolean;
+  feishuGatewayAccounts: Record<string, unknown>[];
+  feishuGatewayDisableRequests: string[];
+  feishuGatewayReloadCount: number;
+  feishuGatewayUpdatePayloads: Record<string, unknown>[];
+  feishuGatewayUpdateRequests: string[];
   failNextHooksValidateDetail: Record<string, unknown>[] | null;
   hooksConfig: Record<string, unknown>;
   hooksSavePayloads: Record<string, unknown>[];
@@ -73,6 +78,12 @@ interface SettingsActionState {
   uiLanguageSavePayloads: Record<string, unknown>[];
   webConfig: Record<string, unknown>;
   webSavePayloads: Record<string, unknown>[];
+  wechatGatewayAccounts: Record<string, unknown>[];
+  wechatGatewayLoginStartCount: number;
+  wechatGatewayLoginWaitPayloads: Record<string, unknown>[];
+  wechatGatewayReloadCount: number;
+  wechatGatewayUpdatePayloads: Record<string, unknown>[];
+  wechatGatewayUpdateRequests: string[];
 }
 
 test("keeps Settings open after outside drag and mask click", async ({
@@ -574,6 +585,139 @@ test("creates and deletes Agent Runtime configs from the System secondary settin
     );
     await page.screenshot({
       path: screenshotPath("v2-agent-runtime-create-delete.png", SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("manages Gateway accounts from the System secondary settings page", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state = settingsActionState();
+  try {
+    await installShellState(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleSettingsActionApi(context, state),
+      sessionTitle: "TS gateway settings",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    const settings = await openSettingsDialog(page);
+    const sections = settings.getByRole("navigation", {
+      name: "Settings sections",
+    });
+    await expect(sections.getByRole("button", { name: "Gateway" }))
+      .toHaveCount(0);
+
+    await openSystemSettingsPage(settings, "Gateway");
+    await expect(settings.getByRole("heading", { name: "Gateway" })).toBeVisible();
+    await expect(settings.getByText("Feishu Main")).toBeVisible();
+    await expect(settings.getByText("WeChat Main")).toBeVisible();
+    await expect(settings.getByText("Relay Bot · workspace-1 · mention_only"))
+      .toBeVisible();
+    await expect(settings.getByText("workspace-1 · desktop · Running"))
+      .toBeVisible();
+    expect(state.requestedPaths).toContain("/gateway/feishu/accounts");
+    expect(state.requestedPaths).toContain("/gateway/wechat/accounts");
+
+    await settings.getByRole("button", { name: "Reload Feishu gateway" }).click();
+    await expect.poll(() => state.feishuGatewayReloadCount).toBe(1);
+    await settings.getByRole("button", { name: "Reload WeChat gateway" }).click();
+    await expect.poll(() => state.wechatGatewayReloadCount).toBe(1);
+
+    await settings.getByRole("button", { name: "Connect WeChat" }).click();
+    await expect.poll(() => state.wechatGatewayLoginStartCount).toBe(1);
+    await expect.poll(() => state.wechatGatewayLoginWaitPayloads).toEqual([
+      { session_key: "wechat-session", timeout_ms: 480000 },
+    ]);
+    await expect(settings.getByText("Connected.")).toBeVisible();
+
+    const feishuRow = settings.locator(".at-trigger-row").filter({
+      hasText: "Feishu Main",
+    });
+    await feishuRow.getByRole("button", { name: "Disable" }).click();
+    await expect.poll(() => state.feishuGatewayDisableRequests)
+      .toEqual(["feishu-main"]);
+    const disabledFeishuRow = settings.locator(".at-trigger-row").filter({
+      hasText: "Feishu Main",
+    });
+    await expect(disabledFeishuRow).toContainText("Disabled");
+
+    await disabledFeishuRow.locator(".at-trigger-row-main").click();
+    await expect(settings.getByText("Account ID")).toBeVisible();
+    await expect(
+      settings.locator(".at-settings-detail-page"),
+    ).toContainText("feishu-main");
+    await settings.getByRole("textbox", { name: "* Name" })
+      .fill("feishu-updated");
+    await settings.getByRole("textbox", { name: "* App name" })
+      .fill("Relay Bot Updated");
+    await settings.getByRole("button", { name: "Save" }).click();
+    await expect.poll(() => state.feishuGatewayUpdateRequests)
+      .toEqual(["feishu-main"]);
+    expect(state.feishuGatewayUpdatePayloads.at(-1)).toMatchObject({
+      display_name: "Feishu Main",
+      name: "feishu-updated",
+      source_config: {
+        app_id: "cli_app_id",
+        app_name: "Relay Bot Updated",
+        provider: "feishu",
+        trigger_rule: "mention_only",
+      },
+      target_config: {
+        normal_root_role_id: "main",
+        orchestration_preset_id: null,
+        session_mode: "normal",
+        shell_safety_policy_enabled: true,
+        workspace_id: "workspace-1",
+        yolo: true,
+      },
+    });
+    expect(state.feishuGatewayUpdatePayloads.at(-1))
+      .not.toHaveProperty("secret_config");
+
+    await expect(settings.getByText("WeChat Main")).toBeVisible();
+    const wechatRow = settings.locator(".at-trigger-row").filter({
+      hasText: "WeChat Main",
+    });
+    await wechatRow.locator(".at-trigger-row-main").click();
+    await expect(
+      settings.getByText("WeChat gateway account and session target."),
+    ).toBeVisible();
+    await settings.getByLabel("Display name").fill("WeChat Updated");
+    await settings.getByLabel("Route tag").fill("mobile");
+    await settings.getByRole("button", { name: "Save" }).click();
+    await expect.poll(() => state.wechatGatewayUpdateRequests)
+      .toEqual(["wechat-main"]);
+    expect(state.wechatGatewayUpdatePayloads.at(-1)).toMatchObject({
+      base_url: "http://127.0.0.1:5900",
+      cdn_base_url: "http://127.0.0.1:5901",
+      display_name: "WeChat Updated",
+      normal_root_role_id: "main",
+      orchestration_preset_id: null,
+      route_tag: "mobile",
+      session_mode: "normal",
+      thinking: {
+        enabled: false,
+        effort: null,
+      },
+      workspace_id: "workspace-1",
+      yolo: true,
+    });
+
+    await expect(page.locator(".ant-message-notice")).toHaveCount(0, {
+      timeout: 8000,
+    });
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(page, "v2 gateway settings should stay framed");
+    await expectComposerControlsDoNotOverlap(page);
+    await page.screenshot({
+      path: screenshotPath("v2-gateway-settings-actions.png", SCREENSHOT_FOLDER),
     });
   } finally {
     await appServer.close();
@@ -1830,6 +1974,11 @@ function settingsActionState(): SettingsActionState {
     environmentVariables: environmentVariables(),
     failNextHooksValidateDetail: null,
     failNextWebSave: false,
+    feishuGatewayAccounts: feishuGatewayAccounts(),
+    feishuGatewayDisableRequests: [],
+    feishuGatewayReloadCount: 0,
+    feishuGatewayUpdatePayloads: [],
+    feishuGatewayUpdateRequests: [],
     hooksConfig: hooksConfig(),
     hooksSavePayloads: [],
     hooksValidatePayloads: [],
@@ -1867,6 +2016,12 @@ function settingsActionState(): SettingsActionState {
     uiLanguageSavePayloads: [],
     webConfig: webConfig(),
     webSavePayloads: [],
+    wechatGatewayAccounts: wechatGatewayAccounts(),
+    wechatGatewayLoginStartCount: 0,
+    wechatGatewayLoginWaitPayloads: [],
+    wechatGatewayReloadCount: 0,
+    wechatGatewayUpdatePayloads: [],
+    wechatGatewayUpdateRequests: [],
   };
 }
 
@@ -1992,6 +2147,12 @@ async function handleSettingsActionApi(
   }
   if (method === "GET" && path === "/roles:options") {
     await context.fulfillJson(roleOptions());
+    return true;
+  }
+  if (method === "GET" && path === "/workspaces") {
+    await context.fulfillJson([
+      { root_path: "C:/repo", workspace_id: "workspace-1" },
+    ]);
     return true;
   }
   if (method === "GET" && path === "/roles/configs") {
@@ -2180,6 +2341,127 @@ async function handleSettingsActionApi(
   }
   if (method === "GET" && path === "/system/configs/hooks/runtime") {
     await context.fulfillJson(hooksRuntimeResponse());
+    return true;
+  }
+  if (method === "GET" && path === "/gateway/feishu/accounts") {
+    await context.fulfillJson(state.feishuGatewayAccounts);
+    return true;
+  }
+  if (method === "POST" && path === "/gateway/feishu/reload") {
+    state.feishuGatewayReloadCount += 1;
+    await context.fulfillJson({ status: "ok" });
+    return true;
+  }
+  if (
+    method === "POST" &&
+    path.startsWith("/gateway/feishu/accounts/") &&
+    path.endsWith(":disable")
+  ) {
+    const accountId = decodeURIComponent(
+      path
+        .replace("/gateway/feishu/accounts/", "")
+        .replace(":disable", ""),
+    );
+    state.feishuGatewayDisableRequests.push(accountId);
+    state.feishuGatewayAccounts = state.feishuGatewayAccounts.map((account) =>
+      account.account_id === accountId ? { ...account, status: "disabled" } : account,
+    );
+    await context.fulfillJson(
+      state.feishuGatewayAccounts.find((account) => account.account_id === accountId) ??
+        {},
+    );
+    return true;
+  }
+  if (
+    method === "PATCH" &&
+    path.startsWith("/gateway/feishu/accounts/")
+  ) {
+    const accountId = decodeURIComponent(
+      path.replace("/gateway/feishu/accounts/", ""),
+    );
+    const payload = readJsonBody(context);
+    state.feishuGatewayUpdateRequests.push(accountId);
+    state.feishuGatewayUpdatePayloads.push(payload);
+    state.feishuGatewayAccounts = state.feishuGatewayAccounts.map((account) =>
+      account.account_id === accountId
+        ? {
+            ...account,
+            display_name: payload.display_name ?? account.display_name,
+            name: payload.name ?? account.name,
+            source_config: payload.source_config ?? account.source_config,
+            target_config: payload.target_config ?? account.target_config,
+            updated_at: "2026-06-26T10:00:00Z",
+          }
+        : account,
+    );
+    await context.fulfillJson(
+      state.feishuGatewayAccounts.find((account) => account.account_id === accountId) ??
+        {},
+    );
+    return true;
+  }
+  if (method === "GET" && path === "/gateway/wechat/accounts") {
+    await context.fulfillJson(state.wechatGatewayAccounts);
+    return true;
+  }
+  if (method === "POST" && path === "/gateway/wechat/reload") {
+    state.wechatGatewayReloadCount += 1;
+    await context.fulfillJson({ status: "ok" });
+    return true;
+  }
+  if (method === "POST" && path === "/gateway/wechat/login/start") {
+    state.wechatGatewayLoginStartCount += 1;
+    await context.fulfillJson({
+      message: "Scan the QR code.",
+      qr_code_url: "data:image/png;base64,abc",
+      session_key: "wechat-session",
+    });
+    return true;
+  }
+  if (method === "POST" && path === "/gateway/wechat/login/wait") {
+    const payload = readJsonBody(context);
+    state.wechatGatewayLoginWaitPayloads.push(payload);
+    await context.fulfillJson({
+      account_id: "wechat-main",
+      connected: true,
+      message: "Connected.",
+    });
+    return true;
+  }
+  if (
+    method === "PATCH" &&
+    path.startsWith("/gateway/wechat/accounts/")
+  ) {
+    const accountId = decodeURIComponent(
+      path.replace("/gateway/wechat/accounts/", ""),
+    );
+    const payload = readJsonBody(context);
+    state.wechatGatewayUpdateRequests.push(accountId);
+    state.wechatGatewayUpdatePayloads.push(payload);
+    state.wechatGatewayAccounts = state.wechatGatewayAccounts.map((account) =>
+      account.account_id === accountId
+        ? {
+            ...account,
+            base_url: payload.base_url ?? account.base_url,
+            cdn_base_url: payload.cdn_base_url ?? account.cdn_base_url,
+            display_name: payload.display_name ?? account.display_name,
+            normal_root_role_id:
+              payload.normal_root_role_id ?? account.normal_root_role_id,
+            orchestration_preset_id:
+              payload.orchestration_preset_id ?? account.orchestration_preset_id,
+            route_tag: payload.route_tag ?? account.route_tag,
+            session_mode: payload.session_mode ?? account.session_mode,
+            thinking: payload.thinking ?? account.thinking,
+            updated_at: "2026-06-26T10:00:00Z",
+            workspace_id: payload.workspace_id ?? account.workspace_id,
+            yolo: payload.yolo ?? account.yolo,
+          }
+        : account,
+    );
+    await context.fulfillJson(
+      state.wechatGatewayAccounts.find((account) => account.account_id === accountId) ??
+        {},
+    );
     return true;
   }
   if (method === "GET" && path === "/system/configs/agent-runtimes") {
@@ -2391,6 +2673,69 @@ function environmentVariables(): {
   };
 }
 
+function feishuGatewayAccounts(): Record<string, unknown>[] {
+  return [
+    {
+      account_id: "feishu-main",
+      created_at: "2026-06-24T00:00:00Z",
+      display_name: "Feishu Main",
+      name: "feishu-main",
+      secret_status: {
+        app_secret_configured: true,
+      },
+      source_config: {
+        app_id: "cli_app_id",
+        app_name: "Relay Bot",
+        provider: "feishu",
+        trigger_rule: "mention_only",
+      },
+      status: "enabled",
+      target_config: {
+        normal_root_role_id: "main",
+        orchestration_preset_id: null,
+        session_mode: "normal",
+        shell_safety_policy_enabled: true,
+        thinking: {
+          enabled: false,
+          effort: null,
+        },
+        workspace_id: "workspace-1",
+        yolo: true,
+      },
+      updated_at: "2026-06-24T00:00:00Z",
+    },
+  ];
+}
+
+function wechatGatewayAccounts(): Record<string, unknown>[] {
+  return [
+    {
+      account_id: "wechat-main",
+      base_url: "http://127.0.0.1:5900",
+      cdn_base_url: "http://127.0.0.1:5901",
+      created_at: "2026-06-24T00:00:00Z",
+      display_name: "WeChat Main",
+      last_error: null,
+      last_event_at: null,
+      last_inbound_at: null,
+      last_login_at: "2026-06-24T00:00:00Z",
+      last_outbound_at: null,
+      normal_root_role_id: "main",
+      orchestration_preset_id: null,
+      remote_user_id: "wxid_main",
+      route_tag: "desktop",
+      running: true,
+      session_mode: "normal",
+      status: "enabled",
+      sync_cursor: "",
+      thinking: { enabled: false, effort: null },
+      updated_at: "2026-06-24T00:00:00Z",
+      workspace_id: "workspace-1",
+      yolo: true,
+    },
+  ];
+}
+
 function environmentPathParts(path: string): { key: string; scope: string } {
   const [scope = "", ...keyParts] = path
     .replace("/system/configs/environment-variables/", "")
@@ -2428,7 +2773,10 @@ function roleOptions(): Record<string, unknown> {
   return {
     coordinator_role_id: null,
     main_agent_role_id: "MainAgent",
-    normal_mode_roles: [{ name: "Main Agent", role_id: "MainAgent" }],
+    normal_mode_roles: [
+      { name: "Main Agent", role_id: "MainAgent" },
+      { name: "Main", role_id: "main" },
+    ],
     subagent_roles: [{ name: "Reviewer", role_id: "reviewer" }],
   };
 }

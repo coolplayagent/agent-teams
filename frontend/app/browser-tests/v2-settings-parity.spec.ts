@@ -180,6 +180,88 @@ test("surveys V1 settings sections and nested system pages from the browser", as
   }
 });
 
+test("shows System status loading and error states without flattening secondary pages", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state = settingsParityState();
+  let systemStatusRequests = 0;
+  let resolveStatusRequest: () => void = () => undefined;
+  let resolveStatusResponse: () => void = () => undefined;
+  const statusRequestStarted = new Promise<void>((resolve) => {
+    resolveStatusRequest = resolve;
+  });
+  const statusResponseReleased = new Promise<void>((resolve) => {
+    resolveStatusResponse = resolve;
+  });
+  try {
+    await installShellState(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: async (context) => {
+        if (context.method === "GET" && context.path === "/system/configs") {
+          systemStatusRequests += 1;
+          if (systemStatusRequests === 1) {
+            resolveStatusRequest();
+            await statusResponseReleased;
+          }
+          await context.fulfillJson(
+            { detail: "System status unavailable for parity." },
+            500,
+          );
+          return true;
+        }
+        return handleSettingsParityApi(context, state);
+      },
+      sessionTitle: "TS system status states",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    const settings = await openSettingsDialog(page);
+    const sections = settings.getByRole("navigation", {
+      name: "Settings sections",
+    });
+
+    await sections.getByRole("button", { name: "System" }).click();
+    await statusRequestStarted;
+    await expect(settings.getByRole("heading", { name: "System" })).toBeVisible();
+    await expect(settings.locator(".at-settings-section .ant-skeleton"))
+      .toBeVisible();
+    await expect
+      .poll(async () => systemPageLabels(settings))
+      .toEqual([...SECONDARY_SYSTEM_PAGES]);
+    await page.screenshot({
+      path: screenshotPath("v2-settings-system-status-loading.png", SCREENSHOT_FOLDER),
+    });
+
+    resolveStatusResponse();
+    await expect(settings.getByText("System status unavailable for parity."))
+      .toBeVisible();
+    await expect(settings.locator(".at-settings-section .ant-skeleton"))
+      .toHaveCount(0);
+    await expect
+      .poll(async () => systemPageLabels(settings))
+      .toEqual([...SECONDARY_SYSTEM_PAGES]);
+    for (const secondaryLabel of SECONDARY_SYSTEM_PAGES) {
+      await expect(sections.getByRole("button", { name: secondaryLabel }))
+        .toHaveCount(0);
+    }
+    expect(systemStatusRequests).toBeGreaterThanOrEqual(1);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "v2 System status loading and error states should stay framed",
+    );
+    await page.screenshot({
+      path: screenshotPath("v2-settings-system-status-error.png", SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
 test("pairs V1 General notification controls with the V2 Notifications page", async ({
   page,
 }) => {

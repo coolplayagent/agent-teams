@@ -9859,3 +9859,18 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent matrix scan, System secondary action coverage, screenshot-quality correction, browser verification, screenshot inspection, and matrix update completed for this slice. This does not claim `SET-14` Verified, formal V1 visual/DOM pairing, System loading/error-state coverage, reviewer-subagent sign-off, or final V2 frontend completion.
+
+## 2026-07-10 System Status Loading And Error Evidence Slice
+
+### Scope
+- Continued `SET-14` after the System secondary action pass and targeted the remaining browser loading/error-state evidence for the System status request.
+- Added a packed browser scenario that delays `/system/configs` after opening Settings > System, proves the status area shows a skeleton while the secondary System page launchers remain visible, then returns a 500 with a concrete error message.
+- The error-state assertion verifies the inline alert replaces the skeleton, the System secondary launchers are still available, and MCP/Commands/GitHub remain absent from first-level Settings navigation.
+
+### Verification
+- `npm run test:browser -- v2-settings-parity.spec.ts --project=chromium -g "System status loading"` passed.
+- `npm run test:browser -- v2-settings-parity.spec.ts --project=chromium` passed with 5 Chromium tests.
+- Screenshot inspection reviewed `.tmp/frontend-v2-ts-settings-parity/v2-settings-system-status-loading.png` and `.tmp/frontend-v2-ts-settings-parity/v2-settings-system-status-error.png`.
+
+### Reviewer
+- Main-agent matrix scan, System status loading/error browser coverage, screenshot inspection, and matrix update completed for this slice. This does not claim `SET-14` Verified, formal V1 visual/DOM pairing, reviewer-subagent sign-off, or final V2 frontend completion.

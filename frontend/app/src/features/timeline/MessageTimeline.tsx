@@ -363,12 +363,16 @@ export function MessageTimeline({
     () =>
       dropExactTextRows(
         mergeTerminalRuntimeTextRowsIntoPersistedAnswers(
-          mergeToolRowsByCallId(
-            mergeRuntimeThinkingRowsIntoHydratedRows(
-              displayPersistedRows,
-              runtimeRows.filter(timelineRowHasRenderableContent),
+          dropDuplicateFinalPartsFromWorkRows(
+            dropDuplicateWorkRowsAfterToolMerge(
+              mergeToolRowsByCallId(
+                mergeRuntimeThinkingRowsIntoHydratedRows(
+                  displayPersistedRows,
+                  runtimeRows.filter(timelineRowHasRenderableContent),
+                ),
+                { dedupeNonToolRows: false },
+              ),
             ),
-            { dedupeNonToolRows: false },
           ),
         ),
         suppressExactText,
@@ -2535,6 +2539,64 @@ function dropDuplicateRowsAfterToolMerge(rows: TimelineRow[]): TimelineRow[] {
   return dedupedRows;
 }
 
+function dropDuplicateWorkRowsAfterToolMerge(rows: TimelineRow[]): TimelineRow[] {
+  const seenWorkContent = new Set<string>();
+  const dedupedRows: TimelineRow[] = [];
+  for (const row of rows) {
+    const workDedupeKey = timelineRowWorkContentDedupeKey(row);
+    if (workDedupeKey !== null && seenWorkContent.has(workDedupeKey)) {
+      const remainingParts = row.parts.filter((part) => part.kind !== "thinking");
+      if (remainingParts.length === 0 || remainingParts.every(timelinePartIsWork)) {
+        continue;
+      }
+      const dedupedRow = rowWithParts(row, remainingParts, "deduped-work");
+      if (timelineRowHasRenderableContent(dedupedRow)) {
+        dedupedRows.push(dedupedRow);
+      }
+      continue;
+    }
+    dedupedRows.push(row);
+    if (workDedupeKey !== null) {
+      seenWorkContent.add(workDedupeKey);
+    }
+  }
+  return dedupedRows;
+}
+
+function dropDuplicateFinalPartsFromWorkRows(rows: TimelineRow[]): TimelineRow[] {
+  const standaloneFinalKeys = new Set<string>();
+  for (const row of rows) {
+    if (timelineRowHasWorkPart(row)) {
+      continue;
+    }
+    for (const key of timelineRowFinalTextDedupeKeys(row)) {
+      standaloneFinalKeys.add(key);
+    }
+  }
+  if (standaloneFinalKeys.size === 0) {
+    return rows;
+  }
+  return rows.flatMap((row) => {
+    if (!timelineRowHasWorkPart(row)) {
+      return [row];
+    }
+    const remainingParts = row.parts.filter((part) => {
+      if (part.kind !== "text") {
+        return true;
+      }
+      return !standaloneFinalKeys.has(timelineRowPartTextDedupeKey(row, part.text));
+    });
+    if (remainingParts.length === row.parts.length) {
+      return [row];
+    }
+    if (remainingParts.length === 0) {
+      return [];
+    }
+    const dedupedRow = rowWithParts(row, remainingParts, "deduped-final");
+    return timelineRowHasRenderableContent(dedupedRow) ? [dedupedRow] : [];
+  });
+}
+
 function timelineRowNonToolContentDedupeKey(row: TimelineRow): string | null {
   const runId = row.runId?.trim() ?? "";
   if (runId.length === 0) {
@@ -2543,6 +2605,47 @@ function timelineRowNonToolContentDedupeKey(row: TimelineRow): string | null {
   const text = normalizedTimelineText(
     row.parts
       .map(timelineNonToolPartDedupeText)
+      .filter((partText) => partText.length > 0)
+      .join("\n\n"),
+  );
+  if (text.length === 0) {
+    return null;
+  }
+  return [
+    runId,
+    stableTimelineRole(row.role),
+    row.instanceId ?? "",
+    text,
+  ].join(":");
+}
+
+function timelineRowFinalTextDedupeKeys(row: TimelineRow): string[] {
+  return row.parts.flatMap((part) => {
+    if (part.kind !== "text") {
+      return [];
+    }
+    const text = normalizedTimelineText(part.text);
+    return text.length > 0 ? [timelineRowPartTextDedupeKey(row, text)] : [];
+  });
+}
+
+function timelineRowPartTextDedupeKey(row: TimelineRow, text: string): string {
+  return [
+    row.runId?.trim() ?? "",
+    stableTimelineRole(row.role),
+    row.instanceId ?? "",
+    normalizedTimelineText(text),
+  ].join(":");
+}
+
+function timelineRowWorkContentDedupeKey(row: TimelineRow): string | null {
+  const runId = row.runId?.trim() ?? "";
+  if (runId.length === 0) {
+    return null;
+  }
+  const text = normalizedTimelineText(
+    row.parts
+      .map(timelineWorkPartDedupeText)
       .filter((partText) => partText.length > 0)
       .join("\n\n"),
   );
@@ -2728,6 +2831,13 @@ function timelineNonToolPartDedupeText(part: TimelineRenderPart): string {
   }
   if (part.kind === "media") {
     return part.url;
+  }
+  return "";
+}
+
+function timelineWorkPartDedupeText(part: TimelineRenderPart): string {
+  if (part.kind === "thinking") {
+    return part.text;
   }
   return "";
 }

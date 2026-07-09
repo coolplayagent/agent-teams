@@ -3127,6 +3127,115 @@ describe("MessageTimeline", () => {
     expect(screen.getAllByText("Persisted shared answer")).toHaveLength(1);
   });
 
+  it("does not duplicate processed work when round coordinator messages mirror session history", async () => {
+    const thinkingText = "Round mirrored work plan";
+    const finalText = "Round mirrored final answer";
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        created_at: "2026-06-23T12:42:34Z",
+        message: {
+          parts: [
+            {
+              content: thinkingText,
+              part_kind: "thinking",
+            },
+            {
+              args: { path: "src/relay_teams/skills/__init__.py" },
+              part_kind: "tool-call",
+              tool_call_id: "call-round-mirror",
+              tool_name: "read",
+            },
+          ],
+        },
+        message_id: "message-mirrored-work",
+        role_id: "MainAgent",
+        run_id: "run-round-mirror",
+      },
+      {
+        created_at: "2026-06-23T12:42:35Z",
+        message: {
+          parts: [
+            {
+              content: "read complete",
+              part_kind: "tool-return",
+              tool_call_id: "call-round-mirror",
+              tool_name: "read",
+            },
+          ],
+        },
+        message_id: "message-mirrored-result",
+        role_id: "MainAgent",
+        run_id: "run-round-mirror",
+      },
+      {
+        created_at: "2026-06-23T12:42:36Z",
+        message: {
+          parts: [{ content: finalText, part_kind: "text" }],
+        },
+        message_id: "message-mirrored-final",
+        role_id: "MainAgent",
+        run_id: "run-round-mirror",
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          coordinator_messages: [
+            {
+              created_at: "2026-06-23T12:42:34Z",
+              message: {
+                parts: [
+                  {
+                    content: thinkingText,
+                    part_kind: "thinking",
+                  },
+                  {
+                    args: { path: "src/relay_teams/skills/__init__.py" },
+                    part_kind: "tool-call",
+                    tool_call_id: "call-round-mirror",
+                    tool_name: "read",
+                  },
+                  {
+                    content: "read complete",
+                    part_kind: "tool-return",
+                    tool_call_id: "call-round-mirror",
+                    tool_name: "read",
+                  },
+                  {
+                    content: finalText,
+                    part_kind: "text",
+                  },
+                ],
+              },
+              role_id: "MainAgent",
+            },
+          ],
+          created_at: "2026-06-23T12:42:33Z",
+          run_id: "run-round-mirror",
+          run_status: "completed",
+          run_user_message: "Round mirror check",
+        },
+      ],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline();
+
+    await waitFor(() =>
+      expect(container.textContent ?? "").toContain(finalText),
+    );
+    const finalArticle = Array.from(container.querySelectorAll("article.at-message"))
+      .find((article) => (article.textContent ?? "").includes(finalText));
+    expect(finalArticle).not.toBeUndefined();
+    expect(finalArticle?.closest(".at-processed-group")).toBeNull();
+    expect(container.querySelectorAll(".at-message-thinking")).toHaveLength(1);
+    expect(container.querySelectorAll(".at-message-tool")).toHaveLength(1);
+    expect(textOccurrenceCount(container.textContent ?? "", thinkingText)).toBe(1);
+    expect(textOccurrenceCount(container.textContent ?? "", finalText)).toBe(1);
+    expect(screen.getByText("Tool result: read")).not.toBeVisible();
+  });
+
   it("uses the round marker instead of duplicating the persisted user prompt row", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {

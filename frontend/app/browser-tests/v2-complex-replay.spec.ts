@@ -23,6 +23,19 @@ const THINKING_TEXT = "先确认回放顺序，再读取目标文件，最后汇
 const TOOL_RESULT_TEXT = "src/relay_teams/skills/__init__.py exists";
 const FINAL_TEXT = "复杂回放最终回答：内容顺序稳定，没有重复用户消息。";
 
+interface FinalAnswerActionMetrics {
+  actionButtonCount: number;
+  actionCount: number;
+  actionInsideProcessedGroup: boolean;
+  actionTop: number;
+  articleBottom: number;
+  articleLeft: number;
+  articleRight: number;
+  contentBottom: number;
+  contentTop: number;
+  finalTextOccurrencesInAnswerArticle: number;
+}
+
 test("replays complex history without duplicated expanded round prompt after refresh", async ({
   page,
 }) => {
@@ -42,6 +55,7 @@ test("replays complex history without duplicated expanded round prompt after ref
     await expectComplexReplayCollapsed(page);
     await expandRoundPromptAndProcessedWork(page);
     await expectComplexReplayExpanded(page);
+    await expectFinalAnswerActionsPlacedUnderAnswer(page);
     await page.screenshot({
       path: screenshotPath("v2-complex-replay-expanded-before-refresh.png", SCREENSHOT_FOLDER),
     });
@@ -52,6 +66,7 @@ test("replays complex history without duplicated expanded round prompt after ref
     await expectComplexReplayCollapsed(page);
     await expandRoundPromptAndProcessedWork(page);
     await expectComplexReplayExpanded(page);
+    await expectFinalAnswerActionsPlacedUnderAnswer(page);
 
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await expectNoDocumentScroll(
@@ -60,6 +75,9 @@ test("replays complex history without duplicated expanded round prompt after ref
     );
     await page.screenshot({
       path: screenshotPath("v2-complex-replay-expanded-after-refresh.png", SCREENSHOT_FOLDER),
+    });
+    await page.screenshot({
+      path: screenshotPath("v2-complex-replay-final-actions-placement.png", SCREENSHOT_FOLDER),
     });
   } finally {
     await appServer.close();
@@ -121,6 +139,60 @@ async function expectComplexReplayExpanded(page: Page): Promise<void> {
   await expect(processed.locator(".at-message-tool-preview"))
     .toHaveText(TOOL_RESULT_TEXT);
   await expect(processed.getByText(FINAL_TEXT)).toHaveCount(0);
+}
+
+async function expectFinalAnswerActionsPlacedUnderAnswer(page: Page): Promise<void> {
+  const finalArticle = page.locator("article.at-message").filter({ hasText: FINAL_TEXT });
+  await expect(finalArticle).toHaveCount(1);
+  await expect(finalArticle.locator(".at-message-actions")).toHaveCount(1);
+  await expect(finalArticle.locator(".at-message-actions button")).toHaveCount(2);
+
+  await expect.poll(() => finalAnswerActionMetrics(page))
+    .toMatchObject({
+      actionButtonCount: 2,
+      actionCount: 1,
+      actionInsideProcessedGroup: false,
+      finalTextOccurrencesInAnswerArticle: 1,
+    });
+  const metrics = await finalAnswerActionMetrics(page);
+  expect(metrics.actionTop).toBeGreaterThanOrEqual(metrics.contentBottom - 1);
+  expect(metrics.actionTop).toBeLessThanOrEqual(metrics.articleBottom);
+  expect(metrics.contentTop).toBeGreaterThanOrEqual(0);
+  expect(metrics.articleLeft).toBeGreaterThanOrEqual(0);
+  expect(metrics.articleRight).toBeGreaterThan(metrics.articleLeft);
+}
+
+async function finalAnswerActionMetrics(page: Page): Promise<FinalAnswerActionMetrics> {
+  return page.evaluate((finalText) => {
+    const articles = Array.from(document.querySelectorAll<HTMLElement>("article.at-message"));
+    const answerArticle = articles.find((article) =>
+      (article.textContent ?? "").includes(finalText),
+    );
+    if (answerArticle === undefined) {
+      throw new Error("Final answer article was not rendered.");
+    }
+    const content = answerArticle.querySelector<HTMLElement>(".at-message-content");
+    const actions = answerArticle.querySelector<HTMLElement>(".at-message-actions");
+    if (content === null || actions === null) {
+      throw new Error("Final answer content or actions were not rendered.");
+    }
+    const articleRect = answerArticle.getBoundingClientRect();
+    const contentRect = content.getBoundingClientRect();
+    const actionRect = actions.getBoundingClientRect();
+    return {
+      actionButtonCount: actions.querySelectorAll("button").length,
+      actionCount: answerArticle.querySelectorAll(".at-message-actions").length,
+      actionInsideProcessedGroup: actions.closest("details.at-processed-group") !== null,
+      actionTop: actionRect.top,
+      articleBottom: articleRect.bottom,
+      articleLeft: articleRect.left,
+      articleRight: articleRect.right,
+      contentBottom: contentRect.bottom,
+      contentTop: contentRect.top,
+      finalTextOccurrencesInAnswerArticle:
+        (answerArticle.textContent ?? "").split(finalText).length - 1,
+    };
+  }, FINAL_TEXT);
 }
 
 async function textOccurrenceCountInTimeline(

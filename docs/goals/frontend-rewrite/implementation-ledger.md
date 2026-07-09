@@ -10036,3 +10036,24 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - This addresses the specific “already rendered, then rebuilt once” terminal-settlement failure for `MSG-02`/`STREAM-02`. It does not claim full V2 completion, true real-provider normal-stream proof, broader orchestration/tool-heavy terminal variants, interrupted recovery, or final V1/V2 visual sign-off.
+
+## 2026-07-10 Complex Replay Processed Dedup Slice
+
+### Scope
+- Reproduced the reported replay inconsistency with the packed complex replay browser fixture instead of relying on visible text. The failing state had two thinking cards in `已处理` because session messages and round coordinator messages both described the same work sequence.
+- Added a narrow timeline merge pass after tool-call/result merge: duplicate work text from mirrored coordinator rows is removed, and duplicate final-answer text embedded in a work row is stripped when an independent final-answer row already exists.
+- Kept final-answer actions anchored to the final answer article by extending the complex replay browser test to assert one `.at-message-actions` block, two action buttons, no action inside `已处理`, and stable placement under the answer content before and after hard refresh.
+- Added focused TS coverage for the exact double-source replay shape: persisted session work/result/final plus a mirrored `coordinator_messages` entry.
+- Rebuilt `frontend/dist/app` so `/app/` uses the corrected timeline bundle.
+
+### Verification
+- `npm test -- src/test/MessageTimeline.test.tsx -t "does not duplicate processed work when round coordinator messages mirror session history"` passed.
+- `npm test -- src/test/MessageTimeline.test.tsx -t "duplicate|processed work|round messages"` passed with 8 focused tests.
+- `npm run lint` passed.
+- `npm run build` passed and regenerated the packed `/app/` bundle.
+- `npm run test:browser -- v2-complex-replay.spec.ts --project=chromium` passed.
+- Screenshot inspection reviewed `.tmp/frontend-v2-ts-complex-replay/v2-complex-replay-expanded-before-refresh.png`, `.tmp/frontend-v2-ts-complex-replay/v2-complex-replay-expanded-after-refresh.png`, and `.tmp/frontend-v2-ts-complex-replay/v2-complex-replay-final-actions-placement.png`.
+
+### Reviewer
+- This closes the specific complex replay duplication and final-action placement gap for `MSG-01`/`MSG-05`.
+- `npm test -- src/test/MessageTimeline.test.tsx` was also run and is not green: 19 existing runtime typewriter/cursor tests still fail because the current UI intentionally renders only a partial live buffer or removes idle cursors where those tests still expect full text/cursor behavior. This slice does not claim full timeline closure, broader stream correctness, or final V1/V2 visual sign-off.

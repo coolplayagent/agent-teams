@@ -573,13 +573,13 @@ def _extract_normal_tool_pressure_config(
     prefix_tag = f"{tag}-" if tag else ""
     return _NormalToolPressureConfig(
         tool_count=max(1, min(16, int(match.group(1)))),
-        delay_ms=max(0, min(2_000, int(match.group(2)))),
+        delay_ms=max(0, min(5_000, int(match.group(2)))),
         tool_call_prefix=f"call-normal-tool-pressure-{prefix_tag}",
     )
 
 
 def _build_tool_pressure_shell_command(*, index: int, delay_ms: int) -> str:
-    sleep_seconds = max(0.0, min(2.0, delay_ms / 1000))
+    sleep_seconds = max(0.0, min(5.0, delay_ms / 1000))
     script = (
         f"import time; time.sleep({sleep_seconds:.3f}); print('tool-pressure-{index}')"
     )

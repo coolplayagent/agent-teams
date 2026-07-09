@@ -373,7 +373,7 @@ test("managed backend normal tool pressure streams compact lifecycle cards", asy
     const toolCount = 3;
     const finalText = `[fake-llm] normal tool pressure completed ${toolCount} shell calls.`;
     const promptText = [
-      `${title}: [normal-tool-pressure count=${toolCount} delay=1200 tag=${toolTag}]`,
+      `${title}: [normal-tool-pressure count=${toolCount} delay=3500 tag=${toolTag}]`,
       "请运行 fake LLM 请求的 shell 工具并用最终文本收尾。",
     ].join("\n");
 
@@ -391,10 +391,29 @@ test("managed backend normal tool pressure streams compact lifecycle cards", asy
     await expect.poll(() => toolCardCount(page), { timeout: 30_000 })
       .toBeGreaterThanOrEqual(toolCount);
     await expect.poll(() => nakedRuntimeRoleLineCount(page)).toBe(0);
+    await expect
+      .poll(() => currentRunStatus(session.session_id, createdRunId))
+      .toBe("active");
     await page.screenshot({
       fullPage: false,
       path: screenshotPath(
         "managed-live-tool-pressure-running.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expectManagedShellReady(page);
+    await expect
+      .poll(() => currentRunStatus(session.session_id, createdRunId))
+      .toBe("active");
+    await expect.poll(() => toolCardCount(page), { timeout: 45_000 })
+      .toBeGreaterThanOrEqual(toolCount);
+    await expect.poll(() => nakedRuntimeRoleLineCount(page)).toBe(0);
+    await page.screenshot({
+      fullPage: false,
+      path: screenshotPath(
+        "managed-live-tool-pressure-after-active-refresh.png",
         SCREENSHOT_FOLDER,
       ),
     });

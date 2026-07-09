@@ -910,6 +910,13 @@ For every row moved to `Verified`, record:
 - Automated evidence: `npm test -- src/test/AppShell.test.tsx -t "subagent panel|subagent sessions|subagent"`, `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium -g "opens a nested subagent session"`, `npm run lint`, `npm run build`.
 - This does not mark `SUB-01` as `Verified`; live production-backend variants, final V1/V2 visual sign-off, and broader subagent replay/streaming closure remain open.
 
+## 2026-07-10 Managed Tool Active Refresh Guard
+
+- `MSG-04`/`STREAM-02` tightened for tool-heavy active refresh. The managed real-backend/fake-LLM tool-pressure run now holds shell calls open long enough to hard-refresh while the backend still reports the run as active, then verifies the refreshed page restores the same tool lifecycle cards instead of dropping, splitting, or leaking role-only rows.
+- The terminal phase still requires one final answer row, three completed tool lifecycle cards folded under `Processed`, no spinner, no legacy `Tool call: shell` label, no document scroll, and no composer overlap. This covers the user-visible class where a tool stream looks right only before a session switch or hard refresh.
+- Automated evidence: `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "managed backend normal tool pressure streams compact lifecycle cards"`, `npm run lint`, `uv run --extra dev ruff check tests/integration_tests/support/fake_llm_server.py`, `git diff --check`.
+- This does not mark `MSG-04` or `STREAM-02` as `Verified`; broader orchestration variants, interrupted real-provider recovery, and final V1/V2 visual sign-off remain open.
+
 ## 2026-07-10 Terminal Round Hydration Stability
 
 - `MSG-02`/`STREAM-02` tightened for the user-visible failure where the full live answer had already rendered, then terminal `/messages` plus `/rounds` catch-up caused the answer to be treated as a new message shape and visually rebuilt. Timeline message merging now prefers richer hydrated parts, such as `thinking` plus final `text`, when the text content is equivalent to an already-visible runtime row. This preserves the runtime row identity while allowing terminal processed work to appear.

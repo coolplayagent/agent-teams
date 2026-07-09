@@ -93,6 +93,11 @@ const IMAGE_BARE_PATH_PATTERN =
   /((?:\/|\.{1,2}\/|[A-Za-z]:[\\/])[^"'`\s<>]+?\.(?:avif|bmp|gif|jpe?g|png|webp))/gi;
 const TRAILING_PATH_PUNCTUATION_PATTERN = /[),.:;!?\\\]}>，。！？；：）】》]+$/u;
 const LIVE_ROUND_REFETCH_MS = 1500;
+const STREAM_REVEAL_INTERVAL_MS = 28;
+const STREAM_REVEAL_INITIAL_CHARS = 2;
+const STREAM_REVEAL_SMALL_STEP = 2;
+const STREAM_REVEAL_MEDIUM_STEP = 4;
+const STREAM_REVEAL_LARGE_STEP = 8;
 interface MessageTimelineProps {
   emptyDescription?: string;
   emptyFallback?: ReactNode;
@@ -277,9 +282,8 @@ export function MessageTimeline({
       persistedRowsWithRuntimeTextAnchors(
         persistedRows,
         runtimeState.runs,
-        displayRounds,
       ),
-    [displayRounds, persistedRows, runtimeState.runs],
+    [persistedRows, runtimeState.runs],
   );
   const hydratedOutputTextByRunId = useMemo(
     () => timelineOutputTextByRunId(anchoredPersistedRows),
@@ -329,12 +333,14 @@ export function MessageTimeline({
   );
   const runtimeRows = useMemo(
     () =>
-      runtimeEntriesToRows(
-        runtimeEntries,
-        runtimeState.runs,
-        variant,
-        terminalRunIdOverrides,
-        terminalScopeOverride,
+      dropCoveredCursorOnlyRows(
+        runtimeEntriesToRows(
+          runtimeEntries,
+          runtimeState.runs,
+          variant,
+          terminalRunIdOverrides,
+          terminalScopeOverride,
+        ),
       ),
     [
       runtimeEntries,
@@ -1711,15 +1717,12 @@ function mergeTerminalRuntimeTextRowsIntoPersistedAnswers(
 function persistedRowsWithRuntimeTextAnchors(
   persistedRows: TimelineRow[],
   runStates: Record<string, RuntimeRunState>,
-  rounds: SessionRound[],
 ): TimelineRow[] {
-  const openRoundRunIds = openRoundRunIdSet(rounds);
   let changed = false;
   const nextRows = persistedRows.map((row) => {
     const runtimeHydration = runtimeTextHydrationForPersistedRow(
       row,
       runStates,
-      openRoundRunIds,
     );
     const runtimeAnchorKey = runtimeHydration?.key ?? null;
     if (runtimeAnchorKey === null || runtimeAnchorKey === row.key) {
@@ -1767,7 +1770,6 @@ interface RuntimeTextHydration {
 function runtimeTextHydrationForPersistedRow(
   row: TimelineRow,
   runStates: Record<string, RuntimeRunState>,
-  openRoundRunIds: ReadonlySet<string>,
 ): RuntimeTextHydration | null {
   if (!persistedAnswerRowCanHydrateRuntimeText(row)) {
     return null;
@@ -1778,12 +1780,7 @@ function runtimeTextHydrationForPersistedRow(
   }
   const runState = runStates[runId];
   if (runState === undefined) {
-    return openRoundRunIds.has(runId)
-      ? {
-          key: null,
-          streaming: true,
-        }
-      : null;
+    return null;
   }
   const streaming = !runtimeRunStateClosesText(runState);
   const hydratedText = normalizedTimelineText(rowCopyText(row.parts));
@@ -1807,10 +1804,7 @@ function runtimeTextHydrationForPersistedRow(
             };
     }
     if (!openText.hasVisibleContent) {
-      return {
-        key: null,
-        streaming: true,
-      };
+      return null;
     }
     if (key !== null) {
       return {
@@ -1827,17 +1821,6 @@ function runtimeTextHydrationForPersistedRow(
     key,
     streaming: false,
   };
-}
-
-function openRoundRunIdSet(rounds: SessionRound[]): ReadonlySet<string> {
-  const runIds = new Set<string>();
-  for (const round of rounds) {
-    const runId = round.run_id.trim();
-    if (runId.length > 0 && !roundHasTerminalStatus(round)) {
-      runIds.add(runId);
-    }
-  }
-  return runIds;
 }
 
 interface OpenRuntimeTextAnchor {
@@ -2652,6 +2635,54 @@ function dropPersistedRowsCoveredByTerminalRuntime(
     }
     const text = normalizedTimelineText(rowCopyText(row.parts));
     return text.length === 0 || !terminalTexts.has(text);
+  });
+}
+
+function dropCoveredCursorOnlyRows(rows: TimelineRow[]): TimelineRow[] {
+  const runsWithVisibleRuntimeContent = new Set<string>();
+  for (const row of rows) {
+    const runId = row.runId?.trim() ?? "";
+    if (runId.length === 0 || timelineRowIsCursorOnly(row)) {
+      continue;
+    }
+    if (timelineRowHasVisibleRuntimeContent(row)) {
+      runsWithVisibleRuntimeContent.add(runId);
+    }
+  }
+  if (runsWithVisibleRuntimeContent.size === 0) {
+    return rows;
+  }
+  return rows.filter((row) => {
+    const runId = row.runId?.trim() ?? "";
+    return (
+      runId.length === 0 ||
+      !timelineRowIsCursorOnly(row) ||
+      !runsWithVisibleRuntimeContent.has(runId)
+    );
+  });
+}
+
+function timelineRowIsCursorOnly(row: TimelineRow): boolean {
+  if (row.parts.length !== 1) {
+    return false;
+  }
+  const [part] = row.parts;
+  return (
+    part?.kind === "text" &&
+    part.cursorOnly === true &&
+    part.text.trim().length === 0
+  );
+}
+
+function timelineRowHasVisibleRuntimeContent(row: TimelineRow): boolean {
+  return row.parts.some((part) => {
+    if (part.kind === "text") {
+      return part.cursorOnly !== true && part.text.trim().length > 0;
+    }
+    if (part.kind === "thinking") {
+      return part.text.trim().length > 0;
+    }
+    return true;
   });
 }
 
@@ -5602,6 +5633,7 @@ function appendRuntimeTextSegment(
     existing.row.text = existing.part.text;
     if (text.length > 0) {
       existing.placeholder = false;
+      delete existing.part.cursorOnly;
     }
     return true;
   }
@@ -5632,6 +5664,9 @@ function createRuntimeTextAccumulator(
   placeholder: boolean,
 ): RuntimeTextAccumulator {
   const part = timelineTextPart(text, true);
+  if (placeholder && text.length === 0) {
+    part.cursorOnly = true;
+  }
   return {
     part,
     placeholder,
@@ -6535,19 +6570,122 @@ function useStreamingDisplayText(
   cursorOnly: boolean,
   streamIdentity: string,
 ): StreamingDisplayText {
-  void reveal;
-  void cursorOnly;
-  void streamIdentity;
+  const activeStream = streaming || reveal;
+  const [displayState, setDisplayState] = useState<StreamingDisplayState>(() => ({
+    streamIdentity,
+    text: initialStreamingDisplayText(targetText, activeStream, cursorOnly),
+  }));
+  const displayText =
+    displayState.streamIdentity === streamIdentity ? displayState.text : targetText;
+  const revealing =
+    !cursorOnly &&
+    displayState.streamIdentity === streamIdentity &&
+    displayText !== targetText &&
+    targetText.startsWith(displayText);
+
+  useEffect(() => {
+    setDisplayState((current) => {
+      if (cursorOnly) {
+        return streamingDisplayState(current, streamIdentity, "");
+      }
+      if (current.streamIdentity !== streamIdentity) {
+        return {
+          streamIdentity,
+          text: initialStreamingDisplayText(targetText, activeStream, false),
+        };
+      }
+      if (current.text === targetText) {
+        return current;
+      }
+      if (targetText.startsWith(current.text)) {
+        return current;
+      }
+      return {
+        streamIdentity,
+        text: initialStreamingDisplayText(targetText, activeStream, false),
+      };
+    });
+  }, [activeStream, cursorOnly, streamIdentity, streaming, targetText]);
+
+  useEffect(() => {
+    if (!revealing) {
+      return undefined;
+    }
+    const timer = window.setTimeout(() => {
+      setDisplayState((current) => {
+        if (
+          current.streamIdentity !== streamIdentity ||
+          current.text === targetText ||
+          !targetText.startsWith(current.text)
+        ) {
+          return current;
+        }
+        return {
+          streamIdentity,
+          text: nextStreamingDisplayText(current.text, targetText),
+        };
+      });
+    }, STREAM_REVEAL_INTERVAL_MS);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [revealing, streamIdentity, targetText, displayText]);
 
   return {
-    cursorVisible: streaming,
-    revealing: false,
-    text: targetText,
+    cursorVisible: streaming || revealing,
+    revealing,
+    text: displayText,
   };
 }
 
 function timelineStreamingTextCanRenderInline(text: string): boolean {
   return !/[\r\n`*#[\]<>|]/u.test(text);
+}
+
+interface StreamingDisplayState {
+  streamIdentity: string;
+  text: string;
+}
+
+function streamingDisplayState(
+  current: StreamingDisplayState,
+  streamIdentity: string,
+  text: string,
+): StreamingDisplayState {
+  return current.streamIdentity === streamIdentity && current.text === text
+    ? current
+    : { streamIdentity, text };
+}
+
+function initialStreamingDisplayText(
+  targetText: string,
+  activeStream: boolean,
+  cursorOnly: boolean,
+): string {
+  if (cursorOnly || targetText.length === 0) {
+    return "";
+  }
+  if (!activeStream) {
+    return targetText;
+  }
+  return targetText.slice(
+    0,
+    Math.min(STREAM_REVEAL_INITIAL_CHARS, targetText.length),
+  );
+}
+
+function nextStreamingDisplayText(currentText: string, targetText: string): string {
+  const remaining = targetText.length - currentText.length;
+  if (remaining <= 0) {
+    return targetText;
+  }
+  const step =
+    remaining > 96
+      ? STREAM_REVEAL_LARGE_STEP
+      : remaining > 32
+        ? STREAM_REVEAL_MEDIUM_STEP
+        : STREAM_REVEAL_SMALL_STEP;
+  return targetText.slice(0, currentText.length + step);
 }
 
 function StreamingCursor() {

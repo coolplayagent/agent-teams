@@ -9993,3 +9993,26 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - This closes the packed-browser Search loading-state evidence gap for `PAGE-04`. It does not mark Search as `Verified`, because formal V1 screenshot/DOM pairing and reviewer sign-off remain open.
+
+## 2026-07-10 Streaming Typewriter Hydration Slice
+
+### Scope
+- Reproduced the reported fake-stream failure as a product bug: large live text deltas were rendered fully because `useStreamingDisplayText` returned the target text directly, and persisted history rows could be re-marked as streaming just because their round still had an open run.
+- Restored a real display buffer in `MessageTimeline`. Live text now starts from a non-empty prefix, advances on a timer under `.at-message-streaming-text`, keeps the same stream identity across terminal settlement, and removes the cursor without rebuilding the completed answer.
+- Stopped historical rows from pretending to be live. Persisted rows now hydrate from runtime text only when a matching open runtime text anchor has visible live content; open-round run ids alone no longer trigger a reveal.
+- Removed empty cursor-only runtime rows once real runtime content exists, so pending placeholders do not survive next to the actual stream.
+- Tightened main-chat and subagent browser tests so they assert partial-prefix streaming, no full-answer jump on the first frame, no empty streaming text nodes, no stale cursor after terminal, and no fake subagent history retyping.
+- Rebuilt `frontend/dist/app` so the served `/app/` bundle contains the fix.
+
+### Verification
+- `npm run lint` passed.
+- `npm run build` passed and regenerated the packed `/app/` bundle.
+- `npm run test:browser -- v2-stream-create-run.spec.ts --project=chromium -g "renders received stream text incrementally"` passed.
+- `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium -g "streams subagent deltas incrementally"` passed.
+- `npm run test:browser -- v2-stream-create-run.spec.ts --project=chromium` passed with 4 Chromium tests.
+- `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium` passed with 12 Chromium tests.
+- Screenshot inspection reviewed `.tmp/frontend-v2-ts-stream/v2-stream-received-delta-no-replay.png`; it shows one settled answer row and no streaming cursor after terminal output.
+- Screenshot inspection reviewed `.tmp/frontend-v2-ts-subagent-session/v2-subagent-delta-visible.png`; it shows the persisted subagent checkpoint as static history and the live `SUB_STREAM` row as the only streaming text with one cursor.
+
+### Reviewer
+- This closes the specific fake typewriter/rebuild gap for `MSG-02` and the right-panel subagent hydration path exercised by `SUB-01`. It does not mark final V2 frontend completion, interrupted recovery, full real-provider normal-stream closure, or V1/V2 visual sign-off as complete.

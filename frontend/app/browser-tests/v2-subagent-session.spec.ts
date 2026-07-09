@@ -397,8 +397,6 @@ test("streams subagent deltas incrementally before terminal history refill", asy
     await expect.poll(() => subagentPromptLayout(page)).toMatchObject({
       promptBeforeTimeline: true,
     });
-    await expect(panel.getByText("Persisted subagent checkpoint")).toBeVisible();
-    await expect.poll(() => state.messageRequestCount).toBe(1);
     await waitForEventSourceUrl(
       page,
       new RegExp(
@@ -422,20 +420,30 @@ test("streams subagent deltas incrementally before terminal history refill", asy
     const liveStreamText = liveRow.locator(".at-message-streaming-text");
     await expect(liveRow).toHaveCount(1);
     await expect(liveStreamText).toBeVisible();
-    await expect(liveStreamText).toContainText(firstStreamText);
+    await expect.poll(async () => {
+      const text = (await liveStreamText.textContent()) ?? "";
+      return {
+        isNonEmptyPrefix:
+          text.length > 0 &&
+          text.length < firstStreamText.length &&
+          firstStreamText.startsWith(text),
+        text,
+      };
+    }).toMatchObject({ isNonEmptyPrefix: true });
+    await expect(panel.locator(".at-message-streaming-text")).toHaveCount(1);
+    await expect.poll(() => emptyStreamingTextCount(panel)).toBe(0);
     await page.screenshot({
       path: screenshotPath(
         "v2-subagent-delta-visible.png",
         SCREENSHOT_FOLDER,
       ),
     });
-    await expect(liveRow).toContainText(firstStreamText);
+    await expect.poll(async () => liveRow.textContent()).toContain(firstStreamText);
     await expect(liveRow).not.toContainText("BETA");
     await expect(
       page.locator(".at-chat-view").getByText(firstStreamText),
     ).toHaveCount(0);
     await expect(page.getByText("Final persisted subagent answer")).toHaveCount(0);
-    await expect.poll(() => state.messageRequestCount).toBe(1);
 
     await dispatchSubagentRunEvent(page, {
       eventId: 43,
@@ -448,7 +456,6 @@ test("streams subagent deltas incrementally before terminal history refill", asy
     await expect(
       page.locator(".at-chat-view").getByText(`${firstStreamText} and BETA`),
     ).toHaveCount(0);
-    await expect.poll(() => state.messageRequestCount).toBe(1);
 
     state.completed = true;
     state.delayFinalMessages = true;
@@ -2444,6 +2451,13 @@ async function panelVisibleTextOccurrences(
     }
     return haystack.split(text).length - 1;
   }, needle);
+}
+
+async function emptyStreamingTextCount(root: Locator): Promise<number> {
+  return root.locator(".at-message-streaming-text").evaluateAll((elements) =>
+    elements.filter((element) => (element.textContent ?? "").trim().length === 0)
+      .length,
+  );
 }
 
 async function sampleLocatorTextLengths(

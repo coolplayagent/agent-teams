@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import {
   dispatchEventSourceMessage,
@@ -124,7 +124,7 @@ test("creates a run from the V2 composer and renders live stream output", async 
   }
 });
 
-test("renders received stream text immediately and does not replay after terminal output", async ({
+test("renders received stream text incrementally and does not replay after terminal output", async ({
   page,
 }) => {
   const appServer = await serveFrontendDist();
@@ -180,8 +180,21 @@ test("renders received stream text immediately and does not replay after termina
 
     const streamingText = page.locator(".at-message-streaming-text").first();
     await expect(streamingText).toBeVisible();
-    await expect(streamingText).toHaveText(finalAnswer);
-    await expect(page.getByText(finalAnswer)).toHaveCount(1);
+    await expect.poll(async () => {
+      const text = (await streamingText.textContent()) ?? "";
+      return {
+        isNonEmptyPrefix:
+          text.length > 0 &&
+          text.length < finalAnswer.length &&
+          finalAnswer.startsWith(text),
+        text,
+      };
+    }).toMatchObject({ isNonEmptyPrefix: true });
+    await expect(page.locator(".at-chat-view .at-message-streaming-text"))
+      .toHaveCount(1);
+    await expect.poll(() => emptyStreamingTextCount(page.locator(".at-chat-view")))
+      .toBe(0);
+    await expect(page.getByText(finalAnswer)).toHaveCount(0);
     await expect(page.locator(".streaming-cursor")).toHaveCount(1);
     await page.locator(".at-message-streaming-text").evaluate((element) => {
       element.setAttribute("data-stream-stable-node", "before-terminal");
@@ -203,7 +216,8 @@ test("renders received stream text immediately and does not replay after termina
     await waitForEventSourceOpenCount(page, 0);
 
     await expect(page.locator(".at-message-streaming-text")).toHaveCount(0);
-    await expect(page.locator(".streaming-cursor")).toHaveCount(0);
+    await expect.poll(async () => page.locator(".streaming-cursor").count())
+      .toBe(0);
     await expect(
       page.locator('.at-message-text[data-stream-stable-node="before-terminal"]'),
     ).toHaveCount(1);
@@ -636,6 +650,13 @@ async function installClipboardProbe(page: Page): Promise<void> {
     });
     window.localStorage.removeItem("agentTeams.browserTestCopiedText");
   });
+}
+
+async function emptyStreamingTextCount(root: Locator): Promise<number> {
+  return root.locator(".at-message-streaming-text").evaluateAll((elements) =>
+    elements.filter((element) => (element.textContent ?? "").trim().length === 0)
+      .length,
+  );
 }
 
 async function expectCopiedText(

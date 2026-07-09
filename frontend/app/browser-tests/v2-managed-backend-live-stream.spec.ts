@@ -293,6 +293,75 @@ test("managed backend active stream stays in one streaming row after hard refres
   }
 });
 
+test("managed backend normal tool pressure streams compact lifecycle cards", async ({
+  page,
+}) => {
+  const title = `managed-live-tool-pressure-${Date.now()}`;
+  const session = await createSession(title);
+  let runId: string | null = null;
+  try {
+    await openManagedSession(page, session, title);
+    await expectManagedShellReady(page);
+
+    const toolTag = streamTagFromTitle(title);
+    const toolCount = 3;
+    const finalText = `[fake-llm] normal tool pressure completed ${toolCount} shell calls.`;
+    const promptText = [
+      `${title}: [normal-tool-pressure count=${toolCount} delay=1200 tag=${toolTag}]`,
+      "请运行 fake LLM 请求的 shell 工具并用最终文本收尾。",
+    ].join("\n");
+
+    const runResponse = waitForRunCreateResponse(page);
+    await submitPrompt(page, promptText);
+    const createdRunId = await runIdFromResponse(await runResponse);
+    runId = createdRunId;
+    await expect(page.getByRole("button", { name: /停止|Stop/ })).toBeVisible({
+      timeout: 20_000,
+    });
+
+    await expect.poll(() => visibleRunningToolCardCount(page), {
+      timeout: 90_000,
+    }).toBeGreaterThanOrEqual(1);
+    await expect.poll(() => toolCardCount(page), { timeout: 30_000 })
+      .toBeGreaterThanOrEqual(toolCount);
+    await expect.poll(() => nakedRuntimeRoleLineCount(page)).toBe(0);
+    await page.screenshot({
+      fullPage: false,
+      path: screenshotPath(
+        "managed-live-tool-pressure-running.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+
+    await switchAwayAndBack(page, title);
+    await expect.poll(() => toolCardCount(page), { timeout: 45_000 })
+      .toBeGreaterThanOrEqual(toolCount);
+    await expect.poll(() => nakedRuntimeRoleLineCount(page)).toBe(0);
+
+    await waitForRunToLeaveActive(session.session_id, createdRunId, 180_000);
+    await expect
+      .poll(() => mainTimelineMessageArticleText(page), { timeout: 60_000 })
+      .toContain(finalText);
+    await expect(page.locator(".streaming-cursor")).toHaveCount(0);
+    await expectToolPressureTerminalState(page, toolCount, finalText);
+    await expectNoDocumentScroll(
+      page,
+      "managed normal tool pressure should stay inside the fixed shell",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.screenshot({
+      fullPage: false,
+      path: screenshotPath(
+        "managed-live-tool-pressure-terminal.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+  } finally {
+    await stopRunIfPresent(runId);
+    await deleteSession(session.session_id);
+  }
+});
+
 async function startManagedBackend(): Promise<ManagedBackend> {
   const fakeLlmPort = await findFreePort();
   const backendPort = await findFreePort();
@@ -701,6 +770,81 @@ async function strictPrefixMessageArticleCount(
 async function mainTimelineMessageArticleText(page: Page): Promise<string> {
   return page.locator(".at-chat-view article.at-message").evaluateAll((nodes) =>
     nodes.map((node) => node.textContent ?? "").join("\n"),
+  );
+}
+
+async function expectToolPressureTerminalState(
+  page: Page,
+  toolCount: number,
+  finalText: string,
+): Promise<void> {
+  await expect.poll(() => messageArticleContainingCount(page, finalText))
+    .toBe(1);
+  const processed = page.locator("details.at-processed-group");
+  await expect(processed).toHaveCount(1);
+  const expectedCompletedSnapshot = Array.from(
+    { length: toolCount },
+    () => "completed:closed",
+  ).join("|");
+  await expect.poll(() => toolStatusSnapshot(page), { timeout: 60_000 })
+    .toBe(expectedCompletedSnapshot);
+  await expect(processed).not.toHaveAttribute("open", "");
+  await expect.poll(() => visibleProcessedToolCardCount(page)).toBe(0);
+  await processed.locator(".at-processed-group-summary").click();
+  await expect(processed).toHaveAttribute("open", "");
+  const completedTools = processed.locator(".at-message-tool[data-status='completed']");
+  await expect(completedTools).toHaveCount(toolCount);
+  await expect(processed.locator(".at-message-tool-spinner")).toHaveCount(0);
+  await expect(processed.getByText("Tool call: shell")).toHaveCount(0);
+  await expect(page.locator(".at-message-role")).toHaveCount(0);
+  for (let index = 1; index <= toolCount; index += 1) {
+    await expect(processed).toContainText(`tool-pressure-${index}`);
+  }
+}
+
+async function toolCardCount(page: Page): Promise<number> {
+  return page.locator(".at-chat-view .at-message-tool").count();
+}
+
+async function toolStatusSnapshot(page: Page): Promise<string> {
+  return page.locator(".at-chat-view .at-message-tool").evaluateAll((nodes) =>
+    nodes.map((node) => {
+      const element = node as HTMLElement;
+      const status = element.dataset.status ?? "";
+      const inClosedGroup =
+        element.closest("details.at-processed-group:not([open])") !== null;
+      return `${status}:${inClosedGroup ? "closed" : "visible"}`;
+    }).join("|"),
+  );
+}
+
+async function visibleProcessedToolCardCount(page: Page): Promise<number> {
+  return page.locator("details.at-processed-group .at-message-tool")
+    .evaluateAll((nodes) =>
+      nodes.filter((node) => {
+        const element = node as HTMLElement;
+        return element.offsetParent !== null;
+      }).length,
+    );
+}
+
+async function visibleRunningToolCardCount(page: Page): Promise<number> {
+  return page.locator(".at-chat-view .at-message-tool[data-status='running']")
+    .evaluateAll((nodes) =>
+      nodes.filter((node) => {
+        const element = node as HTMLElement;
+        return element.offsetParent !== null;
+      }).length,
+    );
+}
+
+async function nakedRuntimeRoleLineCount(page: Page): Promise<number> {
+  return page.locator(".at-chat-view").evaluate((root) =>
+    Array.from(root.querySelectorAll("article.at-message, .at-message-text"))
+      .filter((node) => {
+        const text = (node.textContent ?? "").replace(/\s+/g, " ").trim();
+        return text === "MainAgent" || text === "Explorer" || text === "Crafter";
+      }).length,
   );
 }
 

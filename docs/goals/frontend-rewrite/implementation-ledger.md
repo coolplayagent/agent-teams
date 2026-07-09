@@ -9825,3 +9825,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent stream failure-path analysis, production timeline reveal hardening, focused component coverage, managed real-backend/fake-LLM browser verification, packed dist rebuild, matrix update, and ledger update completed for this slice. This does not claim `MSG-02`, `STREAM-02`, `SUB-01`, or final V2 frontend completion as verified.
+
+## 2026-07-09 Managed Tool-Pressure Stream Closure Slice
+
+### Scope
+- Re-ran the stream/replay work against a deterministic managed backend instead of relying on screenshots or optimistic component tests.
+- Added a normal-mode fake-LLM tool-pressure browser scenario that creates three delayed shell calls, observes running lifecycle cards, switches sessions mid-run, waits for terminal state, and then checks the processed replay state.
+- The new browser scenario exposed a real terminal gap: completed runs could still show persisted `tool-call`-only cards as hidden `running` cards inside `已处理` when history had not supplied matching tool-return parts.
+- Fixed `MessageTimeline` so terminal processed segments close unresolved persisted tool-call parts as completed, while existing tool-return/error merge behavior still wins when results are present. Runtime-only terminal tool calls keep the same safety close.
+- Added component coverage for unresolved runtime tool calls after `run_completed` and unresolved persisted tool-call-only history inside completed rounds.
+
+### Verification
+- `npm test -- src/test/MessageTimeline.test.tsx -t "closes unresolved runtime tool calls|closes unresolved persisted tool calls|keeps closed runtime tool events"` passed with 3 focused tests.
+- `npm test -- src/test/MessageTimeline.test.tsx` passed with 194 tests.
+- `npm run lint` passed.
+- `npm run build` passed and regenerated the packed `frontend/dist/app` bundle.
+- `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "normal tool pressure"` passed against the built `/app/` bundle.
+
+### Reviewer
+- Main-agent failure reproduction, product fix, focused component coverage, dist rebuild, deterministic browser verification, matrix update, and ledger update completed for this slice. This does not claim final V2 frontend completion, full production-backend stream sign-off, or full V1 visual parity sign-off.

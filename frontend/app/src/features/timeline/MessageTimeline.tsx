@@ -1312,11 +1312,12 @@ function collapseProcessedSegment(
   segment: TimelineRow[],
   runId: string,
 ): TimelineRow[] {
+  const terminalSegment = closeTerminalSegmentToolCalls(segment);
   const keepMainNarrationOutside = segment.some(timelineRowHasInjectionNotice);
-  const surfacedRows = segment.filter((row) =>
+  const surfacedRows = terminalSegment.filter((row) =>
     timelineRowStaysOutsideProcessedGroup(row, keepMainNarrationOutside),
   );
-  const processableSegment = segment.filter(
+  const processableSegment = terminalSegment.filter(
     (row) => !timelineRowStaysOutsideProcessedGroup(row, keepMainNarrationOutside),
   );
   if (surfacedRows.length > 0 && processableSegment.length > 0) {
@@ -1325,7 +1326,30 @@ function collapseProcessedSegment(
       ...collapseProcessedSegmentCore(processableSegment, runId),
     ];
   }
-  return collapseProcessedSegmentCore(segment, runId);
+  return collapseProcessedSegmentCore(terminalSegment, runId);
+}
+
+function closeTerminalSegmentToolCalls(segment: TimelineRow[]): TimelineRow[] {
+  let changed = false;
+  const rows = segment.map((row) => {
+    let rowChanged = false;
+    const parts = row.parts.map((part) => {
+      if (part.kind !== "tool" || part.phase !== "call") {
+        return part;
+      }
+      rowChanged = true;
+      changed = true;
+      return { ...part, phase: "result" as const };
+    });
+    return rowChanged
+      ? {
+          ...row,
+          parts,
+          text: rowCopyText(parts),
+        }
+      : row;
+  });
+  return changed ? rows : segment;
 }
 
 function collapseProcessedSegmentCore(
@@ -2792,6 +2816,7 @@ function runtimeEntriesToRows(
     rows.push(runtimeEntryToRow(entry, variant));
   }
   closeTerminalRuntimeTextSegments(rows, activeText, runStates);
+  closeTerminalRuntimeToolCalls(rows, runStates);
   return rows;
 }
 
@@ -2840,6 +2865,25 @@ function runtimeRunStateClosesText(
     runState?.status === "failed" ||
     runState?.terminalEventType !== null
   );
+}
+
+function closeTerminalRuntimeToolCalls(
+  rows: TimelineRow[],
+  runStates: Record<string, RuntimeRunState>,
+): void {
+  for (const row of rows) {
+    if (row.source !== "runtime" || row.runId === null) {
+      continue;
+    }
+    if (!runtimeRunStateClosesText(runStates[row.runId])) {
+      continue;
+    }
+    for (const part of row.parts) {
+      if (part.kind === "tool" && part.phase === "call") {
+        part.phase = "result";
+      }
+    }
+  }
 }
 
 function mergeRuntimeCompletedOutputIntoActiveText(

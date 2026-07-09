@@ -4591,6 +4591,127 @@ describe("MessageTimeline", () => {
     expect(toolPreElement(screenElement(toolTitle))).toHaveTextContent(/npm test/);
   });
 
+  it("closes unresolved runtime tool calls when a stream reaches a terminal run state", async () => {
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: [],
+        runs: {
+          "run-terminal-tool": {
+            runId: "run-terminal-tool",
+            status: "closed",
+            lastEventId: 2,
+            seenEventKeys: [],
+            terminalEventType: "run_completed",
+            entries: [
+              {
+                id: "run-terminal-tool:1:0",
+                sessionId: "session-1",
+                runId: "run-terminal-tool",
+                roleId: "MainAgent",
+                kind: "tool_call",
+                text: "shell",
+                payload: {
+                  args: { command: "echo tool-pressure-1" },
+                  tool_call_id: "call-terminal-tool",
+                  tool_name: "shell",
+                },
+                eventId: 1,
+                occurredAt: "2026-06-23T00:00:01Z",
+              },
+              {
+                id: "run-terminal-tool:2:1",
+                sessionId: "session-1",
+                runId: "run-terminal-tool",
+                roleId: "MainAgent",
+                kind: "run_completed",
+                text: "completed",
+                payload: { phase: "completed" },
+                eventId: 2,
+                occurredAt: "2026-06-23T00:00:02Z",
+              },
+            ],
+          },
+        },
+      },
+    });
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message_id: "assistant-terminal-tool",
+        role_id: "MainAgent",
+        trace_id: "run-terminal-tool",
+        content: "Final answer after tool call",
+      },
+    ]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("Final answer after tool call")).toBeVisible();
+    expect(await screen.findByText("Processed")).toBeVisible();
+    openProcessedGroup(container);
+    expect(screen.queryByText("Tool call: shell")).not.toBeInTheDocument();
+    const toolTitle = await screen.findByText("Tool result: shell");
+    expect(toolTitle).toBeVisible();
+    const toolBlock = screenElement(toolTitle).closest(".at-message-tool");
+    expect(toolBlock).toHaveAttribute("data-status", "completed");
+    expect(toolBlock?.querySelector(".at-message-tool-spinner")).toBeNull();
+    expect(toolPreElement(screenElement(toolTitle))).toHaveTextContent(
+      /tool-pressure-1/,
+    );
+  });
+
+  it("closes unresolved persisted tool calls inside terminal processed rounds", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message: {
+          parts: [
+            {
+              args: { command: "echo persisted-pressure-1" },
+              part_kind: "tool-call",
+              tool_call_id: "call-persisted-terminal-tool",
+              tool_name: "shell",
+            },
+          ],
+        },
+        message_id: "assistant-persisted-terminal-tool",
+        role_id: "MainAgent",
+        run_id: "run-persisted-terminal-tool",
+      },
+      {
+        content: "Final persisted answer",
+        message_id: "assistant-persisted-terminal-answer",
+        role_id: "MainAgent",
+        run_id: "run-persisted-terminal-tool",
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          created_at: "2026-06-23T12:42:33Z",
+          run_id: "run-persisted-terminal-tool",
+          run_status: "completed",
+          run_user_message: "Run a persisted terminal tool",
+        },
+      ],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("Final persisted answer")).toBeVisible();
+    expect(await screen.findByText("Processed")).toBeVisible();
+    openProcessedGroup(container);
+    expect(screen.queryByText("Tool call: shell")).not.toBeInTheDocument();
+    const toolTitle = await screen.findByText("Tool result: shell");
+    expect(toolTitle).toBeVisible();
+    const toolBlock = screenElement(toolTitle).closest(".at-message-tool");
+    expect(toolBlock).toHaveAttribute("data-status", "completed");
+    expect(toolBlock?.querySelector(".at-message-tool-spinner")).toBeNull();
+    expect(toolPreElement(screenElement(toolTitle))).toHaveTextContent(
+      /persisted-pressure-1/,
+    );
+  });
+
   it("renders image media references with previewable images", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {

@@ -758,6 +758,15 @@ For every row moved to `Verified`, record:
 - Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx -t "fully streamed text answer|completed runtime row"`, `npm test -- src/test/MessageTimeline.test.tsx`, `npm run lint`, `npm run build`, `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "terminal hard refresh|active stream stays"`.
 - This still does not mark `MSG-02`, `STREAM-02`, or `SUB-01` as `Verified`; true real-provider normal-stream proof, interrupted recovery, broader production-backend orchestration/tool-heavy variants, and final V1 visual sign-off remain open.
 
+## 2026-07-09 Managed Tool-Pressure Stream Closure
+
+- `MSG-04`/`STREAM-02` tightened with deterministic browser evidence for normal-mode tool streaming. The managed backend spec now drives a fake-LLM normal run that issues three delayed `shell` tool calls, observes at least one visible running lifecycle card, switches away and back during the active run, then verifies terminal replay.
+- Fixed the terminal processed-group gap exposed by that browser run: if a run is terminal but persisted history still only has `tool-call` parts, the processed segment now closes those pending tool cards as completed instead of leaving hidden `running` cards and stale spinners after completion. The same terminal close guard also remains on runtime rows.
+- The browser terminal assertion now checks one final answer row, exactly three collapsed completed tool lifecycle cards, no legacy `Tool call: shell` label, no spinner, no naked role-only rows, no document-level scroll, and no composer overlap.
+- Added component coverage for both unresolved runtime tool calls after `run_completed` and unresolved persisted tool-call-only history inside a completed round.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx -t "closes unresolved runtime tool calls|closes unresolved persisted tool calls|keeps closed runtime tool events"`, `npm test -- src/test/MessageTimeline.test.tsx`, `npm run lint`, `npm run build`, `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "normal tool pressure"`.
+- This does not mark `MSG-04` or `STREAM-02` as `Verified`; production-backend tool/orchestration variants, interrupted recovery, and final V1 visual sign-off remain open.
+
 ## Immediate P0 Batch
 
 The current batch closes these rows first:

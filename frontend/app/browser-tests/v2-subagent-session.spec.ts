@@ -746,8 +746,10 @@ test("recovers a settled subagent stream after refresh before history refill", a
       .locator(`.at-timeline-row[data-run-id="${SUBAGENT_RUN_ID}"]`)
       .filter({ hasText: "REFRESH_STREAM" });
     const restoredDisplay = restoredRow.locator(".at-message-streaming-text");
-    await expect(restoredDisplay).toBeVisible();
-    await expect(restoredDisplay).toContainText(terminalText);
+    await expect(restoredRow).toBeVisible();
+    await expect(restoredRow).toContainText(terminalText);
+    await expect(restoredDisplay).toHaveCount(0);
+    await expect(restoredPanel.locator(".streaming-cursor")).toHaveCount(0);
     await page.screenshot({
       path: screenshotPath(
         "v2-subagent-refresh-restored-delta.png",

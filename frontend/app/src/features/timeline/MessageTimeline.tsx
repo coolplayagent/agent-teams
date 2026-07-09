@@ -93,6 +93,10 @@ const IMAGE_BARE_PATH_PATTERN =
   /((?:\/|\.{1,2}\/|[A-Za-z]:[\\/])[^"'`\s<>]+?\.(?:avif|bmp|gif|jpe?g|png|webp))/gi;
 const TRAILING_PATH_PUNCTUATION_PATTERN = /[),.:;!?\\\]}>，。！？；：）】》]+$/u;
 const LIVE_ROUND_REFETCH_MS = 1500;
+const STREAMING_REVEAL_CHARS_PER_SECOND = 120;
+const STREAMING_REVEAL_INITIAL_CHARS = 2;
+
+const streamingDisplayTextCache = new Map<string, string>();
 
 interface MessageTimelineProps {
   emptyDescription?: string;
@@ -6526,13 +6530,101 @@ function useStreamingDisplayText(
   streamIdentity: string,
 ): StreamingDisplayText {
   void reveal;
-  void cursorOnly;
-  void streamIdentity;
+  const shouldReveal =
+    streaming && !cursorOnly && targetText.length < LONG_STREAM_TEXT_THRESHOLD;
+  const initialText = shouldReveal
+    ? initialStreamingDisplayText(streamIdentity, targetText)
+    : targetText;
+  const [displayText, setDisplayText] = useState(initialText);
+  const displayTextRef = useRef(initialText);
+  useEffect(() => {
+    displayTextRef.current = displayText;
+  }, [displayText]);
+  useEffect(() => {
+    if (!shouldReveal) {
+      streamingDisplayTextCache.set(streamIdentity, targetText);
+      if (displayTextRef.current !== targetText) {
+        displayTextRef.current = targetText;
+        setDisplayText(targetText);
+      }
+      return;
+    }
+
+    const normalizedStart = streamingDisplayStartText(
+      displayTextRef.current,
+      targetText,
+    );
+    if (normalizedStart !== displayTextRef.current) {
+      displayTextRef.current = normalizedStart;
+      setDisplayText(normalizedStart);
+    }
+
+    let frameHandle: number | null = null;
+    let lastFrameTime = window.performance.now();
+    const revealNextFrame = (frameTime: number) => {
+      const currentText = displayTextRef.current;
+      if (currentText === targetText) {
+        streamingDisplayTextCache.set(streamIdentity, targetText);
+        return;
+      }
+      const elapsedMs = Math.max(16, frameTime - lastFrameTime);
+      lastFrameTime = frameTime;
+      const nextLength = Math.min(
+        targetText.length,
+        currentText.length +
+          Math.max(1, Math.floor((elapsedMs * STREAMING_REVEAL_CHARS_PER_SECOND) / 1000)),
+      );
+      const nextText = targetText.slice(0, nextLength);
+      displayTextRef.current = nextText;
+      streamingDisplayTextCache.set(streamIdentity, nextText);
+      setDisplayText(nextText);
+      frameHandle = window.requestAnimationFrame(revealNextFrame);
+    };
+    frameHandle = window.requestAnimationFrame(revealNextFrame);
+    return () => {
+      if (frameHandle !== null) {
+        window.cancelAnimationFrame(frameHandle);
+      }
+    };
+  }, [shouldReveal, streamIdentity, targetText]);
+
   return {
     cursorVisible: streaming,
-    revealing: false,
-    text: targetText,
+    revealing: shouldReveal,
+    text: displayText,
   };
+}
+
+function initialStreamingDisplayText(
+  streamIdentity: string,
+  targetText: string,
+): string {
+  const cachedText = streamingDisplayTextCache.get(streamIdentity);
+  if (cachedText === undefined) {
+    return targetText.slice(0, Math.min(STREAMING_REVEAL_INITIAL_CHARS, targetText.length));
+  }
+  return streamingDisplayStartText(cachedText, targetText);
+}
+
+function streamingDisplayStartText(currentText: string, targetText: string): string {
+  if (targetText.startsWith(currentText)) {
+    return currentText;
+  }
+  if (currentText.startsWith(targetText)) {
+    return targetText;
+  }
+  const commonLength = commonPrefixLength(currentText, targetText);
+  return targetText.slice(0, commonLength);
+}
+
+function commonPrefixLength(left: string, right: string): number {
+  const maxLength = Math.min(left.length, right.length);
+  for (let index = 0; index < maxLength; index += 1) {
+    if (left[index] !== right[index]) {
+      return index;
+    }
+  }
+  return maxLength;
 }
 
 function StreamingCursor() {

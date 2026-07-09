@@ -792,6 +792,14 @@ For every row moved to `Verified`, record:
 - Automated evidence: `npm test -- src/test/AppShell.test.tsx -t "subagent"`, `npm run build`, `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium`.
 - This does not mark `MSG-02`, `STREAM-02`, or `SUB-01` as `Verified`; production-backend orchestration stream variants, interrupted recovery, and final V1 visual sign-off remain open.
 
+## 2026-07-09 Real SSE Reconnect Replay Tightening
+
+- `MSG-02`/`STREAM-02` tightened for interrupted stream recovery: the runtime-cursor real SSE scenario now reconnects from `after_event_id=2`, verifies the resumed answer is exactly one message row with the pre-interruption chunk before the resumed chunk, then hard-refreshes and verifies the persisted replay remains exactly one non-streaming row with no cursor or second reveal pass.
+- `MSG-04` tightened for rich replay: real SSE replay now asserts the terminal tool lifecycle is represented by the completed `Tool result: read` card only, with no separate stale `Tool call: read` card after completion.
+- `SUB-01`/`MSG-03` tightened for subagent lifecycle noise: `subagent_session_status_changed`, `subagent_stopped`, and `subagent_resumed` are now filtered from the main transcript like question/injection lifecycle events. The right-side subagent panel still owns child output; main timeline keeps user-visible recovery/manual-action content without leaking internal subagent status rows.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx -t "hides internal coordination"`, `npm test -- src/test/MessageTimeline.test.tsx`, `npm run build`, `npm run test:browser -- v2-real-sse-stale-recovery.spec.ts --project=chromium -g "preserves rich real SSE replay"`, `npm run test:browser -- v2-real-sse-stale-recovery.spec.ts --project=chromium`, `npm run lint`.
+- This does not mark `MSG-02`, `STREAM-02`, or `SUB-01` as `Verified`; live production-backend stream variants and final V1/V2 visual sign-off remain open.
+
 ## Immediate P0 Batch
 
 The current batch closes these rows first:

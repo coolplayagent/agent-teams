@@ -39,6 +39,7 @@ const RECOVERY_ACTION_RESUMED_CHUNK = "real SSE recovery action resumed chunk";
 const RECOVERY_QUESTION_SUPPLEMENT = "Need release note coverage";
 const REFRESH_RESUMED_CHUNK = "real SSE refresh resumed chunk";
 const RUNTIME_CURSOR_RESUMED_CHUNK = "real SSE resumed chunk";
+const RUNTIME_CURSOR_FULL_TEXT = `${FIRST_CHUNK}${RUNTIME_CURSOR_RESUMED_CHUNK}`;
 const RICH_REPLAY_THINKING_PREFIX = "checking replay state";
 const RICH_REPLAY_THINKING_SUFFIX = " after reconnect";
 const RICH_REPLAY_THINKING = `${RICH_REPLAY_THINKING_PREFIX}${RICH_REPLAY_THINKING_SUFFIX}`;
@@ -358,6 +359,7 @@ interface RealSseState {
   completed: boolean;
   injectionRequests: RealSseInjectionRequest[];
   lastEventId: number;
+  messageRequestCount: number;
   multiplexRequests: RealSseMultiplexRequest[];
   pendingToolApproval: boolean;
   pendingUserQuestion: boolean;
@@ -950,10 +952,6 @@ async function runRealSseRichReplayScenario(
       RICH_REPLAY_STATE_DELTA_SUMMARY,
       RICH_REPLAY_TODO_SUMMARY,
       RICH_REPLAY_NOTIFICATION_SUMMARY,
-      RICH_REPLAY_SUBAGENT_STATUS_SUMMARY,
-      RICH_REPLAY_BACKGROUND_TASK_SUMMARY,
-      RICH_REPLAY_SUBAGENT_STOPPED_SUMMARY,
-      RICH_REPLAY_SUBAGENT_RESUMED_SUMMARY,
       RICH_REPLAY_MANUAL_ACTION_SUMMARY,
       RICH_REPLAY_OUTPUT_TEXT,
     ]) {
@@ -967,11 +965,15 @@ async function runRealSseRichReplayScenario(
       RICH_REPLAY_INJECTION_APPLIED_SUMMARY,
       RICH_REPLAY_QUESTION_SUMMARY,
       RICH_REPLAY_QUESTION_ANSWER_SUMMARY,
+      RICH_REPLAY_SUBAGENT_STATUS_SUMMARY,
+      RICH_REPLAY_BACKGROUND_TASK_SUMMARY,
+      RICH_REPLAY_SUBAGENT_STOPPED_SUMMARY,
+      RICH_REPLAY_SUBAGENT_RESUMED_SUMMARY,
     ]) {
       await expect(page.getByText(text)).toHaveCount(0);
     }
-    await expectTimelineTextVisible(page, "Tool call: read");
     await expectTimelineTextVisible(page, "Tool result: read");
+    await expect(page.getByText("Tool call: read")).toHaveCount(0);
 
     const outputImage = page.getByRole("img", { name: RICH_REPLAY_OUTPUT_IMAGE });
     await expect(outputImage).toBeVisible();
@@ -1039,12 +1041,30 @@ async function runRealSseRuntimeCursorReconnectScenario(
       (request) => request.afterEventId === "2",
     )).toBe(true);
     await expect(page.getByText(RUNTIME_CURSOR_RESUMED_CHUNK)).toBeVisible();
-    await expect(page.locator(".at-message").filter({ hasText: FIRST_CHUNK }))
-      .toHaveCount(1);
+    const completedRuntimeMessage = page
+      .locator(".at-message")
+      .filter({ hasText: FIRST_CHUNK })
+      .filter({ hasText: RUNTIME_CURSOR_RESUMED_CHUNK });
+    await expect(completedRuntimeMessage).toHaveCount(1);
+    await expectRuntimeCursorTextIsExact(completedRuntimeMessage.first());
     await expect(page.getByRole("button", { exact: true, name: "Stop" })).toBeHidden({
       timeout: 15_000,
     });
     await expect(page.getByRole("button", { name: /^(Send|发送)$/ })).toBeVisible();
+    await expect(page.locator(".at-message-streaming-text")).toHaveCount(0);
+    await expect(page.locator(".streaming-cursor")).toHaveCount(0);
+    await page.reload();
+    await waitForV2Shell(page);
+    await expect.poll(() => state.messageRequestCount).toBeGreaterThan(0);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    const replayedMessage = page
+      .locator(".at-message")
+      .filter({ hasText: FIRST_CHUNK })
+      .filter({ hasText: RUNTIME_CURSOR_RESUMED_CHUNK });
+    await expect(replayedMessage).toHaveCount(1);
+    await expectRuntimeCursorTextIsExact(replayedMessage.first());
+    await expect(page.locator(".at-message-streaming-text")).toHaveCount(0);
+    await expect(page.locator(".streaming-cursor")).toHaveCount(0);
     expect(state.runCreateCount).toBe(1);
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await expectNoDocumentScroll(
@@ -1499,6 +1519,7 @@ async function handleRealSseApi(
     return true;
   }
   if (context.method === "GET" && context.path === `/sessions/${SESSION_ID}/messages`) {
+    state.messageRequestCount += 1;
     await context.fulfillJson(realSsePersistedMessages(state));
     return true;
   }
@@ -1614,6 +1635,7 @@ async function handleRealSseApi(
     if (completeRuntimeCursorAfterFulfill) {
       state.completed = true;
       state.lastEventId = 4;
+      state.persistedAssistantText = RUNTIME_CURSOR_FULL_TEXT;
     }
     return true;
   }
@@ -2107,8 +2129,12 @@ async function handleRuntimeCursorHttpApi(
     });
     return true;
   }
+  if (path === `/sessions/${SESSION_ID}/messages`) {
+    state.messageRequestCount += 1;
+    sendJson(response, realSsePersistedMessages(state));
+    return true;
+  }
   if (
-    path === `/sessions/${SESSION_ID}/messages` ||
     path === `/sessions/${SESSION_ID}/subagents` ||
     path === `/sessions/${SESSION_ID}/agents` ||
     path === `/sessions/${SESSION_ID}/tasks` ||
@@ -2417,6 +2443,7 @@ function handleRuntimeCursorSse(
     }));
     state.completed = true;
     state.lastEventId = 4;
+    state.persistedAssistantText = RUNTIME_CURSOR_FULL_TEXT;
     response.end();
     return;
   }
@@ -3728,6 +3755,7 @@ function createRealSseState(overrides: Partial<RealSseState> = {}): RealSseState
     completed: false,
     injectionRequests: [],
     lastEventId: 0,
+    messageRequestCount: 0,
     multiplexRequests: [],
     pendingToolApproval: false,
     pendingUserQuestion: false,
@@ -3855,6 +3883,16 @@ async function expectTimelineSelectorVisible(
   }
   await expect(locator).toBeVisible();
   return locator;
+}
+
+async function expectRuntimeCursorTextIsExact(locator: Locator): Promise<void> {
+  const text = await locator.innerText();
+  expect(countOccurrences(text, FIRST_CHUNK)).toBe(1);
+  expect(countOccurrences(text, RUNTIME_CURSOR_RESUMED_CHUNK)).toBe(1);
+  expect(text.indexOf(FIRST_CHUNK)).toBeLessThan(
+    text.indexOf(RUNTIME_CURSOR_RESUMED_CHUNK),
+  );
+  expect(text).toContain(RUNTIME_CURSOR_FULL_TEXT);
 }
 
 async function expandFirstProcessedGroup(page: Page): Promise<void> {

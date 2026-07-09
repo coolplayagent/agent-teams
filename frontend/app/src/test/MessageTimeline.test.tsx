@@ -9657,7 +9657,7 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText(/python slow_stream.py/)).not.toBeInTheDocument();
   });
 
-  it("hides question coordination events from the transcript while keeping recovery events visible", async () => {
+  it("hides internal coordination events from the transcript while keeping recovery events visible", async () => {
     setRuntimeEntries([
       runtimeGenericEntry({
         id: "run-coordination:1:0",
@@ -9769,9 +9769,7 @@ describe("MessageTimeline", () => {
 
     renderTimeline();
 
-    await screen.findByText(
-      "Subagent status: Review PR · status running · phase subagent_running · role reviewer · instance subagent-1",
-    );
+    await screen.findByText("Awaiting manual action: root task root-1");
     expect(
       screen.queryByText("User question: Pick deployment target · #question-1"),
     ).not.toBeInTheDocument();
@@ -9789,18 +9787,18 @@ describe("MessageTimeline", () => {
       ),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByText(
+      screen.queryByText(
         "Subagent status: Review PR · status running · phase subagent_running · role reviewer · instance subagent-1",
       ),
-    ).toBeVisible();
+    ).not.toBeInTheDocument();
     expect(
-      screen.getByText(
+      screen.queryByText(
         "Subagent stopped: reason stopped_by_user · role reviewer · instance subagent-1 · task task-1",
       ),
-    ).toBeVisible();
+    ).not.toBeInTheDocument();
     expect(
-      screen.getByText("Subagent resumed: role reviewer · instance subagent-1 · task task-1"),
-    ).toBeVisible();
+      screen.queryByText("Subagent resumed: role reviewer · instance subagent-1 · task task-1"),
+    ).not.toBeInTheDocument();
     expect(screen.getByText("Awaiting manual action: root task root-1")).toBeVisible();
     expect(screen.queryByText("Run started: phase: streaming")).not.toBeInTheDocument();
     expect(
@@ -9809,6 +9807,8 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText("user question requested")).not.toBeInTheDocument();
     expect(screen.queryByText("injection enqueued")).not.toBeInTheDocument();
     expect(screen.queryByText("subagent session status changed")).not.toBeInTheDocument();
+    expect(screen.queryByText("subagent stopped")).not.toBeInTheDocument();
+    expect(screen.queryByText("subagent resumed")).not.toBeInTheDocument();
   });
 
   it("renders runtime todo update events as compact todo summaries", async () => {

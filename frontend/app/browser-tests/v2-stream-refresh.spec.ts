@@ -32,6 +32,7 @@ interface CapturedRunCreateRequest {
 interface RefreshRecoveryState {
   completed: boolean;
   lastEventId: number;
+  messageRequestCount: number;
   persistedAssistantText: string;
   runCreated: boolean;
 }
@@ -54,6 +55,7 @@ test("resumes an active stream after refresh without duplicating hydrated output
   const recoveryState: RefreshRecoveryState = {
     completed: false,
     lastEventId: 0,
+    messageRequestCount: 0,
     persistedAssistantText: "",
     runCreated: false,
   };
@@ -170,6 +172,7 @@ test("does not rebuild a fully displayed live answer when persisted history catc
   const recoveryState: RefreshRecoveryState = {
     completed: false,
     lastEventId: 0,
+    messageRequestCount: 0,
     persistedAssistantText: "",
     runCreated: false,
   };
@@ -241,6 +244,7 @@ test("does not rebuild a fully displayed live answer when persisted history catc
     recoveryState.persistedAssistantText = finalText;
     recoveryState.lastEventId = 3;
     recoveryState.completed = true;
+    const messageRequestsBeforeTerminal = recoveryState.messageRequestCount;
     await dispatchRunEvent(page, {
       eventId: 3,
       payload: { status: "completed" },
@@ -256,11 +260,14 @@ test("does not rebuild a fully displayed live answer when persisted history catc
     await expect(liveAnswerRow.locator(".streaming-cursor")).toHaveCount(0);
     await expect.poll(() => liveAnswerRow.first().getAttribute("data-row-key"))
       .toBe(liveRowKey);
+    await expect.poll(() => recoveryState.messageRequestCount)
+      .toBeGreaterThan(messageRequestsBeforeTerminal);
     await expect.poll(() =>
       page.locator(".at-chat-view").evaluate((element, expectedText) =>
         (element.textContent ?? "").split(expectedText).length - 1,
       finalText),
     ).toBe(1);
+    await expectSettledAnswerDoesNotReplay(page, liveAnswerRow, finalText, liveRowKey);
 
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await expectNoDocumentScroll(
@@ -287,6 +294,7 @@ test("fills terminal structured output from a visible runtime prefix without rep
   const recoveryState: RefreshRecoveryState = {
     completed: false,
     lastEventId: 0,
+    messageRequestCount: 0,
     persistedAssistantText: "",
     runCreated: false,
   };
@@ -657,6 +665,7 @@ async function handleRefreshApi(
     return true;
   }
   if (context.method === "GET" && context.path === `/sessions/${SESSION_ID}/messages`) {
+    recoveryState.messageRequestCount += 1;
     await context.fulfillJson(persistedMessages(recoveryState));
     return true;
   }
@@ -860,6 +869,28 @@ async function collectStreamingTextLengthSamples(
     await locator.page().waitForTimeout(35);
   }
   return samples;
+}
+
+async function expectSettledAnswerDoesNotReplay(
+  page: Page,
+  answerRow: Locator,
+  finalText: string,
+  rowKey: string | null,
+): Promise<void> {
+  for (let frame = 0; frame < 20; frame += 1) {
+    await page.waitForTimeout(35);
+    await expect(answerRow).toHaveCount(1);
+    await expect(answerRow).toContainText(finalText);
+    await expect(answerRow.locator(".at-message-streaming-text")).toHaveCount(0);
+    await expect(answerRow.locator(".streaming-cursor")).toHaveCount(0);
+    await expect(answerRow.first()).toHaveAttribute("data-row-key", rowKey ?? "");
+    const visibleCount = await page.locator(".at-chat-view").evaluate(
+      (element, expectedText) =>
+        (element.textContent ?? "").split(expectedText).length - 1,
+      finalText,
+    );
+    expect(visibleCount).toBe(1);
+  }
 }
 
 function increasingSampleCount(samples: number[]): number {

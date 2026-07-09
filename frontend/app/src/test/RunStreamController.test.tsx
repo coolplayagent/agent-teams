@@ -200,6 +200,7 @@ describe("useRunStreamController", () => {
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["sessions", "sidebar"],
     });
+    expect(listSessionRoundsMock).not.toHaveBeenCalled();
   });
 
   it("refreshes sidebar subagent discovery immediately for new subagent events", () => {

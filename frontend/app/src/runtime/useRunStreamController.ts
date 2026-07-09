@@ -832,10 +832,12 @@ function terminalRoundSettleTargets(
   runs: StartRunStreamTarget[],
   runtimeState: RuntimeState,
 ): TerminalRoundSettleTarget[] {
-  return normalizeRunTargets(runs).map((run) => ({
-    expectedToolCallIds: runtimeToolCallIds(runtimeState.runs[run.runId]),
-    runId: run.runId,
-  }));
+  return normalizeRunTargets(runs)
+    .map((run) => ({
+      expectedToolCallIds: runtimeToolCallIds(runtimeState.runs[run.runId]),
+      runId: run.runId,
+    }))
+    .filter((target) => target.expectedToolCallIds.length > 0);
 }
 
 async function settleTerminalRoundsFromHistory({

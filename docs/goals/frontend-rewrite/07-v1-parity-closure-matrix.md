@@ -775,6 +775,14 @@ For every row moved to `Verified`, record:
 - Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx -t "does not restart reveal|does not replay a fully streamed text answer|keeps a fully revealed live row"`, `npm test -- src/test/MessageTimeline.test.tsx`, `npm run test:browser -- v2-stream-create-run.spec.ts --project=chromium -g "reveals live stream text progressively"`, `npm run lint`, `npm run build`.
 - This still does not mark `MSG-02` or `STREAM-02` as `Verified`; true real-provider normal-stream proof, interrupted recovery, broader production-backend orchestration/tool-heavy variants, and final V1 visual sign-off remain open.
 
+## 2026-07-09 Terminal Text Stream Hydration Gate
+
+- `MSG-02`/`STREAM-02` tightened after browser evidence showed the packed stream-refresh spec was not actually proving terminal `/messages` hydration for pure text streams. The terminal controller had been waiting for round history for every run, including runs with no tool calls, so normal text streams could stay on runtime-only output until the round-settle loop timed out.
+- The round-settle gate now only applies to terminal runs that emitted tool calls needing persisted round/tool reconciliation. Pure text streams immediately invalidate/refetch session detail, messages, rounds, sidebar, and token usage at terminal close; tool-heavy streams still wait for round history to include the expected tool call ids before refreshing hydrated rounds.
+- Browser coverage now counts `/sessions/{id}/messages` requests, proves terminal close triggers a real messages refetch after the full live answer is visible, and samples the settled answer for 20 frames: one answer row, stable runtime row key, no `.at-message-streaming-text`, no cursor, and no duplicated final text.
+- Automated evidence: `npm test -- src/test/RunStreamController.test.tsx -t "refreshes timeline|waits for terminal round history"`, `npm test -- src/test/RunStreamController.test.tsx`, `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium -g "does not rebuild a fully displayed live answer"`, `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium`, `npm run build`, `npm run lint`.
+- This still does not mark `MSG-02` or `STREAM-02` as `Verified`; true real-provider normal-stream proof, interrupted recovery, broader production-backend orchestration/tool-heavy variants, and final V1 visual sign-off remain open.
+
 ## Immediate P0 Batch
 
 The current batch closes these rows first:

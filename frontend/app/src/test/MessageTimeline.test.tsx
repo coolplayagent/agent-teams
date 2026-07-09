@@ -817,7 +817,7 @@ describe("MessageTimeline", () => {
     expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
   });
 
-  it("reveals received live runtime text progressively without pre-rendering the full delta", async () => {
+  it("renders received live runtime text immediately without synthetic replay", async () => {
     vi.stubEnv("MODE", "production");
     vi.useFakeTimers();
     const finalAnswer = [
@@ -844,20 +844,14 @@ describe("MessageTimeline", () => {
       ".at-message-streaming-text",
     );
     expect(streamingText).not.toBeNull();
-    expect(streamingText).toHaveTextContent("L");
-    expect(screen.queryByText(finalAnswer)).not.toBeInTheDocument();
+    expect(streamingText).toHaveTextContent(finalAnswer);
+    expect(screen.getByText(finalAnswer)).toBeVisible();
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(56);
     });
-    expect(streamingText?.textContent?.length ?? 0).toBeGreaterThan(1);
-
-    for (let frame = 0; frame < 80; frame += 1) {
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(28);
-      });
-    }
+    expect(streamingText).toHaveTextContent(finalAnswer);
     expect(screen.getByText(finalAnswer)).toBeVisible();
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
   });
@@ -944,8 +938,9 @@ describe("MessageTimeline", () => {
 
     const { container } = renderTimeline();
 
-    expect(container.querySelector(".at-message-streaming-text")).toHaveTextContent("L");
-    expect(screen.queryByText(finalAnswer)).not.toBeInTheDocument();
+    expect(container.querySelector(".at-message-streaming-text"))
+      .toHaveTextContent(finalAnswer);
+    expect(screen.getByText(finalAnswer)).toBeVisible();
     const rowBefore = container.querySelector<HTMLElement>("article.at-message");
     const textNodeBefore = container.querySelector<HTMLElement>(".at-message-text");
 

@@ -767,6 +767,14 @@ For every row moved to `Verified`, record:
 - Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx -t "closes unresolved runtime tool calls|closes unresolved persisted tool calls|keeps closed runtime tool events"`, `npm test -- src/test/MessageTimeline.test.tsx`, `npm run lint`, `npm run build`, `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "normal tool pressure"`.
 - This does not mark `MSG-04` or `STREAM-02` as `Verified`; production-backend tool/orchestration variants, interrupted recovery, and final V1 visual sign-off remain open.
 
+## 2026-07-09 Completed Stream History Refresh Guard
+
+- `MSG-02` tightened for the visible regression where a fully rendered stream could be treated as new reveal text after terminal state and history refresh. Persisted answer rows that are anchored to a closed runtime text row now explicitly drop text `streaming`/`reveal` state while preserving the runtime row key, so repeated history refreshes cannot restart the typewriter animation or replace the existing answer DOM node.
+- Added component coverage that reproduces the end-to-end handoff shape: a full text delta becomes visible, `run_completed` closes the stream, history arrives with the same answer and a completed round, then history refreshes again with a different message id. The test asserts the same article node and `.at-message-text` node remain mounted, the final answer appears once, and no `.at-message-streaming-text` or cursor returns.
+- Browser evidence remains the existing packed stream check for progressive reveal and terminal settlement: the row is marked before terminal, terminal close removes the streaming wrapper/cursor, keeps the same row key, and leaves one final answer.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx -t "does not restart reveal|does not replay a fully streamed text answer|keeps a fully revealed live row"`, `npm test -- src/test/MessageTimeline.test.tsx`, `npm run test:browser -- v2-stream-create-run.spec.ts --project=chromium -g "reveals live stream text progressively"`, `npm run lint`, `npm run build`.
+- This still does not mark `MSG-02` or `STREAM-02` as `Verified`; true real-provider normal-stream proof, interrupted recovery, broader production-backend orchestration/tool-heavy variants, and final V1 visual sign-off remain open.
+
 ## Immediate P0 Batch
 
 The current batch closes these rows first:

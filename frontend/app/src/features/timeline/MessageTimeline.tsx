@@ -1705,6 +1705,13 @@ function persistedRowsWithRuntimeTextAnchors(
         changed = true;
         return persistedRowWithOpenRuntimeStreaming(row);
       }
+      if (runtimeHydration !== null) {
+        const closedRow = rowWithoutTextReveal(row);
+        if (closedRow !== row) {
+          changed = true;
+        }
+        return closedRow;
+      }
       return row;
     }
     changed = true;
@@ -1714,7 +1721,7 @@ function persistedRowsWithRuntimeTextAnchors(
     };
     return runtimeHydration?.streaming === true
       ? persistedRowWithOpenRuntimeStreaming(anchoredRow)
-      : anchoredRow;
+      : rowWithoutTextReveal(anchoredRow);
   });
   return changed ? nextRows : persistedRows;
 }
@@ -1985,10 +1992,10 @@ function persistedRowWithRuntimeTextAnchor(
   persistedRow: TimelineRow,
   runtimeRow: TimelineRow,
 ): TimelineRow {
-  return {
+  return rowWithoutTextReveal({
     ...persistedRow,
     key: runtimeRow.key,
-  };
+  });
 }
 
 function persistedRowWithRuntimeRevealParts(
@@ -2007,6 +2014,31 @@ function persistedRowWithRuntimeRevealParts(
     parts: [...workParts, ...runtimeTextParts],
     text: runtimeRow.text,
   };
+}
+
+function rowWithoutTextReveal(row: TimelineRow): TimelineRow {
+  let changed = false;
+  const parts = row.parts.map((part) => {
+    if (part.kind !== "text") {
+      return part;
+    }
+    if (part.reveal !== true && part.streaming !== true) {
+      return part;
+    }
+    changed = true;
+    return {
+      kind: "text" as const,
+      text: part.text,
+      streaming: false,
+    };
+  });
+  return changed
+    ? {
+        ...row,
+        parts,
+        text: rowCopyText(parts),
+      }
+    : row;
 }
 
 function terminalRuntimeTextCandidate(row: TimelineRow, text: string): boolean {

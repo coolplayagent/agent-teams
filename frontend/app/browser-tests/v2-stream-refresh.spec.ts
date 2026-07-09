@@ -289,6 +289,113 @@ test("does not rebuild a fully displayed live answer when persisted history catc
   }
 });
 
+test("does not replay when persisted history renders before live replay arrives", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const runCreateRequests: CapturedRunCreateRequest[] = [];
+  const finalText = [
+    "LIVE_STREAM_ALPHA",
+    "LIVE_STREAM_BETA",
+    "LIVE_STREAM_GAMMA",
+    "LIVE_STREAM_DELTA",
+    "LIVE_STREAM_EPSILON",
+    "LIVE_STREAM_ZETA",
+    "LIVE_STREAM_ETA",
+    "LIVE_STREAM_THETA",
+    "LIVE_STREAM_IOTA",
+    "LIVE_STREAM_KAPPA",
+  ].join(" ");
+  const recoveryState: RefreshRecoveryState = {
+    completed: false,
+    lastEventId: 0,
+    messageRequestCount: 0,
+    persistedAssistantText: finalText,
+    runCreated: true,
+  };
+  try {
+    await installShellState(page);
+    await installMockEventSource(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) =>
+        handleRefreshApi(context, runCreateRequests, recoveryState),
+      sessionTitle: "TS stream persisted before replay",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await waitForEventSourceUrl(
+      page,
+      /\/api\/ag-ui\/runs\/run-ts-refresh\/events\?after_event_id=0$/,
+    );
+
+    const answerRow = page.locator(
+      `.at-timeline-row.at-message[data-run-id="${RUN_ID}"]`,
+    );
+    await expect(answerRow).toHaveCount(1);
+    await expect(answerRow).toContainText(finalText);
+    await expect(answerRow.locator(".at-message-streaming-text")).toHaveText(finalText);
+    await expect(answerRow.locator(".streaming-cursor")).toHaveCount(1);
+
+    await dispatchRunEvent(page, {
+      eventId: 1,
+      payload: { text: finalText },
+      relayEventType: "text_delta",
+      type: "message.text.delta",
+    });
+    recoveryState.lastEventId = 1;
+
+    await expect(answerRow).toHaveCount(1);
+    await expect(answerRow.locator(".at-message-streaming-text")).toHaveText(finalText);
+    await expect(answerRow.locator(".streaming-cursor")).toHaveCount(1);
+    await expect.poll(async () => answerRow.locator(".at-message-text").textContent())
+      .not.toBe("L");
+    await expect.poll(() =>
+      page.locator(".at-chat-view").evaluate((element, expectedText) =>
+        (element.textContent ?? "").split(expectedText).length - 1,
+      finalText),
+    ).toBe(1);
+
+    recoveryState.completed = true;
+    recoveryState.lastEventId = 2;
+    await dispatchRunEvent(page, {
+      eventId: 2,
+      payload: { status: "completed" },
+      relayEventType: "run_completed",
+      type: "run.completed",
+    });
+    await waitForEventSourceOpenCount(page, 0);
+    await expect(answerRow).toHaveCount(1);
+    await expect(answerRow).toContainText(finalText);
+    await expect(answerRow.locator(".at-message-streaming-text")).toHaveCount(0);
+    await expect(answerRow.locator(".streaming-cursor")).toHaveCount(0);
+    await expectSettledAnswerDoesNotReplay(
+      page,
+      answerRow,
+      finalText,
+      await answerRow.first().getAttribute("data-row-key"),
+    );
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "history-first live replay should not rebuild the fixed V2 timeline",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-stream-history-first-live-replay.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
 test("does not replay a completed live answer when terminal round history catches up", async ({
   page,
 }) => {

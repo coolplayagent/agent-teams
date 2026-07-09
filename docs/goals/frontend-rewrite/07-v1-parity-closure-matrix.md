@@ -114,6 +114,28 @@ For every row moved to `Verified`, record:
 
 ## Verification Ledger
 
+### 2026-07-10 History-First Stream Replay Guard
+
+- `MSG-02` and `STREAM-02` tightened for the race where `/messages` or
+  `/rounds` can render the complete answer before a live/replayed SSE
+  `text_delta` for the same run arrives. The stream display snapshot is now
+  allowed to migrate between message and runtime row identities only within the
+  same run id, so a remount can keep already-visible complete text without
+  borrowing state from another run that happened to have the same text.
+- The running state still shows the cursor at the end of the already-known
+  answer, but the live replay can no longer restart from the first character.
+  Terminal close then removes `.at-message-streaming-text` and
+  `.streaming-cursor` while preserving one answer occurrence.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx`,
+  `npm run build`,
+  `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium -g "does not replay when persisted history renders before live replay arrives"`,
+  `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium -g "does not rebuild a fully displayed live answer when persisted history catches up"`,
+  and `npm run lint`.
+- This does not move `MSG-02` or `STREAM-02` to `Verified`; interrupted
+  recovery, broader production-backend orchestration/tool variants, true
+  real-provider normal-stream proof, and final V1/V2 visual sign-off remain
+  open.
+
 ### 2026-07-10 Streaming Initial-Mount Reveal Guard
 
 - `MSG-02` and `STREAM-02` tightened after manual review showed a live answer could be fully visible and then visually restart from the beginning when the streaming text component remounted during terminal/history or session recovery. The typewriter hook no longer treats initial `streaming=true` as permission to replay existing text. Initial streaming mounts now show the already-known text immediately with the cursor at the end; only later target-text growth reveals incrementally.

@@ -548,6 +548,137 @@ describe("MessageTimeline", () => {
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
   });
 
+  it("does not replay runtime text after the persisted answer is already visible", async () => {
+    vi.stubEnv("MODE", "production");
+    const finalAnswer = [
+      "LIVE_STREAM_ALPHA",
+      "LIVE_STREAM_BETA",
+      "LIVE_STREAM_GAMMA",
+      "LIVE_STREAM_DELTA",
+      "LIVE_STREAM_EPSILON",
+      "LIVE_STREAM_ZETA",
+      "LIVE_STREAM_ETA",
+      "LIVE_STREAM_THETA",
+      "LIVE_STREAM_IOTA",
+      "LIVE_STREAM_KAPPA",
+    ].join(" ");
+    const runId = "run-persisted-before-live-replay";
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: finalAnswer,
+        message_id: "assistant-persisted-before-live-replay",
+        role_id: "MainAgent",
+        run_id: runId,
+      },
+    ]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText(finalAnswer)).toBeVisible();
+    const rowBeforeReplay = container.querySelector<HTMLElement>("article.at-message");
+    const textBeforeReplay = container.querySelector<HTMLElement>(".at-message-text");
+    expect(rowBeforeReplay).not.toBeNull();
+    expect(textBeforeReplay).not.toBeNull();
+    expect(rowBeforeReplay).not.toHaveClass("is-streaming");
+    expect(container.querySelector(".at-message-streaming-text")).toBeNull();
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
+
+    act(() => {
+      useRuntimeStore.setState({
+        runtimeState: {
+          activeRunIds: [runId],
+          runs: {
+            [runId]: {
+              entries: [
+                {
+                  eventId: 8,
+                  id: `${runId}:8:0`,
+                  kind: "text_delta",
+                  occurredAt: "2026-06-23T00:00:00Z",
+                  payload: { text: finalAnswer },
+                  roleId: "MainAgent",
+                  runId,
+                  sessionId: "session-1",
+                  text: finalAnswer,
+                },
+              ],
+              hadVisibleTextStream: true,
+              lastEventId: 8,
+              runId,
+              seenEventKeys: [],
+              status: "open",
+              terminalEventType: null,
+            },
+          },
+        },
+      });
+    });
+
+    const rowAfterReplay = container.querySelector<HTMLElement>("article.at-message");
+    const textAfterReplay = container.querySelector<HTMLElement>(".at-message-text");
+    expect(rowAfterReplay?.dataset.rowKey).toBe(
+      "runtime-text:run-persisted-before-live-replay:MainAgent:0",
+    );
+    expect(rowAfterReplay).toHaveClass("is-streaming");
+    expect(textAfterReplay).not.toBeNull();
+    expect(textAfterReplay).toHaveClass("at-message-streaming-text");
+    expect(textAfterReplay).toHaveTextContent(finalAnswer);
+    expect(textAfterReplay?.textContent).not.toBe("L");
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+
+    act(() => {
+      useRuntimeStore.setState({
+        runtimeState: {
+          activeRunIds: [],
+          runs: {
+            [runId]: {
+              entries: [
+                {
+                  eventId: 8,
+                  id: `${runId}:8:0`,
+                  kind: "text_delta",
+                  occurredAt: "2026-06-23T00:00:00Z",
+                  payload: { text: finalAnswer },
+                  roleId: "MainAgent",
+                  runId,
+                  sessionId: "session-1",
+                  text: finalAnswer,
+                },
+                {
+                  eventId: 9,
+                  id: `${runId}:9:1`,
+                  kind: "run_completed",
+                  occurredAt: "2026-06-23T00:00:01Z",
+                  payload: { status: "completed" },
+                  roleId: "MainAgent",
+                  runId,
+                  sessionId: "session-1",
+                  text: "completed",
+                },
+              ],
+              hadVisibleTextStream: true,
+              lastEventId: 9,
+              runId,
+              seenEventKeys: [],
+              status: "closed",
+              terminalEventType: "run_completed",
+            },
+          },
+        },
+      });
+    });
+
+    const rowAfterCompleted = container.querySelector<HTMLElement>("article.at-message");
+    expect(rowAfterCompleted?.dataset.rowKey).toBe(
+      "runtime-text:run-persisted-before-live-replay:MainAgent:0",
+    );
+    expect(rowAfterCompleted).not.toHaveClass("is-streaming");
+    expect(screen.getByText(finalAnswer)).toBeVisible();
+    expect(container.querySelector(".at-message-streaming-text")).toBeNull();
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
+  });
+
   it("keeps MainAgent live answer text outside the processed group", async () => {
     const finalAnswer = "LIVE_MAIN_AGENT_ALPHA LIVE_MAIN_AGENT_BETA";
     setRuntimeStateFromEvents([

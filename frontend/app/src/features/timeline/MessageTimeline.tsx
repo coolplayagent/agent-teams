@@ -6606,6 +6606,14 @@ function nextStreamingDisplayState(
 ): StreamingDisplayState {
   const active = shouldRevealStreamingText(targetText, streaming, reveal);
   if (current.identity !== identity) {
+    if (current.targetText === targetText && current.text === targetText) {
+      return {
+        active,
+        identity,
+        targetText,
+        text: targetText,
+      };
+    }
     return initialStreamingDisplayState(targetText, streaming, reveal, identity);
   }
   if (!active) {
@@ -6687,18 +6695,48 @@ function restoredStreamingDisplayText(
   }
   const snapshot = streamingDisplaySnapshots.get(identity);
   if (snapshot === undefined || snapshot.text.length === 0) {
-    return null;
+    return restoredCompleteStreamingDisplayText(identity, targetText);
   }
   if (!targetText.startsWith(snapshot.text)) {
-    return null;
+    return restoredCompleteStreamingDisplayText(identity, targetText);
   }
   if (
     snapshot.text.length <= initialRevealedText(targetText).length &&
     snapshot.text !== targetText
   ) {
-    return null;
+    return restoredCompleteStreamingDisplayText(identity, targetText);
   }
   return snapshot.text;
+}
+
+function restoredCompleteStreamingDisplayText(
+  identity: string,
+  targetText: string,
+): string | null {
+  for (const [snapshotIdentity, snapshot] of streamingDisplaySnapshots) {
+    if (
+      snapshot.targetText === targetText &&
+      snapshot.text === targetText &&
+      streamIdentitiesShareRunScope(identity, snapshotIdentity)
+    ) {
+      return targetText;
+    }
+  }
+  return null;
+}
+
+function streamIdentitiesShareRunScope(left: string, right: string): boolean {
+  const leftRunId = runIdFromStreamIdentity(left);
+  return leftRunId !== null && leftRunId === runIdFromStreamIdentity(right);
+}
+
+function runIdFromStreamIdentity(identity: string): string | null {
+  const parts = identity.split(":");
+  if (parts[0] === "runtime-text" || parts[0] === "run-text") {
+    const runId = parts[1]?.trim() ?? "";
+    return runId.length > 0 ? runId : null;
+  }
+  return null;
 }
 
 function rememberStreamingDisplayState(state: StreamingDisplayState): void {

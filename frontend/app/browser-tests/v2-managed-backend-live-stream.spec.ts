@@ -406,8 +406,24 @@ test("managed backend subagent stream reveals incrementally in the right panel",
       .toContain(firstToken);
     expect(await latestSubagentPanelRuntimeText(panel)).not.toContain(lastToken);
 
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expectManagedShellReady(page);
+    await expect(page.locator(".at-subagent-session-view")).toBeVisible({
+      timeout: 30_000,
+    });
+    const restoredPanel = page.locator(".at-subagent-session-view");
+    await expect
+      .poll(() => restoredPanel.locator(".at-subagent-session-prompt").textContent(), {
+        timeout: 45_000,
+      })
+      .toContain(childTag);
+    await expect
+      .poll(() => latestSubagentPanelRuntimeText(restoredPanel), { timeout: 60_000 })
+      .toContain(firstToken);
+    expect(await latestSubagentPanelRuntimeText(restoredPanel)).not.toContain(lastToken);
+
     const tokenSamples = await collectSubagentPanelTokenProgressSamples(
-      panel,
+      restoredPanel,
       childTag,
       childTokenCount,
       90_000,
@@ -423,14 +439,14 @@ test("managed backend subagent stream reveals incrementally in the right panel",
     await page.screenshot({
       fullPage: false,
       path: screenshotPath(
-        "managed-live-subagent-panel-streaming.png",
+        "managed-live-subagent-panel-restored-streaming.png",
         SCREENSHOT_FOLDER,
       ),
     });
 
     await waitForRunToLeaveActive(session.session_id, createdRunId, 180_000);
     await expect
-      .poll(() => panel.textContent(), { timeout: 60_000 })
+      .poll(() => restoredPanel.textContent(), { timeout: 60_000 })
       .toContain(lastToken);
     await expect
       .poll(() => mainTimelineMessageArticleText(page), { timeout: 60_000 })
@@ -439,7 +455,7 @@ test("managed backend subagent stream reveals incrementally in the right panel",
       .not.toContain(firstToken);
     await expect.poll(() => mainTimelineMessageArticleText(page))
       .not.toContain(lastToken);
-    await expect(panel.locator(".streaming-cursor")).toHaveCount(0);
+    await expect(restoredPanel.locator(".streaming-cursor")).toHaveCount(0);
     await expect(page.locator(".streaming-cursor")).toHaveCount(0);
     await expectNoDocumentScroll(
       page,

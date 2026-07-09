@@ -808,6 +808,15 @@ For every row moved to `Verified`, record:
 - Automated evidence: `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "managed backend subagent stream reveals"`, `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium`, `npm run lint`.
 - This does not mark `SUB-01`, `MSG-02`, or `STREAM-02` as `Verified`; live production-backend orchestration variants and final V1/V2 visual sign-off remain open.
 
+## 2026-07-09 Managed Active Refresh Terminal Cursor Closure
+
+- `MSG-02`/`STREAM-02` tightened after managed-browser evidence showed a fully rendered stream could still carry `.at-message-streaming-text` and `.streaming-cursor` when the run had already reached backend terminal state after a session switch or hard refresh.
+- Main-session closure now refreshes selected session detail while active streams are present, so `latest_terminal_run_id/status` reaches `MessageTimeline` promptly after backend completion. The managed normal-stream session-switch case now settles with one final answer row, stable row key, zero prefix rows, zero streaming wrappers, and zero cursors.
+- `SUB-01` tightened for the right-side subagent panel active-refresh case: after opening the panel during child streaming, hard-refreshing the page, restoring the panel, and sampling continued numbered child tokens, terminal state closes stale runtime streaming even if the child runtime store still has an open snapshot. The panel keeps prompt/header context, child tokens stay out of `.at-chat-view`, and final terminal state has no cursor.
+- Added component coverage for both terminal subagent history refresh and stale-open runtime text under a completed subagent record; kept existing open-runtime hydration tests intact so active streams still show streaming while they are genuinely active.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx src/test/SubagentSessionView.test.tsx`, `npm run build`, `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium`, `npm run lint`.
+- This does not mark `MSG-02`, `STREAM-02`, or `SUB-01` as `Verified`; live production-backend orchestration variants, interrupted real-provider recovery, and final V1/V2 visual sign-off remain open.
+
 ## Immediate P0 Batch
 
 The current batch closes these rows first:

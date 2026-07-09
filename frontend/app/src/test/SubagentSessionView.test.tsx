@@ -715,6 +715,87 @@ describe("SubagentSessionView", () => {
     expect(await screen.findByText("Final subagent answer")).toBeVisible();
   });
 
+  it("does not replay terminal subagent text after a refreshed panel receives history", async () => {
+    const finalText = [
+      "SUBAGENT_STREAM_ALPHA",
+      "SUBAGENT_STREAM_BETA",
+      "SUBAGENT_STREAM_GAMMA",
+      "SUBAGENT_STREAM_DELTA",
+    ].join(" ");
+    setRuntimeEntries([
+      runtimeTextDeltaEntry({
+        instanceId: "subagent-instance-1",
+        runId: "subagent_run_1",
+        text: finalText,
+      }),
+    ]);
+    const refreshedMessages = deferredAgentMessages();
+    listAgentMessagesMock
+      .mockResolvedValueOnce([])
+      .mockReturnValueOnce(refreshedMessages.promise);
+
+    const { container } = renderSubagentSessionView();
+
+    await waitFor(() => expect(screen.getByText(finalText)).toBeVisible(), {
+      timeout: 3000,
+    });
+    await waitFor(() => expect(openSessionSubagentRunStreamMock).toHaveBeenCalled());
+
+    closeLatestSubagentStream(closedRuntimeState("subagent_run_1"));
+
+    await waitFor(() => expect(listAgentMessagesMock).toHaveBeenCalledTimes(2));
+    expect(screen.getByText(finalText)).toBeVisible();
+    expect(container.querySelector(".at-message-streaming-text")).toBeNull();
+    expect(container.querySelector(".streaming-cursor")).toBeNull();
+
+    await act(async () => {
+      refreshedMessages.resolve([
+        {
+          content: finalText,
+          message_id: "subagent-message-final",
+          role: "assistant",
+          run_id: "subagent_run_1",
+        },
+      ]);
+      await refreshedMessages.promise;
+    });
+
+    expect(container.textContent).toContain(finalText);
+    expect(container.querySelector(".at-message-streaming-text")).toBeNull();
+    expect(container.querySelector(".streaming-cursor")).toBeNull();
+  }, 10000);
+
+  it("closes stale open runtime text when the subagent record is terminal", async () => {
+    const finalText = [
+      "SUBAGENT_STREAM_ALPHA",
+      "SUBAGENT_STREAM_BETA",
+      "SUBAGENT_STREAM_GAMMA",
+      "SUBAGENT_STREAM_DELTA",
+    ].join(" ");
+    setRuntimeEntries([
+      runtimeTextDeltaEntry({
+        instanceId: "subagent-instance-1",
+        runId: "subagent_run_1",
+        text: finalText,
+      }),
+    ]);
+    listAgentMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderSubagentSessionView({
+      subagent: createSubagent({
+        runPhase: "completed",
+        runStatus: "completed",
+        status: "completed",
+      }),
+    });
+
+    expect(await screen.findByText("completed")).toBeVisible();
+    expect(container.textContent).toContain(finalText);
+    expect(container.querySelector(".at-message-streaming-text")).toBeNull();
+    expect(container.querySelector(".streaming-cursor")).toBeNull();
+    expect(openSessionSubagentRunStreamMock).not.toHaveBeenCalled();
+  });
+
   it("renders closed stream state immediately before terminal history refresh runs", async () => {
     listAgentMessagesMock.mockResolvedValue([]);
     renderSubagentSessionView();
@@ -849,7 +930,7 @@ describe("SubagentSessionView", () => {
 
     await waitFor(() => expect(listAgentMessagesMock).toHaveBeenCalledTimes(3));
     fireEvent.click(screen.getByText("Processed"));
-    expect(await screen.findByText("Tool call: shell")).toBeVisible();
+    expect(await screen.findByText("Tool result: shell")).toBeVisible();
     expect(screen.queryByText("Existing subagent answer")).not.toBeInTheDocument();
     expect(
       screen.queryByText("Incomplete persisted subagent answer"),

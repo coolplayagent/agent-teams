@@ -227,6 +227,12 @@ export function MessageTimeline({
     () => terminalRunIdOverrideSet(latestTerminalRunId, latestTerminalRunStatus),
     [latestTerminalRunId, latestTerminalRunStatus],
   );
+  const terminalScopeOverride = useMemo(
+    () =>
+      variant === "subagent-panel" &&
+      normalizedTerminalRoundStatus(latestTerminalRunStatus) !== null,
+    [latestTerminalRunStatus, variant],
+  );
   const railRounds = useMemo(
     () => visibleRoundRailRounds(displayRounds, expandedHistorySegmentIds),
     [displayRounds, expandedHistorySegmentIds],
@@ -326,8 +332,21 @@ export function MessageTimeline({
     ],
   );
   const runtimeRows = useMemo(
-    () => runtimeEntriesToRows(runtimeEntries, runtimeState.runs, variant),
-    [runtimeEntries, runtimeState.runs, variant],
+    () =>
+      runtimeEntriesToRows(
+        runtimeEntries,
+        runtimeState.runs,
+        variant,
+        terminalRunIdOverrides,
+        terminalScopeOverride,
+      ),
+    [
+      runtimeEntries,
+      runtimeState.runs,
+      terminalRunIdOverrides,
+      terminalScopeOverride,
+      variant,
+    ],
   );
   const displayPersistedRows = useMemo(
     () =>
@@ -2762,6 +2781,8 @@ function runtimeEntriesToRows(
   entries: TimelineEntry[],
   runStates: Record<string, RuntimeRunState>,
   variant: "session" | "subagent-panel",
+  terminalRunIdOverrides: ReadonlySet<string> = new Set(),
+  terminalScopeOverride = false,
 ): TimelineRow[] {
   const rows: TimelineRow[] = [];
   const activeThinking = new Map<string, RuntimeThinkingAccumulator>();
@@ -2850,8 +2871,19 @@ function runtimeEntriesToRows(
     }
     rows.push(runtimeEntryToRow(entry, variant));
   }
-  closeTerminalRuntimeTextSegments(rows, activeText, runStates);
-  closeTerminalRuntimeToolCalls(rows, runStates);
+  closeTerminalRuntimeTextSegments(
+    rows,
+    activeText,
+    runStates,
+    terminalRunIdOverrides,
+    terminalScopeOverride,
+  );
+  closeTerminalRuntimeToolCalls(
+    rows,
+    runStates,
+    terminalRunIdOverrides,
+    terminalScopeOverride,
+  );
   return rows;
 }
 
@@ -2882,10 +2914,17 @@ function closeTerminalRuntimeTextSegments(
   rows: TimelineRow[],
   activeText: Map<string, RuntimeTextAccumulator>,
   runStates: Record<string, RuntimeRunState>,
+  terminalRunIdOverrides: ReadonlySet<string>,
+  terminalScopeOverride: boolean,
 ): void {
   activeText.forEach((existing, groupKey) => {
     const runId = existing.row.runId;
-    if (runId !== null && runtimeRunStateClosesText(runStates[runId])) {
+    if (
+      runId !== null &&
+      (terminalScopeOverride ||
+        runtimeRunStateClosesText(runStates[runId]) ||
+        terminalRunIdOverrides.has(runId))
+    ) {
       closeRuntimeTextAccumulator(rows, existing, false);
       activeText.delete(groupKey);
     }
@@ -2905,12 +2944,18 @@ function runtimeRunStateClosesText(
 function closeTerminalRuntimeToolCalls(
   rows: TimelineRow[],
   runStates: Record<string, RuntimeRunState>,
+  terminalRunIdOverrides: ReadonlySet<string>,
+  terminalScopeOverride: boolean,
 ): void {
   for (const row of rows) {
     if (row.source !== "runtime" || row.runId === null) {
       continue;
     }
-    if (!runtimeRunStateClosesText(runStates[row.runId])) {
+    if (
+      !terminalScopeOverride &&
+      !runtimeRunStateClosesText(runStates[row.runId]) &&
+      !terminalRunIdOverrides.has(row.runId)
+    ) {
       continue;
     }
     for (const part of row.parts) {

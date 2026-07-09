@@ -2,6 +2,20 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-09 Managed Backend Normal Stream Proof
+
+### Scope
+- Added a deterministic browser proof path for normal assistant streaming through the real FastAPI backend, real `/app/` bundle, HTTP run creation, and SSE stream handling, while using the existing fake LLM server as the model provider.
+- The new managed spec starts an isolated fake LLM process plus an isolated backend process with a temporary home/config directory, waits for the actual `/api/sessions` contract to become available, then drives the browser through normal chat runs.
+- The first scenario samples visible stream-row text lengths during a slow fake-LLM response, proves the row grows before the final token is present, switches away to another session and back, then verifies the final answer appears once with no strict-prefix leftover row, no stale cursor, no document-level scroll, and no composer overlap.
+- The second scenario waits for terminal settlement, hard-refreshes the completed run, and verifies the final answer still appears once with no stale streaming wrapper or prefix duplicate.
+
+### Verification
+- `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium` passed with 2 Chromium scenarios.
+
+### Reviewer
+- Main-agent decision: this closes the deterministic normal-stream proof gap for the frontend/backend/SSE path that the real-model audit could not prove reliably. It does not close true real-provider normal-stream verification, interrupted recovery, complex tool/orchestration variants, final V1/V2 visual sign-off, or the overall V2 frontend goal.
+
 ## 2026-07-09 Real Backend Stream Audit Correction
 
 ### Scope

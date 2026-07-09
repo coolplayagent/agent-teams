@@ -856,6 +856,14 @@ For every row moved to `Verified`, record:
 - Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx`, `npm test -- src/test/SubagentSessionView.test.tsx`, `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium -g "does not rebuild a fully displayed live answer|terminal round history catches up"`, `npm run test:browser -- v2-stream-create-run.spec.ts --project=chromium -g "reveals live stream text progressively"`, `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium -g "opens a nested subagent session|replays an orchestration subagent panel|streams a live orchestration subagent"`, `npm run lint`, `npm run build`.
 - This does not mark `MSG-02`, `STREAM-02`, or `SUB-01` as `Verified`; interrupted recovery, broader production-backend orchestration/tool variants, and final V1/V2 visual sign-off remain open.
 
+## 2026-07-10 Late Stream Event Ordering Guard
+
+- `STREAM-02` tightened for the missing-content class where a reconnecting or replaying stream can receive event IDs out of order. The runtime reducer no longer drops an unseen event solely because its `event_id` is below the highest local cursor; it only drops events at or before the explicit replay cursor. This preserves late-but-unseen events while still suppressing stale replay data.
+- Runtime timeline entries are now kept in stable `event_id` order and terminal state is recomputed from that ordered entry list. This prevents a late event from rendering after newer text or incorrectly changing the visible run lifecycle by arrival order alone.
+- Browser coverage now drives a packed V2 stream that receives `ORDER_EVENT_10`, then `ORDER_EVENT_12`, then the late `ORDER_EVENT_11`; the DOM assertion verifies all three appear exactly once and in 10 -> 11 -> 12 order before terminal close removes the cursor. The same reconnect file was rerun fully to keep manual reconnect exhaustion, non-text reconnect, and Last-Event-ID fallback coverage intact.
+- Automated evidence: `npm test -- src/test/runtimeReducers.test.ts`, `npm test -- src/test/streamClient.test.ts`, `npm run test:browser -- v2-stream-reconnect.spec.ts --project=chromium -g "late unseen stream events|Last-Event-ID"`, `npm run test:browser -- v2-stream-reconnect.spec.ts --project=chromium`, `npm run lint`, `npm run build`.
+- This does not mark `STREAM-02` as `Verified`; active hard-refresh continuation through broader managed/real backend variants and final V1/V2 visual sign-off remain open.
+
 ## Immediate P0 Batch
 
 The current batch closes these rows first:

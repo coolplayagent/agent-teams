@@ -246,6 +246,97 @@ test("preserves non-text stream events after reconnect", async ({ page }) => {
   }
 });
 
+test("renders late unseen stream events in event id order", async ({ page }) => {
+  const appServer = await serveFrontendDist();
+  const runCreateRequests: CapturedRunCreateRequest[] = [];
+  try {
+    await installShellState(page);
+    await installMockEventSource(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleStreamApi(context, runCreateRequests),
+      sessionTitle: "TS late stream event",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+
+    const prompt = page.getByRole("textbox", { name: "Prompt" });
+    await prompt.fill("Late event order check");
+    await page.getByRole("button", { name: "Send" }).click();
+    await expect.poll(() => runCreateRequests.length).toBe(1);
+    await waitForEventSourceUrl(
+      page,
+      /\/api\/ag-ui\/runs\/run-ts-reconnect\/events\?after_event_id=0$/,
+    );
+
+    const firstChunk = "ORDER_EVENT_10";
+    const lateChunk = "ORDER_EVENT_11";
+    const thirdChunk = "ORDER_EVENT_12";
+    await dispatchRunEvent(page, {
+      eventId: 10,
+      payload: { text: firstChunk },
+      relayEventType: "text_delta",
+      type: "message.text.delta",
+    });
+    await dispatchRunEvent(page, {
+      eventId: 12,
+      payload: { text: thirdChunk },
+      relayEventType: "text_delta",
+      type: "message.text.delta",
+    });
+    await expect(page.getByText(firstChunk)).toBeVisible();
+    await expect(page.getByText(thirdChunk)).toBeVisible();
+
+    await dispatchRunEvent(page, {
+      eventId: 11,
+      payload: { text: lateChunk },
+      relayEventType: "text_delta",
+      type: "message.text.delta",
+    });
+    await expect(page.getByText(lateChunk)).toBeVisible();
+    await expect.poll(() =>
+      page.locator(".at-chat-view").evaluate((root, tokens) => {
+        const text = root.textContent ?? "";
+        const indexes = (tokens as string[]).map((token) => text.indexOf(token));
+        return (
+          indexes.every((index) => index >= 0) &&
+          indexes[0] < indexes[1] &&
+          indexes[1] < indexes[2]
+        );
+      }, [firstChunk, lateChunk, thirdChunk]),
+    ).toBe(true);
+    await expect.poll(() =>
+      page.locator(".at-chat-view").evaluate((root, token) =>
+        (root.textContent ?? "").split(token as string).length - 1,
+      lateChunk),
+    ).toBe(1);
+
+    await dispatchRunEvent(page, {
+      eventId: 13,
+      payload: { status: "completed" },
+      relayEventType: "run_completed",
+      type: "run.completed",
+    });
+    await waitForEventSourceOpenCount(page, 0);
+    await expect(page.locator(".streaming-cursor")).toHaveCount(0);
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "v2 late stream event order should leave shell fixed-height",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.screenshot({
+      path: screenshotPath("v2-late-stream-event-order.png", SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
 test("reconnects from SSE Last-Event-ID when payload event id is missing", async ({
   page,
 }) => {

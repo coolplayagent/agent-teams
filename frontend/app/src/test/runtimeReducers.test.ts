@@ -29,6 +29,7 @@ describe("runtime reducers", () => {
           "run-1": {
             entries: [],
             lastEventId: 12,
+            replayAfterEventId: 12,
             runId: "run-1",
             seenEventKeys: [],
             status: "open",
@@ -45,6 +46,37 @@ describe("runtime reducers", () => {
 
     expect(state.runs["run-1"].entries).toHaveLength(0);
     expect(state.runs["run-1"].lastEventId).toBe(12);
+  });
+
+  it("keeps unseen late events that arrive below the local stream cursor", () => {
+    const withEventTen = reduceRunEvent(
+      initialRuntimeState,
+      runEvent({
+        event_id: 10,
+        event_type: "text_delta",
+        payload_json: JSON.stringify({ text: "first chunk" }),
+      }),
+    );
+    const withEventTwelve = reduceRunEvent(
+      withEventTen,
+      runEvent({
+        event_id: 12,
+        event_type: "text_delta",
+        payload_json: JSON.stringify({ text: "third chunk" }),
+      }),
+    );
+    const withLateEventEleven = reduceRunEvent(
+      withEventTwelve,
+      runEvent({
+        event_id: 11,
+        event_type: "text_delta",
+        payload_json: JSON.stringify({ text: "second chunk" }),
+      }),
+    );
+
+    expect(withLateEventEleven.runs["run-1"].lastEventId).toBe(12);
+    expect(withLateEventEleven.runs["run-1"].entries.map((entry) => entry.text))
+      .toEqual(["first chunk", "second chunk", "third chunk"]);
   });
 
   it("bounds fallback dedupe keys for long streams", () => {
@@ -155,6 +187,37 @@ describe("runtime reducers", () => {
       "run_completed",
       "token_usage",
     ]);
+  });
+
+  it("keeps entryless recovered terminal runs closed for trailing events", () => {
+    const state = reduceRunEvent(
+      {
+        activeRunIds: [],
+        runs: {
+          "run-1": {
+            entries: [],
+            lastEventId: 10,
+            runId: "run-1",
+            seenEventKeys: ["run-1:10"],
+            status: "closed",
+            terminalEventType: "run_completed",
+          },
+        },
+      },
+      runEvent({
+        event_id: 11,
+        event_type: "token_usage",
+        payload_json: JSON.stringify({ total_tokens: 123 }),
+      }),
+    );
+
+    expect(state.activeRunIds).toEqual([]);
+    expect(state.runs["run-1"]).toMatchObject({
+      status: "closed",
+      terminalEventType: "run_completed",
+    });
+    expect(state.runs["run-1"].entries.map((entry) => entry.kind))
+      .toEqual(["token_usage"]);
   });
 
   it("reopens a completed run only from a later resume lifecycle event", () => {

@@ -90,7 +90,7 @@ export function reduceRunEvent(
   const existing = state.runs[runId] ?? createRunState(runId);
   const rawEventId = event.event_id;
   const hasPositiveEventId = typeof rawEventId === "number" && rawEventId > 0;
-  if (hasPositiveEventId && rawEventId <= existing.lastEventId) {
+  if (hasPositiveEventId && rawEventId <= (existing.replayAfterEventId ?? 0)) {
     return state;
   }
   const dedupeKey = eventDedupeKey(event);
@@ -102,9 +102,22 @@ export function reduceRunEvent(
     hasPositiveEventId
       ? rawEventId
       : existing.lastEventId;
-  const terminalEventType = nextTerminalEventType(
+  const nextEntry = {
+    id: `${runId}:${eventId}:${existing.entries.length}`,
+    sessionId: event.session_id,
+    runId,
+    instanceId: event.instance_id ?? "",
+    roleId: event.role_id ?? event.instance_id ?? "agent",
+    kind: event.event_type,
+    text: eventText(event.payload, event.event_type),
+    payload: event.payload,
+    eventId,
+    occurredAt: event.occurred_at ?? "",
+  } satisfies TimelineEntry;
+  const entries = appendTimelineEntry(existing.entries, nextEntry);
+  const terminalEventType = terminalEventTypeFromEntries(
+    entries,
     existing.terminalEventType,
-    event.event_type,
   );
   const status: StreamStatus = terminalEventType === null ? "open" : "closed";
   const nextRun: RuntimeRunState = {
@@ -118,18 +131,7 @@ export function reduceRunEvent(
       ? existing.seenEventKeys
       : rememberSeenEventKey(existing.seenEventKeys, dedupeKey),
     terminalEventType,
-    entries: appendTimelineEntry(existing.entries, {
-      id: `${runId}:${eventId}:${existing.entries.length}`,
-      sessionId: event.session_id,
-      runId,
-      instanceId: event.instance_id ?? "",
-      roleId: event.role_id ?? event.instance_id ?? "agent",
-      kind: event.event_type,
-      text: eventText(event.payload, event.event_type),
-      payload: event.payload,
-      eventId,
-      occurredAt: event.occurred_at ?? "",
-    }),
+    entries,
   };
 
   const activeRunIds = new Set(state.activeRunIds);
@@ -381,11 +383,41 @@ function appendTimelineEntry(
   if (!shouldRenderEntry(nextEntry.kind)) {
     return entries;
   }
-  return [...entries, nextEntry];
+  return [...entries, nextEntry].sort(compareTimelineEntries);
 }
 
 function shouldRenderEntry(kind: RunEventType | "message"): boolean {
   return kind.trim().length > 0;
+}
+
+function compareTimelineEntries(left: TimelineEntry, right: TimelineEntry): number {
+  if (left.eventId > 0 && right.eventId > 0 && left.eventId !== right.eventId) {
+    return left.eventId - right.eventId;
+  }
+  return 0;
+}
+
+function terminalEventTypeFromEntries(
+  entries: TimelineEntry[],
+  fallbackTerminalEventType: RunEventType | null,
+): RunEventType | null {
+  let terminalEventType: RunEventType | null = fallbackTerminalEventType;
+  let hasLifecycleEntry = false;
+  for (const entry of entries) {
+    if (!isRunLifecycleEntry(entry.kind)) {
+      continue;
+    }
+    if (!hasLifecycleEntry) {
+      terminalEventType = null;
+      hasLifecycleEntry = true;
+    }
+    terminalEventType = nextTerminalEventType(terminalEventType, entry.kind);
+  }
+  return terminalEventType;
+}
+
+function isRunLifecycleEntry(kind: RunEventType | "message"): boolean {
+  return kind === "run_resumed" || isTerminalRunEvent(kind);
 }
 
 function eventText(payload: JsonValue, eventType: RunEventType): string {

@@ -1196,6 +1196,7 @@ function createRunStreamController(
     activeRunIds: [],
     clearRunStream: vi.fn(),
     setForegroundSessionId: vi.fn(),
+    settleTerminalRunStream: vi.fn(),
     startRunStream: vi.fn(),
     startRunStreams: vi.fn(),
     suppressedRunIds: [],

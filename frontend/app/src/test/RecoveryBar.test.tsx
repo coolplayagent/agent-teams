@@ -1241,6 +1241,7 @@ function runStreamController(activeRunId: string | null = null): RunStreamContro
     activeRunIds: activeRunId === null ? [] : [activeRunId],
     clearRunStream: vi.fn(),
     setForegroundSessionId: vi.fn(),
+    settleTerminalRunStream: vi.fn(),
     startRunStream: vi.fn(),
     startRunStreams: vi.fn(),
     suppressedRunIds: [],

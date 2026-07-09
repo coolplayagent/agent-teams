@@ -52,6 +52,7 @@ export interface RunStreamController {
   activeRunIds: string[];
   clearRunStream: (options?: ClearRunStreamOptions) => void;
   setForegroundSessionId: (sessionId: string | null) => void;
+  settleTerminalRunStream: (options: SettleTerminalRunStreamOptions) => void;
   startRunStream: (options: StartRunStreamOptions) => void;
   startRunStreams: (options: StartRunStreamsOptions) => void;
   suppressedRunIds: string[];
@@ -60,6 +61,11 @@ export interface RunStreamController {
 
 export interface ClearRunStreamOptions {
   suppressRunIds?: string[];
+}
+
+export interface SettleTerminalRunStreamOptions {
+  runIds: string[];
+  sessionId: string;
 }
 
 interface RunStreamCallbacks {
@@ -219,6 +225,20 @@ export function useRunStreamController(): RunStreamController {
       );
     }
     stopActiveRunStream();
+  };
+
+  const settleTerminalRunStream = (options: SettleTerminalRunStreamOptions) => {
+    const runs = Array.from(
+      new Set(
+        options.runIds
+          .map((runId) => runId.trim())
+          .filter((runId) => runId.length > 0),
+      ),
+    ).map((runId) => ({ runId }));
+    if (runs.length === 0) {
+      return;
+    }
+    finishClosedRunStream(options.sessionId, runs);
   };
 
   const setForegroundSessionId = (sessionId: string | null) => {
@@ -483,6 +503,7 @@ export function useRunStreamController(): RunStreamController {
     activeRunIds,
     clearRunStream,
     setForegroundSessionId,
+    settleTerminalRunStream,
     startRunStream,
     startRunStreams,
     suppressedRunIds,

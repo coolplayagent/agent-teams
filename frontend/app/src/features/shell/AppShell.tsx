@@ -333,6 +333,14 @@ export function AppShell() {
       ) ?? null,
     [selectedSessionId, sidebarSessionsQuery.data],
   );
+  const latestTerminalRunId =
+    sessionDetailQuery.data?.latest_terminal_run_id ??
+    selectedSession?.latest_terminal_run_id ??
+    null;
+  const latestTerminalRunStatus =
+    sessionDetailQuery.data?.latest_terminal_run_status ??
+    selectedSession?.latest_terminal_run_status ??
+    null;
   const visibleActiveSubagent =
     activeSubagentAutoRestoreBlocked
       ? null
@@ -413,6 +421,27 @@ export function AppShell() {
       setActiveSubagentAutoRestoreBlocked(true);
     }
   }, [activeSubagent, selectedSessionId]);
+
+  useEffect(() => {
+    const runId = latestTerminalRunId?.trim() ?? "";
+    if (
+      runId.length === 0 ||
+      selectedSessionId === null ||
+      !isTerminalRunStatus(latestTerminalRunStatus) ||
+      !runStreamController.activeRunIds.includes(runId)
+    ) {
+      return;
+    }
+    runStreamController.settleTerminalRunStream({
+      runIds: [runId],
+      sessionId: selectedSessionId,
+    });
+  }, [
+    latestTerminalRunId,
+    latestTerminalRunStatus,
+    runStreamController,
+    selectedSessionId,
+  ]);
 
   useEffect(() => {
     if (selectedSession === null || selectedSession.has_unread_terminal_run !== true) {
@@ -909,14 +938,10 @@ export function AppShell() {
               <ChatWorkspace
                 contentLoadingKey={chatContentLoadingKey}
                 latestTerminalRunId={
-                  sessionDetailQuery.data?.latest_terminal_run_id ??
-                  selectedSession?.latest_terminal_run_id ??
-                  null
+                  latestTerminalRunId
                 }
                 latestTerminalRunStatus={
-                  sessionDetailQuery.data?.latest_terminal_run_status ??
-                  selectedSession?.latest_terminal_run_status ??
-                  null
+                  latestTerminalRunStatus
                 }
                 onSubagentOpen={handleTimelineSubagentOpen}
                 primaryRoleId={sessionDetailQuery.data?.normal_root_role_id ?? null}
@@ -1394,6 +1419,20 @@ function terminalViewMarkKey(session: SessionSidebarRecord): string {
     session.latest_terminal_run_status ?? "",
     session.latest_terminal_run_updated_at ?? "",
   ].join(":");
+}
+
+function isTerminalRunStatus(value: string | null | undefined): boolean {
+  switch ((value ?? "").trim().toLowerCase()) {
+    case "completed":
+    case "failed":
+    case "stopped":
+    case "paused":
+    case "cancelled":
+    case "canceled":
+      return true;
+    default:
+      return false;
+  }
 }
 
 function markSidebarTerminalRunViewed(

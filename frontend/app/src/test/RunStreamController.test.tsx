@@ -383,6 +383,50 @@ describe("useRunStreamController", () => {
       .not.toContain("run-1");
   });
 
+  it("settles a terminal run without dropping displayed runtime entries", () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+    const options = streamMocks.latestOptions as {
+      onState: (runtimeState: RuntimeState) => void;
+    };
+    const displayedEntry = runtimeStateEntry({
+      eventId: 12,
+      kind: "text_delta",
+      payload: { text: "already displayed terminal text" },
+    });
+    act(() => {
+      options.onState(runtimeStateWithEntries([displayedEntry]));
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Settle terminal stream" }));
+
+    const settledRun = useRuntimeStore.getState().runtimeState.runs["run-1"];
+    expect(settledRun).toMatchObject({
+      entries: [displayedEntry],
+      status: "closed",
+    });
+    expect(useRuntimeStore.getState().runtimeState.activeRunIds)
+      .not.toContain("run-1");
+    expect(screen.getByTestId("active-run-ids")).toBeEmptyDOMElement();
+  });
+
   it("keeps refreshing after close until sidebar reports the terminal run", async () => {
     listSessionRoundsMock.mockResolvedValue({
       has_more: false,
@@ -1821,6 +1865,17 @@ function RunStreamHarness({ afterEventId }: { afterEventId?: number }) {
         onClick={() => controller.clearRunStream({ suppressRunIds: ["run-1"] })}
       >
         Clear stream suppressing run
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          controller.settleTerminalRunStream({
+            runIds: ["run-1"],
+            sessionId: "session-1",
+          })
+        }
+      >
+        Settle terminal stream
       </button>
       <button
         type="button"

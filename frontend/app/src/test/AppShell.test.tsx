@@ -1218,6 +1218,42 @@ describe("AppShell", () => {
     expect(runStreamControllerMock.clearRunStream).toHaveBeenCalledTimes(1);
   });
 
+  it("settles a foreground stream when the selected session reaches terminal state", async () => {
+    runStreamControllerMock = createRunStreamController({
+      activeRunId: "run-active",
+      activeRunIds: ["run-active"],
+      trackedRunIds: ["run-active"],
+    });
+    useRunStreamControllerMock.mockReturnValue(runStreamControllerMock);
+    getSessionMock.mockResolvedValue({
+      latest_terminal_run_id: "run-active",
+      latest_terminal_run_status: "completed",
+      normal_root_role_id: "MainAgent",
+      session_id: "session-1",
+      workspace_id: "workspace-1",
+    });
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        latest_terminal_run_id: "run-active",
+        latest_terminal_run_status: "completed",
+        session_id: "session-1",
+        title: "Session 1",
+        workspace_id: "workspace-1",
+      },
+    ]);
+
+    renderShell();
+
+    expect(await screen.findByTestId("timeline")).toBeVisible();
+    await waitFor(() =>
+      expect(runStreamControllerMock.settleTerminalRunStream).toHaveBeenCalledWith({
+        runIds: ["run-active"],
+        sessionId: "session-1",
+      }),
+    );
+    expect(runStreamControllerMock.clearRunStream).not.toHaveBeenCalled();
+  });
+
   it("detaches a stale active foreground stream when creating a session from an empty shell", async () => {
     window.localStorage.setItem("agentTeams.shellView", "workspace");
     runStreamControllerMock = createRunStreamController({
@@ -1826,6 +1862,7 @@ function createRunStreamController(
     activeRunIds: [],
     clearRunStream: vi.fn(),
     setForegroundSessionId: vi.fn(),
+    settleTerminalRunStream: vi.fn(),
     startRunStream: vi.fn(),
     startRunStreams: vi.fn(),
     suppressedRunIds: [],

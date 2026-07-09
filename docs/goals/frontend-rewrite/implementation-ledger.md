@@ -10016,3 +10016,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - This closes the specific fake typewriter/rebuild gap for `MSG-02` and the right-panel subagent hydration path exercised by `SUB-01`. It does not mark final V2 frontend completion, interrupted recovery, full real-provider normal-stream closure, or V1/V2 visual sign-off as complete.
+
+## 2026-07-10 Terminal Runtime Settle Without Replay Slice
+
+### Scope
+- Reproduced the remaining rebuild risk in the code path rather than treating screenshots as proof: AppShell was clearing the selected foreground stream when backend terminal metadata arrived, which removed the runtime transcript and forced the timeline to replace the already-visible live row with hydrated history.
+- Added `settleTerminalRunStream` to the stream controller. It closes the run and clears active/Stop state while preserving runtime entries, then performs the same terminal session/round refresh used by normal stream closure.
+- Changed AppShell terminal metadata reconciliation to call the settle path instead of destructive clear.
+- Updated all `RunStreamController` test doubles for the new interface and rebuilt `frontend/dist/app` for `/app/`.
+
+### Verification
+- `npm test -- src/test/AppShell.test.tsx -t "terminal state|primary feature surface"` passed.
+- `npm test -- src/test/RunStreamController.test.tsx -t "settles a terminal run without dropping displayed runtime entries"` passed.
+- `npm run lint` passed.
+- `npm run build` passed and regenerated the packed `/app/` bundle.
+- `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "fully displayed live answer stable"` passed after build.
+- `npm run test:browser -- v2-stream-create-run.spec.ts --project=chromium -g "does not replay after terminal output"` passed after build.
+- Screenshot inspection reviewed `.tmp/frontend-v2-managed-backend-live/managed-live-hold-terminal-stable.png`; it shows one completed answer row, no Stop button, and no streaming cursor or second replay row.
+
+### Reviewer
+- This addresses the specific “already rendered, then rebuilt once” terminal-settlement failure for `MSG-02`/`STREAM-02`. It does not claim full V2 completion, true real-provider normal-stream proof, broader orchestration/tool-heavy terminal variants, interrupted recovery, or final V1/V2 visual sign-off.

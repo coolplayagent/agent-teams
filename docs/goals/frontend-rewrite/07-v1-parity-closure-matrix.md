@@ -114,6 +114,32 @@ For every row moved to `Verified`, record:
 
 ## Verification Ledger
 
+### 2026-07-10 Terminal Settle Without Runtime Drop Guard
+
+- `MSG-02` and `STREAM-02` tightened after manual review showed a fully
+  displayed live answer could still appear to rebuild when backend terminal
+  metadata arrived. The shell no longer uses destructive `clearRunStream` for
+  a selected session that the backend has already marked terminal. It now
+  settles that run as closed while preserving the runtime transcript entries,
+  so `MessageTimeline` can keep the already-visible answer anchored to the
+  same row instead of replacing it with a freshly hydrated history row.
+- The controller guard proves the active run id is removed and the run status
+  becomes closed while existing runtime entries remain intact. The AppShell
+  guard proves backend terminal metadata calls the settle path rather than the
+  destructive clear path. Browser coverage then verifies the exact user-visible
+  failure mode: a fully displayed live answer remains stable when terminal
+  status arrives, with no streaming cursor, no strict-prefix leftover row, and
+  no terminal replay/retype.
+- Automated evidence: `npm test -- src/test/AppShell.test.tsx -t "terminal state|primary feature surface"`,
+  `npm test -- src/test/RunStreamController.test.tsx -t "settles a terminal run without dropping displayed runtime entries"`,
+  `npm run lint`, `npm run build`,
+  `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "fully displayed live answer stable"`,
+  and `npm run test:browser -- v2-stream-create-run.spec.ts --project=chromium -g "does not replay after terminal output"`.
+- Browser evidence: `.tmp/frontend-v2-managed-backend-live/managed-live-hold-terminal-stable.png`.
+- This does not move `MSG-02` or `STREAM-02` to `Verified`; true
+  real-provider normal-stream proof, broader orchestration/tool-heavy terminal
+  variants, interrupted recovery, and final V1/V2 visual sign-off remain open.
+
 ### 2026-07-10 Gateway Secondary Settings Browser Pass
 
 - `SET-14` tightened: the System-owned Gateway page now has packed-browser

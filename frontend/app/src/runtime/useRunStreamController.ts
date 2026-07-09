@@ -360,6 +360,15 @@ export function useRunStreamController(): RunStreamController {
         if (streamGeneration !== streamGenerationRef.current) {
           return;
         }
+        if (trackedRunTargetsShouldReconnectAfterClose(options.runs, runtimeStateRef.current)) {
+          refreshRecoverySnapshot(options.sessionId);
+          scheduleRunStreamReconnect(
+            options,
+            streamGeneration,
+            "Run stream closed before terminal state.",
+          );
+          return;
+        }
         finishClosedRunStream(options.sessionId, options.runs);
       },
       onError: (errorMessage, errorKind) => {
@@ -749,6 +758,25 @@ function trackedRunTargetsClosed(
   return normalizeRunTargets(runs).every(
     (run) => runtimeState.runs[run.runId]?.status === "closed",
   );
+}
+
+function trackedRunTargetsShouldReconnectAfterClose(
+  runs: StartRunStreamTarget[],
+  runtimeState: RuntimeState,
+): boolean {
+  return normalizeRunTargets(runs).some((run) => {
+    const runState = runtimeState.runs[run.runId];
+    if (runState?.status === "closed") {
+      return false;
+    }
+    if ((run.afterEventId ?? 0) > 0) {
+      return true;
+    }
+    if ((runState?.lastEventId ?? 0) > 0) {
+      return true;
+    }
+    return runState?.status === "open";
+  });
 }
 
 function activeTrackedRunIdsForSession(

@@ -90,7 +90,15 @@ describe("useRunStreamController", () => {
     });
     expect(recoveryRefreshCallCount(invalidateSpy)).toBe(2);
 
-    const options = streamMocks.latestOptions as { onClosed: () => void };
+    const options = streamMocks.latestOptions as {
+      onClosed: () => void;
+      onState: (runtimeState: RuntimeState) => void;
+    };
+    act(() => {
+      options.onState(runtimeStateWithRunStatuses([
+        { lastEventId: 12, runId: "run-1", status: "closed" },
+      ]));
+    });
     act(() => {
       options.onClosed();
     });
@@ -100,6 +108,57 @@ describe("useRunStreamController", () => {
       vi.advanceTimersByTime(10000);
     });
     expect(recoveryRefreshCallCount(invalidateSpy)).toBe(refreshCountAfterClose);
+  });
+
+  it("reconnects when a run stream closes before the run reaches terminal state", () => {
+    vi.useFakeTimers();
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+    const firstOptions = streamMocks.optionsList[0] as RunStreamOptions;
+    act(() => {
+      firstOptions.onState(runtimeStateWithRunStatuses([
+        { lastEventId: 12, runId: "run-1", status: "open" },
+      ]));
+    });
+
+    const refreshCountBeforeClose = recoveryRefreshCallCount(invalidateSpy);
+    act(() => {
+      firstOptions.onClosed?.(useRuntimeStore.getState().runtimeState);
+    });
+    expect(recoveryRefreshCallCount(invalidateSpy)).toBeGreaterThan(
+      refreshCountBeforeClose,
+    );
+    expect(streamMocks.openRunStream).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      vi.advanceTimersByTime(3500);
+    });
+
+    expect(streamMocks.handles[0].close).toHaveBeenCalledTimes(1);
+    expect(streamMocks.openRunStream).toHaveBeenCalledTimes(2);
+    const reconnectOptions = streamMocks.optionsList[1] as RunStreamOptions;
+    expect(reconnectOptions.runId).toBe("run-1");
+    expect(reconnectOptions.afterEventId).toBe(12);
+    expect(screen.getByTestId("active-run-ids")).toHaveTextContent("run-1");
+    expect(screen.getByTestId("tracked-run-ids")).toHaveTextContent("run-1");
   });
 
   it("polls sidebar subagent discovery while a stream stays active", () => {

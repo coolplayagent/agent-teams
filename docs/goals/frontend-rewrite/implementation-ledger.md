@@ -2,6 +2,20 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-09 Active Stream Close Reconnect Guard
+
+### Scope
+- Fixed a controller-level recovery bug found while probing active-refresh behavior: `useRunStreamController` treated every SSE `close` as terminal, even when the tracked run still had an active cursor or had already received events.
+- The controller now separates empty no-output close from active interruption. Empty starts can still settle as terminal/no-output, but active runs with a local cursor or recovery `afterEventId` refresh recovery state and reconnect from the latest cursor instead of being marked terminal.
+- Added focused coverage for the exact boundary: active close reconnects after 3.5 seconds from the latest local event id, while existing terminal/no-output close behavior still suppresses stale recovery targets and refreshes terminal history.
+
+### Verification
+- `npm run test -- src/test/RunStreamController.test.tsx` passed with 35 tests.
+- `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium` passed with the existing 2 Chromium managed-backend normal stream scenarios.
+
+### Reviewer
+- Main-agent decision: this tightens `STREAM-02` and `REC-01` for premature SSE close/reconnect semantics. It does not claim true active hard-refresh continuation through the managed backend, real-provider normal-stream proof, complex orchestration/tool recovery, final V1/V2 visual sign-off, or the overall V2 frontend goal.
+
 ## 2026-07-09 Managed Backend Normal Stream Proof
 
 ### Scope

@@ -1176,6 +1176,15 @@ For every row moved to `Verified`, record:
 - Automated evidence: `npm test -- src/test/FrontendPythonUiHarnessParity.test.ts src/test/UserFacingNamingParity.test.ts`, `npm run lint`.
 - This does not mark `CLEAN-01` as `Verified`; promoted-route naming, final screenshot sweep, final documentation, and reviewer sign-off remain open.
 
+## 2026-07-10 Managed Stale-Selection Active Recovery Guard
+
+- `SESS-03`/`STREAM-02`/`REC-01` tightened with a managed real-backend/fake-LLM recovery path that combines active streaming, session switching, stale persisted selection, and hard refresh.
+- The browser scenario starts a slow normal assistant stream, captures one live row, switches to another session while the source run remains active, deliberately persists the idle session as the selected session, and reloads. Startup reconciliation must select the genuinely active source run instead of the stale idle selection.
+- Post-reload assertions require exactly one restored live message row, an active backend run, multiple increasing text-length samples, the complete ordered token range through terminal settlement, one occurrence of the first token, no strict-prefix leftover row, no stale cursor, no document-level scroll, and no composer overlap.
+- Automated evidence: `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "managed backend active stream recovers when stored selection points elsewhere"`, `npm run lint`.
+- Visual evidence: `.tmp/frontend-v2-managed-backend-live/managed-live-stale-selection-active-refresh.png` shows the recovered terminal answer inside the fixed shell with the sidebar and composer remaining fixed.
+- This does not mark `SESS-03`, `STREAM-02`, or `REC-01` as `Verified`; real-provider interruption/reconnect, broader production orchestration/tool recovery variants, and final paired V1/V2 visual sign-off remain open.
+
 ## Immediate P0 Batch
 
 The current batch closes these rows first:

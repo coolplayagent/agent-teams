@@ -375,6 +375,102 @@ test("managed backend active stream stays in one streaming row after hard refres
   }
 });
 
+test("managed backend active stream recovers when stored selection points elsewhere", async ({
+  page,
+}) => {
+  const title = `managed-live-stale-selection-${Date.now()}`;
+  const session = await createSession(title);
+  const fallback = await createSession(`managed-live-hidden-target-${Date.now()}`);
+  let runId: string | null = null;
+  try {
+    await openManagedSession(page, session, title);
+    await expectManagedShellReady(page);
+
+    const streamTag = streamTagFromTitle(title);
+    const expectedText = slowStreamExpectedText(streamTag, 72);
+    const firstToken = slowStreamToken(streamTag, 0);
+    const lastToken = slowStreamToken(streamTag, 71);
+    const promptText = [
+      `${title}: [slow-stream tag=${streamTag} repeat=72 delay=100 chunk=8]`,
+      "请只输出 fake LLM 返回的慢速文本。",
+    ].join("\n");
+
+    const runResponse = waitForRunCreateResponse(page);
+    await submitPrompt(page, promptText);
+    const createdRunId = await runIdFromResponse(await runResponse);
+    runId = createdRunId;
+    await expect(page.getByRole("button", { name: /停止|Stop/ })).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect
+      .poll(() => latestLiveStreamText(page), { timeout: 90_000 })
+      .toContain(firstToken);
+
+    const liveSnippet = await stableLiveStreamSnippet(page);
+    await expect
+      .poll(() => currentRunStatus(session.session_id, createdRunId))
+      .toBe("active");
+
+    await expect
+      .poll(() => messageArticleContainingCount(page, liveSnippet))
+      .toBe(1);
+    await page.locator(".at-session-item").filter({
+      hasText: fallback.metadata?.title ?? "",
+    }).first().click();
+    await expect(page.locator(".at-session-item.is-selected")).not.toContainText(title);
+    await expect(page.getByText(liveSnippet)).toHaveCount(0);
+    await page.evaluate(({ sessionId, workspaceId }) => {
+      window.localStorage.setItem("agentTeams.selectedSessionId", sessionId);
+      window.localStorage.setItem("agentTeams.selectedWorkspaceId", workspaceId);
+    }, {
+      sessionId: fallback.session_id,
+      workspaceId: fallback.workspace_id ?? "default",
+    });
+
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expectManagedShellReady(page);
+    await expect(page.locator(".at-session-item.is-selected")).toContainText(title);
+    await expect.poll(() => messageArticleContainingCount(page, liveSnippet))
+      .toBe(1);
+    await expect
+      .poll(() => currentRunStatus(session.session_id, createdRunId))
+      .toBe("active");
+    await expect
+      .poll(() => latestLiveStreamText(page), { timeout: 90_000 })
+      .toContain(firstToken);
+    const recoveredSamples = await collectLiveStreamTextLengthSamples(page, 90_000, 80);
+    expect(increasingSampleCount(recoveredSamples)).toBeGreaterThanOrEqual(2);
+
+    await waitForRunToLeaveActive(session.session_id, createdRunId, 180_000);
+    await expect
+      .poll(() => mainTimelineMessageArticleText(page), { timeout: 60_000 })
+      .toContain(lastToken);
+    await expectTerminalAnswerDoesNotReplay(page, expectedText);
+    await expect.poll(() => messageArticleTextOccurrenceCount(page, firstToken))
+      .toBe(1);
+    await expect
+      .poll(() => strictPrefixMessageArticleCount(page, expectedText))
+      .toBe(0);
+    await expect(page.locator(".streaming-cursor")).toHaveCount(0);
+    await expectNoDocumentScroll(
+      page,
+      "managed stale-selection active refresh should stay inside the fixed shell",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.screenshot({
+      fullPage: false,
+      path: screenshotPath(
+        "managed-live-stale-selection-active-refresh.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+  } finally {
+    await stopRunIfPresent(runId);
+    await deleteSession(fallback.session_id);
+    await deleteSession(session.session_id);
+  }
+});
+
 test("managed backend normal tool pressure streams compact lifecycle cards", async ({
   page,
 }) => {

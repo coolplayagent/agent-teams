@@ -10174,3 +10174,18 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent decision: this tightens one interrupted session-switch recovery path with exact cursor and text assertions. It does not mark `SESS-03`, `STREAM-02`, `REC-01`, or final V2 frontend complete; managed/real interrupted-recovery variants, true real-provider normal assistant stream proof, and final V1/V2 visual sign-off remain open.
+
+## 2026-07-10 Managed Stale-Selection Active Recovery Guard Slice
+
+### Scope
+- Continued P0 runtime closure on the combined `SESS-03`/`STREAM-02`/`REC-01` boundary using the managed real backend and deterministic fake LLM.
+- Added a browser scenario that starts a slow normal assistant stream, switches to an idle session while the source run remains active, persists that idle session as the selected session, and hard-refreshes the app.
+- Startup recovery must prefer the genuinely active source run, restore exactly one live row, continue receiving post-reload text growth, and settle to the complete ordered terminal answer without duplicate first tokens or leftover prefix rows.
+
+### Verification
+- `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "managed backend active stream recovers when stored selection points elsewhere"` passed with 1 Chromium test.
+- `npm run lint` passed.
+- Screenshot inspection reviewed `.tmp/frontend-v2-managed-backend-live/managed-live-stale-selection-active-refresh.png`; the recovered terminal output remains inside the fixed content scroller while the sidebar and composer stay fixed and non-overlapping.
+
+### Reviewer
+- Main-agent decision: this adds managed-backend evidence for stale-selection arbitration plus active-stream continuation. It does not mark `SESS-03`, `STREAM-02`, `REC-01`, or final V2 frontend complete; real-provider interruption/reconnect, broader production orchestration/tool recovery variants, and final paired V1/V2 visual sign-off remain open.

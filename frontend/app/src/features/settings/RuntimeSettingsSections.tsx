@@ -540,7 +540,7 @@ function PluginInstallView({
         ) : null}
         <div className="at-settings-section-actions">
           <Button
-            disabled={marketplaceLoadedWithoutEntries}
+            disabled={marketplaceLoadedWithoutEntries || installMutation.isPending}
             htmlType="submit"
             loading={installMutation.isPending}
             type="primary"
@@ -1545,7 +1545,10 @@ function AgentRuntimeRegistryView({ onBack }: { onBack: () => void }) {
                       {registryAgentMeta(agent, t)}
                     </Typography.Text>
                     <Button
-                      disabled={agent.installed === true && agent.update_available !== true}
+                      disabled={
+                        installMutation.isPending
+                        || (agent.installed === true && agent.update_available !== true)
+                      }
                       loading={installMutation.isPending}
                       onClick={() => installMutation.mutate(agent)}
                     >

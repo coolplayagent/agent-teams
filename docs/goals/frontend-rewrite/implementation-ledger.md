@@ -10209,3 +10209,64 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent decision: this closes the managed-backend network-interruption evidence gap across the main runtime variants and fixes the subagent native-reconnect contract. It does not mark P0 or final V2 complete; true real-provider interruption/reconnect, final paired V1/V2 visual sign-off, and remaining parity rows stay open.
+
+## 2026-07-10 Complete Settings V1/V2 Pairing Batch
+
+### Scope
+- Replaced the misleading V2-only Settings survey with a real paired browser
+  audit. The scenario opens the live V1 root, records all 14 legacy tabs and
+  their visible controls, then maps every tab to a V2 primary page or System
+  secondary page.
+- Extracted the canonical V2 primary and System-secondary inventories into
+  `settingsNavigation.ts`. Static tests now consume the same source contract as
+  the runtime, including the explicit mapping from live V1 infrastructure tabs
+  to V2 System pages.
+- Strengthened the paired browser contract from page-count checks to multiple
+  page-specific text and control assertions across Appearance, General, Model,
+  MCP, Plugins, Commands, Hooks, Agent Runtime, Roles, Orchestration, Web,
+  Proxy, Remote workspace, and Environment variables.
+- Added a shared Settings load-error Retry action and wired it through General,
+  Speech, Notifications, Models, Roles, Role detail, Orchestration, Web,
+  ClawHub, Proxy, Remote workspace, Environment variables, and System status.
+  Packed browser tests exhaust the automatic retry first, then prove manual
+  recovery for System, General, and a Role secondary detail.
+- Reworked System secondary navigation into a compact left-aligned `Back to
+  System` toolbar, removed the repeated `System` label from every launcher row,
+  and collapsed no-metadata rows to a single grid column.
+- Fixed pending mutation semantics exposed by the component suite: Plugin and
+  Agent Runtime registry install controls are now truly disabled while their
+  mutation is running, instead of only displaying a spinner while accepting a
+  second submission.
+- Rebuilt `frontend/dist/app` with the completed Settings batch.
+
+### Verification
+- `npm test -- --run src/test/SettingsShared.test.tsx
+  src/test/SettingsNavigationParity.test.ts` passed with 5 tests.
+- `npm test -- --run src/test/SettingsDrawer.test.tsx -t "renders a real
+  settings center|shows a pending state while plugin install is running"`
+  passed with 2 focused tests.
+- `npm test -- --run src/test/SettingsDrawer.test.tsx` passed with all 62
+  tests after the suite began waiting for plugin mutations to return to the
+  user-visible list state and explicitly cleaned up each QueryClient.
+- `npm run typecheck`, `npm run lint`, and `npm run build` passed.
+- `npm run test:browser -- v2-settings-parity.spec.ts
+  v2-appearance-layout.spec.ts --project=chromium` passed with all 12 tests
+  after the complete surface contracts and primary/detail retry recovery were
+  added.
+- Manual inspection reviewed the paired desktop Appearance/Roles screenshots,
+  the System landing and secondary navigation, the 620px all-section survey,
+  and the recovered System/Role screenshots under
+  `.tmp/frontend-v2-ts-settings-parity/`.
+
+### Reviewer
+- Independent review initially returned NOT PASS because the first draft only
+  sampled one core control per page, Role detail lacked a retry action, the
+  recovered screenshot was captured before the full frame settled, and an
+  overloaded full component run had plugin failures. The batch was reopened;
+  page-specific contracts, detail recovery, stable-frame waits, and pending
+  button semantics were added before requesting a second review.
+- The second independent review returned PASS after checking all four reopened
+  blockers. Its final condition, a green complete SettingsDrawer suite, was
+  satisfied by the 62/62 run above.
+- This batch verifies `SET-01`, `SET-02`, and `SET-14`. It does not mark the
+  remaining Settings action/error rows or the complete V2 rewrite finished.

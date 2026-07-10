@@ -3,6 +3,12 @@ import { writeFile } from "node:fs/promises";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import {
+  SETTINGS_SECTION_DEFINITIONS,
+  SYSTEM_SETTINGS_PAGE_DEFINITIONS,
+  V1_LEGACY_SETTINGS_TAB_DEFINITIONS,
+} from "../src/features/settings/settingsNavigation";
+
+import {
   ensureScreenshotDir,
   expectNoDocumentScroll,
   expectNoUnhandledApiRoutes,
@@ -17,31 +23,39 @@ import {
 
 const SCREENSHOT_FOLDER = "frontend-v2-ts-settings-parity";
 
-const V1_SETTINGS_SECTIONS = [
-  "Appearance",
-  "General",
-  "Speech",
-  "Notifications",
-  "Model",
-  "Roles",
-  "Orchestration",
-  "Web",
-  "ClawHub",
-  "Proxy",
-  "Remote workspace",
-  "Environment variables",
-  "System",
-] as const;
+const V2_LABEL_BY_SECTION = {
+  appearance: "Appearance",
+  clawhub: "ClawHub",
+  environment: "Environment variables",
+  general: "General",
+  models: "Model",
+  notifications: "Notifications",
+  orchestration: "Orchestration",
+  proxy: "Proxy",
+  roles: "Roles",
+  speech: "Speech",
+  system: "System",
+  web: "Web",
+  workspace: "Remote workspace",
+} as const;
 
-const SECONDARY_SYSTEM_PAGES = [
-  "MCP",
-  "Plugins",
-  "Commands",
-  "Hooks",
-  "Agent Runtime",
-  "GitHub",
-  "Gateway",
-] as const;
+const V2_LABEL_BY_SYSTEM_PAGE = {
+  "agent-runtime": "Agent Runtime",
+  commands: "Commands",
+  github: "GitHub",
+  hooks: "Hooks",
+  mcp: "MCP",
+  plugins: "Plugins",
+  triggers: "Gateway",
+} as const;
+
+const V2_SETTINGS_SECTIONS = SETTINGS_SECTION_DEFINITIONS.map(
+  (section) => V2_LABEL_BY_SECTION[section.key],
+);
+
+const SECONDARY_SYSTEM_PAGES = SYSTEM_SETTINGS_PAGE_DEFINITIONS.map(
+  (page) => V2_LABEL_BY_SYSTEM_PAGE[page.key],
+);
 
 interface SettingsParityState {
   failNextNotificationSave: boolean;
@@ -53,6 +67,133 @@ interface SettingsParityState {
   proxySavePayloads: Record<string, unknown>[];
   requestedPaths: string[];
 }
+
+interface SettingsSurfaceSnapshot {
+  controlCount: number;
+  controls: string[];
+  id: string;
+  label: string;
+  text: string;
+}
+
+interface SettingsSurfaceContract {
+  id: string;
+  v1Controls?: string[];
+  v1Text: string[];
+  v2Controls: string[];
+  v2Id: string;
+  v2Text: string[];
+}
+
+const SETTINGS_SURFACE_CONTRACTS: SettingsSurfaceContract[] = [
+  {
+    id: "appearance",
+    v1Text: ["Accent", "Background", "UI Font Size", "Line Height", "Message Spacing"],
+    v2Controls: ["Theme preset", "Accent color value", "UI font", "Line height", "Message spacing"],
+    v2Id: "appearance",
+    v2Text: ["System", "Light", "Dark", "Contrast", "Diff markers"],
+  },
+  {
+    id: "general",
+    v1Controls: ["Show diagnostic information", "Enable local shell safeguards", "STT Profile", "Language"],
+    v1Text: ["Diagnostics", "Shell Policy", "Speech to Text", "Notifications"],
+    v2Controls: ["Shell safety policy", "Show diagnostic information", "Speech", "Notifications", "Save"],
+    v2Id: "general",
+    v2Text: ["Shell policy", "Related settings", "Speech", "Notifications"],
+  },
+  {
+    id: "model",
+    v1Controls: ["Set default", "Test", "Edit", "Delete", "Profile Name", "Provider", "Model", "API Key", "Context Window"],
+    v1Text: ["Default", "Fallback", "Advanced Options", "Image Input", "Speech"],
+    v2Controls: ["New profile", "Default", "Test", "Delete"],
+    v2Id: "models",
+    v2Text: ["Profiles", "Default profile", "gpt-5-mini", "openai_compatible"],
+  },
+  {
+    id: "mcp",
+    v1Text: ["No MCP servers loaded", "reload"],
+    v2Controls: ["Refresh", "Reload config", "Add Server"],
+    v2Id: "system/mcp",
+    v2Text: ["Servers", "Enabled", "Tools", "No MCP servers configured"],
+  },
+  {
+    id: "plugins",
+    v1Text: ["No plugins installed", "roles", "skills", "hooks", "commands", "MCP servers"],
+    v2Controls: ["Refresh", "Add Plugin"],
+    v2Id: "system/plugins",
+    v2Text: ["Plugins", "Diagnostics", "No plugins configured"],
+  },
+  {
+    id: "commands",
+    v1Text: ["No commands discovered", "app config commands", "workspace command"],
+    v2Controls: ["Search command or workspace", "Refresh", "Add Command"],
+    v2Id: "system/commands",
+    v2Text: ["Commands", "Workspaces", "Global", "No commands discovered"],
+  },
+  {
+    id: "hooks",
+    v1Text: ["No hooks configured", "Add a hook"],
+    v2Controls: ["Refresh", "Add hook", "Validate", "Save"],
+    v2Id: "system/hooks",
+    v2Text: ["Configured groups", "Loaded hooks", "Sources", "No hooks configured"],
+  },
+  {
+    id: "agents",
+    v1Controls: ["Edit", "Agent ID", "Name", "Description", "Protocol", "Transport", "Command", "Args"],
+    v1Text: ["Codex ACP", "New agent", "Custom", "Registry"],
+    v2Controls: ["Refresh", "ACP registry", "New runtime", "Codex ACP"],
+    v2Id: "system/agent-runtime",
+    v2Text: ["Agent runtimes", "Default coding runtime", "acp", "stdio"],
+  },
+  {
+    id: "roles",
+    v1Controls: ["Edit", "Role ID", "Name", "Description", "Version", "Model Profile", "Bound Agent", "Execution Surface", "Durable Memory"],
+    v1Text: ["Main Agent", "Tool Groups", "MCP Servers", "Skills", "Memory"],
+    v2Controls: ["New role", "Main Agent"],
+    v2Id: "roles",
+    v2Text: ["Coordinator", "Main agent", "Normal roles", "Subagent roles", "Default role"],
+  },
+  {
+    id: "orchestration",
+    v1Controls: ["Set default", "Edit", "Delete Orchestration"],
+    v1Text: ["Default", "Roles", "Orchestration Editor"],
+    v2Controls: ["New orchestration", "Default", "Set default", "Edit"],
+    v2Id: "orchestration",
+    v2Text: ["Default preset", "Presets", "Main plus reviewer"],
+  },
+  {
+    id: "web",
+    v1Controls: ["Provider", "Exa API Key", "Fallback Provider", "SearXNG Instance URL"],
+    v1Text: ["Web Search Provider", "Built-in Instances", "Provider website"],
+    v2Controls: ["Exa API key", "Fallback provider", "SearXNG instance URL", "Save"],
+    v2Id: "web",
+    v2Text: ["Provider", "Built-in instances", "Provider website", "https://exa.ai"],
+  },
+  {
+    id: "proxy",
+    v1Controls: ["HTTP Proxy", "HTTPS Proxy", "ALL Proxy", "NO_PROXY", "Default SSL Verification", "Target URL", "Timeout (ms)"],
+    v1Text: ["Proxy Settings", "Connectivity Test"],
+    v2Controls: ["HTTP Proxy", "HTTPS Proxy", "ALL Proxy", "NO_PROXY", "Default SSL verification", "Target URL", "Timeout (ms)", "Test URL", "Save"],
+    v2Id: "proxy",
+    v2Text: ["Proxy settings", "Proxy authentication", "Connectivity test"],
+  },
+  {
+    id: "workspace",
+    v1Controls: ["Test", "Edit", "Delete", "Profile ID", "Host", "Port", "Remote Shell", "Connect Timeout (s)", "Username"],
+    v1Text: ["Add SSH Profile", "Reusable SSH profiles", "dev.example.com"],
+    v2Controls: ["New SSH profile", "Test", "Edit", "Delete"],
+    v2Id: "workspace",
+    v2Text: ["devbox", "dev.example.com", "Authentication", "Remote shell"],
+  },
+  {
+    id: "environment",
+    v1Controls: ["Edit", "Delete", "System Variables 1 Show"],
+    v1Text: ["App Variables", "System Variables", "V2_PARITY_ENV"],
+    v2Controls: ["New variable", "Edit", "Delete", "System1"],
+    v2Id: "environment",
+    v2Text: ["App", "System", "V2_PARITY_ENV", "String"],
+  },
+];
 
 interface NotificationRowSnapshot {
   browserChecked: boolean;
@@ -118,7 +259,7 @@ const EXPECTED_NOTIFICATION_ROWS: NotificationRowSnapshot[] = [
   },
 ];
 
-test("surveys V1 settings sections and nested system pages from the browser", async ({
+test("surveys V2 settings sections and nested system pages from the browser", async ({
   page,
 }) => {
   const appServer = await serveFrontendDist();
@@ -141,13 +282,13 @@ test("surveys V1 settings sections and nested system pages from the browser", as
 
     await expect
       .poll(async () => sectionLabels(sections))
-      .toEqual([...V1_SETTINGS_SECTIONS]);
+      .toEqual(V2_SETTINGS_SECTIONS);
     for (const secondaryLabel of SECONDARY_SYSTEM_PAGES) {
       await expect(sections.getByRole("button", { name: secondaryLabel }))
         .toHaveCount(0);
     }
 
-    for (const sectionLabel of V1_SETTINGS_SECTIONS) {
+    for (const sectionLabel of V2_SETTINGS_SECTIONS) {
       await sections.getByRole("button", { name: sectionLabel }).click();
       await expect(settings.getByRole("heading", { name: sectionLabel }))
         .toBeVisible();
@@ -159,6 +300,8 @@ test("surveys V1 settings sections and nested system pages from the browser", as
     await expect
       .poll(async () => systemPageLabels(settings))
       .toEqual([...SECONDARY_SYSTEM_PAGES]);
+    await expect(settings.locator(".at-settings-list .at-settings-list-meta"))
+      .toHaveCount(0);
     for (const secondaryLabel of SECONDARY_SYSTEM_PAGES) {
       await expect(
         settings.locator(".at-settings-list-button").filter({
@@ -175,6 +318,176 @@ test("surveys V1 settings sections and nested system pages from the browser", as
     await page.screenshot({
       path: screenshotPath("v2-settings-v1-section-survey.png", SCREENSHOT_FOLDER),
     });
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("pairs every live V1 settings tab with its V2 primary or secondary page", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state = settingsParityState();
+  try {
+    await installShellState(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleSettingsParityApi(context, state),
+      sessionTitle: "TS complete settings V1 V2 pairing",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/`);
+    await waitForV1Shell(page);
+    await page.locator("#settings-btn").click();
+    const v1Settings = page.locator("#settings-modal.settings-modal-visible");
+    await expect(v1Settings).toBeVisible();
+    const liveV1Tabs = await v1Settings.locator(".settings-tab").evaluateAll((tabs) =>
+      tabs.map((tab) => ({
+        key: tab.getAttribute("data-tab") ?? "",
+        label: tab.textContent?.replace(/\s+/g, " ").trim() ?? "",
+      })),
+    );
+    expect(liveV1Tabs).toEqual(
+      V1_LEGACY_SETTINGS_TAB_DEFINITIONS.map((tab) => ({
+        key: tab.key,
+        label: tab.label,
+      })),
+    );
+
+    const v1Surfaces: SettingsSurfaceSnapshot[] = [];
+    for (const tab of V1_LEGACY_SETTINGS_TAB_DEFINITIONS) {
+      await v1Settings.locator(`.settings-tab[data-tab="${tab.key}"]`).click();
+      await expect(v1Settings.locator(`#${tab.key}-panel`)).toBeVisible();
+      await expect(v1Settings.locator("#settings-panel-title"))
+        .toHaveText(tab.label);
+      v1Surfaces.push({
+        id: tab.key,
+        label: tab.label,
+        ...await settingsSurfaceSnapshot(v1Settings.locator(`#${tab.key}-panel`)),
+      });
+      await expectV1CoreControl(v1Settings, tab.key);
+      if (tab.key === "appearance" || tab.key === "roles") {
+        await page.screenshot({
+          path: screenshotPath(
+            `v1-settings-${tab.key}-complete-pairing.png`,
+            SCREENSHOT_FOLDER,
+          ),
+        });
+      }
+    }
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    const v2Settings = await openSettingsDialog(page);
+    const v2Navigation = v2Settings.getByRole("navigation", {
+      name: "Settings sections",
+    });
+    await expect.poll(async () => sectionLabels(v2Navigation))
+      .toEqual(V2_SETTINGS_SECTIONS);
+
+    const v2Surfaces: SettingsSurfaceSnapshot[] = [];
+    for (const tab of V1_LEGACY_SETTINGS_TAB_DEFINITIONS) {
+      if ("v2Section" in tab) {
+        const section = SETTINGS_SECTION_DEFINITIONS.find(
+          (candidate) => candidate.key === tab.v2Section,
+        );
+        expect(section).toBeDefined();
+        const sectionLabel = section === undefined
+          ? ""
+          : V2_LABEL_BY_SECTION[section.key];
+        await v2Navigation.getByRole("button", { name: sectionLabel }).click();
+        await expect(v2Settings.getByRole("heading", { name: sectionLabel }))
+          .toBeVisible();
+        v2Surfaces.push({
+          id: tab.v2Section,
+          label: sectionLabel,
+          ...await settingsSurfaceSnapshot(
+            v2Settings.locator(".at-settings-section-body"),
+          ),
+        });
+        await expectV2CoreControl(v2Settings, tab.key);
+        if (tab.key === "appearance" || tab.key === "roles") {
+          await page.screenshot({
+            path: screenshotPath(
+              `v2-settings-${tab.key}-complete-pairing.png`,
+              SCREENSHOT_FOLDER,
+            ),
+          });
+        }
+        continue;
+      }
+
+      await v2Navigation.getByRole("button", { name: "System" }).click();
+      const pageDefinition = SYSTEM_SETTINGS_PAGE_DEFINITIONS.find(
+        (candidate) => candidate.key === tab.v2SystemPage,
+      );
+      expect(pageDefinition).toBeDefined();
+      const pageLabel = pageDefinition === undefined
+        ? ""
+        : V2_LABEL_BY_SYSTEM_PAGE[pageDefinition.key];
+      const launcher = v2Settings.locator(".at-settings-list-button").filter({
+        hasText: pageLabel,
+      });
+      await expect(launcher).toHaveCount(1);
+      await launcher.click();
+      await expect(v2Settings.getByRole("heading", { name: pageLabel }))
+        .toBeVisible();
+      await expect(v2Settings.getByRole("button", { name: "Back to System" }))
+        .toBeVisible();
+      v2Surfaces.push({
+        id: `system/${tab.v2SystemPage}`,
+        label: pageLabel,
+        ...await settingsSurfaceSnapshot(
+          v2Settings.locator(".at-settings-section-body"),
+        ),
+      });
+      await expectV2CoreControl(v2Settings, tab.key);
+      await v2Settings.getByRole("button", { name: "Back to System" }).click();
+    }
+
+    await v2Navigation.getByRole("button", { name: "System" }).click();
+    await page.screenshot({
+      path: screenshotPath("v2-settings-system-complete-pairing.png", SCREENSHOT_FOLDER),
+    });
+
+    await page.setViewportSize({ height: 860, width: 620 });
+    for (const sectionLabel of V2_SETTINGS_SECTIONS) {
+      await v2Navigation.getByRole("button", { name: sectionLabel }).click();
+      await expect(v2Settings.getByRole("heading", { name: sectionLabel }))
+        .toBeVisible();
+      const dialogBox = await v2Settings.boundingBox();
+      const headingBox = await v2Settings
+        .getByRole("heading", { name: sectionLabel })
+        .boundingBox();
+      expect(dialogBox).not.toBeNull();
+      expect(headingBox).not.toBeNull();
+      expect((dialogBox?.x ?? -1) + (dialogBox?.width ?? 0)).toBeLessThanOrEqual(620);
+      expect((headingBox?.x ?? -1) + (headingBox?.width ?? 0)).toBeLessThanOrEqual(620);
+    }
+    await expectNoDocumentScroll(page, "all narrow settings pages should stay framed");
+    await page.screenshot({
+      path: screenshotPath("v2-settings-all-sections-narrow.png", SCREENSHOT_FOLDER),
+    });
+
+    await writeFile(
+      screenshotPath("settings-complete-v1-v2-pairing.json", SCREENSHOT_FOLDER),
+      `${JSON.stringify(
+        {
+          liveV1Tabs,
+          v1Surfaces,
+          v2Navigation: await sectionLabels(v2Navigation),
+          v2Surfaces,
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+    expectSettingsSurfaceContracts(v1Surfaces, v2Surfaces);
+    expect(v1Surfaces).toHaveLength(V1_LEGACY_SETTINGS_TAB_DEFINITIONS.length);
+    expect(v2Surfaces).toHaveLength(V1_LEGACY_SETTINGS_TAB_DEFINITIONS.length);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
   } finally {
     await appServer.close();
   }
@@ -201,14 +514,18 @@ test("shows System status loading and error states without flattening secondary 
       handleRequest: async (context) => {
         if (context.method === "GET" && context.path === "/system/configs") {
           systemStatusRequests += 1;
-          if (systemStatusRequests === 1) {
-            resolveStatusRequest();
-            await statusResponseReleased;
+          if (systemStatusRequests <= 2) {
+            if (systemStatusRequests === 1) {
+              resolveStatusRequest();
+              await statusResponseReleased;
+            }
+            await context.fulfillJson(
+              { detail: "System status unavailable for parity." },
+              500,
+            );
+            return true;
           }
-          await context.fulfillJson(
-            { detail: "System status unavailable for parity." },
-            500,
-          );
+          await context.fulfillJson(systemConfigResponse());
           return true;
         }
         return handleSettingsParityApi(context, state);
@@ -256,6 +573,104 @@ test("shows System status loading and error states without flattening secondary 
     );
     await page.screenshot({
       path: screenshotPath("v2-settings-system-status-error.png", SCREENSHOT_FOLDER),
+    });
+    await settings.getByRole("button", { name: "Retry" }).click();
+    await expect(settings.getByText("Skills loaded")).toBeVisible();
+    await expect(settings.getByText("Enabled")).toBeVisible();
+    await expect(settings.getByText("System status unavailable for parity."))
+      .toHaveCount(0);
+    expect(systemStatusRequests).toBeGreaterThanOrEqual(3);
+    await expect(page.locator(".at-topbar")).toBeVisible();
+    await expect(settings.getByRole("navigation", { name: "Settings sections" }))
+      .toBeVisible();
+    await page.waitForTimeout(800);
+    await page.screenshot({
+      animations: "disabled",
+      path: screenshotPath("v2-settings-system-status-recovered.png", SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("recovers primary and role-detail settings after their automatic retries fail", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state = settingsParityState();
+  let generalRequests = 0;
+  let roleDetailRequests = 0;
+  try {
+    await installShellState(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: async (context) => {
+        if (context.method === "GET" && context.path === "/system/configs/general") {
+          generalRequests += 1;
+          if (generalRequests <= 2) {
+            await context.fulfillJson({ detail: "General settings unavailable." }, 500);
+          } else {
+            await context.fulfillJson({ shell_safety_policy_enabled: true });
+          }
+          return true;
+        }
+        if (context.method === "GET" && context.path === "/roles/configs/main") {
+          roleDetailRequests += 1;
+          if (roleDetailRequests <= 2) {
+            await context.fulfillJson({ detail: "Role detail unavailable." }, 500);
+          } else {
+            await context.fulfillJson(roleConfigDocument());
+          }
+          return true;
+        }
+        return handleSettingsParityApi(context, state);
+      },
+      sessionTitle: "TS settings retry recovery",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    const settings = await openSettingsDialog(page);
+    const sections = settings.getByRole("navigation", {
+      name: "Settings sections",
+    });
+
+    await sections.getByRole("button", { name: "General" }).click();
+    await expect(settings.getByText("General settings unavailable."))
+      .toBeVisible();
+    await settings.getByRole("button", { name: "Retry" }).click();
+    await expect(settings.getByRole("switch", { name: "Shell safety policy" }))
+      .toBeChecked();
+    await expect(settings.getByText("General settings unavailable."))
+      .toHaveCount(0);
+    expect(generalRequests).toBeGreaterThanOrEqual(3);
+
+    await sections.getByRole("button", { name: "Roles" }).click();
+    const mainRole = settings.locator(".at-settings-list-button").filter({
+      hasText: "Main Agent",
+    });
+    await expect(mainRole).toHaveCount(1);
+    await mainRole.click();
+    await expect(settings.getByText("Role detail unavailable."))
+      .toBeVisible();
+    await settings.getByRole("button", { name: "Retry" }).click();
+    await expect(settings.getByLabel("Role ID")).toHaveValue("main");
+    await expect(settings.getByLabel("Execution surface"))
+      .toHaveValue("workspace");
+    await expect(settings.getByText("Role detail unavailable."))
+      .toHaveCount(0);
+    expect(roleDetailRequests).toBeGreaterThanOrEqual(3);
+
+    await expect(page.locator(".at-topbar")).toBeVisible();
+    await expect(settings.getByRole("navigation", { name: "Settings sections" }))
+      .toBeVisible();
+    await page.waitForTimeout(1800);
+    await expectNoDocumentScroll(page, "settings retry recovery should stay framed");
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await page.screenshot({
+      animations: "disabled",
+      path: screenshotPath("v2-settings-primary-detail-recovered.png", SCREENSHOT_FOLDER),
     });
   } finally {
     await appServer.close();
@@ -556,6 +971,129 @@ async function openSettingsDialog(page: Page): Promise<Locator> {
   return settings;
 }
 
+function expectSettingsSurfaceContracts(
+  v1Surfaces: SettingsSurfaceSnapshot[],
+  v2Surfaces: SettingsSurfaceSnapshot[],
+): void {
+  for (const contract of SETTINGS_SURFACE_CONTRACTS) {
+    const v1 = v1Surfaces.find((surface) => surface.id === contract.id);
+    const v2 = v2Surfaces.find((surface) => surface.id === contract.v2Id);
+    expect(v1, `Missing V1 surface ${contract.id}`).toBeDefined();
+    expect(v2, `Missing V2 surface ${contract.v2Id}`).toBeDefined();
+    for (const token of contract.v1Text) {
+      expect(v1?.text, `V1 ${contract.id} is missing text ${token}`).toContain(token);
+    }
+    for (const control of contract.v1Controls ?? []) {
+      expect(
+        v1?.controls.some((candidate) => candidate.includes(control)),
+        `V1 ${contract.id} is missing control ${control}`,
+      ).toBe(true);
+    }
+    for (const token of contract.v2Text) {
+      expect(v2?.text, `V2 ${contract.v2Id} is missing text ${token}`).toContain(token);
+    }
+    for (const control of contract.v2Controls) {
+      expect(
+        v2?.controls.some((candidate) => candidate.includes(control)),
+        `V2 ${contract.v2Id} is missing control ${control}`,
+      ).toBe(true);
+    }
+  }
+}
+
+async function settingsSurfaceSnapshot(
+  surface: Locator,
+): Promise<Omit<SettingsSurfaceSnapshot, "id" | "label">> {
+  await expect(surface).toBeVisible();
+  return surface.evaluate((element) => {
+    function normalize(value: string | null | undefined): string {
+      return (value ?? "").replace(/\s+/g, " ").trim();
+    }
+    const controls = Array.from(
+      element.querySelectorAll("button, input, select, textarea, [role='switch']"),
+    )
+      .filter((control) => {
+        const style = window.getComputedStyle(control);
+        return style.display !== "none" && style.visibility !== "hidden";
+      })
+      .map((control) => {
+        const id = control.getAttribute("id") ?? "";
+        const label = id
+          ? element.querySelector(`label[for="${CSS.escape(id)}"]`)
+          : null;
+        return normalize(
+          control.getAttribute("aria-label")
+          ?? label?.textContent
+          ?? control.getAttribute("placeholder")
+          ?? control.textContent,
+        );
+      })
+      .filter(Boolean);
+    return {
+      controlCount: controls.length,
+      controls,
+      text: normalize(element.textContent).slice(0, 1200),
+    };
+  });
+}
+
+async function expectV1CoreControl(settings: Locator, tabKey: string): Promise<void> {
+  const selectorByTab: Record<string, string> = {
+    agents: "#add-agent-btn",
+    appearance: "#appearance-ui-font",
+    commands: "#add-command-btn",
+    environment: "#add-env-btn",
+    general: "#settings-shell-safety-policy-toggle",
+    hooks: "#add-hook-btn",
+    mcp: "#add-mcp-server-btn",
+    model: "#add-profile-btn",
+    orchestration: "#add-orchestration-preset-btn",
+    plugins: "#plugins-panel",
+    proxy: "#proxy-http-proxy",
+    roles: "#add-role-btn",
+    web: "#web-provider",
+    workspace: "#add-ssh-profile-btn",
+  };
+  const selector = selectorByTab[tabKey];
+  expect(selector).toBeDefined();
+  await expect(settings.locator(selector ?? "[data-missing-v1-control]"))
+    .toBeVisible();
+}
+
+async function expectV2CoreControl(settings: Locator, v1TabKey: string): Promise<void> {
+  const buttonNameByTab: Record<string, string> = {
+    agents: "New runtime",
+    commands: "Add Command",
+    environment: "New variable",
+    hooks: "Add hook",
+    mcp: "Add Server",
+    model: "New profile",
+    orchestration: "New orchestration",
+    plugins: "Refresh",
+    roles: "New role",
+    workspace: "New SSH profile",
+  };
+  const buttonName = buttonNameByTab[v1TabKey];
+  if (buttonName !== undefined) {
+    await expect(settings.getByRole("button", { name: buttonName, exact: true }))
+      .toBeVisible();
+    return;
+  }
+  if (v1TabKey === "web") {
+    await expect(settings.getByLabel("Exa API key", { exact: true })).toBeVisible();
+    return;
+  }
+  const labelByTab: Record<string, string> = {
+    appearance: "UI font",
+    general: "Shell safety policy",
+    proxy: "HTTP Proxy",
+  };
+  const label = labelByTab[v1TabKey];
+  expect(label).toBeDefined();
+  await expect(settings.getByLabel(label ?? "missing V2 control", { exact: true }))
+    .toBeVisible();
+}
+
 async function sectionLabels(sections: Locator): Promise<string[]> {
   return sections.getByRole("button").evaluateAll((buttons) =>
     buttons.map((button) => button.textContent?.trim() ?? ""),
@@ -684,6 +1222,37 @@ async function handleSettingsParityApi(
   state.requestedPaths.push(context.path);
   const method = context.method;
   const path = context.path;
+  if (
+    method === "GET"
+    && (path === "/system/configs/model-fallback" || path === "/connectors/w3")
+  ) {
+    await context.fulfillJson({});
+    return true;
+  }
+  if (method === "GET" && path === "/mcp/servers") {
+    await context.fulfillJson([]);
+    return true;
+  }
+  if (method === "GET" && path === "/system/commands:catalog") {
+    await context.fulfillJson({ app_commands: [], workspaces: [] });
+    return true;
+  }
+  if (
+    method === "GET"
+    && (path === "/system/configs/plugins"
+      || path === "/system/configs/plugins/runtime")
+  ) {
+    await context.fulfillJson({ diagnostics: [], plugins: [] });
+    return true;
+  }
+  if (method === "GET" && path === "/system/configs/hooks") {
+    await context.fulfillJson({ hooks: {} });
+    return true;
+  }
+  if (method === "GET" && path === "/system/configs/hooks/runtime") {
+    await context.fulfillJson({ loaded_hooks: [], sources: [] });
+    return true;
+  }
   if (method === "GET" && path === "/system/configs") {
     await context.fulfillJson(systemConfigResponse());
     return true;
@@ -859,6 +1428,27 @@ function roleConfigSummaries(): Record<string, unknown>[] {
       version: "1.0.0",
     },
   ];
+}
+
+function roleConfigDocument(): Record<string, unknown> {
+  return {
+    bound_agent_id: null,
+    deletable: false,
+    description: "Default role",
+    execution_surface: "workspace",
+    file_name: "main.md",
+    mcp_servers: ["filesystem"],
+    memory_profile: { enabled: true },
+    mode: "primary",
+    model_profile: "default",
+    name: "Main Agent",
+    role_id: "main",
+    skills: ["builtin:time"],
+    source: "app",
+    system_prompt: "Handle the user request.",
+    tools: ["read", "shell"],
+    version: "1.0.0",
+  };
 }
 
 function modelProfiles(): Record<string, Record<string, unknown>> {

@@ -1,4 +1,4 @@
-import { Alert, Skeleton, Typography } from "antd";
+import { Alert, Button, Skeleton, Typography } from "antd";
 import type { ReactNode } from "react";
 
 import { useTranslations } from "../../i18n";
@@ -23,9 +23,11 @@ export function SettingsSection({
 export function SettingsQueryState({
   error,
   loading,
+  onRetry,
 }: {
   error: Error | null;
   loading: boolean;
+  onRetry?: () => void;
 }) {
   const t = useTranslations();
   if (loading) {
@@ -34,6 +36,13 @@ export function SettingsQueryState({
   if (error !== null) {
     return (
       <Alert
+        action={
+          onRetry === undefined ? null : (
+            <Button onClick={onRetry} size="small">
+              {t("settingsRetry")}
+            </Button>
+          )
+        }
         message={error.message || t("settingsLoadFailed")}
         showIcon
         type="error"

@@ -83,7 +83,11 @@ export function WebSettingsSection() {
 
   return (
     <SettingsSection title={t("settingsWeb")}>
-      <SettingsQueryState error={webQuery.error} loading={webQuery.isLoading} />
+      <SettingsQueryState
+        error={webQuery.error}
+        loading={webQuery.isLoading}
+        onRetry={() => void webQuery.refetch()}
+      />
       {!webQuery.isLoading && webQuery.data !== undefined ? (
         <Form
           className="at-settings-form at-settings-wide-form"

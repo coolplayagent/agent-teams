@@ -127,7 +127,11 @@ export function ProxySettingsSection() {
 
   return (
     <SettingsSection title={t("settingsProxy")}>
-      <SettingsQueryState error={proxyQuery.error} loading={proxyQuery.isLoading} />
+      <SettingsQueryState
+        error={proxyQuery.error}
+        loading={proxyQuery.isLoading}
+        onRetry={() => void proxyQuery.refetch()}
+      />
       {!proxyQuery.isLoading && proxyQuery.data !== undefined ? (
         <Form
           className="at-settings-form at-settings-wide-form"

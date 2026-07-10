@@ -94,7 +94,11 @@ export function ClawHubSettingsSection() {
 
   return (
     <SettingsSection title={t("settingsClawHub")}>
-      <SettingsQueryState error={configQuery.error} loading={configQuery.isLoading} />
+      <SettingsQueryState
+        error={configQuery.error}
+        loading={configQuery.isLoading}
+        onRetry={() => void configQuery.refetch()}
+      />
       {!configQuery.isLoading && configQuery.data !== undefined ? (
         <>
           <div className="at-settings-facts">

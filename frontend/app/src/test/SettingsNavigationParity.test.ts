@@ -1,15 +1,18 @@
-/// <reference types="node" />
-
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-import { translate, type TranslationKey } from "../i18n";
-
-const settingsCenterSource = readFileSync("src/features/settings/SettingsCenter.tsx", "utf8");
+import { translate } from "../i18n";
+import {
+  SETTINGS_SECTION_DEFINITIONS,
+  SYSTEM_SETTINGS_PAGE_DEFINITIONS,
+  V1_LEGACY_SETTINGS_TAB_DEFINITIONS,
+} from "../features/settings/settingsNavigation";
 
 describe("settings navigation parity", () => {
   it("keeps the V1 settings section order and labels", () => {
-    const primarySections = settingsSections();
+    const primarySections = SETTINGS_SECTION_DEFINITIONS.map((section) => ({
+      key: section.key,
+      label: translate("en", section.labelKey),
+    }));
 
     expect(primarySections).toEqual([
       { key: "appearance", label: "Appearance" },
@@ -45,7 +48,10 @@ describe("settings navigation parity", () => {
   });
 
   it("keeps system settings pages behind the secondary page launcher", () => {
-    expect(systemSettingsPages()).toEqual([
+    expect(SYSTEM_SETTINGS_PAGE_DEFINITIONS.map((page) => ({
+      key: page.key,
+      label: translate("en", page.labelKey),
+    }))).toEqual([
       { key: "mcp", label: "MCP" },
       { key: "plugins", label: "Plugins" },
       { key: "commands", label: "Commands" },
@@ -54,37 +60,53 @@ describe("settings navigation parity", () => {
       { key: "github", label: "GitHub" },
       { key: "triggers", label: "Gateway" },
     ]);
-    expect(settingsCenterSource).toMatch(
-      /selectedPage !== null[\s\S]*?<SystemSettingsPageContent page={selectedPage} \/>/,
+  });
+
+  it("maps every live V1 settings tab to one V2 page without inventing entries", () => {
+    expect(V1_LEGACY_SETTINGS_TAB_DEFINITIONS.map((tab) => tab.label)).toEqual([
+      "Appearance",
+      "General",
+      "Model",
+      "MCP",
+      "Plugins",
+      "Commands",
+      "Hooks",
+      "Agent Runtime",
+      "Roles",
+      "Orchestration",
+      "Web",
+      "Proxy",
+      "Remote Workspace",
+      "Environment",
+    ]);
+
+    const mappedPrimarySections = new Set(
+      V1_LEGACY_SETTINGS_TAB_DEFINITIONS.flatMap((tab) =>
+        "v2Section" in tab ? [tab.v2Section] : [],
+      ),
     );
+    const mappedSystemPages = new Set(
+      V1_LEGACY_SETTINGS_TAB_DEFINITIONS.flatMap((tab) =>
+        "v2SystemPage" in tab ? [tab.v2SystemPage] : [],
+      ),
+    );
+    expect([...mappedPrimarySections]).toEqual([
+      "appearance",
+      "general",
+      "models",
+      "roles",
+      "orchestration",
+      "web",
+      "proxy",
+      "workspace",
+      "environment",
+    ]);
+    expect([...mappedSystemPages]).toEqual([
+      "mcp",
+      "plugins",
+      "commands",
+      "hooks",
+      "agent-runtime",
+    ]);
   });
 });
-
-interface SettingsNavItem {
-  key: string;
-  label: string;
-}
-
-function settingsSections(): SettingsNavItem[] {
-  const match = settingsCenterSource.match(
-    /const sections = useMemo\([\s\S]*?\(\) => \[([\s\S]*?)\],\s*\[t\],\s*\);/,
-  );
-  const sectionBlock = match?.[1] ?? "";
-  return [...sectionBlock.matchAll(/key:\s*"([^"]+)" as const,\s*label:\s*t\("([^"]+)"\)/g)]
-    .map((sectionMatch) => ({
-      key: sectionMatch[1],
-      label: translate("en", sectionMatch[2] as TranslationKey),
-    }));
-}
-
-function systemSettingsPages(): SettingsNavItem[] {
-  const match = settingsCenterSource.match(
-    /const systemItems = useMemo\([\s\S]*?\(\) => \[([\s\S]*?)\],\s*\[t\],\s*\);/,
-  );
-  const pageBlock = match?.[1] ?? "";
-  return [...pageBlock.matchAll(/key:\s*"([^"]+)",[\s\S]*?title:\s*t\("([^"]+)"\)/g)]
-    .map((pageMatch) => ({
-      key: pageMatch[1],
-      label: translate("en", pageMatch[2] as TranslationKey),
-    }));
-}

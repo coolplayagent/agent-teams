@@ -81,6 +81,7 @@ export function NotificationSettingsSection() {
       <SettingsQueryState
         error={notificationQuery.error}
         loading={notificationQuery.isLoading}
+        onRetry={() => void notificationQuery.refetch()}
       />
       {!notificationQuery.isLoading && notificationQuery.data !== undefined ? (
         <Form

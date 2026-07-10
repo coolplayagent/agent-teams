@@ -27,6 +27,7 @@ interface OrchestrationSettingsSectionProps {
   config: OrchestrationConfig | undefined;
   error: Error | null;
   loading: boolean;
+  onRetry: () => void;
   roles: RoleConfigOptions | undefined;
 }
 
@@ -45,6 +46,7 @@ export function OrchestrationSettingsSection({
   config,
   error,
   loading,
+  onRetry,
   roles,
 }: OrchestrationSettingsSectionProps) {
   const { message } = App.useApp();
@@ -151,8 +153,8 @@ export function OrchestrationSettingsSection({
 
   return (
     <SettingsSection title={t("settingsOrchestration")}>
-      <SettingsQueryState error={error} loading={loading} />
-      {!loading && config !== undefined ? (
+      <SettingsQueryState error={error} loading={loading} onRetry={onRetry} />
+      {!loading && error === null && config !== undefined ? (
         creatingPreset ? (
           <OrchestrationPresetDetail
             config={config}

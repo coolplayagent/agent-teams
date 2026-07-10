@@ -125,7 +125,14 @@ export function SpeechSettingsSection() {
 
   return (
     <SettingsSection title={t("settingsSpeech")}>
-      <SettingsQueryState error={error} loading={loading} />
+      <SettingsQueryState
+        error={error}
+        loading={loading}
+        onRetry={() => {
+          void speechQuery.refetch();
+          void profilesQuery.refetch();
+        }}
+      />
       {!loading && error === null ? (
         <Form
           className="at-settings-form at-settings-wide-form"

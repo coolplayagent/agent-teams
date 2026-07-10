@@ -255,7 +255,11 @@ export function WorkspaceSettingsSection() {
 
   return (
     <SettingsSection title={t("settingsWorkspace")}>
-      <SettingsQueryState error={profilesQuery.error} loading={profilesQuery.isLoading} />
+      <SettingsQueryState
+        error={profilesQuery.error}
+        loading={profilesQuery.isLoading}
+        onRetry={() => void profilesQuery.refetch()}
+      />
       {!profilesQuery.isLoading && profilesQuery.data !== undefined ? (
         <>
           <div className="at-settings-section-actions">

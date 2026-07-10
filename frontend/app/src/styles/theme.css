@@ -6911,6 +6911,10 @@ body {
   border-bottom: 0;
 }
 
+.at-settings-list-row.is-single-column {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .at-orchestration-list-row {
   grid-template-columns: minmax(0, 1fr) minmax(86px, 132px) max-content max-content;
 }
@@ -7130,7 +7134,20 @@ body {
 
 .at-settings-system-detail-toolbar {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  min-height: 42px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--at-border);
+  background: var(--at-surface);
+}
+
+.at-settings-system-detail-toolbar .ant-btn {
+  color: var(--at-text-muted);
+}
+
+.at-settings-system-detail-toolbar .ant-btn:hover,
+.at-settings-system-detail-toolbar .ant-btn:focus-visible {
+  color: var(--at-text);
 }
 
 .at-settings-system-detail > .at-settings-section {

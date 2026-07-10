@@ -12,6 +12,7 @@ import {
 import type { FormInstance } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
+import { ArrowLeft } from "lucide-react";
 
 import {
   deleteModelProfile,
@@ -71,38 +72,18 @@ import { SpeechSettingsSection } from "./SpeechSettingsSection";
 import { TriggerSettingsSection } from "./TriggerSettingsSection";
 import { WebSettingsSection } from "./WebSettingsSection";
 import { WorkspaceSettingsSection } from "./WorkspaceSettingsSection";
-
-type SettingsSectionKey =
-  | "appearance"
-  | "clawhub"
-  | "environment"
-  | "general"
-  | "roles"
-  | "models"
-  | "notifications"
-  | "orchestration"
-  | "proxy"
-  | "speech"
-  | "system"
-  | "web"
-  | "workspace";
+import {
+  isSystemSettingsPage,
+  SETTINGS_SECTION_DEFINITIONS,
+  SYSTEM_SETTINGS_PAGE_DEFINITIONS,
+  type SettingsSectionKey,
+  type SystemSettingsPage,
+} from "./settingsNavigation";
 
 type GeneralRelatedSectionKey = Extract<
   SettingsSectionKey,
   "appearance" | "notifications" | "speech"
 >;
-
-const SYSTEM_SETTINGS_PAGE_IDS = [
-  "mcp",
-  "plugins",
-  "commands",
-  "hooks",
-  "agent-runtime",
-  "github",
-  "triggers",
-] as const;
-
-type SystemSettingsPage = (typeof SYSTEM_SETTINGS_PAGE_IDS)[number];
 
 interface SettingsCenterProps {
   open: boolean;
@@ -155,21 +136,10 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
   }, [generalQuery.data, form]);
 
   const sections = useMemo(
-    () => [
-      { key: "appearance" as const, label: t("settingsAppearance") },
-      { key: "general" as const, label: t("settingsGeneral") },
-      { key: "speech" as const, label: t("settingsSpeech") },
-      { key: "notifications" as const, label: t("settingsNotifications") },
-      { key: "models" as const, label: t("settingsModels") },
-      { key: "roles" as const, label: t("settingsRoles") },
-      { key: "orchestration" as const, label: t("settingsOrchestration") },
-      { key: "web" as const, label: t("settingsWeb") },
-      { key: "clawhub" as const, label: t("settingsClawHub") },
-      { key: "proxy" as const, label: t("settingsProxy") },
-      { key: "workspace" as const, label: t("settingsWorkspace") },
-      { key: "environment" as const, label: t("settingsEnvironment") },
-      { key: "system" as const, label: t("settingsSystem") },
-    ],
+    () => SETTINGS_SECTION_DEFINITIONS.map((section) => ({
+      key: section.key,
+      label: t(section.labelKey),
+    })),
     [t],
   );
 
@@ -205,6 +175,7 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
             form={form}
             loading={generalQuery.isLoading}
             onNavigate={setActiveSection}
+            onRetry={() => void generalQuery.refetch()}
             onSubmit={(values) => saveMutation.mutate(values)}
             saving={saveMutation.isPending}
           />
@@ -215,6 +186,7 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
           <SettingsRoles
             error={rolesQuery.error}
             loading={rolesQuery.isLoading}
+            onRetry={() => void rolesQuery.refetch()}
             roles={rolesQuery.data}
           />
         ) : null}
@@ -222,6 +194,7 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
           <SettingsModels
             error={modelsQuery.error}
             loading={modelsQuery.isLoading}
+            onRetry={() => void modelsQuery.refetch()}
             profiles={modelsQuery.data}
           />
         ) : null}
@@ -230,6 +203,7 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
             config={orchestrationQuery.data}
             error={orchestrationQuery.error}
             loading={orchestrationQuery.isLoading}
+            onRetry={() => void orchestrationQuery.refetch()}
             roles={rolesQuery.data}
           />
         ) : null}
@@ -279,50 +253,12 @@ function SettingsSystem() {
     };
   }, []);
   const systemItems = useMemo(
-    () => [
-      {
-        detail: t("settingsSystemMcpDetail"),
-        key: "mcp",
-        meta: t("settingsSystem"),
-        title: t("settingsMcp"),
-      },
-      {
-        detail: t("settingsSystemPluginsDetail"),
-        key: "plugins",
-        meta: t("settingsSystem"),
-        title: t("settingsPlugins"),
-      },
-      {
-        detail: t("settingsSystemCommandsDetail"),
-        key: "commands",
-        meta: t("settingsSystem"),
-        title: t("settingsCommands"),
-      },
-      {
-        detail: t("settingsSystemHooksDetail"),
-        key: "hooks",
-        meta: t("settingsSystem"),
-        title: t("settingsHooks"),
-      },
-      {
-        detail: t("settingsSystemAgentRuntimeDetail"),
-        key: "agent-runtime",
-        meta: t("settingsSystem"),
-        title: t("settingsAgentRuntime"),
-      },
-      {
-        detail: t("settingsSystemGitHubDetail"),
-        key: "github",
-        meta: t("settingsSystem"),
-        title: t("settingsGitHub"),
-      },
-      {
-        detail: t("settingsSystemTriggersDetail"),
-        key: "triggers",
-        meta: t("settingsSystem"),
-        title: t("settingsTriggers"),
-      },
-    ],
+    () => SYSTEM_SETTINGS_PAGE_DEFINITIONS.map((page) => ({
+      detail: t(page.detailKey),
+      key: page.key,
+      meta: "",
+      title: t(page.labelKey),
+    })),
     [t],
   );
 
@@ -330,7 +266,13 @@ function SettingsSystem() {
     return (
       <div className="at-settings-system-detail">
         <div className="at-settings-system-detail-toolbar">
-          <Button onClick={() => setSelectedPage(null)}>{t("settingsBack")}</Button>
+          <Button
+            icon={<ArrowLeft size={15} />}
+            onClick={() => setSelectedPage(null)}
+            type="text"
+          >
+            {t("settingsBackToSystem")}
+          </Button>
         </div>
         <SystemSettingsPageContent page={selectedPage} />
       </div>
@@ -339,7 +281,11 @@ function SettingsSystem() {
 
   return (
     <SettingsSection title={t("settingsSystem")}>
-      <SettingsQueryState error={statusQuery.error} loading={statusQuery.isLoading} />
+      <SettingsQueryState
+        error={statusQuery.error}
+        loading={statusQuery.isLoading}
+        onRetry={() => void statusQuery.refetch()}
+      />
       {!statusQuery.isLoading && statusQuery.data !== undefined ? (
         <div className="at-settings-facts">
           <Fact
@@ -394,15 +340,12 @@ function SystemSettingsPageContent({ page }: { page: SystemSettingsPage }) {
   return <GitHubSettingsSection />;
 }
 
-function isSystemSettingsPage(key: string): key is SystemSettingsPage {
-  return SYSTEM_SETTINGS_PAGE_IDS.some((page) => page === key);
-}
-
 function SettingsGeneral({
   error,
   form,
   loading,
   onNavigate,
+  onRetry,
   onSubmit,
   saving,
 }: {
@@ -410,6 +353,7 @@ function SettingsGeneral({
   form: FormInstance<GeneralConfig>;
   loading: boolean;
   onNavigate: (section: GeneralRelatedSectionKey) => void;
+  onRetry: () => void;
   onSubmit: (values: GeneralConfig) => void;
   saving: boolean;
 }) {
@@ -438,8 +382,8 @@ function SettingsGeneral({
 
   return (
     <SettingsSection title={t("settingsGeneral")}>
-      <SettingsQueryState error={error} loading={loading} />
-      {!loading ? (
+      <SettingsQueryState error={error} loading={loading} onRetry={onRetry} />
+      {!loading && error === null ? (
         <Form
           className="at-general-page"
           form={form}
@@ -513,10 +457,12 @@ function SettingsGeneral({
 function SettingsRoles({
   error,
   loading,
+  onRetry,
   roles,
 }: {
   error: Error | null;
   loading: boolean;
+  onRetry: () => void;
   roles: Awaited<ReturnType<typeof getRoleConfigOptions>> | undefined;
 }) {
   const { message } = App.useApp();
@@ -625,6 +571,11 @@ function SettingsRoles({
       <SettingsQueryState
         error={roleConfigsQuery.error ?? error}
         loading={roleConfigsQuery.isLoading || loading}
+        onRetry={() => {
+          onRetry();
+          void roleConfigsQuery.refetch();
+          void agentRuntimesQuery.refetch();
+        }}
       />
       {creatingRole ? (
         <RoleConfigDetail
@@ -655,6 +606,7 @@ function SettingsRoles({
           onDelete={(roleId) => deleteMutation.mutate(roleId)}
           onSave={(document) => saveMutation.mutate(document)}
           onValidate={(document) => validateMutation.mutate(document)}
+          onRetry={() => void selectedRoleQuery.refetch()}
           agentRuntimes={agentRuntimesQuery.data ?? []}
           agentRuntimesLoading={agentRuntimesQuery.isLoading}
           roleOptions={roles}
@@ -697,6 +649,7 @@ function RoleConfigDetail({
   onDelete,
   onSave,
   onValidate,
+  onRetry,
   agentRuntimes,
   agentRuntimesLoading,
   roleOptions,
@@ -714,6 +667,7 @@ function RoleConfigDetail({
   onDelete: (roleId: string) => void;
   onSave: (document: RoleConfigDocument) => void;
   onValidate: (document: RoleConfigDocument) => void;
+  onRetry?: () => void;
   agentRuntimes: AgentRuntimeSummary[];
   agentRuntimesLoading: boolean;
   roleOptions: Awaited<ReturnType<typeof getRoleConfigOptions>> | undefined;
@@ -789,7 +743,7 @@ function RoleConfigDetail({
           <Button onClick={onBack}>{t("settingsBack")}</Button>
         </div>
       </div>
-      <SettingsQueryState error={error} loading={loading} />
+      <SettingsQueryState error={error} loading={loading} onRetry={onRetry} />
       {document !== undefined ? (
         <>
           <div className="at-settings-facts at-settings-workspace-facts">
@@ -947,10 +901,12 @@ function RoleConfigDetail({
 function SettingsModels({
   error,
   loading,
+  onRetry,
   profiles,
 }: {
   error: Error | null;
   loading: boolean;
+  onRetry: () => void;
   profiles: Awaited<ReturnType<typeof getModelProfiles>> | undefined;
 }) {
   const { message } = App.useApp();
@@ -1170,7 +1126,7 @@ function SettingsModels({
 
   return (
     <SettingsSection title={t("settingsModels")}>
-      <SettingsQueryState error={error} loading={loading} />
+      <SettingsQueryState error={error} loading={loading} onRetry={onRetry} />
       {!loading && profiles !== undefined ? (
         creatingProfile ? (
           <ModelProfileDetail
@@ -2327,15 +2283,21 @@ function SettingsList({
                 {item.detail}
               </Typography.Text>
             </div>
-            <Typography.Text className="at-settings-list-meta" ellipsis title={item.meta}>
-              {item.meta}
-            </Typography.Text>
+            {item.meta ? (
+              <Typography.Text className="at-settings-list-meta" ellipsis title={item.meta}>
+                {item.meta}
+              </Typography.Text>
+            ) : null}
           </>
         );
         if (onSelect !== undefined) {
           return (
             <button
-              className="at-settings-list-button at-settings-list-row"
+              className={
+                item.meta
+                  ? "at-settings-list-button at-settings-list-row"
+                  : "at-settings-list-button at-settings-list-row is-single-column"
+              }
               key={item.key}
               onClick={() => onSelect(item)}
               type="button"
@@ -2345,7 +2307,14 @@ function SettingsList({
           );
         }
         return (
-          <div className="at-settings-list-row" key={item.key}>
+          <div
+            className={
+              item.meta
+                ? "at-settings-list-row"
+                : "at-settings-list-row is-single-column"
+            }
+            key={item.key}
+          >
             {content}
           </div>
         );

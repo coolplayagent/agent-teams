@@ -323,6 +323,7 @@ const validateRoleConfigMock = vi.mocked(validateRoleConfig);
 const waitWeChatGatewayLoginMock = vi.mocked(waitWeChatGatewayLogin);
 const fetchSpeechConfigMock = vi.mocked(fetchSpeechConfig);
 const saveSpeechConfigMock = vi.mocked(saveSpeechConfig);
+const activeQueryClients = new Set<QueryClient>();
 
 function orchestrationConfigFixture(): OrchestrationConfig {
   return {
@@ -365,6 +366,19 @@ function orchestrationConfigFixture(): OrchestrationConfig {
 }
 
 beforeEach(() => {
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      addEventListener: vi.fn(),
+      addListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+      matches: false,
+      media: query,
+      onchange: null,
+      removeEventListener: vi.fn(),
+      removeListener: vi.fn(),
+    })),
+  });
   getGeneralConfigMock.mockResolvedValue({ shell_safety_policy_enabled: true });
   getConfigStatusMock.mockResolvedValue({
     skills: {
@@ -1440,10 +1454,14 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  for (const queryClient of activeQueryClients) {
+    queryClient.clear();
+  }
+  activeQueryClients.clear();
   delete window.agentTeamsDesktop;
   window.localStorage.clear();
   applyAppearanceSettings(defaultAppearanceSettings);
-  vi.clearAllMocks();
+  vi.resetAllMocks();
 });
 
 describe("SettingsDrawer", () => {
@@ -1599,21 +1617,21 @@ describe("SettingsDrawer", () => {
     expect(await screen.findByText("/opsx:propose")).toBeVisible();
     expect(screen.getByText("Global commands")).toBeVisible();
     expect(getCommandCatalogMock).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to System" }));
 
     fireEvent.click(screen.getByText("Plugins").closest("button") as HTMLElement);
     expect(await screen.findByText("workspace-tools")).toBeVisible();
     expect(screen.getByText("2 components")).toBeVisible();
     expect(getPluginsConfigMock).toHaveBeenCalledTimes(1);
     expect(getPluginsRuntimeMock).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to System" }));
 
     fireEvent.click(screen.getByText("Hooks").closest("button") as HTMLElement);
     expect((await screen.findAllByText("Session startup setup")).length).toBeGreaterThan(0);
     expect(screen.getByText("SessionStart · python hooks/start.py")).toBeVisible();
     expect(getHooksConfigMock).toHaveBeenCalledTimes(1);
     expect(getHookRuntimeViewMock).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to System" }));
 
     fireEvent.click(screen.getByText("Agent Runtime").closest("button") as HTMLElement);
     expect(await screen.findByText("Codex CLI")).toBeVisible();
@@ -2047,6 +2065,7 @@ describe("SettingsDrawer", () => {
         source_ref: "v1.2.0",
       }),
     );
+    await waitForPluginListSettled();
   });
 
   it("shows a pending state while plugin install is running", async () => {
@@ -2070,7 +2089,7 @@ describe("SettingsDrawer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add Plugin" }));
 
     await waitFor(() => expect(installPluginMock).toHaveBeenCalledTimes(1));
-    expect(screen.getByRole("button", { name: "Add Plugin" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Add Plugin/ })).toBeDisabled();
     resolveInstall({ diagnostics: [], plugins: [] });
     await waitFor(() => expect(screen.getByText("workspace-tools")).toBeVisible());
   });
@@ -2100,6 +2119,7 @@ describe("SettingsDrawer", () => {
         source_kind: "local",
       }),
     );
+    await waitForPluginListSettled();
   });
 
   it("loads marketplace plugins before installing the selected version", async () => {
@@ -2152,6 +2172,7 @@ describe("SettingsDrawer", () => {
         version: null,
       }),
     );
+    await waitForPluginListSettled();
   });
 
   it("blocks unsupported marketplace entries after loading them", async () => {
@@ -2239,6 +2260,7 @@ describe("SettingsDrawer", () => {
         version: "0.1.0",
       }),
     );
+    await waitForPluginListSettled();
   });
 
   it("loads Claude marketplace plugins with provider defaults", async () => {
@@ -2315,6 +2337,7 @@ describe("SettingsDrawer", () => {
         version: null,
       }),
     );
+    await waitForPluginListSettled();
   });
 
   it("loads ClawHub marketplace entries with safe direct compatibility defaults", async () => {
@@ -2422,6 +2445,7 @@ describe("SettingsDrawer", () => {
         version: null,
       }),
     );
+    await waitForPluginListSettled();
   });
 
   it("selects a marketplace version before updating marketplace plugins", async () => {
@@ -4623,9 +4647,13 @@ function renderDrawer() {
       },
     },
   });
+  activeQueryClients.add(queryClient);
   render(
     <QueryClientProvider client={queryClient}>
-      <ConfigProvider button={{ autoInsertSpace: false }}>
+      <ConfigProvider
+        button={{ autoInsertSpace: false }}
+        theme={{ token: { motion: false } }}
+      >
         <AntApp>{renderWithStrictModeBoundary(<SettingsDrawer onClose={vi.fn()} open />)}</AntApp>
       </ConfigProvider>
     </QueryClientProvider>,
@@ -4701,6 +4729,10 @@ function installDesktopApi(version: string) {
 function lastBackButton(): HTMLElement {
   const buttons = screen.getAllByRole("button", { name: "Back" });
   return buttons[buttons.length - 1] as HTMLElement;
+}
+
+async function waitForPluginListSettled() {
+  await waitFor(() => expect(screen.getByText("workspace-tools")).toBeVisible());
 }
 
 function lastDeleteButton(): HTMLElement {

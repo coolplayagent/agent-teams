@@ -156,6 +156,7 @@ export function EnvironmentSettingsSection() {
       <SettingsQueryState
         error={environmentQuery.error}
         loading={environmentQuery.isLoading}
+        onRetry={() => void environmentQuery.refetch()}
       />
       {!environmentQuery.isLoading && environmentQuery.data !== undefined ? (
         <>

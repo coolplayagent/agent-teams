@@ -243,6 +243,42 @@ describe("GitHubSettingsSection", () => {
     );
   });
 
+  it("does not overwrite an edited webhook while token refresh is in flight", async () => {
+    let resolveRefresh: (config: GitHubConfigView) => void = () => undefined;
+    getGitHubConfigMock
+      .mockResolvedValueOnce(githubConfig)
+      .mockReturnValueOnce(
+        new Promise<GitHubConfigView>((resolve) => {
+          resolveRefresh = resolve;
+        }),
+      );
+    renderSection();
+
+    const tokenInput = await screen.findByLabelText("Token");
+    fireEvent.focus(tokenInput);
+    fireEvent.change(tokenInput, { target: { value: "ghp_next" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save token" }));
+    await waitFor(() =>
+      expect(saveGitHubConfigMock).toHaveBeenCalledWith({ token: "ghp_next" }),
+    );
+
+    fireEvent.change(screen.getByLabelText("Webhook base URL"), {
+      target: { value: "https://changed.example" },
+    });
+    resolveRefresh({
+      token_configured: true,
+      webhook_base_url: "https://hooks.example",
+    });
+
+    expect(
+      await screen.findByText(
+        "https://changed.example/api/triggers/github/deliveries",
+      ),
+    ).toBeVisible();
+    expect(screen.getByLabelText("Webhook base URL"))
+      .toHaveValue("https://changed.example");
+  });
+
   it("backfills a delayed tunnel public URL and clears matching URLs on stop", async () => {
     githubConfig = {
       token_configured: false,

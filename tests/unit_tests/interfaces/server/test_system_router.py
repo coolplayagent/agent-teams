@@ -466,16 +466,13 @@ class _FakeSystemService:
             raise self.proxy_reload_error
         return None
 
-    def get_saved_proxy_config(self) -> dict[str, object]:
-        return {
-            "http_proxy": "http://proxy.example:8080",
-            "https_proxy": None,
-            "all_proxy": None,
-            "no_proxy": "localhost,127.0.0.1",
-            "proxy_username": "alice",
-            "proxy_password": "secret",
-            "ssl_verify": None,
-        }
+    def get_saved_proxy_config(self) -> ProxyEnvInput:
+        return ProxyEnvInput(
+            http_proxy="http://proxy.example:8080",
+            no_proxy="localhost,127.0.0.1",
+            proxy_username="alice",
+            proxy_password="secret",
+        )
 
     def save_proxy_config(self, config: ProxyEnvInput) -> None:
         if self.proxy_save_error is not None:
@@ -1688,7 +1685,7 @@ def test_sync_system_read_routes_run_service_calls_in_threadpool(monkeypatch) ->
     assert [call[0] for call in calls] == [
         "get_config_status",
         "get_ui_language_settings",
-        "get_model_config",
+        "get_model_profiles",
         "get_model_profiles",
         "get_model_fallback_config",
         "get_provider_models",
@@ -2417,7 +2414,20 @@ def test_get_clawhub_config() -> None:
     response = client.get("/api/system/configs/clawhub")
 
     assert response.status_code == 200
-    assert response.json() == {"token": None}
+    assert response.json() == {"token_configured": False}
+
+
+def test_get_clawhub_config_reports_saved_token_without_returning_it() -> None:
+    class _FakeConfiguredClawHubSystemService(_FakeSystemService):
+        def get_clawhub_config(self) -> ClawHubConfig:
+            return ClawHubConfig(token="ch_saved_secret")
+
+    client = _create_test_client(_FakeConfiguredClawHubSystemService())
+
+    response = client.get("/api/system/configs/clawhub")
+
+    assert response.status_code == 200
+    assert response.json() == {"token_configured": True}
 
 
 def test_save_clawhub_config() -> None:
@@ -2432,6 +2442,23 @@ def test_save_clawhub_config() -> None:
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
     assert service.saved_clawhub_config == {"token": "ch_secret"}
+
+
+def test_save_clawhub_config_preserves_saved_token() -> None:
+    class _FakeConfiguredClawHubSystemService(_FakeSystemService):
+        def get_clawhub_config(self) -> ClawHubConfig:
+            return ClawHubConfig(token="ch_saved_secret")
+
+    service = _FakeConfiguredClawHubSystemService()
+    client = _create_test_client(service)
+
+    response = client.put(
+        "/api/system/configs/clawhub",
+        json={"token": None, "preserve_token": True},
+    )
+
+    assert response.status_code == 200
+    assert service.saved_clawhub_config == {"token": "ch_saved_secret"}
 
 
 def test_probe_clawhub_connectivity() -> None:
@@ -3116,23 +3143,12 @@ def test_get_model_config() -> None:
     response = client.get("/api/system/configs/model")
 
     assert response.status_code == 200
-    assert response.json() == {
-        "default": {
-            "provider": "openai_compatible",
-            "model": "gpt-4o-mini",
-            "base_url": "https://example.test/v1",
-            "api_key": "secret",
-            "headers": [],
-            "temperature": 0.2,
-            "top_p": 1.0,
-            "max_tokens": 2048,
-            "context_window": 128000,
-            "connect_timeout_seconds": 25.0,
-            "is_default": True,
-            "maas_auth": None,
-            "ssl_verify": None,
-        }
-    }
+    profile = response.json()["default"]
+    assert profile["provider"] == "openai_compatible"
+    assert profile["model"] == "gpt-4o-mini"
+    assert profile["api_key"] is None
+    assert profile["has_api_key"] is True
+    assert "secret" not in response.text
 
 
 def test_save_model_config() -> None:
@@ -3224,14 +3240,14 @@ def test_save_model_config_rejects_unknown_profile_field() -> None:
     assert response.status_code == 422
 
 
-def test_get_model_profiles_returns_api_key() -> None:
+def test_get_model_profiles_masks_api_key() -> None:
     client = _create_test_client(_FakeSystemService())
 
     response = client.get("/api/system/configs/model/profiles")
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["default"]["api_key"] == "secret"
+    assert payload["default"]["api_key"] is None
     assert payload["default"]["has_api_key"] is True
     assert payload["default"]["is_default"] is True
     assert payload["default"]["context_window"] == 128000
@@ -3442,9 +3458,116 @@ def test_get_proxy_config() -> None:
         "all_proxy": None,
         "no_proxy": "localhost,127.0.0.1",
         "proxy_username": "alice",
-        "proxy_password": "secret",
+        "has_password": True,
         "ssl_verify": None,
     }
+
+
+def test_get_proxy_config_strips_mismatched_legacy_url_credentials() -> None:
+    class _LegacyProxySystemService(_FakeSystemService):
+        def get_saved_proxy_config(self) -> ProxyEnvInput:
+            return ProxyEnvInput(
+                http_proxy="http://alice:first@proxy-one.example:8080",
+                https_proxy="http://bob:second@proxy-two.example:8443",
+            )
+
+    client = _create_test_client(_LegacyProxySystemService())
+
+    response = client.get("/api/system/configs/proxy")
+
+    assert response.status_code == 200
+    assert response.json()["http_proxy"] == "http://proxy-one.example:8080"
+    assert response.json()["https_proxy"] == "http://proxy-two.example:8443"
+    assert response.json()["has_password"] is True
+    assert "first" not in response.text
+    assert "second" not in response.text
+
+
+def test_proxy_save_and_probe_preserve_mismatched_legacy_url_credentials() -> None:
+    class _LegacyProxySystemService(_FakeSystemService):
+        last_web_probe_request: WebConnectivityProbeRequest | None = None
+
+        def get_saved_proxy_config(self) -> ProxyEnvInput:
+            return ProxyEnvInput(
+                http_proxy="http://alice:first@proxy-one.example:8080",
+                https_proxy="http://bob:second@proxy-two.example:8443",
+            )
+
+        def probe_web_connectivity(
+            self,
+            request: object,
+        ) -> WebConnectivityProbeResult:
+            assert isinstance(request, WebConnectivityProbeRequest)
+            self.last_web_probe_request = request
+            return super().probe_web_connectivity(request)
+
+    service = _LegacyProxySystemService()
+    client = _create_test_client(service)
+
+    save_response = client.put(
+        "/api/system/configs/proxy",
+        json={
+            "http_proxy": "http://proxy-one.example:8080",
+            "https_proxy": "http://proxy-two.example:8443",
+            "preserve_password": True,
+        },
+    )
+    probe_response = client.post(
+        "/api/system/configs/web:probe",
+        json={
+            "url": "https://example.com",
+            "preserve_saved_proxy_password": True,
+            "proxy_override": {
+                "http_proxy": "http://proxy-one.example:8080",
+                "https_proxy": "http://proxy-two.example:8443",
+            },
+        },
+    )
+
+    assert save_response.status_code == 200
+    assert service.saved_proxy_config is not None
+    assert service.saved_proxy_config["http_proxy"] == (
+        "http://alice:first@proxy-one.example:8080"
+    )
+    assert service.saved_proxy_config["https_proxy"] == (
+        "http://bob:second@proxy-two.example:8443"
+    )
+    assert probe_response.status_code == 200
+    assert service.last_web_probe_request is not None
+    assert service.last_web_probe_request.proxy_override is not None
+    assert service.last_web_probe_request.proxy_override.http_proxy == (
+        "http://alice:first@proxy-one.example:8080"
+    )
+    assert service.last_web_probe_request.proxy_override.https_proxy == (
+        "http://bob:second@proxy-two.example:8443"
+    )
+
+    service.saved_proxy_config = None
+    changed_save_response = client.put(
+        "/api/system/configs/proxy",
+        json={
+            "http_proxy": "http://proxy-one.example:8080",
+            "https_proxy": "http://proxy-three.example:8443",
+            "preserve_password": True,
+        },
+    )
+    changed_probe_response = client.post(
+        "/api/system/configs/web:probe",
+        json={
+            "url": "https://example.com",
+            "preserve_saved_proxy_password": True,
+            "proxy_override": {
+                "http_proxy": "http://proxy-one.example:8080",
+                "https_proxy": "http://proxy-three.example:8443",
+            },
+        },
+    )
+
+    assert changed_save_response.status_code == 400
+    assert changed_probe_response.status_code == 400
+    assert "all proxy URLs remain unchanged" in changed_save_response.json()["detail"]
+    assert "all proxy URLs remain unchanged" in changed_probe_response.json()["detail"]
+    assert service.saved_proxy_config is None
 
 
 def test_get_web_config() -> None:
@@ -3455,11 +3578,31 @@ def test_get_web_config() -> None:
     assert response.status_code == 200
     assert response.json() == {
         "provider": "exa",
-        "exa_api_key": None,
+        "exa_api_key_configured": False,
         "fallback_provider": "searxng",
         "searxng_instance_url": DEFAULT_SEARXNG_INSTANCE_URL,
         "searxng_instance_seeds": list(DEFAULT_SEARXNG_INSTANCE_SEEDS),
     }
+
+
+def test_get_web_config_reports_saved_key_without_returning_it() -> None:
+    class _FakeConfiguredWebSystemService(_FakeSystemService):
+        def get_web_config(self) -> WebConfig:
+            return WebConfig(
+                provider=WebProvider.EXA,
+                exa_api_key="exa_saved_secret",
+                fallback_provider=WebFallbackProvider.SEARXNG,
+                searxng_instance_url=DEFAULT_SEARXNG_INSTANCE_URL,
+            )
+
+    client = _create_test_client(_FakeConfiguredWebSystemService())
+
+    response = client.get("/api/system/configs/web")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["exa_api_key_configured"] is True
+    assert "exa_api_key" not in payload
 
 
 def test_save_proxy_config() -> None:
@@ -3492,6 +3635,27 @@ def test_save_proxy_config() -> None:
     }
 
 
+def test_save_proxy_config_preserves_saved_password() -> None:
+    service = _FakeSystemService()
+    client = _create_test_client(service)
+
+    response = client.put(
+        "/api/system/configs/proxy",
+        json={
+            "http_proxy": "http://proxy.example:8080",
+            "no_proxy": "localhost,127.0.0.1",
+            "proxy_username": "alice",
+            "proxy_password": None,
+            "preserve_password": True,
+            "ssl_verify": None,
+        },
+    )
+
+    assert response.status_code == 200
+    assert service.saved_proxy_config is not None
+    assert service.saved_proxy_config["proxy_password"] == "secret"
+
+
 def test_save_web_config() -> None:
     service = _FakeSystemService()
     client = _create_test_client(service)
@@ -3514,6 +3678,35 @@ def test_save_web_config() -> None:
         "fallback_provider": "searxng",
         "searxng_instance_url": "https://search.example.test/",
     }
+
+
+def test_save_web_config_preserves_saved_api_key() -> None:
+    class _FakeConfiguredWebSystemService(_FakeSystemService):
+        def get_web_config(self) -> WebConfig:
+            return WebConfig(
+                provider=WebProvider.EXA,
+                exa_api_key="exa_saved_secret",
+                fallback_provider=WebFallbackProvider.SEARXNG,
+                searxng_instance_url=DEFAULT_SEARXNG_INSTANCE_URL,
+            )
+
+    service = _FakeConfiguredWebSystemService()
+    client = _create_test_client(service)
+
+    response = client.put(
+        "/api/system/configs/web",
+        json={
+            "provider": "exa",
+            "exa_api_key": None,
+            "preserve_exa_api_key": True,
+            "fallback_provider": "searxng",
+            "searxng_instance_url": "https://search.example.test/",
+        },
+    )
+
+    assert response.status_code == 200
+    assert service.saved_web_config is not None
+    assert service.saved_web_config["exa_api_key"] == "exa_saved_secret"
 
 
 def test_save_web_config_rejects_searxng_primary_provider() -> None:
@@ -4677,7 +4870,7 @@ def test_save_model_profile_forwards_headers() -> None:
 
 class _FakeEnvironmentVariableService:
     def __init__(self) -> None:
-        self.saved_payload: dict[str, str] | None = None
+        self.saved_payload: dict[str, str | bool] | None = None
         self.deleted_key: tuple[str, str] | None = None
         self.permission_error: PermissionError | None = None
 
@@ -4694,7 +4887,8 @@ class _FakeEnvironmentVariableService:
             "app": [
                 {
                     "key": "OPENAI_API_KEY",
-                    "value": "secret",
+                    "masked": True,
+                    "value": "************",
                     "scope": "app",
                     "value_kind": "string",
                 }
@@ -4707,20 +4901,23 @@ class _FakeEnvironmentVariableService:
         scope: object,
         key: str,
         request: object,
-    ) -> dict[str, str]:
+    ) -> dict[str, str | bool]:
         if self.permission_error is not None:
             raise self.permission_error
         source_key = getattr(request, "source_key")
+        preserve_existing = getattr(request, "preserve_existing")
         value = getattr(request, "value")
         self.saved_payload = {
             "scope": str(getattr(scope, "value", scope)),
             "key": key,
+            "preserve_existing": preserve_existing,
             "source_key": "" if source_key is None else str(source_key),
             "value": value,
         }
         return {
             "key": key,
-            "value": value,
+            "masked": True,
+            "value": "************",
             "scope": str(getattr(scope, "value", scope)),
             "value_kind": "string",
         }
@@ -4771,6 +4968,7 @@ def test_environment_variable_routes_run_service_calls_in_threadpool(
         client.put(
             "/api/system/configs/environment-variables/app/OPENAI_API_KEY",
             json={
+                "preserve_existing": False,
                 "source_key": "OPENAI_KEY",
                 "value": "updated-secret",
             },
@@ -4801,13 +4999,15 @@ def test_save_environment_variable() -> None:
     assert response.status_code == 200
     assert response.json() == {
         "key": "OPENAI_API_KEY",
-        "value": "updated-secret",
+        "masked": True,
+        "value": "************",
         "scope": "app",
         "value_kind": "string",
     }
     assert service.saved_payload == {
         "scope": "app",
         "key": "OPENAI_API_KEY",
+        "preserve_existing": False,
         "source_key": "OPENAI_KEY",
         "value": "updated-secret",
     }
@@ -4886,13 +5086,21 @@ def test_save_orchestration_config_rejects_unknown_top_level_field() -> None:
 
 def test_get_model_config_preserves_omitted_sparse_fields() -> None:
     class _SparseSystemService(_FakeSystemService):
-        def get_model_config(self) -> dict[str, object]:
+        def get_model_profiles(self) -> dict[str, object]:
             return {
                 "default": {
                     "provider": "openai_compatible",
                     "model": "gpt-4o-mini",
                     "base_url": "https://example.test/v1",
                     "api_key": "secret",
+                    "headers": [
+                        {
+                            "configured": True,
+                            "name": "Authorization",
+                            "secret": True,
+                            "value": "Bearer secret-header",
+                        }
+                    ],
                 }
             }
 
@@ -4906,6 +5114,15 @@ def test_get_model_config_preserves_omitted_sparse_fields() -> None:
             "provider": "openai_compatible",
             "model": "gpt-4o-mini",
             "base_url": "https://example.test/v1",
-            "api_key": "secret",
+            "api_key": None,
+            "has_api_key": True,
+            "headers": [
+                {
+                    "configured": True,
+                    "name": "Authorization",
+                    "secret": True,
+                    "value": None,
+                }
+            ],
         }
     }

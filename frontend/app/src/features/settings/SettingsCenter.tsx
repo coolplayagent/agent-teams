@@ -204,6 +204,9 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
             error={orchestrationQuery.error}
             loading={orchestrationQuery.isLoading}
             onRetry={() => void orchestrationQuery.refetch()}
+            onRoleOptionsRetry={() => void rolesQuery.refetch()}
+            roleOptionsError={rolesQuery.error}
+            roleOptionsLoading={rolesQuery.isLoading}
             roles={rolesQuery.data}
           />
         ) : null}
@@ -776,19 +779,39 @@ function RoleConfigDetail({
             >
               <Input autoComplete="off" disabled={!creating} />
             </Form.Item>
-            <Form.Item label={t("settingsRoleName")} name="name">
+            <Form.Item
+              label={t("settingsRoleName")}
+              name="name"
+              rules={[{ message: t("settingsRoleNameRequired"), required: true }]}
+            >
               <Input autoComplete="off" />
             </Form.Item>
-            <Form.Item label={t("settingsRoleDescription")} name="description">
+            <Form.Item
+              label={t("settingsRoleDescription")}
+              name="description"
+              rules={[{ message: t("settingsRoleDescriptionRequired"), required: true }]}
+            >
               <Input.TextArea autoSize={{ minRows: 2, maxRows: 5 }} />
             </Form.Item>
-            <Form.Item label={t("settingsRoleVersion")} name="version">
+            <Form.Item
+              label={t("settingsRoleVersion")}
+              name="version"
+              rules={[{ message: t("settingsRoleVersionRequired"), required: true }]}
+            >
               <Input autoComplete="off" />
             </Form.Item>
-            <Form.Item label={t("settingsRoleModelProfile")} name="model_profile">
+            <Form.Item
+              label={t("settingsRoleModelProfile")}
+              name="model_profile"
+              rules={[{ message: t("settingsRoleModelProfileRequired"), required: true }]}
+            >
               <Input autoComplete="off" />
             </Form.Item>
-            <Form.Item label={t("settingsRoleExecutionSurface")} name="execution_surface">
+            <Form.Item
+              label={t("settingsRoleExecutionSurface")}
+              name="execution_surface"
+              rules={[{ message: t("settingsRoleExecutionSurfaceRequired"), required: true }]}
+            >
               <Input autoComplete="off" />
             </Form.Item>
             <Form.Item
@@ -807,7 +830,11 @@ function RoleConfigDetail({
                 showSearch
               />
             </Form.Item>
-            <Form.Item label={t("settingsRoleMode")} name="mode">
+            <Form.Item
+              label={t("settingsRoleMode")}
+              name="mode"
+              rules={[{ message: t("settingsRoleModeRequired"), required: true }]}
+            >
               <Input autoComplete="off" />
             </Form.Item>
             <Form.Item label={t("settingsMcpToolCount")} name="tools">
@@ -853,7 +880,11 @@ function RoleConfigDetail({
                       : "at-role-prompt-textarea is-hidden"
                   }
                 >
-                  <Form.Item name="system_prompt" noStyle>
+                  <Form.Item
+                    name="system_prompt"
+                    noStyle
+                    rules={[{ message: t("settingsRoleSystemPromptRequired"), required: true }]}
+                  >
                     <Input.TextArea
                       aria-label={t("settingsRoleSystemPrompt")}
                       autoSize={{ minRows: 8, maxRows: 18 }}
@@ -1587,7 +1618,11 @@ function ModelProfileDetail({
             <Input inputMode="numeric" type="number" />
           </Form.Item>
           <Form.Item label={t("settingsModelSslVerify")} name="ssl_verify">
-            <Input placeholder={t("settingsModelSslVerifyPlaceholder")} />
+            <select className="at-settings-native-select">
+              <option value="">{t("settingsProxySslInherit")}</option>
+              <option value="true">{t("settingsProxySslVerifyOption")}</option>
+              <option value="false">{t("settingsProxySslSkipOption")}</option>
+            </select>
           </Form.Item>
           <Form.Item
             className="at-model-profile-switch-field"
@@ -1845,10 +1880,10 @@ function buildModelProfileSaveRequest(
   if (profile.headers !== undefined) {
     request.headers = profile.headers;
   }
-  if (profile.maas_auth !== undefined) {
+  if (values === undefined && profile.maas_auth !== undefined) {
     request.maas_auth = profile.maas_auth;
   }
-  if (profile.codeagent_auth !== undefined) {
+  if (values === undefined && profile.codeagent_auth !== undefined) {
     request.codeagent_auth = profile.codeagent_auth;
   }
   if (values === undefined && profile.capabilities !== undefined) {
@@ -2470,6 +2505,7 @@ function newRoleConfigDraft(): RoleConfigDocument {
   return {
     bound_agent_id: null,
     description: "",
+    execution_surface: "api",
     file_name: "new-role.md",
     mcp_servers: [],
     memory_profile: {

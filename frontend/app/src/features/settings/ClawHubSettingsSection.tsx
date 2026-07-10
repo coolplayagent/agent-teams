@@ -34,10 +34,9 @@ export function ClawHubSettingsSection() {
     queryKey: ["settings", "clawhub"],
     queryFn: getClawHubConfig,
   });
-  const savedToken = normalizeOptionalString(configQuery.data?.token);
   const draftToken = normalizeOptionalString(form.getFieldValue("token"));
-  const effectiveToken = tokenDirty ? draftToken : savedToken;
-  const hasSavedToken = savedToken !== null;
+  const effectiveToken = tokenDirty ? draftToken : null;
+  const hasSavedToken = configQuery.data?.token_configured === true;
 
   useEffect(() => {
     if (configQuery.data === undefined) {
@@ -49,7 +48,11 @@ export function ClawHubSettingsSection() {
   }, [configQuery.data, form]);
 
   const saveMutation = useMutation({
-    mutationFn: () => saveClawHubConfig({ token: effectiveToken }),
+    mutationFn: () =>
+      saveClawHubConfig({
+        preserve_token: hasSavedToken && !tokenDirty,
+        token: effectiveToken,
+      }),
     onSuccess: () => {
       void message.success(t("settingsClawHubSaved"));
       void queryClient.invalidateQueries({ queryKey: ["settings", "clawhub"] });
@@ -76,7 +79,7 @@ export function ClawHubSettingsSection() {
   });
 
   function runProbe() {
-    if (effectiveToken === null) {
+    if (effectiveToken === null && (!hasSavedToken || tokenDirty)) {
       setProbeNotice({
         kind: "error",
         message: t("settingsClawHubTokenRequired"),

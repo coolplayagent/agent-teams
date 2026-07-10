@@ -85,6 +85,25 @@ interface SettingsSurfaceContract {
   v2Text: string[];
 }
 
+interface V1DetailSurfaceContract {
+  controls: string[];
+  id: string;
+  tabKey: string;
+  text: string[];
+  trigger: string;
+}
+
+interface V2DetailSurfaceContract {
+  closeAction: "Back" | "Cancel";
+  controls: string[];
+  dialogName?: string;
+  id: string;
+  rowIsButton?: boolean;
+  rowText: string;
+  tabKey: string;
+  useEditAction?: boolean;
+}
+
 const SETTINGS_SURFACE_CONTRACTS: SettingsSurfaceContract[] = [
   {
     id: "appearance",
@@ -103,8 +122,8 @@ const SETTINGS_SURFACE_CONTRACTS: SettingsSurfaceContract[] = [
   },
   {
     id: "model",
-    v1Controls: ["Set default", "Test", "Edit", "Delete", "Profile Name", "Provider", "Model", "API Key", "Context Window"],
-    v1Text: ["Default", "Fallback", "Advanced Options", "Image Input", "Speech"],
+    v1Controls: ["Set default", "Test", "Edit", "Delete"],
+    v1Text: ["default", "OpenAI Compatible", "gpt-5-mini", "Fallback disabled"],
     v2Controls: ["New profile", "Default", "Test", "Delete"],
     v2Id: "models",
     v2Text: ["Profiles", "Default profile", "gpt-5-mini", "openai_compatible"],
@@ -139,24 +158,24 @@ const SETTINGS_SURFACE_CONTRACTS: SettingsSurfaceContract[] = [
   },
   {
     id: "agents",
-    v1Controls: ["Edit", "Agent ID", "Name", "Description", "Protocol", "Transport", "Command", "Args"],
-    v1Text: ["Codex ACP", "New agent", "Custom", "Registry"],
+    v1Controls: ["Edit"],
+    v1Text: ["Codex ACP", "ACP", "Stdio", "Default coding runtime"],
     v2Controls: ["Refresh", "ACP registry", "New runtime", "Codex ACP"],
     v2Id: "system/agent-runtime",
     v2Text: ["Agent runtimes", "Default coding runtime", "acp", "stdio"],
   },
   {
     id: "roles",
-    v1Controls: ["Edit", "Role ID", "Name", "Description", "Version", "Model Profile", "Bound Agent", "Execution Surface", "Durable Memory"],
-    v1Text: ["Main Agent", "Tool Groups", "MCP Servers", "Skills", "Memory"],
+    v1Controls: ["Edit"],
+    v1Text: ["Main Agent", "main", "v1.0.0", "default", "api"],
     v2Controls: ["New role", "Main Agent"],
     v2Id: "roles",
     v2Text: ["Coordinator", "Main agent", "Normal roles", "Subagent roles", "Default role"],
   },
   {
     id: "orchestration",
-    v1Controls: ["Set default", "Edit", "Delete Orchestration"],
-    v1Text: ["Default", "Roles", "Orchestration Editor"],
+    v1Controls: ["Set default", "Edit"],
+    v1Text: ["Default", "Roles: 1", "Main plus reviewer"],
     v2Controls: ["New orchestration", "Default", "Set default", "Edit"],
     v2Id: "orchestration",
     v2Text: ["Default preset", "Presets", "Main plus reviewer"],
@@ -179,8 +198,8 @@ const SETTINGS_SURFACE_CONTRACTS: SettingsSurfaceContract[] = [
   },
   {
     id: "workspace",
-    v1Controls: ["Test", "Edit", "Delete", "Profile ID", "Host", "Port", "Remote Shell", "Connect Timeout (s)", "Username"],
-    v1Text: ["Add SSH Profile", "Reusable SSH profiles", "dev.example.com"],
+    v1Controls: ["Test", "Edit", "Delete"],
+    v1Text: ["devbox", "dev.example.com", "Password"],
     v2Controls: ["New SSH profile", "Test", "Edit", "Delete"],
     v2Id: "workspace",
     v2Text: ["devbox", "dev.example.com", "Authentication", "Remote shell"],
@@ -192,6 +211,124 @@ const SETTINGS_SURFACE_CONTRACTS: SettingsSurfaceContract[] = [
     v2Controls: ["New variable", "Edit", "Delete", "System1"],
     v2Id: "environment",
     v2Text: ["App", "System", "V2_PARITY_ENV", "String"],
+  },
+];
+
+const V1_DETAIL_SURFACE_CONTRACTS: V1DetailSurfaceContract[] = [
+  {
+    controls: ["Profile Name", "API Protocol", "Base URL", "Model", "API Key"],
+    id: "model/edit",
+    tabKey: "model",
+    text: ["Provider and Model", "Advanced Options", "Fallback"],
+    trigger: "Edit",
+  },
+  {
+    controls: ["Agent ID", "Name", "Description", "Protocol", "Transport"],
+    id: "agents/edit",
+    tabKey: "agents",
+    text: ["Stdio Transport", "Environment Bindings", "Custom", "Registry"],
+    trigger: "Edit",
+  },
+  {
+    controls: ["Role ID", "Name", "Description", "Version", "Model Profile", "Bound Agent", "Execution Surface"],
+    id: "roles/edit",
+    tabKey: "roles",
+    text: ["Role Editor", "Tool Groups", "MCP Servers", "Skills", "Durable Memory"],
+    trigger: "Edit",
+  },
+  {
+    controls: ["Orchestration ID", "Orchestration Name", "Description", "Max Cycles", "Max Parallel Tasks"],
+    id: "orchestration/edit",
+    tabKey: "orchestration",
+    text: ["Orchestration Editor", "Allowed Roles", "Delete Orchestration"],
+    trigger: "Edit",
+  },
+  {
+    controls: ["Profile ID", "Host", "Port", "Remote Shell", "Connect Timeout (s)", "Username", "Password", "Private Key"],
+    id: "workspace/edit",
+    tabKey: "workspace",
+    text: ["SSH Profile", "Authentication"],
+    trigger: "Edit",
+  },
+  {
+    controls: ["Key", "Value"],
+    id: "environment/edit",
+    tabKey: "environment",
+    text: ["App Variables", "System Variables"],
+    trigger: "Edit",
+  },
+];
+
+const V2_DETAIL_SURFACE_CONTRACTS: V2DetailSurfaceContract[] = [
+  {
+    closeAction: "Back",
+    controls: ["Profile ID", "Provider", "Model", "Base URL", "API Key"],
+    id: "model/edit",
+    rowText: "gpt-5-mini",
+    tabKey: "model",
+  },
+  {
+    closeAction: "Back",
+    controls: ["Agent ID", "Name", "Description", "Protocol", "Transport"],
+    id: "agents/edit",
+    rowIsButton: true,
+    rowText: "Default coding runtime",
+    tabKey: "agents",
+  },
+  {
+    closeAction: "Back",
+    controls: [
+      "Role ID",
+      "Role name",
+      "Description",
+      "Version",
+      "Model profile",
+      "Bound agent",
+      "Execution surface",
+    ],
+    id: "roles/edit",
+    rowText: "Default role",
+    tabKey: "roles",
+  },
+  {
+    closeAction: "Back",
+    controls: [
+      "Preset ID",
+      "Preset name",
+      "Description",
+      "Max cycles",
+      "Max parallel tasks",
+    ],
+    id: "orchestration/edit",
+    rowText: "Main plus reviewer",
+    tabKey: "orchestration",
+  },
+  {
+    closeAction: "Cancel",
+    controls: [
+      "Profile ID",
+      "Host",
+      "Port",
+      "Remote shell",
+      "Connect timeout (s)",
+      "Username",
+      "Password",
+      "Private key",
+    ],
+    dialogName: "Edit SSH profile",
+    id: "workspace/edit",
+    rowText: "dev.example.com",
+    tabKey: "workspace",
+    useEditAction: true,
+  },
+  {
+    closeAction: "Cancel",
+    controls: ["Key", "Value"],
+    dialogName: "Edit environment variable",
+    id: "environment/edit",
+    rowText: "V2_PARITY_ENV",
+    tabKey: "environment",
+    useEditAction: true,
   },
 ];
 
@@ -356,6 +493,7 @@ test("pairs every live V1 settings tab with its V2 primary or secondary page", a
     );
 
     const v1Surfaces: SettingsSurfaceSnapshot[] = [];
+    const v1DetailSurfaces: SettingsSurfaceSnapshot[] = [];
     for (const tab of V1_LEGACY_SETTINGS_TAB_DEFINITIONS) {
       await v1Settings.locator(`.settings-tab[data-tab="${tab.key}"]`).click();
       await expect(v1Settings.locator(`#${tab.key}-panel`)).toBeVisible();
@@ -375,6 +513,35 @@ test("pairs every live V1 settings tab with its V2 primary or secondary page", a
           ),
         });
       }
+      const detailContract = V1_DETAIL_SURFACE_CONTRACTS.find(
+        (candidate) => candidate.tabKey === tab.key,
+      );
+      if (detailContract !== undefined) {
+        await v1Settings
+          .locator(`#${tab.key}-panel`)
+          .getByRole("button", { name: detailContract.trigger })
+          .first()
+          .click();
+        await expect(
+          v1Settings
+            .locator(`#${tab.key}-panel`)
+            .getByLabel(detailContract.controls[0], { exact: true }),
+        ).toBeVisible();
+        const detailSnapshot = await settingsSurfaceSnapshot(
+          v1Settings.locator(`#${tab.key}-panel`),
+        );
+        v1DetailSurfaces.push({
+          id: detailContract.id,
+          label: `${tab.label} detail`,
+          ...detailSnapshot,
+        });
+        await page.screenshot({
+          path: screenshotPath(
+            `v1-settings-${tab.key}-detail-complete-pairing.png`,
+            SCREENSHOT_FOLDER,
+          ),
+        });
+      }
     }
 
     await page.goto(`${appServer.url}/app/`);
@@ -387,6 +554,7 @@ test("pairs every live V1 settings tab with its V2 primary or secondary page", a
       .toEqual(V2_SETTINGS_SECTIONS);
 
     const v2Surfaces: SettingsSurfaceSnapshot[] = [];
+    const v2DetailSurfaces: SettingsSurfaceSnapshot[] = [];
     for (const tab of V1_LEGACY_SETTINGS_TAB_DEFINITIONS) {
       if ("v2Section" in tab) {
         const section = SETTINGS_SECTION_DEFINITIONS.find(
@@ -407,6 +575,14 @@ test("pairs every live V1 settings tab with its V2 primary or secondary page", a
           ),
         });
         await expectV2CoreControl(v2Settings, tab.key);
+        const detailSurface = await captureV2DetailSurface(
+          page,
+          v2Settings,
+          tab.key,
+        );
+        if (detailSurface !== null) {
+          v2DetailSurfaces.push(detailSurface);
+        }
         if (tab.key === "appearance" || tab.key === "roles") {
           await page.screenshot({
             path: screenshotPath(
@@ -443,6 +619,14 @@ test("pairs every live V1 settings tab with its V2 primary or secondary page", a
         ),
       });
       await expectV2CoreControl(v2Settings, tab.key);
+      const detailSurface = await captureV2DetailSurface(
+        page,
+        v2Settings,
+        tab.key,
+      );
+      if (detailSurface !== null) {
+        v2DetailSurfaces.push(detailSurface);
+      }
       await v2Settings.getByRole("button", { name: "Back to System" }).click();
     }
 
@@ -475,7 +659,9 @@ test("pairs every live V1 settings tab with its V2 primary or secondary page", a
       `${JSON.stringify(
         {
           liveV1Tabs,
+          v1DetailSurfaces,
           v1Surfaces,
+          v2DetailSurfaces,
           v2Navigation: await sectionLabels(v2Navigation),
           v2Surfaces,
         },
@@ -485,6 +671,8 @@ test("pairs every live V1 settings tab with its V2 primary or secondary page", a
       "utf8",
     );
     expectSettingsSurfaceContracts(v1Surfaces, v2Surfaces);
+    expectV1DetailSurfaceContracts(v1DetailSurfaces);
+    expectV2DetailSurfaceContracts(v2DetailSurfaces);
     expect(v1Surfaces).toHaveLength(V1_LEGACY_SETTINGS_TAB_DEFINITIONS.length);
     expect(v2Surfaces).toHaveLength(V1_LEGACY_SETTINGS_TAB_DEFINITIONS.length);
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
@@ -671,6 +859,186 @@ test("recovers primary and role-detail settings after their automatic retries fa
     await page.screenshot({
       animations: "disabled",
       path: screenshotPath("v2-settings-primary-detail-recovered.png", SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("recovers every remaining primary Settings page after loading and request failure", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state = settingsParityState();
+  const recoveryPaths = [
+    "/system/configs/model/profiles",
+    "/roles/configs",
+    "/system/configs/orchestration",
+    "/system/configs/web",
+    "/system/configs/clawhub",
+    "/system/configs/proxy",
+    "/system/configs/workspace/ssh-profiles",
+    "/system/configs/environment-variables",
+  ] as const;
+  const gates = new Map<string, ReturnType<typeof createRequestGate>>(
+    recoveryPaths.map((path) => [path, createRequestGate()]),
+  );
+  const requestCounts = new Map<string, number>();
+  const manualRecoveryAllowed = new Set<string>();
+  const errorMessages = new Map<string, string>(
+    recoveryPaths.map((path) => [
+      path,
+      `Unavailable during Settings recovery: ${path}`,
+    ]),
+  );
+  try {
+    await installShellState(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: async (context) => {
+        const gate = gates.get(context.path);
+        if (context.method === "GET" && gate !== undefined) {
+          const requestCount = (requestCounts.get(context.path) ?? 0) + 1;
+          requestCounts.set(context.path, requestCount);
+          if (requestCount === 1) {
+            gate.markStarted();
+            await gate.release;
+          }
+          if (!manualRecoveryAllowed.has(context.path)) {
+            await context.fulfillJson(
+              { detail: errorMessages.get(context.path) },
+              500,
+            );
+            return true;
+          }
+        }
+        return handleSettingsParityApi(context, state);
+      },
+      sessionTitle: "TS Settings complete recovery",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    const settings = await openSettingsDialog(page);
+    const navigation = settings.getByRole("navigation", {
+      name: "Settings sections",
+    });
+    const cases: Array<{
+      name: string;
+      path: (typeof recoveryPaths)[number];
+      recovered: () => Promise<void>;
+      slug: string;
+    }> = [
+      {
+        name: "Model",
+        path: "/system/configs/model/profiles",
+        recovered: async () => {
+          await expect(settings.getByText("gpt-5-mini")).toBeVisible();
+        },
+        slug: "model",
+      },
+      {
+        name: "Roles",
+        path: "/roles/configs",
+        recovered: async () => {
+          await expect(
+            settings.locator(".at-settings-list-button").filter({ hasText: "Main Agent" }),
+          ).toBeVisible();
+        },
+        slug: "roles",
+      },
+      {
+        name: "Orchestration",
+        path: "/system/configs/orchestration",
+        recovered: async () => {
+          await expect(
+            settings.getByRole("button", { name: /Default 1 roles/ }),
+          ).toBeVisible();
+        },
+        slug: "orchestration",
+      },
+      {
+        name: "Web",
+        path: "/system/configs/web",
+        recovered: async () => {
+          await expect(settings.getByLabel("Exa API key")).toBeVisible();
+        },
+        slug: "web",
+      },
+      {
+        name: "ClawHub",
+        path: "/system/configs/clawhub",
+        recovered: async () => {
+          await expect(settings.getByLabel("Token")).toBeVisible();
+        },
+        slug: "clawhub",
+      },
+      {
+        name: "Proxy",
+        path: "/system/configs/proxy",
+        recovered: async () => {
+          await expect(settings.getByLabel("HTTP proxy")).toBeVisible();
+        },
+        slug: "proxy",
+      },
+      {
+        name: "Remote workspace",
+        path: "/system/configs/workspace/ssh-profiles",
+        recovered: async () => {
+          await expect(
+            settings.getByRole("button", { name: /devbox dev\.example\.com/ }),
+          ).toBeVisible();
+        },
+        slug: "remote-workspace",
+      },
+      {
+        name: "Environment variables",
+        path: "/system/configs/environment-variables",
+        recovered: async () => {
+          await expect(settings.getByText("V2_PARITY_ENV")).toBeVisible();
+        },
+        slug: "environment",
+      },
+    ];
+
+    for (const recoveryCase of cases) {
+      await navigation.getByRole("button", { name: recoveryCase.name }).click();
+      await gates.get(recoveryCase.path)?.started;
+      if (recoveryCase.name !== "Orchestration") {
+        await expect(settings.locator(".at-settings-section .ant-skeleton"))
+          .toBeVisible();
+      }
+      gates.get(recoveryCase.path)?.releaseRequest();
+      const errorMessage = errorMessages.get(recoveryCase.path) ?? "Unavailable";
+      await expect(settings.getByText(errorMessage)).toBeVisible();
+      await expect(settings.locator(".at-settings-section .ant-skeleton"))
+        .toHaveCount(0);
+      await page.screenshot({
+        animations: "disabled",
+        path: screenshotPath(
+          `v2-settings-${recoveryCase.slug}-load-error.png`,
+          SCREENSHOT_FOLDER,
+        ),
+      });
+      manualRecoveryAllowed.add(recoveryCase.path);
+      await settings.getByRole("button", { name: "Retry" }).click();
+      await recoveryCase.recovered();
+      await expect(settings.getByText(errorMessage)).toHaveCount(0);
+      expect(requestCounts.get(recoveryCase.path)).toBeGreaterThanOrEqual(2);
+    }
+
+    await expectNoDocumentScroll(
+      page,
+      "remaining Settings loading and recovery should stay framed",
+    );
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await page.screenshot({
+      animations: "disabled",
+      path: screenshotPath(
+        "v2-settings-all-remaining-pages-recovered.png",
+        SCREENSHOT_FOLDER,
+      ),
     });
   } finally {
     await appServer.close();
@@ -941,7 +1309,8 @@ test("saves Notifications and Proxy settings through real V2 controls", async ({
     ]);
     expect(state.proxySavePayloads.at(-1)).toMatchObject({
       http_proxy: "http://127.0.0.1:7890",
-      proxy_password: "saved-proxy-password",
+      preserve_password: true,
+      proxy_password: null,
       ssl_verify: null,
     });
     expect(state.proxyReloadCount).toBe(1);
@@ -1001,6 +1370,113 @@ function expectSettingsSurfaceContracts(
   }
 }
 
+function expectV1DetailSurfaceContracts(
+  detailSurfaces: SettingsSurfaceSnapshot[],
+): void {
+  expect(detailSurfaces).toHaveLength(V1_DETAIL_SURFACE_CONTRACTS.length);
+  for (const contract of V1_DETAIL_SURFACE_CONTRACTS) {
+    const surface = detailSurfaces.find((candidate) => candidate.id === contract.id);
+    expect(surface, `Missing V1 detail surface ${contract.id}`).toBeDefined();
+    for (const token of contract.text) {
+      expect(
+        surface?.text,
+        `V1 detail ${contract.id} is missing text ${token}`,
+      ).toContain(token);
+    }
+    for (const control of contract.controls) {
+      expect(
+        surface?.controls.some((candidate) => candidate.includes(control)),
+        `V1 detail ${contract.id} is missing control ${control}`,
+      ).toBe(true);
+    }
+  }
+}
+
+function expectV2DetailSurfaceContracts(
+  detailSurfaces: SettingsSurfaceSnapshot[],
+): void {
+  expect(detailSurfaces).toHaveLength(V2_DETAIL_SURFACE_CONTRACTS.length);
+  for (const contract of V2_DETAIL_SURFACE_CONTRACTS) {
+    const surface = detailSurfaces.find((candidate) => candidate.id === contract.id);
+    expect(surface, `Missing V2 detail surface ${contract.id}`).toBeDefined();
+    for (const control of contract.controls) {
+      expect(
+        surface?.controls.some((candidate) => candidate.includes(control)),
+        `V2 detail ${contract.id} is missing control ${control}`,
+      ).toBe(true);
+    }
+  }
+}
+
+async function captureV2DetailSurface(
+  page: Page,
+  settings: Locator,
+  tabKey: string,
+): Promise<SettingsSurfaceSnapshot | null> {
+  const contract = V2_DETAIL_SURFACE_CONTRACTS.find(
+    (candidate) => candidate.tabKey === tabKey,
+  );
+  if (contract === undefined) {
+    return null;
+  }
+
+  const row = settings.locator(".at-settings-list-row").filter({
+    hasText: contract.rowText,
+  });
+  await expect(row).toHaveCount(1);
+  if (contract.useEditAction === true) {
+    if (contract.tabKey === "workspace") {
+      await row.click();
+      const detail = settings.locator(".at-settings-workspace-detail");
+      await expect(detail).toBeVisible();
+      await detail.getByRole("button", { name: "Edit", exact: true }).click();
+    } else {
+      await row.getByRole("button", { name: "Edit", exact: true }).click();
+    }
+  } else if (
+    contract.rowIsButton === true
+    || await row.evaluate((element) => element instanceof HTMLButtonElement)
+  ) {
+    await row.click();
+  } else {
+    const detailButton = row.locator(
+      ".at-settings-list-button, .at-model-profile-row-main",
+    );
+    await expect(detailButton).toHaveCount(1);
+    await detailButton.click();
+  }
+
+  const surface = contract.dialogName === undefined
+    ? settings.locator(".at-settings-section-body")
+    : page.getByRole("dialog", { name: contract.dialogName });
+  await expect(surface).toBeVisible();
+  for (const control of contract.controls) {
+    await expect(surface.getByLabel(control, { exact: true })).toBeVisible();
+  }
+  if (contract.dialogName !== undefined) {
+    await page.waitForTimeout(300);
+  }
+  const snapshot = {
+    id: contract.id,
+    label: `${tabKey} detail`,
+    ...await settingsSurfaceSnapshot(surface),
+  };
+  await page.screenshot({
+    path: screenshotPath(
+      `v2-settings-${tabKey}-detail-complete-pairing.png`,
+      SCREENSHOT_FOLDER,
+    ),
+  });
+  await surface.getByRole("button", {
+    name: contract.closeAction,
+    exact: true,
+  }).click();
+  if (contract.dialogName !== undefined) {
+    await expect(surface).toBeHidden();
+  }
+  return snapshot;
+}
+
 async function settingsSurfaceSnapshot(
   surface: Locator,
 ): Promise<Omit<SettingsSurfaceSnapshot, "id" | "label">> {
@@ -1014,7 +1490,9 @@ async function settingsSurfaceSnapshot(
     )
       .filter((control) => {
         const style = window.getComputedStyle(control);
-        return style.display !== "none" && style.visibility !== "hidden";
+        return control.getClientRects().length > 0
+          && style.display !== "none"
+          && style.visibility !== "hidden";
       })
       .map((control) => {
         const id = control.getAttribute("id") ?? "";
@@ -1032,7 +1510,7 @@ async function settingsSurfaceSnapshot(
     return {
       controlCount: controls.length,
       controls,
-      text: normalize(element.textContent).slice(0, 1200),
+      text: normalize((element as HTMLElement).innerText).slice(0, 1200),
     };
   });
 }
@@ -1215,6 +1693,18 @@ function settingsParityState(): SettingsParityState {
   };
 }
 
+function createRequestGate() {
+  let markStarted: () => void = () => undefined;
+  let releaseRequest: () => void = () => undefined;
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve;
+  });
+  const release = new Promise<void>((resolve) => {
+    releaseRequest = resolve;
+  });
+  return { markStarted, release, releaseRequest, started };
+}
+
 async function handleSettingsParityApi(
   context: MockApiRouteContext,
   state: SettingsParityState,
@@ -1265,6 +1755,10 @@ async function handleSettingsParityApi(
     await context.fulfillJson(roleConfigSummaries());
     return true;
   }
+  if (method === "GET" && path === "/roles/configs/main") {
+    await context.fulfillJson(roleConfigDocument());
+    return true;
+  }
   if (method === "GET" && path === "/system/configs/model/profiles") {
     await context.fulfillJson(modelProfiles());
     return true;
@@ -1281,12 +1775,19 @@ async function handleSettingsParityApi(
     await context.fulfillJson(agentRuntimes());
     return true;
   }
+  if (
+    method === "GET"
+    && path === "/system/configs/agent-runtimes/codex-acp"
+  ) {
+    await context.fulfillJson(agentRuntimeDocument());
+    return true;
+  }
   if (method === "GET" && path === "/system/configs/web") {
     await context.fulfillJson(webConfig());
     return true;
   }
   if (method === "GET" && path === "/system/configs/clawhub") {
-    await context.fulfillJson({ token: "saved-clawhub-token" });
+    await context.fulfillJson({ token_configured: true });
     return true;
   }
   if (method === "GET" && path === "/system/configs/environment-variables") {
@@ -1304,7 +1805,16 @@ async function handleSettingsParityApi(
   if (method === "PUT" && path === "/system/configs/proxy") {
     const payload = readJsonBody(context);
     state.proxySavePayloads.push(payload);
-    state.proxyConfig = payload;
+    const hasPassword = payload.preserve_password === true
+      ? state.proxyConfig.has_password === true
+      : typeof payload.proxy_password === "string"
+        && payload.proxy_password.trim() !== "";
+    const {
+      preserve_password: _preservePassword,
+      proxy_password: _proxyPassword,
+      ...publicConfig
+    } = payload;
+    state.proxyConfig = { ...publicConfig, has_password: hasPassword };
     await context.fulfillJson({ status: "ok" });
     return true;
   }
@@ -1498,9 +2008,29 @@ function agentRuntimes(): Record<string, unknown>[] {
   ];
 }
 
+function agentRuntimeDocument(): Record<string, unknown> {
+  return {
+    agent_id: "codex-acp",
+    description: "Default coding runtime.",
+    name: "Codex ACP",
+    native_config_enabled: false,
+    native_config_provider: "",
+    protocol: "acp",
+    skill_bridge_enabled: false,
+    skill_bridge_mode: "inline",
+    skill_bridge_skills: [],
+    transport: {
+      args: ["--model", "gpt-5-mini"],
+      command: "codex",
+      env: [],
+      transport: "stdio",
+    },
+  };
+}
+
 function webConfig(): Record<string, unknown> {
   return {
-    exa_api_key: "saved-exa-key",
+    exa_api_key_configured: true,
     fallback_provider: "searxng",
     provider: "exa",
     searxng_instance_seeds: ["https://searx.space"],
@@ -1513,6 +2043,7 @@ function environmentVariables(): Record<string, Record<string, unknown>[]> {
     app: [
       {
         key: "V2_PARITY_ENV",
+        masked: false,
         scope: "app",
         value: "enabled",
         value_kind: "string",
@@ -1521,6 +2052,7 @@ function environmentVariables(): Record<string, Record<string, unknown>[]> {
     system: [
       {
         key: "PATH",
+        masked: false,
         scope: "system",
         value: "C:/Windows/System32",
         value_kind: "expandable",
@@ -1550,7 +2082,7 @@ function proxyConfig(): Record<string, unknown> {
     http_proxy: null,
     https_proxy: "http://127.0.0.1:7891",
     no_proxy: "localhost;127.*",
-    proxy_password: "saved-proxy-password",
+    has_password: true,
     proxy_username: "proxy-user",
     ssl_verify: null,
   };

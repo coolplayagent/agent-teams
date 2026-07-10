@@ -26,6 +26,7 @@ import type {
   BinaryToolListResponse,
   BinaryToolSystemPathResult,
   ClawHubConfig,
+  ClawHubConfigSaveRequest,
   ClawHubConfigSaveResponse,
   ClawHubConnectivityProbeRequest,
   ClawHubConnectivityProbeResult,
@@ -102,6 +103,8 @@ import type {
   OrchestrationConfig,
   PickWorkspaceResponse,
   ProxyConfig,
+  ProxyConfigSaveRequest,
+  ProxyConfigView,
   ObservabilityBreakdowns,
   ObservabilityOverview,
   RecoverySnapshot,
@@ -162,6 +165,7 @@ import type {
   WorkspaceTreeListing,
   WorkspaceUpdateRequest,
   WebConfig,
+  WebConfigSaveRequest,
   WebConnectivityProbeRequest,
   WebConnectivityProbeResult,
   WeChatGatewayAccountRecord,
@@ -744,7 +748,7 @@ export function getClawHubConfig(): Promise<ClawHubConfig> {
 }
 
 export function saveClawHubConfig(
-  config: ClawHubConfig,
+  config: ClawHubConfigSaveRequest,
 ): Promise<ClawHubConfigSaveResponse> {
   return requestJson<ClawHubConfigSaveResponse>("/system/configs/clawhub", {
     method: "PUT",
@@ -994,7 +998,9 @@ export function getWebConfig(): Promise<WebConfig> {
   return requestJson<WebConfig>("/system/configs/web");
 }
 
-export function saveWebConfig(config: WebConfig): Promise<{ status: string }> {
+export function saveWebConfig(
+  config: WebConfigSaveRequest,
+): Promise<{ status: string }> {
   return requestJson<{ status: string }>("/system/configs/web", {
     method: "PUT",
     body: JSON.stringify(config),
@@ -1309,11 +1315,13 @@ export function reloadWeChatGateway(): Promise<{ status: string }> {
   });
 }
 
-export function getProxyConfig(): Promise<ProxyConfig> {
-  return requestJson<ProxyConfig>("/system/configs/proxy");
+export function getProxyConfig(): Promise<ProxyConfigView> {
+  return requestJson<ProxyConfigView>("/system/configs/proxy");
 }
 
-export function saveProxyConfig(config: ProxyConfig): Promise<{ status: string }> {
+export function saveProxyConfig(
+  config: ProxyConfigSaveRequest,
+): Promise<{ status: string }> {
   return requestJson<{ status: string }>("/system/configs/proxy", {
     method: "PUT",
     body: JSON.stringify(config),

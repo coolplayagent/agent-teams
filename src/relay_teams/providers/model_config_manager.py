@@ -104,9 +104,11 @@ class ModelConfigManager:
                 "provider": raw_provider,
                 "model": normalized_profile.get("model", ""),
                 "base_url": normalized_profile.get("base_url", ""),
-                "api_key": api_key,
+                "api_key": None,
                 "has_api_key": has_api_key,
-                "headers": [binding.model_dump(mode="json") for binding in headers],
+                "headers": [
+                    _build_public_header_payload(binding) for binding in headers
+                ],
                 "maas_auth": (
                     _build_maas_auth_profile_payload(maas_auth)
                     if maas_auth is not None
@@ -1896,6 +1898,19 @@ def _build_codeagent_auth_profile_payload(
         "has_refresh_token": codeagent_auth.refresh_token is not None
         or codeagent_auth.has_refresh_token,
     }
+
+
+def _build_public_header_payload(
+    header: ModelRequestHeader,
+) -> dict[str, JsonValue]:
+    if not header.secret:
+        return header.model_dump(mode="json")
+    return header.model_copy(
+        update={
+            "configured": header.configured or header.value is not None,
+            "value": None,
+        }
+    ).model_dump(mode="json")
 
 
 def _build_codeagent_auth_config_payload(

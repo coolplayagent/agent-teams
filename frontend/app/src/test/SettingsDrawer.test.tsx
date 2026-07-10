@@ -109,7 +109,11 @@ import {
   validateRoleConfig,
   waitWeChatGatewayLogin,
 } from "../api/client";
-import type { McpServerToolsSummary, OrchestrationConfig } from "../api/contracts";
+import type {
+  McpServerToolsSummary,
+  OrchestrationConfig,
+  RoleConfigOptions,
+} from "../api/contracts";
 import { fetchSpeechConfig, saveSpeechConfig } from "../api/speech";
 import { SettingsDrawer } from "../features/shell/SettingsDrawer";
 import {
@@ -453,7 +457,7 @@ beforeEach(() => {
     },
   });
   saveNotificationConfigMock.mockResolvedValue({ status: "ok" });
-  getClawHubConfigMock.mockResolvedValue({ token: "saved-clawhub-token" });
+  getClawHubConfigMock.mockResolvedValue({ token_configured: true });
   saveClawHubConfigMock.mockResolvedValue({ status: "ok" });
   probeClawHubConnectivityMock.mockResolvedValue({
     checked_at: "2026-06-24T00:00:00Z",
@@ -1010,7 +1014,7 @@ beforeEach(() => {
     valid: true,
   }));
   getWebConfigMock.mockResolvedValue({
-    exa_api_key: "saved-exa-key",
+    exa_api_key_configured: true,
     fallback_provider: "searxng",
     provider: "exa",
     searxng_instance_seeds: ["https://search.example/"],
@@ -1021,7 +1025,7 @@ beforeEach(() => {
     http_proxy: "http://proxy.example:8080",
     https_proxy: "http://proxy.example:8443",
     no_proxy: "localhost,127.0.0.1",
-    proxy_password: "saved-secret",
+    has_password: true,
     proxy_username: "alice",
     ssl_verify: false,
   });
@@ -1029,18 +1033,21 @@ beforeEach(() => {
     app: [
       {
         key: "OPENAI_API_KEY",
+        masked: true,
         scope: "app",
-        value: "saved-openai-key",
+        value: "************",
         value_kind: "string",
       },
       {
         key: "HTTP_PROXY",
+        masked: false,
         scope: "app",
         value: "http://hidden-proxy.example:8080",
         value_kind: "string",
       },
       {
         key: "SSL_VERIFY",
+        masked: false,
         scope: "app",
         value: "false",
         value_kind: "string",
@@ -1049,6 +1056,7 @@ beforeEach(() => {
     system: [
       {
         key: "PATH",
+        masked: false,
         scope: "system",
         value: "C:/Windows/System32",
         value_kind: "expandable",
@@ -1431,8 +1439,9 @@ beforeEach(() => {
   });
   saveEnvironmentVariableMock.mockResolvedValue({
     key: "ANTHROPIC_API_KEY",
+    masked: true,
     scope: "app",
-    value: "saved-anthropic-key",
+    value: "************",
     value_kind: "string",
   });
   deleteEnvironmentVariableMock.mockResolvedValue({ status: "ok" });
@@ -1551,7 +1560,8 @@ describe("SettingsDrawer", () => {
     const presetDescriptionInput = screen.getByDisplayValue("Main plus reviewer");
     const presetPromptInput = screen.getByDisplayValue("Coordinate the work.");
     expect(screen.getByRole("checkbox", { name: "main" })).toBeChecked();
-    expect(screen.getByRole("checkbox", { name: "reviewer" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Reviewer (reviewer)" }))
+      .toBeChecked();
     fireEvent.change(presetNameInput, { target: { value: "Edited Default" } });
     fireEvent.change(presetDescriptionInput, { target: { value: "Edited reviewer flow" } });
     fireEvent.change(presetPromptInput, {
@@ -1801,14 +1811,15 @@ describe("SettingsDrawer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
     await waitFor(() =>
       expect(probeClawHubConnectivityMock).toHaveBeenCalledWith({
-        token: "saved-clawhub-token",
+        token: null,
       }),
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() =>
       expect(saveClawHubConfigMock).toHaveBeenCalledWith({
-        token: "saved-clawhub-token",
+        preserve_token: true,
+        token: null,
       }),
     );
   });
@@ -1822,14 +1833,15 @@ describe("SettingsDrawer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
     await waitFor(() =>
       expect(probeClawHubConnectivityMock).toHaveBeenCalledWith({
-        token: "saved-clawhub-token",
+        token: null,
       }),
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() =>
       expect(saveClawHubConfigMock).toHaveBeenCalledWith({
-        token: "saved-clawhub-token",
+        preserve_token: true,
+        token: null,
       }),
     );
   });
@@ -1870,6 +1882,7 @@ describe("SettingsDrawer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() =>
       expect(saveClawHubConfigMock).toHaveBeenCalledWith({
+        preserve_token: false,
         token: null,
       }),
     );
@@ -2918,6 +2931,8 @@ describe("SettingsDrawer", () => {
     });
 
     fireEvent.click(await screen.findByRole("button", { name: "New orchestration" }));
+    expect(screen.getByRole("checkbox", { name: "Reviewer (reviewer)" }))
+      .toBeChecked();
     fireEvent.change(await screen.findByLabelText("Preset ID"), {
       target: { value: "analysis" },
     });
@@ -2968,12 +2983,55 @@ describe("SettingsDrawer", () => {
     expect(saveOrchestrationConfigMock).not.toHaveBeenCalled();
   });
 
+  it("waits for role options before freezing a new orchestration draft", async () => {
+    let resolveRoles: (roles: RoleConfigOptions) => void = () => undefined;
+    getRoleConfigOptionsMock.mockReturnValueOnce(
+      new Promise<RoleConfigOptions>((resolve) => {
+        resolveRoles = resolve;
+      }),
+    );
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(
+      within(sections).getByRole("button", { name: "Orchestration" }),
+    );
+    const newButton = await screen.findByRole("button", {
+      name: "New orchestration",
+    });
+    expect(newButton).toBeDisabled();
+
+    resolveRoles({
+      coordinator_role_id: "coordinator",
+      main_agent_role_id: "main",
+      normal_mode_roles: [{ name: "Main Agent", role_id: "main" }],
+      subagent_roles: [{ name: "Reviewer", role_id: "reviewer" }],
+    });
+
+    await waitFor(() => expect(newButton).toBeEnabled());
+    fireEvent.click(newButton);
+    expect(await screen.findByDisplayValue("orchestration_3")).toBeVisible();
+    expect(screen.getByRole("checkbox", { name: "Reviewer (reviewer)" }))
+      .toBeChecked();
+    fireEvent.change(screen.getByLabelText("Preset name"), {
+      target: { value: "Frozen draft" },
+    });
+    expect(screen.getByLabelText("Preset name")).toHaveValue("Frozen draft");
+  });
+
   it("keeps orchestration presets visible when role option loading fails", async () => {
     getRoleConfigOptionsMock.mockRejectedValueOnce(new Error("System roles unavailable."));
     await openOrchestrationSettings();
 
     expect(await screen.findByText("2 roles · Main plus reviewer")).toBeVisible();
     expect(screen.getByText("Shipping")).toBeVisible();
+    expect(screen.getByText("System roles unavailable.")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() =>
+      expect(screen.queryByText("System roles unavailable.")).not.toBeInTheDocument(),
+    );
     expect(screen.queryByLabelText("Preset ID")).toBeNull();
     expect(saveOrchestrationConfigMock).not.toHaveBeenCalled();
   });
@@ -3282,6 +3340,30 @@ describe("SettingsDrawer", () => {
     await waitFor(() => expect(deleteRoleConfigMock).toHaveBeenCalledWith("reviewer"));
 
     fireEvent.click(await screen.findByRole("button", { name: "New role" }));
+    for (const label of [
+      "Role name",
+      "Description",
+      "Version",
+      "Model profile",
+      "Execution surface",
+      "Mode",
+      "System prompt",
+    ]) {
+      fireEvent.change(screen.getByLabelText(label), { target: { value: "" } });
+    }
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    for (const message of [
+      "Role name is required.",
+      "Role description is required.",
+      "Role version is required.",
+      "Model profile is required.",
+      "Execution surface is required.",
+      "Role mode is required.",
+      "System prompt is required.",
+    ]) {
+      expect(await screen.findByText(message)).toBeVisible();
+    }
+    expect(saveRoleConfigMock).not.toHaveBeenCalled();
     fireEvent.change(await screen.findByLabelText("Role ID"), {
       target: { value: "analyst" },
     });
@@ -3290,6 +3372,18 @@ describe("SettingsDrawer", () => {
     });
     fireEvent.change(screen.getByLabelText("Description"), {
       target: { value: "Analyzes the current plan." },
+    });
+    fireEvent.change(screen.getByLabelText("Version"), {
+      target: { value: "1.0.0" },
+    });
+    fireEvent.change(screen.getByLabelText("Model profile"), {
+      target: { value: "default" },
+    });
+    fireEvent.change(screen.getByLabelText("Execution surface"), {
+      target: { value: "api" },
+    });
+    fireEvent.change(screen.getByLabelText("Mode"), {
+      target: { value: "primary" },
     });
     fireEvent.change(screen.getByLabelText("System prompt"), {
       target: { value: "Analyze the plan and report risks." },
@@ -3628,6 +3722,55 @@ describe("SettingsDrawer", () => {
       }),
     );
     expect(saveModelProfileMock.mock.calls[0]?.[1]).not.toHaveProperty("api_key");
+  }, 25000);
+
+  it("replaces saved CodeAgent password credentials when a new password is entered", async () => {
+    getModelProfilesMock.mockResolvedValue({
+      "codeagent-profile": {
+        base_url: "https://codeagentcli.rnd.huawei.com/codeAgentPro",
+        codeagent_auth: {
+          auth_method: "password",
+          auth_source: "profile",
+          has_password: true,
+          username: "saved-codeagent-user",
+        },
+        connect_timeout_seconds: 15,
+        is_default: false,
+        model: "codeagent-chat",
+        provider: "codeagent",
+      },
+    });
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "Model" }));
+    const codeAgentRow = (await screen.findByText("codeagent-profile")).closest(
+      ".at-model-profile-row",
+    );
+    fireEvent.click(
+      within(codeAgentRow as HTMLElement).getByRole("button", {
+        name: /codeagent-profile/,
+      }),
+    );
+    fireEvent.change(await screen.findByLabelText("CodeAgent password"), {
+      target: { value: "replacement-codeagent-password" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(saveModelProfileMock).toHaveBeenCalledTimes(1));
+    expect(saveModelProfileMock).toHaveBeenCalledWith(
+      "codeagent-profile",
+      expect.objectContaining({
+        codeagent_auth: {
+          auth_method: "password",
+          auth_source: "profile",
+          password: "replacement-codeagent-password",
+          username: "saved-codeagent-user",
+        },
+      }),
+    );
   }, 25000);
 
   it("creates a model profile from the catalog without changing settings navigation", async () => {
@@ -4050,7 +4193,8 @@ describe("SettingsDrawer", () => {
     );
 
     expect(await screen.findByText("OPENAI_API_KEY")).toBeVisible();
-    expect(screen.getByText("saved-openai-key")).toBeVisible();
+    expect(screen.getByText("************")).toBeVisible();
+    expect(screen.queryByText("saved-openai-key")).not.toBeInTheDocument();
     expect(screen.getByText("App")).toBeVisible();
     expect(screen.getAllByText("System").length).toBeGreaterThan(1);
     expect(screen.queryByText("http://hidden-proxy.example:8080")).toBeNull();
@@ -4080,6 +4224,7 @@ describe("SettingsDrawer", () => {
         "app",
         "ANTHROPIC_API_KEY",
         {
+          preserve_existing: false,
           source_key: null,
           value: "saved-anthropic-key",
         },
@@ -4091,7 +4236,35 @@ describe("SettingsDrawer", () => {
     await waitFor(() =>
       expect(screen.getByLabelText("Key")).toHaveValue("OPENAI_API_KEY"),
     );
-    expect(screen.getByLabelText("Value")).toHaveValue("saved-openai-key");
+    const secretEditor = screen
+      .getAllByRole("dialog")
+      .find((dialog) => dialog.classList.contains("ant-modal"));
+    expect(secretEditor).toBeDefined();
+    if (secretEditor === undefined) {
+      throw new Error("Expected the environment variable editor to be open.");
+    }
+    expect(within(secretEditor).getByLabelText("Value")).toHaveValue("");
+    expect(
+      within(secretEditor).getByText("Leave blank to keep the saved secret."),
+    ).toBeInTheDocument();
+    fireEvent.click(within(secretEditor).getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(saveEnvironmentVariableMock).toHaveBeenCalledWith(
+        "app",
+        "OPENAI_API_KEY",
+        {
+          preserve_existing: true,
+          source_key: "OPENAI_API_KEY",
+          value: "",
+        },
+      ),
+    );
+
+    await waitFor(() => expect(screen.queryByLabelText("Value")).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Key")).toHaveValue("OPENAI_API_KEY"),
+    );
     fireEvent.change(screen.getByLabelText("Value"), {
       target: { value: "edited-openai-key" },
     });
@@ -4102,6 +4275,7 @@ describe("SettingsDrawer", () => {
         "app",
         "OPENAI_API_KEY",
         {
+          preserve_existing: false,
           source_key: "OPENAI_API_KEY",
           value: "edited-openai-key",
         },
@@ -4338,8 +4512,9 @@ describe("SettingsDrawer", () => {
 
     await waitFor(() =>
       expect(saveWebConfigMock).toHaveBeenCalledWith({
-        exa_api_key: "saved-exa-key",
+        exa_api_key: null,
         fallback_provider: "searxng",
+        preserve_exa_api_key: true,
         provider: "exa",
         searxng_instance_url: "https://search.changed.example/",
       }),
@@ -4355,8 +4530,9 @@ describe("SettingsDrawer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() =>
       expect(saveWebConfigMock).toHaveBeenCalledWith({
-        exa_api_key: "saved-exa-key",
+        exa_api_key: null,
         fallback_provider: "searxng",
+        preserve_exa_api_key: true,
         provider: "exa",
         searxng_instance_url: "https://search.example/",
       }),
@@ -4373,6 +4549,7 @@ describe("SettingsDrawer", () => {
       expect(saveWebConfigMock).toHaveBeenCalledWith({
         exa_api_key: "replacement-exa-key",
         fallback_provider: "searxng",
+        preserve_exa_api_key: false,
         provider: "exa",
         searxng_instance_url: "https://search.example/",
       }),
@@ -4390,6 +4567,7 @@ describe("SettingsDrawer", () => {
       expect(saveWebConfigMock).toHaveBeenCalledWith({
         exa_api_key: null,
         fallback_provider: "searxng",
+        preserve_exa_api_key: false,
         provider: "exa",
         searxng_instance_url: "https://search.example/",
       }),
@@ -4503,9 +4681,10 @@ describe("SettingsDrawer", () => {
 
     await waitFor(() =>
       expect(probeWebConnectivityMock).toHaveBeenCalledWith({
+        preserve_saved_proxy_password: true,
         proxy_override: expect.objectContaining({
           http_proxy: "http://edited.example:8080",
-          proxy_password: "saved-secret",
+          proxy_password: null,
           proxy_username: "alice",
           ssl_verify: false,
         }),
@@ -4524,7 +4703,8 @@ describe("SettingsDrawer", () => {
           http_proxy: "http://edited.example:8080",
           https_proxy: "http://proxy.example:8443",
           no_proxy: "localhost,127.0.0.1",
-          proxy_password: "saved-secret",
+          preserve_password: true,
+          proxy_password: null,
           proxy_username: "alice",
           ssl_verify: false,
         }),
@@ -4539,7 +4719,7 @@ describe("SettingsDrawer", () => {
       http_proxy: null,
       https_proxy: null,
       no_proxy: null,
-      proxy_password: null,
+      has_password: false,
       proxy_username: null,
       ssl_verify: null,
     });
@@ -4560,8 +4740,9 @@ describe("SettingsDrawer", () => {
 
     await waitFor(() =>
       expect(probeWebConnectivityMock).toHaveBeenCalledWith({
+        preserve_saved_proxy_password: true,
         proxy_override: expect.objectContaining({
-          proxy_password: "saved-secret",
+          proxy_password: null,
         }),
         timeout_ms: 5000,
         url: "https://example.com",
@@ -4572,7 +4753,8 @@ describe("SettingsDrawer", () => {
     await waitFor(() =>
       expect(saveProxyConfigMock).toHaveBeenCalledWith(
         expect.objectContaining({
-          proxy_password: "saved-secret",
+          preserve_password: true,
+          proxy_password: null,
         }),
       ),
     );
@@ -4591,6 +4773,7 @@ describe("SettingsDrawer", () => {
 
     await waitFor(() =>
       expect(probeWebConnectivityMock).toHaveBeenCalledWith({
+        preserve_saved_proxy_password: false,
         proxy_override: expect.objectContaining({
           proxy_password: "replacement-secret",
         }),
@@ -4602,6 +4785,7 @@ describe("SettingsDrawer", () => {
     await waitFor(() =>
       expect(saveProxyConfigMock).toHaveBeenCalledWith(
         expect.objectContaining({
+          preserve_password: false,
           proxy_password: "replacement-secret",
         }),
       ),
@@ -4618,6 +4802,7 @@ describe("SettingsDrawer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Test URL" }));
     await waitFor(() =>
       expect(probeWebConnectivityMock).toHaveBeenCalledWith({
+        preserve_saved_proxy_password: false,
         proxy_override: expect.objectContaining({
           proxy_password: null,
         }),
@@ -4629,6 +4814,7 @@ describe("SettingsDrawer", () => {
     await waitFor(() =>
       expect(saveProxyConfigMock).toHaveBeenCalledWith(
         expect.objectContaining({
+          preserve_password: false,
           proxy_password: null,
         }),
       ),

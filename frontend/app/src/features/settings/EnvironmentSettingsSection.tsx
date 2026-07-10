@@ -36,12 +36,14 @@ const HIDDEN_APP_ENV_KEYS = new Set([
   "NO_PROXY",
   "SSL_VERIFY",
 ]);
+const MASKED_ENVIRONMENT_VALUE = "************";
 
 export function EnvironmentSettingsSection() {
   const { message, modal } = App.useApp();
   const queryClient = useQueryClient();
   const t = useTranslations();
   const [editor, setEditor] = useState<EnvironmentVariableEditorState | null>(null);
+  const [valueDirty, setValueDirty] = useState(false);
   const [systemExpanded, setSystemExpanded] = useState(false);
   const [form] = Form.useForm<EnvironmentVariableFormValues>();
 
@@ -68,21 +70,24 @@ export function EnvironmentSettingsSection() {
     }
     form.setFieldsValue({
       key: editor.record?.key ?? "",
-      value: editor.record?.value ?? "",
+      value: editor.record?.masked === true ? "" : editor.record?.value ?? "",
     });
   }, [editor, form]);
 
   const saveMutation = useMutation({
     mutationFn: ({
       key,
+      preserveExisting,
       sourceKey,
       value,
     }: {
       key: string;
+      preserveExisting: boolean;
       sourceKey: string | null;
       value: string;
     }) =>
       saveEnvironmentVariable("app", key, {
+        preserve_existing: preserveExisting,
         source_key: sourceKey,
         value,
       }),
@@ -121,10 +126,12 @@ export function EnvironmentSettingsSection() {
   });
 
   function openCreateEditor() {
+    setValueDirty(false);
     setEditor({ record: null });
   }
 
   function openEditEditor(record: EnvironmentVariableRecord) {
+    setValueDirty(false);
     setEditor({ record });
   }
 
@@ -136,6 +143,8 @@ export function EnvironmentSettingsSection() {
     }
     saveMutation.mutate({
       key,
+      preserveExisting:
+        editor?.record?.masked === true && valueDirty === false,
       sourceKey: editor?.record?.key ?? null,
       value: values.value ?? "",
     });
@@ -207,8 +216,10 @@ export function EnvironmentSettingsSection() {
         form={form}
         onCancel={() => setEditor(null)}
         onSubmit={submit}
+        onValueChange={() => setValueDirty(true)}
         saving={saveMutation.isPending}
         t={t}
+        valueDirty={valueDirty}
       />
     </SettingsSection>
   );
@@ -266,8 +277,11 @@ function EnvironmentRecordRow({
     <div className="at-settings-list-row at-settings-env-row">
       <div className="at-settings-list-main">
         <span title={record.key}>{record.key}</span>
-        <Typography.Text ellipsis title={record.value}>
-          {record.value || "-"}
+        <Typography.Text
+          ellipsis
+          title={record.masked ? MASKED_ENVIRONMENT_VALUE : record.value}
+        >
+          {record.masked ? MASKED_ENVIRONMENT_VALUE : record.value || "-"}
         </Typography.Text>
       </div>
       <div className="at-settings-env-meta">
@@ -301,15 +315,19 @@ function EnvironmentVariableEditorModal({
   form,
   onCancel,
   onSubmit,
+  onValueChange,
   saving,
   t,
+  valueDirty,
 }: {
   editor: EnvironmentVariableEditorState | null;
   form: FormInstance<EnvironmentVariableFormValues>;
   onCancel: () => void;
   onSubmit: (values: EnvironmentVariableFormValues) => void;
+  onValueChange: () => void;
   saving: boolean;
   t: Translate;
+  valueDirty: boolean;
 }) {
   return (
     <Modal
@@ -350,8 +368,25 @@ function EnvironmentVariableEditorModal({
             <Input autoComplete="off" placeholder="OPENAI_API_KEY" />
           </Form.Item>
           <Form.Item label={t("settingsEnvironmentValue")} name="value">
-            <Input.TextArea autoSize={{ minRows: 5, maxRows: 12 }} spellCheck={false} />
+            {editor?.record?.masked === true ? (
+              <Input.Password
+                autoComplete="new-password"
+                onChange={onValueChange}
+                placeholder={MASKED_ENVIRONMENT_VALUE}
+              />
+            ) : (
+              <Input.TextArea
+                autoSize={{ minRows: 5, maxRows: 12 }}
+                onChange={onValueChange}
+                spellCheck={false}
+              />
+            )}
           </Form.Item>
+          {editor?.record?.masked === true && !valueDirty ? (
+            <Typography.Text className="at-settings-help">
+              {t("settingsEnvironmentSecretPreserved")}
+            </Typography.Text>
+          ) : null}
         </div>
       </Form>
     </Modal>

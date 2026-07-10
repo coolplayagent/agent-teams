@@ -28,6 +28,9 @@ interface OrchestrationSettingsSectionProps {
   error: Error | null;
   loading: boolean;
   onRetry: () => void;
+  onRoleOptionsRetry: () => void;
+  roleOptionsError: Error | null;
+  roleOptionsLoading: boolean;
   roles: RoleConfigOptions | undefined;
 }
 
@@ -47,19 +50,23 @@ export function OrchestrationSettingsSection({
   error,
   loading,
   onRetry,
+  onRoleOptionsRetry,
+  roleOptionsError,
+  roleOptionsLoading,
   roles,
 }: OrchestrationSettingsSectionProps) {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const t = useTranslations();
   const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
-  const [creatingPreset, setCreatingPreset] = useState(false);
+  const [creatingPresetDocument, setCreatingPresetDocument] =
+    useState<OrchestrationPreset | null>(null);
+  const creatingPreset = creatingPresetDocument !== null;
   const presets = config?.presets ?? [];
   const selectedPreset =
     selectedPresetId !== null
       ? presets.find((preset) => preset.preset_id === selectedPresetId)
       : undefined;
-
   useEffect(() => {
     if (
       !creatingPreset
@@ -84,7 +91,7 @@ export function OrchestrationSettingsSection({
     },
     onSuccess: ({ nextConfig }, variables) => {
       queryClient.setQueryData(["settings", "orchestration"], nextConfig);
-      setCreatingPreset(false);
+      setCreatingPresetDocument(null);
       setSelectedPresetId(variables.nextSelectedPresetId);
       void message.success(variables.successMessage);
       void queryClient.invalidateQueries({ queryKey: ["settings", "orchestration"] });
@@ -154,17 +161,29 @@ export function OrchestrationSettingsSection({
   return (
     <SettingsSection title={t("settingsOrchestration")}>
       <SettingsQueryState error={error} loading={loading} onRetry={onRetry} />
+      {!loading && roleOptionsLoading ? (
+        <Typography.Text className="at-settings-help">
+          {t("settingsOrchestrationRolesLoading")}
+        </Typography.Text>
+      ) : null}
+      {!loading ? (
+        <SettingsQueryState
+          error={roleOptionsError}
+          loading={false}
+          onRetry={onRoleOptionsRetry}
+        />
+      ) : null}
       {!loading && error === null && config !== undefined ? (
-        creatingPreset ? (
+        creatingPresetDocument !== null ? (
           <OrchestrationPresetDetail
             config={config}
             creating
             defaultPresetId={config.default_orchestration_preset_id}
-            onBack={() => setCreatingPreset(false)}
+            onBack={() => setCreatingPresetDocument(null)}
             onDelete={() => undefined}
             onSave={(values) => requestSave(null, values)}
             onSetDefault={() => undefined}
-            preset={newOrchestrationPresetDraft(config, roles)}
+            preset={creatingPresetDocument}
             roleOptions={orchestrationRoleOptions(roles)}
             saving={saveMutation.isPending}
           />
@@ -190,7 +209,15 @@ export function OrchestrationSettingsSection({
               <Fact label={t("settingsPresetCount")} value={String(presets.length)} />
             </div>
             <div className="at-settings-section-actions">
-              <Button onClick={() => setCreatingPreset(true)} type="primary">
+              <Button
+                disabled={roleOptionsLoading || roleOptionsError !== null}
+                onClick={() => {
+                  setCreatingPresetDocument(
+                    newOrchestrationPresetDraft(config, roles),
+                  );
+                }}
+                type="primary"
+              >
                 {t("settingsOrchestrationNew")}
               </Button>
             </div>
@@ -655,6 +682,10 @@ function newOrchestrationPresetDraft(
   roles: RoleConfigOptions | undefined,
 ): OrchestrationPreset {
   const roleOptions = orchestrationRoleOptions(roles);
+  const preferredRole = (roles?.subagent_roles ?? [])
+    .map((role) => roleOptions.find((option) => option.role_id === role.role_id))
+    .find((role): role is RoleOption => role !== undefined);
+  const initialRole = preferredRole ?? roleOptions[0];
   return {
     description: "",
     name: "New Orchestration",
@@ -664,7 +695,7 @@ function newOrchestrationPresetDraft(
       max_parallel_delegated_tasks: 4,
     },
     preset_id: nextOrchestrationPresetId(config),
-    role_ids: roleOptions[0]?.role_id !== undefined ? [roleOptions[0].role_id] : [],
+    role_ids: initialRole !== undefined ? [initialRole.role_id] : [],
   };
 }
 
@@ -719,8 +750,13 @@ function orchestrationRoleCheckboxOptions(
 ): Array<{ label: string; value: string }> {
   const selectedOptions = orchestrationRoleOptions(undefined, selectedRoleIds);
   const byId = new Map<string, RoleOption>();
-  for (const role of [...roles, ...selectedOptions]) {
+  for (const role of roles) {
     byId.set(role.role_id, role);
+  }
+  for (const role of selectedOptions) {
+    if (!byId.has(role.role_id)) {
+      byId.set(role.role_id, role);
+    }
   }
   return [...byId.values()].map((role) => ({
     label: role.name === role.role_id ? role.role_id : `${role.name} (${role.role_id})`,

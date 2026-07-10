@@ -740,8 +740,8 @@ function ClawHubSettingsDrawer({
   });
   const effectiveToken = tokenDirty
     ? tokenDraft.trim() || null
-    : configQuery.data?.token ?? null;
-  const hasSavedToken = Boolean(configQuery.data?.token?.trim());
+    : null;
+  const hasSavedToken = configQuery.data?.token_configured === true;
 
   useEffect(() => {
     if (!open) {
@@ -759,7 +759,11 @@ function ClawHubSettingsDrawer({
   }, [configQuery.data, open]);
 
   const saveMutation = useMutation({
-    mutationFn: () => saveClawHubConfig({ token: effectiveToken }),
+    mutationFn: () =>
+      saveClawHubConfig({
+        preserve_token: hasSavedToken && !tokenDirty,
+        token: effectiveToken,
+      }),
     onSuccess: () => {
       void message.success(t("skillsClawHubSaved"));
       void queryClient.invalidateQueries({
@@ -787,7 +791,7 @@ function ClawHubSettingsDrawer({
   });
 
   function runProbe() {
-    if (!effectiveToken) {
+    if (!effectiveToken && (!hasSavedToken || tokenDirty)) {
       setProbeNotice({
         kind: "error",
         message: t("skillsClawHubTokenRequired"),

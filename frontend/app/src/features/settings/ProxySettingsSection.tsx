@@ -10,6 +10,7 @@ import {
 } from "../../api/client";
 import type {
   ProxyConfig,
+  ProxyConfigSaveRequest,
   WebConnectivityProbeRequest,
   WebConnectivityProbeResult,
 } from "../../api/contracts";
@@ -39,7 +40,7 @@ export function ProxySettingsSection() {
   const queryClient = useQueryClient();
   const t = useTranslations();
   const [form] = Form.useForm<ProxyFormValues>();
-  const [savedPassword, setSavedPassword] = useState<string | null>(null);
+  const [hasSavedPassword, setHasSavedPassword] = useState(false);
   const [passwordDirty, setPasswordDirty] = useState(false);
   const passwordFocusedRef = useRef(false);
   const [probeResult, setProbeResult] =
@@ -50,7 +51,7 @@ export function ProxySettingsSection() {
     queryFn: getProxyConfig,
   });
   const saveMutation = useMutation({
-    mutationFn: async (config: ProxyConfig) => {
+    mutationFn: async (config: ProxyConfigSaveRequest) => {
       await saveProxyConfig(config);
       return reloadProxyConfig();
     },
@@ -76,7 +77,7 @@ export function ProxySettingsSection() {
     if (proxyQuery.data === undefined) {
       return;
     }
-    setSavedPassword(normalizeOptionalString(proxyQuery.data.proxy_password));
+    setHasSavedPassword(proxyQuery.data.has_password === true);
     setPasswordDirty(false);
     passwordFocusedRef.current = false;
     setProbeResult(null);
@@ -95,7 +96,9 @@ export function ProxySettingsSection() {
   }, [form, proxyQuery.data]);
 
   function submit(values: ProxyFormValues) {
-    saveMutation.mutate(buildProxyConfig(values, savedPassword, passwordDirty));
+    saveMutation.mutate(
+      buildProxyConfig(values, hasSavedPassword, passwordDirty),
+    );
   }
 
   function clearPassword() {
@@ -115,8 +118,16 @@ export function ProxySettingsSection() {
         void message.warning(t("settingsProxyProbeUrlRequired"));
         return;
       }
+      const proxyConfig = buildProxyConfig(
+        allValues,
+        hasSavedPassword,
+        passwordDirty,
+      );
+      const { preserve_password: preserveSavedPassword, ...proxyOverride } =
+        proxyConfig;
       probeMutation.mutate({
-        proxy_override: buildProxyConfig(allValues, savedPassword, passwordDirty),
+        preserve_saved_proxy_password: preserveSavedPassword,
+        proxy_override: proxyOverride,
         timeout_ms: allValues.probe_timeout_ms,
         url,
       });
@@ -187,18 +198,18 @@ export function ProxySettingsSection() {
                     passwordFocusedRef.current = true;
                   }}
                   placeholder={
-                    savedPassword && !passwordDirty
+                    hasSavedPassword && !passwordDirty
                       ? MASKED_PASSWORD_PLACEHOLDER
                       : t("settingsProxyPasswordPlaceholder")
                   }
                 />
               </Form.Item>
-              {savedPassword && !passwordDirty ? (
+              {hasSavedPassword && !passwordDirty ? (
                 <Typography.Text className="at-settings-help">
                   {t("settingsProxyPasswordPreserved")}
                 </Typography.Text>
               ) : null}
-              {savedPassword ? (
+              {hasSavedPassword ? (
                 <Button onClick={clearPassword}>{t("settingsProxyClearPassword")}</Button>
               ) : null}
               <Form.Item label={t("settingsProxySslVerify")} name="ssl_verify">
@@ -310,9 +321,9 @@ function ProbeResult({ result }: { result: WebConnectivityProbeResult | null }) 
 
 function buildProxyConfig(
   values: ProxyFormValues,
-  savedPassword: string | null,
+  hasSavedPassword: boolean,
   passwordDirty: boolean,
-): ProxyConfig {
+): ProxyConfigSaveRequest {
   return {
     all_proxy: normalizeOptionalString(values.all_proxy),
     http_proxy: normalizeOptionalString(values.http_proxy),
@@ -320,7 +331,8 @@ function buildProxyConfig(
     no_proxy: normalizeOptionalString(values.no_proxy),
     proxy_password: passwordDirty
       ? normalizeOptionalString(values.proxy_password)
-      : savedPassword,
+      : null,
+    preserve_password: hasSavedPassword && !passwordDirty,
     proxy_username: normalizeOptionalString(values.proxy_username),
     ssl_verify: parseSslVerify(values.ssl_verify),
   };

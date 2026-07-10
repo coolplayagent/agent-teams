@@ -923,7 +923,7 @@ describe("api client", () => {
       .fn()
       .mockResolvedValueOnce(new Response(JSON.stringify(statusPayload), { status: 200 }))
       .mockResolvedValueOnce(
-        new Response(JSON.stringify({ token: "saved-token" }), { status: 200 }),
+        new Response(JSON.stringify({ token_configured: true }), { status: 200 }),
       )
       .mockResolvedValueOnce(new Response(JSON.stringify({ status: "ok" }), { status: 200 }))
       .mockResolvedValueOnce(
@@ -1002,7 +1002,7 @@ describe("api client", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(getConfigStatus()).resolves.toEqual(statusPayload);
-    await expect(getClawHubConfig()).resolves.toEqual({ token: "saved-token" });
+    await expect(getClawHubConfig()).resolves.toEqual({ token_configured: true });
     await expect(saveClawHubConfig({ token: "next-token" })).resolves.toEqual({
       status: "ok",
     });
@@ -2296,6 +2296,7 @@ describe("api client", () => {
             app: [
               {
                 key: "OPENAI_API_KEY",
+                masked: true,
                 scope: "app",
                 value: "saved-key",
                 value_kind: "string",
@@ -2304,6 +2305,7 @@ describe("api client", () => {
             system: [
               {
                 key: "PATH",
+                masked: false,
                 scope: "system",
                 value: "C:/Windows/System32",
                 value_kind: "expandable",
@@ -2317,8 +2319,9 @@ describe("api client", () => {
         new Response(
           JSON.stringify({
             key: "ANTHROPIC_API_KEY",
+            masked: true,
             scope: "app",
-            value: "saved-anthropic-key",
+            value: "************",
             value_kind: "string",
           }),
           { status: 200 },
@@ -2340,7 +2343,8 @@ describe("api client", () => {
       }),
     ).resolves.toMatchObject({
       key: "ANTHROPIC_API_KEY",
-      value: "saved-anthropic-key",
+      masked: true,
+      value: "************",
     });
     await expect(
       deleteEnvironmentVariable("app", "ANTHROPIC_API_KEY"),

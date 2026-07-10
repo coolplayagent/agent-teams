@@ -23,6 +23,7 @@ from relay_teams.env.runtime_env import (
 from relay_teams.secrets import get_secret_store, is_sensitive_env_key
 
 _EXPANDABLE_VALUE_PATTERN = re.compile(r"%[^%]+%")
+_MASKED_ENVIRONMENT_VALUE = "************"
 
 
 class EnvironmentVariableBackend(Protocol):
@@ -71,10 +72,16 @@ class EnvironmentVariableService:
         self._on_app_env_changed = on_app_env_changed or (lambda _changed_keys: None)
 
     def list_environment_variables(self) -> EnvironmentVariableCatalog:
-        system_records = self._sort_records(
-            self._backend.list_values(EnvironmentVariableScope.SYSTEM)
-        )
-        app_records = self._sort_records(self._load_app_records())
+        system_records = [
+            self._public_record(record)
+            for record in self._sort_records(
+                self._backend.list_values(EnvironmentVariableScope.SYSTEM)
+            )
+        ]
+        app_records = [
+            self._public_record(record)
+            for record in self._sort_records(self._load_app_records())
+        ]
         return EnvironmentVariableCatalog(
             system=tuple(system_records),
             app=tuple(app_records),
@@ -103,19 +110,28 @@ class EnvironmentVariableService:
 
         if request.source_key is not None and source_existing is None:
             raise ValueError(f"Environment variable not found: {source_key}")
+        if request.preserve_existing and source_existing is None:
+            raise ValueError(
+                "Preserving an environment variable value requires an existing key."
+            )
         if is_rename and target_existing is not None:
             raise ValueError(
                 f"Environment variable already exists in {scope.value}: {normalized_key}"
             )
 
+        next_value = (
+            source_existing.value
+            if request.preserve_existing and source_existing is not None
+            else request.value
+        )
         value_kind = _resolve_value_kind(
-            value=request.value,
+            value=next_value,
             source_existing=source_existing,
             target_existing=target_existing,
         )
         next_record = EnvironmentVariableRecord(
             key=normalized_key,
-            value=request.value,
+            value=next_value,
             scope=EnvironmentVariableScope.APP,
             value_kind=value_kind,
         )
@@ -137,7 +153,20 @@ class EnvironmentVariableService:
         if source_existing is not None:
             changed_keys.add(source_key)
         self._on_app_env_changed(frozenset(changed_keys))
-        return next_record
+        return self._public_record(next_record)
+
+    def _public_record(
+        self,
+        record: EnvironmentVariableRecord,
+    ) -> EnvironmentVariableRecord:
+        if not is_sensitive_env_key(record.key):
+            return record.model_copy(update={"masked": False})
+        return record.model_copy(
+            update={
+                "masked": True,
+                "value": _MASKED_ENVIRONMENT_VALUE,
+            }
+        )
 
     def delete_environment_variable(
         self,

@@ -1151,6 +1151,28 @@ test("manages environment variables and session topology from V2 surfaces", asyn
     await expect(settings.getByRole("heading", { name: "Environment variables" }))
       .toBeVisible();
     await expect(settings.getByText("EXISTING_BROWSER_ENV")).toBeVisible();
+    const secretRow = settings.locator(".at-settings-env-row").filter({
+      hasText: "OPENAI_API_KEY",
+    });
+    await expect(secretRow.getByText("************")).toBeVisible();
+    await expect(settings.getByText("browser-openai-secret")).toHaveCount(0);
+    await secretRow.getByRole("button", { name: "Edit" }).click();
+    const secretDialog = page.getByRole("dialog", {
+      name: "Edit environment variable",
+    });
+    await expect(secretDialog.getByLabel("Value")).toHaveValue("");
+    await expect(
+      secretDialog.getByText("Leave blank to keep the saved secret."),
+    ).toBeVisible();
+    await secretDialog.getByRole("button", { name: "Save" }).click();
+    await expect(secretDialog).toBeHidden();
+    await expect.poll(() => state.environmentSavePayloads.at(-1)?.payload)
+      .toEqual({
+        preserve_existing: true,
+        source_key: "OPENAI_API_KEY",
+        value: "",
+      });
+    state.environmentSavePayloads.length = 0;
     await expect(settings.getByText("SYSTEM_BROWSER_ENV")).not.toBeVisible();
 
     await settings.locator(".at-settings-env-system-toggle").click();
@@ -1162,8 +1184,12 @@ test("manages environment variables and session topology from V2 surfaces", asyn
     await settings.getByRole("button", { name: "New variable" }).click();
     const envDialog = page.getByRole("dialog", { name: "New variable" });
     await expect(envDialog).toBeVisible();
-    await envDialog.getByLabel("Key").fill("BROWSER_TS_ENV");
+    await envDialog.getByLabel("Key").fill("INVALID=KEY");
     await envDialog.getByLabel("Value").fill("browser-ts-value");
+    await envDialog.getByRole("button", { name: "Save" }).click();
+    await expect(envDialog.getByText("Key cannot contain '='.")).toBeVisible();
+    expect(state.environmentSavePayloads).toHaveLength(0);
+    await envDialog.getByLabel("Key").fill("BROWSER_TS_ENV");
     await envDialog.screenshot({
       path: screenshotPath("v2-environment-variable-create-dialog.png", SCREENSHOT_FOLDER),
     });
@@ -1177,7 +1203,11 @@ test("manages environment variables and session topology from V2 surfaces", asyn
     expect(state.environmentSavePayloads).toEqual([
       {
         key: "BROWSER_TS_ENV",
-        payload: { source_key: null, value: "browser-ts-value" },
+        payload: {
+          preserve_existing: false,
+          source_key: null,
+          value: "browser-ts-value",
+        },
         scope: "app",
       },
     ]);
@@ -1193,7 +1223,8 @@ test("manages environment variables and session topology from V2 surfaces", asyn
     await expect(editDialog.getByLabel("Key")).toHaveValue("BROWSER_TS_ENV");
     await expect(editDialog.getByLabel("Value")).toHaveValue("browser-ts-value");
     await editDialog.getByLabel("Value").fill("browser-ts-value-edited");
-    await editDialog.screenshot({
+    await page.waitForTimeout(300);
+    await page.screenshot({
       path: screenshotPath("v2-environment-variable-edit-dialog.png", SCREENSHOT_FOLDER),
     });
     await editDialog.getByRole("button", { name: "Save" }).click();
@@ -1203,12 +1234,17 @@ test("manages environment variables and session topology from V2 surfaces", asyn
     expect(state.environmentSavePayloads).toEqual([
       {
         key: "BROWSER_TS_ENV",
-        payload: { source_key: null, value: "browser-ts-value" },
+        payload: {
+          preserve_existing: false,
+          source_key: null,
+          value: "browser-ts-value",
+        },
         scope: "app",
       },
       {
         key: "BROWSER_TS_ENV",
         payload: {
+          preserve_existing: false,
           source_key: "BROWSER_TS_ENV",
           value: "browser-ts-value-edited",
         },
@@ -1348,7 +1384,7 @@ test("tests and saves an existing model profile", async ({ page }) => {
     await settings.getByLabel("Fallback policy").fill(
       "same_provider_then_other_provider",
     );
-    await settings.getByLabel("SSL verify").fill("true");
+    await settings.getByLabel("SSL verify").selectOption("true");
 
     await Promise.all([
       page.waitForResponse(
@@ -1605,7 +1641,7 @@ test("matches Web settings declared defaults and persisted language", async ({
   state.uiLanguage = "zh-CN";
   state.webConfig = {
     ...state.webConfig,
-    exa_api_key: "browser-web-strict-key",
+    exa_api_key_configured: true,
     fallback_provider: null,
     searxng_instance_seeds: [
       "https://search.mdosch.de/",
@@ -1759,8 +1795,9 @@ test("saves Web settings and shows save errors", async ({ page }) => {
     ]);
 
     expect(state.webSavePayloads.at(-1)).toEqual({
-      exa_api_key: "saved-exa-key",
+      exa_api_key: null,
       fallback_provider: "searxng",
+      preserve_exa_api_key: true,
       provider: "exa",
       searxng_instance_url: "https://search.changed.example/",
     });
@@ -1780,8 +1817,9 @@ test("saves Web settings and shows save errors", async ({ page }) => {
       settings.getByRole("button", { name: "Save" }).click(),
     ]);
     expect(state.webSavePayloads.at(-1)).toEqual({
-      exa_api_key: "saved-exa-key",
+      exa_api_key: null,
       fallback_provider: "disabled",
+      preserve_exa_api_key: true,
       provider: "exa",
       searxng_instance_url: "https://search.changed.example/",
     });
@@ -1802,8 +1840,9 @@ test("saves Web settings and shows save errors", async ({ page }) => {
     ]);
 
     expect(state.webSavePayloads.at(-1)).toEqual({
-      exa_api_key: "saved-exa-key",
+      exa_api_key: null,
       fallback_provider: "searxng",
+      preserve_exa_api_key: true,
       provider: "exa",
       searxng_instance_url: "https://search.failed.example/",
     });
@@ -1861,7 +1900,7 @@ test("probes, saves, and clears ClawHub settings", async ({ page }) => {
 
     await settings.getByRole("button", { name: "Test connection" }).click();
     await expect.poll(() => state.clawHubProbePayloads).toEqual([
-      { token: "saved-clawhub-browser-token" },
+      { token: null },
     ]);
     await expect(
       settings.getByText(
@@ -1883,6 +1922,7 @@ test("probes, saves, and clears ClawHub settings", async ({ page }) => {
       settings.getByRole("button", { name: "Save" }).click(),
     ]);
     expect(state.clawHubSavePayloads.at(-1)).toEqual({
+      preserve_token: false,
       token: "next-clawhub-browser-token",
     });
     await expect(page.getByText("ClawHub settings saved.")).toBeVisible();
@@ -1898,7 +1938,7 @@ test("probes, saves, and clears ClawHub settings", async ({ page }) => {
       path: screenshotPath("v2-clawhub-settings-required.png", SCREENSHOT_FOLDER),
     });
     expect(state.clawHubProbePayloads).toEqual([
-      { token: "saved-clawhub-browser-token" },
+      { token: null },
     ]);
 
     await Promise.all([
@@ -1910,7 +1950,10 @@ test("probes, saves, and clears ClawHub settings", async ({ page }) => {
       ),
       settings.getByRole("button", { name: "Save" }).click(),
     ]);
-    expect(state.clawHubSavePayloads.at(-1)).toEqual({ token: null });
+    expect(state.clawHubSavePayloads.at(-1)).toEqual({
+      preserve_token: false,
+      token: null,
+    });
     await expect(page.locator(".ant-message-notice")).toHaveCount(0);
     await page.screenshot({
       path: screenshotPath("v2-clawhub-settings-clear.png", SCREENSHOT_FOLDER),
@@ -2273,21 +2316,32 @@ async function handleSettingsActionApi(
     const { key, scope } = environmentPathParts(path);
     const payload = readJsonBody(context);
     state.environmentSavePayloads.push({ key, payload, scope });
+    const sourceKey = String(payload.source_key ?? key);
+    const sourceRecord = state.environmentVariables.app.find(
+      (record) => String(record.key) === sourceKey,
+    );
+    const masked = isSensitiveEnvironmentKey(key);
+    const value = payload.preserve_existing === true
+      ? String(sourceRecord?.value ?? "")
+      : String(payload.value ?? "");
+    const publicValue = masked ? "************" : value;
     state.environmentVariables.app = [
       ...state.environmentVariables.app.filter(
         (record) => String(record.key) !== key,
       ),
       {
         key,
+        masked,
         scope,
-        value: String(payload.value ?? ""),
+        value: publicValue,
         value_kind: "string",
       },
     ];
     await context.fulfillJson({
       key,
+      masked,
       scope,
-      value: String(payload.value ?? ""),
+      value: publicValue,
       value_kind: "string",
     });
     return true;
@@ -2341,7 +2395,10 @@ async function handleSettingsActionApi(
   if (method === "PUT" && path === "/system/configs/clawhub") {
     const payload = readJsonBody(context);
     state.clawHubSavePayloads.push(payload);
-    state.clawHubConfig = payload;
+    const configured = payload.preserve_token === true
+      ? state.clawHubConfig.token_configured === true
+      : typeof payload.token === "string" && payload.token.trim() !== "";
+    state.clawHubConfig = { token_configured: configured };
     await context.fulfillJson({ status: "ok" });
     return true;
   }
@@ -2860,7 +2917,14 @@ async function handleSettingsActionApi(
     }
     state.webConfig = {
       ...state.webConfig,
-      ...payload,
+      exa_api_key_configured:
+        payload.preserve_exa_api_key === true
+          ? state.webConfig.exa_api_key_configured === true
+          : typeof payload.exa_api_key === "string"
+            && payload.exa_api_key.trim() !== "",
+      fallback_provider: payload.fallback_provider,
+      provider: payload.provider,
+      searxng_instance_url: payload.searxng_instance_url,
       searxng_instance_seeds: state.webConfig.searxng_instance_seeds,
     };
     await context.fulfillJson({ status: "ok" });
@@ -3170,7 +3234,15 @@ function environmentVariables(): {
   return {
     app: [
       {
+        key: "OPENAI_API_KEY",
+        masked: true,
+        scope: "app",
+        value: "************",
+        value_kind: "string",
+      },
+      {
         key: "EXISTING_BROWSER_ENV",
+        masked: false,
         scope: "app",
         value: "existing-browser-value",
         value_kind: "string",
@@ -3179,12 +3251,20 @@ function environmentVariables(): {
     system: [
       {
         key: "SYSTEM_BROWSER_ENV",
+        masked: false,
         scope: "system",
         value: "%USERPROFILE%/agent-teams",
         value_kind: "expandable",
       },
     ],
   };
+}
+
+function isSensitiveEnvironmentKey(key: string): boolean {
+  return key
+    .toUpperCase()
+    .split(/[^A-Z0-9]+/)
+    .some((token) => ["KEY", "TOKEN", "SECRET", "PASSWORD"].includes(token));
 }
 
 function feishuGatewayAccounts(): Record<string, unknown>[] {
@@ -3286,7 +3366,7 @@ function sessionRecord({
 function roleOptions(): Record<string, unknown> {
   return {
     coordinator_role_id: null,
-    main_agent_role_id: "MainAgent",
+    main_agent_role_id: "main",
     normal_mode_roles: [
       { name: "Main Agent", role_id: "MainAgent" },
       { name: "Main", role_id: "main" },
@@ -3302,6 +3382,7 @@ function roleConfigs(): Record<string, Record<string, unknown>> {
       content: "---\nname: Main Agent\n---\nHandle work.",
       deletable: false,
       description: "Main role",
+      execution_surface: "workspace",
       file_name: "main.md",
       mcp_servers: ["filesystem"],
       memory_profile: { enabled: true },
@@ -3321,6 +3402,7 @@ function roleConfigs(): Record<string, Record<string, unknown>> {
       content: "---\nname: Reviewer\n---\nReview carefully.",
       deletable: true,
       description: "Review changes",
+      execution_surface: "workspace",
       file_name: "reviewer.md",
       mcp_servers: ["filesystem"],
       memory_profile: { enabled: true },
@@ -3466,7 +3548,7 @@ function modelCatalogResponse(): Record<string, unknown> {
 
 function webConfig(): Record<string, unknown> {
   return {
-    exa_api_key: "saved-exa-key",
+    exa_api_key_configured: true,
     fallback_provider: "searxng",
     provider: "exa",
     searxng_instance_seeds: ["https://searx.space"],
@@ -3476,7 +3558,7 @@ function webConfig(): Record<string, unknown> {
 
 function clawHubConfig(): Record<string, unknown> {
   return {
-    token: "saved-clawhub-browser-token",
+    token_configured: true,
   };
 }
 

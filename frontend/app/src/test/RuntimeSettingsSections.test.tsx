@@ -352,12 +352,14 @@ function environmentCatalog(): EnvironmentVariableCatalog {
     app: [
       {
         key: "OPENAI_API_KEY",
+        masked: true,
         scope: "app",
         value: "sk-live",
         value_kind: "string",
       },
       {
         key: "HTTP_PROXY",
+        masked: false,
         scope: "app",
         value: "http://hidden.proxy",
         value_kind: "string",
@@ -366,6 +368,7 @@ function environmentCatalog(): EnvironmentVariableCatalog {
     system: [
       {
         key: "PATH",
+        masked: false,
         scope: "system",
         value: "/usr/bin",
         value_kind: "string",

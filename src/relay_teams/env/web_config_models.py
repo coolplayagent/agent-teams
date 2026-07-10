@@ -90,6 +90,42 @@ class WebConfig(BaseModel):
         return None
 
 
+class WebConfigView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider: WebProvider
+    exa_api_key_configured: bool
+    fallback_provider: WebFallbackProvider | None
+    searxng_instance_url: str | None
+    searxng_instance_seeds: tuple[str, ...] = DEFAULT_SEARXNG_INSTANCE_SEEDS
+
+    @classmethod
+    def from_config(cls, config: WebConfig) -> WebConfigView:
+        return cls(
+            provider=config.provider,
+            exa_api_key_configured=config.exa_api_key is not None,
+            fallback_provider=config.fallback_provider,
+            searxng_instance_url=config.searxng_instance_url,
+        )
+
+
+class WebConfigUpdate(WebConfig):
+    preserve_exa_api_key: bool = False
+
+    def to_config(self, *, preserved_api_key: str | None) -> WebConfig:
+        api_key = (
+            preserved_api_key
+            if self.preserve_exa_api_key and self.exa_api_key is None
+            else self.exa_api_key
+        )
+        return WebConfig(
+            provider=self.provider,
+            exa_api_key=api_key,
+            fallback_provider=self.fallback_provider,
+            searxng_instance_url=self.searxng_instance_url,
+        )
+
+
 def _normalize_optional_text(value: str | None) -> str | None:
     if value is None:
         return None

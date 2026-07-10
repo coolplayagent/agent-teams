@@ -1122,6 +1122,11 @@ export interface SystemConfigStatus {
 }
 
 export interface ClawHubConfig {
+  token_configured: boolean;
+}
+
+export interface ClawHubConfigSaveRequest {
+  preserve_token?: boolean;
   token?: string | null;
 }
 
@@ -2296,6 +2301,7 @@ export type EnvironmentVariableValueKind = "expandable" | "string";
 
 export interface EnvironmentVariableRecord {
   key: string;
+  masked: boolean;
   scope: EnvironmentVariableScope;
   value: string;
   value_kind: EnvironmentVariableValueKind;
@@ -2307,6 +2313,7 @@ export interface EnvironmentVariableCatalog {
 }
 
 export interface EnvironmentVariableSaveRequest {
+  preserve_existing?: boolean;
   source_key?: string | null;
   value: string;
 }
@@ -2315,10 +2322,18 @@ export type WebProvider = "exa";
 export type WebFallbackProvider = "disabled" | "searxng";
 
 export interface WebConfig {
-  exa_api_key?: string | null;
+  exa_api_key_configured: boolean;
   fallback_provider?: WebFallbackProvider | null;
   provider: WebProvider;
   searxng_instance_seeds?: string[];
+  searxng_instance_url?: string | null;
+}
+
+export interface WebConfigSaveRequest {
+  exa_api_key?: string | null;
+  fallback_provider?: WebFallbackProvider | null;
+  preserve_exa_api_key?: boolean;
+  provider: WebProvider;
   searxng_instance_url?: string | null;
 }
 
@@ -2627,6 +2642,20 @@ export interface ProxyConfig {
   ssl_verify?: boolean | null;
 }
 
+export interface ProxyConfigView {
+  all_proxy?: string | null;
+  has_password: boolean;
+  http_proxy?: string | null;
+  https_proxy?: string | null;
+  no_proxy?: string | null;
+  proxy_username?: string | null;
+  ssl_verify?: boolean | null;
+}
+
+export interface ProxyConfigSaveRequest extends ProxyConfig {
+  preserve_password?: boolean;
+}
+
 export type WebProbeMethod = "GET" | "HEAD";
 
 export interface WebConnectivityProbeDiagnostics {
@@ -2636,6 +2665,7 @@ export interface WebConnectivityProbeDiagnostics {
 }
 
 export interface WebConnectivityProbeRequest {
+  preserve_saved_proxy_password?: boolean;
   proxy_override?: ProxyConfig | null;
   timeout_ms?: number | null;
   url: string;

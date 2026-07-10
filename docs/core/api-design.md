@@ -234,15 +234,14 @@ Request field:
 
 ### `GET /system/configs/model`
 
-Returns the persisted model config with secret-backed profile API keys rehydrated for UI editing.
-Literal profile `api_key` values and secret header values are migrated out of `model.json` into the unified secret store on read.
-Saved MAAS and CodeAgent profile passwords are never returned in plaintext; password-auth profiles return `password: "••••••••••••"` when a saved password exists.
-The response body is a root object whose keys are profile ids and whose values use the same typed profile schema as `PUT /system/configs/model`, without any legacy top-level `config` wrapper.
+Returns the same public, normalized profile view as `GET /system/configs/model/profiles` for compatibility with older clients.
+The response never rehydrates API keys, secret header values, CodeAgent access/refresh tokens, or saved passwords. API keys are represented by `api_key: null` plus `has_api_key`; secret headers return `value: null` plus `configured`; password-backed auth returns configured flags and the existing masked password placeholder where required by the save contract.
+Literal profile `api_key` values and secret header values are still migrated out of `model.json` into the unified secret store on read, but migration does not make them part of the HTTP response.
 
 ### `GET /system/configs/model/profiles`
 
 Returns normalized model profiles.
-Each profile includes `has_api_key`, the currently stored `api_key` value so the web UI can mask it by default and reveal it on demand, `headers[]` for additional request headers, `is_default` to mark the runtime default profile, optional `context_window` for next-send context preview UI, optional `fallback_policy_id` to bind that profile to a fallback policy, `fallback_priority` to rank it as a fallback candidate, structured `capabilities.input/output.*`, and a derived `input_modalities[]` compatibility field so the UI can label profiles that accept direct media input.
+Each profile includes `has_api_key` and always returns `api_key: null`; the read endpoint never exposes the stored API key. Secret `headers[]` similarly return `value: null` plus `configured: true`, while non-secret header values remain visible for editing. The settings UI leaves credential fields blank and uses configured flags to preserve saved secrets until the user explicitly enters a replacement or clears them. Profiles also include `is_default` to mark the runtime default profile, optional `context_window` for next-send context preview UI, optional `fallback_policy_id` to bind that profile to a fallback policy, `fallback_priority` to rank it as a fallback candidate, structured `capabilities.input/output.*`, and a derived `input_modalities[]` compatibility field so the UI can label profiles that accept direct media input.
 Profiles created from the shared model directory may also include optional `catalog_provider_id`, `catalog_provider_name`, and `catalog_model_name` metadata. These fields are descriptive and do not change provider transport selection.
 `provider` currently supports `openai_compatible`, `anthropic`, `bigmodel`, `minimax`, `maas`, `codeagent`, and the internal/testing-only `echo`. `anthropic` means the profile uses an Anthropic Messages API-compatible transport, including marketplace providers such as MiniMax entries that publish an `/anthropic/v1` API. MAAS profiles return `maas_auth` with `auth_source`, `username`, `has_password`, and `password: "••••••••••••"` when a profile password is saved so the web UI can preserve the stored password without exposing it. CodeAgent profiles return `codeagent_auth`; `auth_method = "sso"` exposes `has_access_token` and `has_refresh_token`, while `auth_method = "password"` exposes `auth_source`, `username`, `has_password`, and `password: "••••••••••••"` when a profile password is saved. The MaaS login endpoint and `app-id`, and the CodeAgent OAuth/login endpoints and inference base URL, are fixed by the backend.
 When no profile is explicitly marked default, the backend resolves the default in this order: a profile named `default`, the only configured profile, then the first profile by name.
@@ -376,21 +375,21 @@ If persisted model config is syntactically valid JSON but semantically invalid f
 ### `GET /system/configs/proxy`
 
 Returns the saved proxy configuration assembled from app `.env` in the resolved config dir, by default `~/.relay-teams/.env`, plus the unified secret store.
-Fields: `http_proxy`, `https_proxy`, `all_proxy`, `no_proxy`, `proxy_username`, `proxy_password`, `ssl_verify`.
+Fields: `http_proxy`, `https_proxy`, `all_proxy`, `no_proxy`, `proxy_username`, `has_password`, `ssl_verify`.
 Saved proxy URLs are returned without embedded credentials when the configured proxy URLs share the same username/password pair.
-If the password was persisted through the secret store, the API rehydrates it into `proxy_password` for editing.
-If a user manually forces `user:password@host` into `.env`, runtime loading still supports it and the API can read it back, but the save flow will not write that password back to `.env`.
+The read endpoint never returns the stored password. `has_password` reports whether a password is available in the unified secret store or a supported legacy URL source.
+If a user manually forces `user:password@host` into `.env`, including different credentials in different proxy URLs, runtime loading still supports it. The public settings read endpoint always strips user info from every URL. When `preserve_password: true` is used with unchanged proxy URLs, the backend keeps those exact legacy per-URL credentials in place without returning them to the browser; it never accepts a new or moved multi-password legacy set through this path.
 
 ### `PUT /system/configs/proxy`
 
 Saves proxy values into app `.env` in the resolved config dir, by default `~/.relay-teams/.env`, and the unified secret store, then reloads runtime proxy state immediately.
 Blank values remove the corresponding proxy key.
 `proxy_username` and `proxy_password` are optional shared credentials.
+When `preserve_password: true` and `proxy_password` is `null`, the backend retains the existing saved shared password. For legacy `.env` values containing different embedded credentials per URL, preserve mode only reuses the exact existing URL values when their credential-free forms are unchanged. Sending `preserve_password: false` with a null or blank password clears saved shared credentials and does not retain legacy embedded credentials.
 `ssl_verify` controls the default TLS certificate verification policy for Agent Teams outbound HTTP clients.
 When omitted or `null`, the backend removes `SSL_VERIFY` from `.env` and falls back to skipping certificate verification by default.
 On save, proxy passwords are persisted through the unified secret store. When a usable system keyring backend exists, the secret store uses keyring; otherwise it falls back to `secrets.json` in the resolved config dir, by default `~/.relay-teams/secrets.json`.
-The `.env` file stores proxy URLs without the password portion.
-Runtime loading still supports manual `.env` proxy URLs that already contain embedded passwords.
+For API-created shared credentials, the `.env` file stores proxy URLs without the password portion. Runtime loading still supports manual `.env` proxy URLs that already contain embedded passwords; unchanged distinct legacy URL credentials remain an explicit preservation-only exception until the user replaces or clears them.
 `no_proxy` accepts both comma-separated and semicolon-separated entries. Wildcard host patterns such as `127.*`, `192.168.*`, and the special token `<local>` are supported.
 
 ### `GET /system/configs/web`
@@ -398,7 +397,7 @@ Runtime loading still supports manual `.env` proxy URLs that already contain emb
 Returns the saved web tool configuration.
 Fields:
 - `provider`: always `exa`
-- `exa_api_key`: optional Exa key rehydrated from the unified secret store
+- `exa_api_key_configured`: whether an Exa key is stored; the read endpoint never returns the key
 - `fallback_provider`: `searxng` by default, or `disabled` when automatic fallback is explicitly turned off
 - `searxng_instance_url`: the SearXNG base URL used for fallback, defaulting to `https://search.mdosch.de/`
 - `searxng_instance_seeds`: the built-in SearXNG seed instances exposed read-only for the settings UI
@@ -410,6 +409,7 @@ Fields:
 Saves the web tool configuration.
 `provider` accepts only `exa`.
 `exa_api_key` remains optional because Exa hosted MCP can be used without a key; providing one only raises the rate-limit ceiling.
+When `preserve_exa_api_key: true` and `exa_api_key` is `null`, the backend retains the existing saved key. Sending an explicit replacement updates it; sending `preserve_exa_api_key: false` with a null or blank value clears it.
 `fallback_provider` defaults to `searxng`. Set it to `disabled` to opt out of automatic retry after Exa quota and rate-limit failures.
 `searxng_instance_url` defaults to `https://search.mdosch.de/`.
 The backend persists the Exa API key only through the unified secret store and does not write it back to `.env`.
@@ -772,7 +772,7 @@ All other UI and API routes return `403` by default. This prevents tunnel or rev
 
 Returns the saved ClawHub configuration.
 Fields:
-- `token`: optional value rehydrated from the unified secret store
+- `token_configured`: whether a token is stored; the read endpoint never returns the token
 
 The ClawHub settings currently exist to support authenticated `clawhub` shell workflows and future ClawHub-backed skill operations. When configured, the runtime injects `CLAWHUB_TOKEN` into shell subprocess environments.
 When no explicit ClawHub site or registry override exists, China-oriented environments default ClawHub subprocesses to `https://mirror-cn.clawhub.com` through both `CLAWHUB_SITE` and `CLAWHUB_REGISTRY`.
@@ -782,6 +782,7 @@ Legacy plaintext `CLAWHUB_TOKEN` values still found in `.env` are migrated into 
 
 Saves the ClawHub configuration.
 `token` is optional. The backend persists it through the unified secret store and removes any managed `CLAWHUB_TOKEN` entries from `.env`.
+When `preserve_token: true` and `token` is `null`, the backend retains the existing saved token. Sending an explicit replacement updates it; sending `preserve_token: false` with a null or blank value clears it.
 
 ### `POST /system/configs/clawhub:probe`
 
@@ -1443,13 +1444,18 @@ Returns environment variables grouped by `system` and `app` scope.
 `app` is editable and is stored across `.env` in the resolved config dir, by default `~/.relay-teams/.env`, and the unified secret store.
 Sensitive-looking app keys such as `*_API_KEY`, `*_TOKEN`, `*_SECRET`, and `*_PASSWORD` are stored in the secret store and excluded from `.env`.
 The server loads app environment values at startup and watches the app `.env` file for external edits, so saved or manually edited app values take effect without restarting the server.
-Each record includes `key`, `value`, `scope`, and `value_kind` (`string` or `expandable`).
+Each record includes `key`, `value`, `masked`, `scope`, and `value_kind`
+(`string` or `expandable`). Sensitive-looking keys return
+`masked=true` and `value="************"`; ordinary list and save responses never
+return their plaintext secret value.
 
 ### `PUT /system/configs/environment-variables/{scope}/{key}`
 
 Upserts one environment variable in the target `scope`.
 Request body fields:
 - `value`: raw variable value
+- optional `preserve_existing`: when `true`, retain the existing stored value
+  while applying edits such as a key rename; this requires an existing source key
 - optional `source_key`: rename from an existing key before saving the new key
 
 `app` writes preserve unrelated `.env` lines and comments where possible.
@@ -1470,6 +1476,7 @@ Deleting a missing key returns a user-facing validation error.
 
 Tests whether a target `http` or `https` URL is reachable under the current proxy and global SSL settings.
 The request may also include `proxy_override` with `http_proxy`, `https_proxy`, `all_proxy`, `no_proxy`, `proxy_username`, `proxy_password`, and `ssl_verify` to run a one-shot probe against unsaved form values.
+When the settings form is reusing saved proxy credentials without exposing them to the browser, it sends `preserve_saved_proxy_password: true`; the backend hydrates the saved shared password or the matching unchanged legacy per-URL credentials only for the one-shot probe and does not include them in the response.
 The backend uses `HEAD` first and falls back to `GET` when the target does not support `HEAD`.
 Any HTTP response (`2xx` through `5xx`) counts as reachable.
 Only transport-level failures such as timeout, DNS, TLS, or proxy handshake errors return `ok=false`.

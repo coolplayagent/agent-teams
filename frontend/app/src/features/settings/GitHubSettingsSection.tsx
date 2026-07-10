@@ -73,12 +73,16 @@ export function GitHubSettingsSection() {
     if (configQuery.data === undefined) {
       return;
     }
-    form.setFieldsValue({
-      token: "",
-      webhook_base_url: configQuery.data.webhook_base_url ?? "",
-    });
-    setTokenDirty(false);
-    tokenFocusedRef.current = false;
+    const nextValues: Partial<GitHubFormValues> = {};
+    if (!form.isFieldTouched("token")) {
+      nextValues.token = "";
+      setTokenDirty(false);
+      tokenFocusedRef.current = false;
+    }
+    if (!form.isFieldTouched("webhook_base_url")) {
+      nextValues.webhook_base_url = configQuery.data.webhook_base_url ?? "";
+    }
+    form.setFieldsValue(nextValues);
   }, [configQuery.data, form]);
 
   function invalidateGitHubQueries() {
@@ -90,6 +94,9 @@ export function GitHubSettingsSection() {
     mutationFn: () =>
       saveGitHubConfig(githubTokenUpdate(tokenDirty, draftToken)),
     onSuccess: () => {
+      form.setFields([{ name: "token", touched: false, value: "" }]);
+      setTokenDirty(false);
+      tokenFocusedRef.current = false;
       setTokenNotice({ kind: "success", message: t("settingsGitHubTokenSaved") });
       void message.success(t("settingsGitHubSaved"));
       invalidateGitHubQueries();

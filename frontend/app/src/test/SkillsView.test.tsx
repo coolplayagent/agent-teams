@@ -148,7 +148,7 @@ beforeEach(() => {
     ref: "runbook-writer",
     skills_reloaded: true,
   });
-  getClawHubConfigMock.mockResolvedValue({ token: "saved-token" });
+  getClawHubConfigMock.mockResolvedValue({ token_configured: true });
   saveClawHubConfigMock.mockResolvedValue({ status: "ok" });
   probeClawHubConnectivityMock.mockResolvedValue({
     checked_at: "2026-06-24T00:00:00Z",
@@ -322,6 +322,7 @@ describe("SkillsView", () => {
 
     await waitFor(() =>
       expect(saveClawHubConfigMock).toHaveBeenCalledWith({
+        preserve_token: false,
         token: "new-token",
       }),
     );
@@ -359,7 +360,7 @@ describe("SkillsView", () => {
       fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
       await waitFor(() =>
         expect(probeClawHubConnectivityMock).toHaveBeenCalledWith({
-          token: "saved-token",
+          token: null,
         }),
       );
       expect(
@@ -371,7 +372,8 @@ describe("SkillsView", () => {
       fireEvent.click(screen.getByRole("button", { name: "Save" }));
       await waitFor(() =>
         expect(saveClawHubConfigMock).toHaveBeenCalledWith({
-          token: "saved-token",
+          preserve_token: true,
+          token: null,
         }),
       );
     },

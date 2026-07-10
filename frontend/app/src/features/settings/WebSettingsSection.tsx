@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import { getWebConfig, saveWebConfig } from "../../api/client";
-import type { WebConfig, WebFallbackProvider } from "../../api/contracts";
+import type { WebConfigSaveRequest, WebFallbackProvider } from "../../api/contracts";
 import { useTranslations } from "../../i18n";
 import { SettingsQueryState, SettingsSection } from "./SettingsShared";
 
@@ -24,7 +24,7 @@ export function WebSettingsSection() {
     queryFn: getWebConfig,
   });
   const saveMutation = useMutation({
-    mutationFn: (values: WebConfig) => saveWebConfig(values),
+    mutationFn: (values: WebConfigSaveRequest) => saveWebConfig(values),
     onSuccess: () => {
       void message.success(t("settingsWebSaved"));
       void queryClient.invalidateQueries({ queryKey: ["settings", "web"] });
@@ -50,7 +50,7 @@ export function WebSettingsSection() {
   }, [form, webQuery.data]);
 
   const seeds = webQuery.data?.searxng_instance_seeds ?? [];
-  const hasSavedApiKey = Boolean(webQuery.data?.exa_api_key?.trim());
+  const hasSavedApiKey = webQuery.data?.exa_api_key_configured === true;
   const preservingSavedApiKey = hasSavedApiKey && !apiKeyDirty;
   let saveError: string | null = null;
   if (saveMutation.error instanceof Error) {
@@ -61,8 +61,7 @@ export function WebSettingsSection() {
 
   function submit(values: WebFormValues) {
     const typedApiKey = values.exa_api_key.trim();
-    const savedApiKey = webQuery.data?.exa_api_key?.trim() ?? "";
-    const effectiveApiKey = apiKeyDirty ? typedApiKey || null : savedApiKey || null;
+    const effectiveApiKey = apiKeyDirty ? typedApiKey || null : null;
     const searxngInstanceUrl = (
       values.searxng_instance_url ??
       form.getFieldValue("searxng_instance_url") ??
@@ -71,6 +70,7 @@ export function WebSettingsSection() {
     saveMutation.mutate({
       provider: "exa",
       exa_api_key: effectiveApiKey,
+      preserve_exa_api_key: hasSavedApiKey && !apiKeyDirty,
       fallback_provider: values.fallback_provider,
       searxng_instance_url: searxngInstanceUrl || null,
     });

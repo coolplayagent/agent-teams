@@ -1,14 +1,19 @@
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { CurrentSessionIndicator } from "../features/shell/CurrentSessionIndicator";
+import { useUiStore } from "../runtime/uiStore";
+
+beforeEach(() => {
+  useUiStore.setState({ language: "en" });
+});
 
 afterEach(() => {
   cleanup();
 });
 
 describe("CurrentSessionIndicator", () => {
-  it("shows the workspace title while keeping the session identity accessible", () => {
+  it("shows the current session title and keeps workspace context in its tooltip", () => {
     render(
       <CurrentSessionIndicator
         selectedSessionId="session-1"
@@ -24,11 +29,15 @@ describe("CurrentSessionIndicator", () => {
       />,
     );
 
-    expect(screen.getByText("Agent Teams")).toBeVisible();
-    expect(screen.getByLabelText("Frontend rewrite running")).toHaveTextContent(
-      "Agent Teams",
+    expect(screen.getByText("Frontend rewrite")).toBeVisible();
+    expect(screen.getByRole("status", { name: "Frontend rewrite Running" }))
+      .toHaveTextContent("Frontend rewrite");
+    expect(screen.getByRole("status")).toHaveAttribute("aria-live", "polite");
+    expect(screen.getByText("Frontend rewrite")).toHaveAttribute(
+      "title",
+      "Agent Teams · Frontend rewrite",
     );
-    expect(screen.getByText("Frontend rewrite running")).toHaveClass("at-sr-only");
+    expect(screen.queryByText("Agent Teams")).not.toBeInTheDocument();
     expect(screen.queryByText("Legacy rewrite")).not.toBeInTheDocument();
   });
 
@@ -41,10 +50,32 @@ describe("CurrentSessionIndicator", () => {
       />,
     );
 
-    expect(screen.getByText("Workspace loading")).toBeVisible();
-    expect(screen.getByLabelText("session-loading")).toHaveTextContent(
-      "Workspace loading",
+    expect(screen.getByText("session-loading")).toBeVisible();
+    expect(screen.getByRole("status", { name: "session-loading" })).toHaveTextContent(
+      "session-loading",
     );
-    expect(screen.getByText("session-loading")).toHaveClass("at-sr-only");
+    expect(screen.getByText("session-loading")).toHaveAttribute(
+      "title",
+      "Workspace loading · session-loading",
+    );
+  });
+
+  it("announces a localized run status without adding visible status chrome", () => {
+    useUiStore.setState({ language: "zh-CN" });
+    render(
+      <CurrentSessionIndicator
+        selectedSessionId="session-running"
+        session={{
+          active_run_status: "running",
+          session_id: "session-running",
+          title: "流式验证",
+        }}
+        workspaceLabel="agent-teams"
+      />,
+    );
+
+    expect(screen.getByText("流式验证")).toBeVisible();
+    expect(screen.getByRole("status", { name: "流式验证 运行中" })).toBeVisible();
+    expect(screen.queryByText("运行中")).not.toBeInTheDocument();
   });
 });

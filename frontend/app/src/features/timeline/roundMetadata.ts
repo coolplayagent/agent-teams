@@ -5,6 +5,7 @@ import {
   type SessionRoundMessage,
   type SessionRoundMessagePart,
 } from "../../api/contracts";
+import type { Translate, TranslationKey } from "../../i18n";
 
 export type RoundTone = "error" | "warning";
 
@@ -129,6 +130,70 @@ export function formatRoundTokens(value: number): string {
     return `${(value / 1000).toFixed(1)}k`;
   }
   return String(Math.round(value));
+}
+
+export function roundStatusDisplayLabel(
+  statusLabel: string | null,
+  t: Translate,
+): string {
+  if (statusLabel === null) {
+    return "";
+  }
+  const normalized = statusLabel.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  const key = roundStatusTranslationKey(normalized);
+  return key === null ? statusLabel : t(key);
+}
+
+function roundStatusTranslationKey(status: string): TranslationKey | null {
+  switch (status) {
+    case "completed":
+    case "succeeded":
+    case "success":
+    case "verified":
+      return "timelineRoundStatusCompleted";
+    case "running":
+    case "in_progress":
+    case "streaming":
+    case "coordinator_running":
+    case "subagent_running":
+      return "timelineRoundStatusRunning";
+    case "stopping":
+      return "timelineRoundStatusStopping";
+    case "queued":
+    case "created":
+    case "pending":
+      return "timelineRoundStatusQueued";
+    case "idle":
+      return "timelineRoundStatusIdle";
+    case "failed":
+    case "error":
+      return "timelineRoundStatusFailed";
+    case "stopped":
+    case "interrupted":
+      return "timelineRoundStatusStopped";
+    case "canceled":
+    case "cancelled":
+      return "timelineRoundStatusCancelled";
+    case "awaiting_manual_action":
+    case "awaiting_input":
+      return "timelineRoundStatusAwaitingInput";
+    case "awaiting_tool_approval":
+      return "timelineRoundStatusAwaitingApproval";
+    case "awaiting_subagent_followup":
+      return "timelineRoundStatusAwaitingSubagent";
+    case "awaiting_recovery":
+      return "timelineRoundStatusRecovering";
+    case "paused":
+      return "timelineRoundStatusPaused";
+    case "terminal":
+      return "timelineRoundStatusFinished";
+    case "manual":
+      return "timelineRoundStatusManual";
+    case "verification_failed":
+      return "timelineRoundStatusVerificationFailed";
+    default:
+      return null;
+  }
 }
 
 function roundIntentText(round: SessionRound): string {

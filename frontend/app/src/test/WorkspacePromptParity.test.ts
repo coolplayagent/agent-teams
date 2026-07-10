@@ -52,7 +52,8 @@ describe("workspace prompt shell parity", () => {
     expect(appShellSource).toContain('className="at-shell"');
     expect(appShellSource).toContain('className="at-body"');
     expect(appShellSource).toContain("<CurrentSessionIndicator");
-    expect(currentSessionIndicatorSource).toContain('className="at-workspace-title"');
+    expect(currentSessionIndicatorSource).toContain('className="at-session-title"');
+    expect(currentSessionIndicatorSource).toContain("{label}");
     expect(currentSessionIndicatorSource).toContain("workspaceLabel");
   });
 

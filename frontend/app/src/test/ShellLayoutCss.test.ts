@@ -319,6 +319,12 @@ describe("shell layout CSS", () => {
 
   it("keeps subagent sessions locked to the workspace frame", () => {
     expect(themeCss).toMatch(
+      /\.at-workspace\s*{[\s\S]*?container-name:\s*at-workspace;[\s\S]*?container-type:\s*inline-size;/,
+    );
+    expect(themeCss).toMatch(
+      /@container at-workspace \(max-width: 907px\)[\s\S]*?\.at-subagent-panel-resizer\s*{[\s\S]*?display:\s*none;[\s\S]*?\.at-subagent-side-panel\s*{[\s\S]*?position:\s*absolute;[\s\S]*?width:\s*min\(100%, 560px\);/,
+    );
+    expect(themeCss).toMatch(
       /\.at-subagent-session-view\s*{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-rows:\s*auto minmax\(0, 1fr\);[\s\S]*?height:\s*100%;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/,
     );
     expect(themeCss).toMatch(

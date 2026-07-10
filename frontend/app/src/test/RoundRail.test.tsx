@@ -131,8 +131,10 @@ describe("RoundRail", () => {
     expect(requireElement(container, ".at-round-rail-list")).toBe(list);
     expect(requireElement(container, ".at-round-rail-node")).toBe(runNode);
     expect(list.scrollTop).toBe(112);
-    expect(screen.getByText("Updated task")).toBeVisible();
-    expect(screen.getByText("Completed")).toBeVisible();
+    const updatedTask = screen.getByText("Updated task");
+    expect(updatedTask).toBeVisible();
+    expect(within(updatedTask.closest("li") as HTMLElement).getByText("Completed"))
+      .toBeVisible();
     expect(screen.getByText("Verify branch")).toBeVisible();
   });
 
@@ -163,7 +165,7 @@ describe("RoundRail", () => {
     const detail = screen.getByLabelText("Round detail");
     expect(detail).toHaveClass("is-open");
     expect(detail).toHaveStyle({ left: "12px", top: "12px" });
-    expect(within(detail).getByText("running")).toBeVisible();
+    expect(within(detail).getByText("Running")).toBeVisible();
     expect(within(detail).getByText("2 pending approvals")).toBeVisible();
     expect(within(detail).getByText("Todo")).toBeVisible();
     expect(within(detail).getByText("2 items")).toBeVisible();

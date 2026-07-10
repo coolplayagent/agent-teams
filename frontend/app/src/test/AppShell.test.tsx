@@ -205,8 +205,9 @@ vi.mock("../features/shell/CurrentSessionIndicator", () => ({
     workspaceLabel: string;
   }) => (
     <div aria-label={session?.title ?? selectedSessionId ?? ""}>
-      <span>{workspaceLabel}</span>
-      <span hidden>{session?.title ?? selectedSessionId ?? ""}</span>
+      <span title={`${workspaceLabel} · ${session?.title ?? selectedSessionId ?? ""}`}>
+        {session?.title ?? selectedSessionId ?? ""}
+      </span>
     </div>
   ),
 }));
@@ -447,12 +448,15 @@ describe("AppShell", () => {
       .toHaveAttribute("aria-valuenow", String(sidebarWidthDefault));
   });
 
-  it("keeps the workspace title separate from the current session identity", async () => {
+  it("shows the current session identity in the top bar", async () => {
     renderShell();
 
-    expect(await screen.findByText("Agent Teams")).toBeVisible();
-    expect(screen.getByLabelText("Session 1")).toHaveTextContent("Agent Teams");
-    expect(screen.getByText("Session 1")).not.toBeVisible();
+    expect(await screen.findByText("Session 1")).toBeVisible();
+    expect(screen.getByLabelText("Session 1")).toHaveTextContent("Session 1");
+    expect(screen.getByText("Session 1")).toHaveAttribute(
+      "title",
+      "Agent Teams · Session 1",
+    );
   });
 
   it("uses the root folder label for the generic default workspace", async () => {
@@ -481,7 +485,7 @@ describe("AppShell", () => {
 
     renderShell();
 
-    expect(await screen.findByText("agent-teams")).toBeVisible();
+    expect(await screen.findByTitle("agent-teams · Session 1")).toBeVisible();
   });
 
   it("does not expose the generic default workspace id while workspace data loads", async () => {
@@ -506,7 +510,7 @@ describe("AppShell", () => {
 
     renderShell();
 
-    expect(await screen.findByText("Agent Teams")).toBeVisible();
+    expect(await screen.findByTitle("Agent Teams · Session 1")).toBeVisible();
     expect(screen.queryByText("default")).not.toBeInTheDocument();
   });
 
@@ -531,7 +535,7 @@ describe("AppShell", () => {
     renderShell();
 
     expect(await screen.findByLabelText("First session")).toHaveTextContent(
-      "Agent Teams",
+      "First session",
     );
     await waitFor(() =>
       expect(useUiStore.getState().selectedSessionId).toBe("session-first"),
@@ -1459,16 +1463,17 @@ describe("AppShell", () => {
         name: "Resize subagent panel",
       });
       await waitFor(() =>
-        expect(panelResizer).toHaveAttribute("aria-valuemax", "648"),
+        expect(panelResizer).toHaveAttribute("aria-valuemax", "508"),
       );
 
-      fireEvent.keyDown(panelResizer, { key: "ArrowLeft" });
-      expect(panelResizer).toHaveAttribute("aria-valuenow", "584");
+      expect(panelResizer).toHaveAttribute("aria-valuenow", "508");
+      fireEvent.keyDown(panelResizer, { key: "ArrowRight" });
+      expect(panelResizer).toHaveAttribute("aria-valuenow", "484");
       fireEvent.keyDown(panelResizer, { key: "ArrowLeft" });
 
-      expect(panelResizer).toHaveAttribute("aria-valuenow", "608");
+      expect(panelResizer).toHaveAttribute("aria-valuenow", "508");
       expect(window.localStorage.getItem("agentTeams.subagentPanelWidth"))
-        .toBe("608");
+        .toBe("508");
     } finally {
       restoreClientWidth();
     }

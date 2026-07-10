@@ -95,6 +95,11 @@ async function installChineseLightShellState(page: Page): Promise<void> {
 
 async function expectComplexReplayCollapsed(page: Page): Promise<void> {
   await expect(page.getByText(FINAL_TEXT)).toBeVisible();
+  await expect(page.locator(".at-session-title")).toHaveText("复杂回放验证");
+  await expect(page.locator(".at-round-marker-meta")).toContainText("已完成");
+  await expect(page.locator(".at-round-marker-meta")).not.toContainText(
+    "completed",
+  );
 
   const marker = page.locator(".at-round-marker-intent");
   await expect(marker).toHaveCount(1);

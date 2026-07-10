@@ -104,13 +104,19 @@ test("opens a nested subagent session and refreshes history after terminal strea
       }),
     ).toHaveCount(0);
     const initialPanelWidth = await subagentPanelWidth(page);
-    await dragSubagentPanelResizer(page, -80);
+    await expectSubagentSplitReadable(page);
+    await dragSubagentPanelResizer(page, 80);
+    await expect.poll(() => subagentPanelWidth(page)).toBeLessThan(
+      initialPanelWidth - 48,
+    );
+    await expect.poll(() => storedSubagentPanelWidth(page)).toBeLessThan(
+      initialPanelWidth - 48,
+    );
+    await dragSubagentPanelResizer(page, -40);
     await expect.poll(() => subagentPanelWidth(page)).toBeGreaterThan(
-      initialPanelWidth + 48,
+      initialPanelWidth - 64,
     );
-    await expect.poll(() => storedSubagentPanelWidth(page)).toBeGreaterThan(
-      initialPanelWidth + 48,
-    );
+    await expectSubagentSplitReadable(page);
     await expect.poll(() => state.messageRequestCount).toBe(1);
     await waitForEventSourceUrl(
       page,
@@ -156,6 +162,13 @@ test("opens a nested subagent session and refreshes history after terminal strea
     await expect(page.locator(".at-subagent-session-badge"))
       .toHaveAttribute("data-status", "completed");
     await expect(page.getByText("Final persisted subagent answer")).toBeVisible();
+    await expect(page.locator(".at-session-title")).toHaveText("TS parent session");
+    await expect(
+      page.locator(".at-chat-view").getByText("Parent session output"),
+    ).toBeVisible();
+    await expect(
+      page.locator(".at-chat-view").getByText("Explorer review"),
+    ).toBeVisible();
 
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await expectNoDocumentScroll(
@@ -164,6 +177,20 @@ test("opens a nested subagent session and refreshes history after terminal strea
     );
     await page.screenshot({
       path: screenshotPath("v2-subagent-session-completed.png", SCREENSHOT_FOLDER),
+    });
+
+    await page.setViewportSize({ height: 720, width: 1024 });
+    await expect(page.locator(".at-subagent-panel-resizer")).toBeHidden();
+    await expectSubagentSplitReadable(page);
+    await expectNoDocumentScroll(
+      page,
+      "medium-width subagent panel should overlay without clipping the workspace",
+    );
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-subagent-session-medium-overlay.png",
+        SCREENSHOT_FOLDER,
+      ),
     });
 
     await page.getByRole("button", { name: "Main session" }).click();
@@ -1126,13 +1153,15 @@ test("streams a live orchestration subagent with right-panel delta cadence", asy
     );
     await waitForEventSourceOpenCount(page, 1);
 
-    const firstStreamText = Array.from(
-      { length: 28 },
-      (_, index) => `ORCH_LIVE_${index}`,
-    ).join(" ");
+    const firstStreamChunks = [
+      Array.from({ length: 9 }, (_, index) => `ORCH_LIVE_${index}`).join(" "),
+      Array.from({ length: 10 }, (_, index) => `ORCH_LIVE_${index + 9}`).join(" "),
+      Array.from({ length: 9 }, (_, index) => `ORCH_LIVE_${index + 19}`).join(" "),
+    ];
+    const firstStreamText = firstStreamChunks.join(" ");
     await dispatchSubagentRunEvent(page, {
       eventId: 42,
-      payload: { text: firstStreamText },
+      payload: { text: firstStreamChunks[0] },
       relayEventType: "text_delta",
       roleId: "Crafter",
       type: "message.text.delta",
@@ -1147,20 +1176,35 @@ test("streams a live orchestration subagent with right-panel delta cadence", asy
         exact: true,
       }),
     ).toHaveCount(0);
-    await expect.poll(async () => ((await liveText.textContent()) ?? "").length)
-      .toBeGreaterThan(0);
-    const firstStreamSamples = await sampleLocatorTextLengths(liveText, 6, 80);
-    expect(firstStreamSamples[0] ?? 0).toBeGreaterThan(0);
-    expect(firstStreamSamples[0] ?? firstStreamText.length)
-      .toBeLessThan(firstStreamText.length);
-    expect(new Set(firstStreamSamples).size).toBeGreaterThanOrEqual(3);
-    expect(Math.max(...firstStreamSamples)).toBeLessThan(firstStreamText.length);
+    await expect(liveText).toHaveText(firstStreamChunks[0]);
+    const stableFirstEventSamples = await sampleLocatorTextLengths(liveText, 3, 80);
+    expect(new Set(stableFirstEventSamples)).toEqual(
+      new Set([firstStreamChunks[0]?.length ?? 0]),
+    );
+
+    await dispatchSubagentRunEvent(page, {
+      eventId: 43,
+      payload: { delta: ` ${firstStreamChunks[1]}` },
+      relayEventType: "output_delta",
+      roleId: "Crafter",
+      type: "message.output.delta",
+    });
+    await expect(liveText).toHaveText(firstStreamChunks.slice(0, 2).join(" "));
+
+    await dispatchSubagentRunEvent(page, {
+      eventId: 44,
+      payload: { delta: ` ${firstStreamChunks[2]}` },
+      relayEventType: "output_delta",
+      roleId: "Crafter",
+      type: "message.output.delta",
+    });
+    await expect(liveText).toHaveText(firstStreamText);
     await expect(
       page.locator(".at-chat-view").getByText("ORCH_LIVE_"),
     ).toHaveCount(0);
 
     await dispatchSubagentRunEvent(page, {
-      eventId: 43,
+      eventId: 45,
       payload: { delta: " ORCH_LIVE_TAIL" },
       relayEventType: "output_delta",
       roleId: "Crafter",
@@ -1183,7 +1227,7 @@ test("streams a live orchestration subagent with right-panel delta cadence", asy
     state.completed = true;
     state.delayFinalMessages = true;
     await dispatchSubagentRunEvent(page, {
-      eventId: 44,
+      eventId: 46,
       payload: { status: "completed" },
       relayEventType: "run_completed",
       roleId: "Crafter",
@@ -1208,6 +1252,14 @@ test("streams a live orchestration subagent with right-panel delta cadence", asy
     await expect(
       page.locator(".at-chat-view").getByText("Final orchestration child answer"),
     ).toHaveCount(0);
+    await expect(page.locator(".at-session-title")).toHaveText(
+      "TS orchestration parent",
+    );
+    await expect(
+      page.locator(".at-chat-view").getByText(
+        "Coordinator is waiting for live orchestration child output.",
+      ),
+    ).toBeVisible();
     await page.screenshot({
       path: screenshotPath(
         "v2-subagent-orchestration-live-stream-final.png",
@@ -1600,6 +1652,43 @@ async function subagentPanelWidth(page: Page): Promise<number> {
   return page.locator(".at-subagent-side-panel").evaluate((panel) =>
     panel.getBoundingClientRect().width,
   );
+}
+
+async function expectSubagentSplitReadable(page: Page): Promise<void> {
+  const geometry = await page.evaluate(() => {
+    const main = document.querySelector<HTMLElement>(".at-chat-view");
+    const panel = document.querySelector<HTMLElement>(".at-subagent-side-panel");
+    const shell = document.querySelector<HTMLElement>(".at-workspace-chat-shell");
+    const resizer = document.querySelector<HTMLElement>(".at-subagent-panel-resizer");
+    if (main === null || panel === null || shell === null || resizer === null) {
+      throw new Error("Subagent split surfaces are missing.");
+    }
+    const mainRect = main.getBoundingClientRect();
+    const panelRect = panel.getBoundingClientRect();
+    const shellRect = shell.getBoundingClientRect();
+    return {
+      mainLeft: mainRect.left,
+      mainRight: mainRect.right,
+      mainWidth: mainRect.width,
+      panelLeft: panelRect.left,
+      panelRight: panelRect.right,
+      panelWidth: panelRect.width,
+      resizerVisible: getComputedStyle(resizer).display !== "none",
+      shellLeft: shellRect.left,
+      shellRight: shellRect.right,
+      shellWidth: shellRect.width,
+    };
+  });
+  expect(geometry.mainLeft).toBeGreaterThanOrEqual(geometry.shellLeft - 1);
+  expect(geometry.panelRight).toBeLessThanOrEqual(geometry.shellRight + 1);
+  expect(geometry.panelWidth).toBeGreaterThanOrEqual(419);
+  if (geometry.resizerVisible) {
+    expect(geometry.mainWidth).toBeGreaterThanOrEqual(479);
+    expect(geometry.mainRight).toBeLessThanOrEqual(geometry.panelLeft);
+  } else {
+    expect(geometry.mainWidth).toBeGreaterThanOrEqual(geometry.shellWidth - 1);
+    expect(geometry.panelWidth).toBeLessThanOrEqual(560);
+  }
 }
 
 async function storedSubagentPanelWidth(page: Page): Promise<number> {

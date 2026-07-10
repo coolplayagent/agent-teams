@@ -37,6 +37,11 @@ test("keeps V1 primary sidebar entries and opens real module surfaces", async ({
 
     await page.goto(`${appServer.url}/app/`);
     await waitForV2Shell(page);
+    await expect(page.locator(".at-session-title")).toHaveText("TS shell parity");
+    await expect(page.locator(".at-session-title")).toHaveAttribute(
+      "title",
+      "agent-teams · TS shell parity",
+    );
     await expect(page.locator(".at-sidebar-nav")).toBeVisible();
     await expect
       .poll(() => page.locator(".at-sidebar-nav-label").allInnerTexts())

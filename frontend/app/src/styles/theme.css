@@ -275,8 +275,8 @@ body {
   min-width: 0;
 }
 
-.at-workspace-title {
-  max-width: 320px;
+.at-session-title {
+  max-width: 360px;
   color: var(--at-text);
   font-size: 14px;
   font-weight: 600;
@@ -957,6 +957,8 @@ body {
 .at-workspace {
   display: flex;
   flex-direction: column;
+  container-name: at-workspace;
+  container-type: inline-size;
   min-width: 0;
   height: 100%;
   min-height: 0;
@@ -990,7 +992,7 @@ body {
 }
 
 .at-workspace-chat-shell.has-subagent-panel {
-  grid-template-columns: minmax(340px, 1fr) 8px minmax(
+  grid-template-columns: minmax(480px, 1fr) 8px minmax(
       420px,
       var(--at-subagent-panel-width, 620px)
     );
@@ -1032,6 +1034,26 @@ body {
   min-height: 0;
   overflow: hidden;
   background: var(--at-bg);
+}
+
+@container at-workspace (max-width: 907px) {
+  .at-workspace-chat-shell,
+  .at-workspace-chat-shell.has-subagent-panel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .at-subagent-panel-resizer {
+    display: none;
+  }
+
+  .at-subagent-side-panel {
+    position: absolute;
+    z-index: 8;
+    inset: 0 0 0 auto;
+    width: min(100%, 560px);
+    border-left: 1px solid var(--at-border);
+    box-shadow: -6px 0 18px color-mix(in srgb, #000 10%, transparent);
+  }
 }
 
 .at-session-switch-loading {
@@ -7901,7 +7923,7 @@ body {
     max-width: 112px;
   }
 
-  .at-workspace-title {
+  .at-session-title {
     max-width: 112px;
     font-size: 14px;
   }

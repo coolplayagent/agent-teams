@@ -2,15 +2,48 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type { SessionRound } from "../api/contracts";
 import {
+  roundStatusDisplayLabel,
   roundSummary,
   sanitizeRoundDiagnosticText,
 } from "../features/timeline/roundMetadata";
+import { translate, type Translate } from "../i18n";
+
+const en: Translate = (key, replacements) => translate("en", key, replacements);
+const zh: Translate = (key, replacements) => translate("zh-CN", key, replacements);
 
 afterEach(() => {
   delete document.documentElement.dataset.diagnosticsVisible;
 });
 
 describe("roundMetadata", () => {
+  it("localizes known runtime statuses while preserving unknown provider states", () => {
+    const expectedChineseStatuses = new Map([
+      ["queued", "已排队"],
+      ["running", "运行中"],
+      ["stopping", "正在停止"],
+      ["paused", "已暂停"],
+      ["stopped", "已停止"],
+      ["completed", "已完成"],
+      ["failed", "失败"],
+      ["idle", "空闲"],
+      ["streaming", "运行中"],
+      ["coordinator_running", "运行中"],
+      ["subagent_running", "运行中"],
+      ["awaiting_tool_approval", "等待审批"],
+      ["awaiting_manual_action", "等待输入"],
+      ["awaiting_subagent_followup", "等待子代理"],
+      ["awaiting_recovery", "恢复中"],
+      ["terminal", "已结束"],
+      ["manual", "手动处理"],
+    ]);
+    for (const [status, expected] of expectedChineseStatuses) {
+      expect(roundStatusDisplayLabel(status, zh)).toBe(expected);
+    }
+    expect(roundStatusDisplayLabel("completed", en)).toBe("Completed");
+    expect(roundStatusDisplayLabel("verification failed", zh)).toBe("验证失败");
+    expect(roundStatusDisplayLabel("provider_warming", zh)).toBe("provider_warming");
+    expect(roundStatusDisplayLabel(null, zh)).toBe("");
+  });
   it("keeps verification failures in the warning lane instead of failed-run error tone", () => {
     const summary = roundSummary(
       round({

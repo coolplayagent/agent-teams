@@ -6,6 +6,7 @@ import {
   formatRoundTokens,
   type RoundMicrocompactSummary,
   type RoundRetrySummary,
+  roundStatusDisplayLabel,
   roundSummary,
   type RoundSummary,
 } from "./roundMetadata";
@@ -174,7 +175,7 @@ function RoundRailDetail({
 
 function roundDetailMetaItems(summary: RoundSummary, t: Translate): string[] {
   return [
-    summary.statusLabel ?? "",
+    roundStatusDisplayLabel(summary.statusLabel, t),
     summary.pendingApprovalCount > 0
       ? t("timelinePendingApprovals", { count: summary.pendingApprovalCount })
       : "",

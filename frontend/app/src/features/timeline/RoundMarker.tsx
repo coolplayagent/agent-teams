@@ -6,6 +6,7 @@ import {
   formatRoundTokens,
   type RoundMicrocompactSummary,
   type RoundRetrySummary,
+  roundStatusDisplayLabel,
   roundSummary,
 } from "./roundMetadata";
 
@@ -38,7 +39,7 @@ export function RoundMarker({ index, round, t }: RoundMarkerProps) {
     summary.diagnosticLabel !== null
       ? `${t("timelineRoundDiagnostic")}: ${summary.diagnosticLabel}`
       : "",
-    summary.statusLabel ?? "",
+    roundStatusDisplayLabel(summary.statusLabel, t),
     summary.durationLabel !== null ? `${summary.durationLabel}` : "",
   ].filter(Boolean);
   const handlePromptSummaryClick = () => {

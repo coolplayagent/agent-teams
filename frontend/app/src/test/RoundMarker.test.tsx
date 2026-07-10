@@ -16,6 +16,9 @@ describe("RoundMarker", () => {
 
     render(<RoundMarker index={0} round={round(prompt)} t={t} />);
 
+    expect(screen.getByText("Completed")).toBeVisible();
+    expect(screen.queryByText("completed")).not.toBeInTheDocument();
+
     fireEvent.click(screen.getByText("Expand"));
 
     expect(screen.getByText("Collapse")).toBeVisible();

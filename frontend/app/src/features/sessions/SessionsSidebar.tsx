@@ -25,6 +25,7 @@ import {
   FolderSearch,
   Pencil,
   Plus,
+  RefreshCw,
   Trash2,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -211,6 +212,14 @@ export function SessionsSidebar({
     queryKey: ["workspaces"],
     queryFn: listWorkspaces,
   });
+  const sidebarQueryError = sessionsQuery.isError
+    ? t("sidebarSessionsLoadError")
+    : workspacesQuery.isError
+      ? t("sidebarWorkspacesLoadError")
+      : null;
+  const retrySidebarQueries = () => {
+    void Promise.all([sessionsQuery.refetch(), workspacesQuery.refetch()]);
+  };
 
   const workspaceOptions = useMemo(
     () => workspacesQuery.data ?? [],
@@ -612,8 +621,21 @@ export function SessionsSidebar({
         </div>
       ) : null}
       {sessionsQuery.isLoading ? <Skeleton active paragraph={{ rows: 8 }} /> : null}
-      {sessionsQuery.isError ? (
-        <Empty description={t("sidebarSessionsLoadError")} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+      {sidebarQueryError !== null ? (
+        <Empty
+          className="at-sidebar-query-error"
+          description={sidebarQueryError}
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+        >
+          <Button
+            icon={<RefreshCw aria-hidden="true" size={13} />}
+            loading={sessionsQuery.isFetching || workspacesQuery.isFetching}
+            onClick={retrySidebarQueries}
+            size="small"
+          >
+            {t("sidebarRetryLoad")}
+          </Button>
+        </Empty>
       ) : null}
       {!sessionsQuery.isLoading &&
       !sessionsQuery.isError &&

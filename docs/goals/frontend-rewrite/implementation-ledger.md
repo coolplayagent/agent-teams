@@ -10333,3 +10333,50 @@ This file tracks implementation evidence for the React/Ant Design migration goal
   existing event retention, terminal flush, session-scoped settlement, memory
   contract, and real-provider evidence. `SESS-03`, `MSG-02`, and `STREAM-02` can be
   upgraded to `Verified`.
+
+## 2026-07-10 Sidebar, Workspace, And Session Inventory Closure Batch
+
+### Scope
+- Completed a fresh V1/V2 DOM and visual audit of the primary navigation,
+  workspace groups, project paths, session rows, selection/action states, and
+  the project sorting menu at desktop and 720px widths.
+- Kept the approved nine-entry V2 primary navigation inventory intact and
+  retained the product decision that subagent sessions open in the right panel
+  instead of returning to V1 nested sidebar directories.
+- Matched the final Chinese sorting label to V1 exactly: `按时间顺序`.
+- Added a compact, explicit retry state for failed workspace or session
+  inventory requests. Retry refetches both resources; when only workspace
+  metadata is unavailable, loaded sessions stay usable through workspace-ID
+  fallback rather than disappearing.
+- Tightened the packed settings secondary-page regression to assert the current
+  semantic `Back to System` action, preserving the required first-level to
+  second-level navigation and return path.
+- Rebuilt `frontend/dist/app` with the sidebar changes.
+
+### Verification
+- `npm test -- src/test/SessionsSidebar.test.tsx src/test/AppShell.test.tsx
+  src/test/ShellNavigationParity.test.ts` passed all 78 tests.
+- `npm run test:browser -- v2-shell-parity.spec.ts --project=chromium` passed all
+  8 tests. The suite covers every primary entry, Settings secondary pages,
+  workspace/session inventory, persistent API failure and explicit recovery at
+  720px, session CRUD, unread terminal clearing, lazy sidebar loading, and fixed
+  independent sidebar/chat scrolling.
+- `npm run typecheck` and `npm run build` passed.
+- Manual inspection reviewed fresh paired V1/V2 desktop and 720px screenshots
+  under `.tmp/frontend-react-ts-route-switch/sidebar-pair-*`, plus the packed
+  failure/recovery captures under `.tmp/frontend-v2-ts-shell/`. The recovery
+  screenshot is gated on session title, timeline, and composer hydration rather
+  than the first visible session row.
+
+### Reviewer
+- Independent review returned PASS after inspecting the implementation diff,
+  packed regression coverage, and all six fresh screenshots. It found no
+  overflow, overlap, or stale recovery state and approved `SHELL-02`, `SESS-01`,
+  and `SESS-02` for `Verified`.
+- The reviewer noted that the running legacy V1 build currently exposes only
+  six primary entries. The nine-entry V2 inventory therefore remains explicitly
+  tied to the user-approved V1 target inventory rather than claiming that this
+  legacy DOM variant contains all nine entries.
+- This batch verifies `SHELL-02`, `SESS-01`, and `SESS-02`; the total moves to
+  22 `Verified` and 22 `In progress`. It does not claim the remaining timeline,
+  composer, subagent, module-page, desktop, or cleanup rows are complete.

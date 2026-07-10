@@ -170,6 +170,61 @@ describe("SessionsSidebar", () => {
     await waitFor(() => expect(searchbox).toHaveFocus());
   });
 
+  it("recovers the complete workspace and session inventory after a load failure", async () => {
+    listWorkspacesMock
+      .mockRejectedValueOnce(new Error("workspace offline"))
+      .mockResolvedValue([
+        {
+          workspace_id: "workspace-1",
+          root_path: "C:/work/agent-teams",
+          display_name: "Agent Teams",
+        },
+      ]);
+    listSidebarSessionsMock
+      .mockRejectedValueOnce(new Error("sessions offline"))
+      .mockResolvedValue([
+        {
+          session_id: "session-a",
+          title: "Recovered session",
+          updated_at: "2026-06-23T10:00:00Z",
+          workspace_id: "workspace-1",
+        },
+      ]);
+
+    renderSidebar();
+
+    expect(await screen.findByText("Could not load sessions")).toBeVisible();
+    const retry = screen.getByRole("button", { name: "Retry" });
+    expect(retry).toBeVisible();
+    fireEvent.click(retry);
+
+    expect(await screen.findByText("Agent Teams")).toBeVisible();
+    expect(await screen.findByText("Recovered session")).toBeVisible();
+    await waitFor(() =>
+      expect(screen.queryByText("Could not load sessions")).not.toBeInTheDocument(),
+    );
+    expect(listWorkspacesMock).toHaveBeenCalledTimes(2);
+    expect(listSidebarSessionsMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps sessions usable when only workspace metadata fails", async () => {
+    listWorkspacesMock.mockRejectedValue(new Error("workspace offline"));
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        session_id: "session-a",
+        title: "Fallback session",
+        updated_at: "2026-06-23T10:00:00Z",
+        workspace_id: "workspace-1",
+      },
+    ]);
+
+    renderSidebar();
+
+    expect(await screen.findByText("Could not load workspaces")).toBeVisible();
+    expect(screen.getByText("Fallback session")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeVisible();
+  });
+
   it("keeps workspace headers visually separate from selected sessions", async () => {
     useUiStore.setState({
       selectedSessionId: "session-a",
@@ -718,6 +773,9 @@ describe("SessionsSidebar", () => {
     expect(screen.getByRole("button", { name: "新建会话" })).toBeVisible();
     expect(screen.getByRole("button", { name: "新建项目" })).toBeVisible();
     expect(screen.getByRole("button", { name: "按项目更新时间" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "按项目更新时间" }));
+    expect(await screen.findByText("按项目创建时间")).toBeInTheDocument();
+    expect(screen.getByText("按时间顺序")).toBeInTheDocument();
     expect(screen.queryByRole("searchbox", { name: "搜索会话" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "筛选会话" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "刷新会话" })).not.toBeInTheDocument();

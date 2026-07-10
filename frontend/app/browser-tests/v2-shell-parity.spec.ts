@@ -233,16 +233,16 @@ test("keeps V1 settings sections and System secondary-page grouping", async ({
     await openSystemPage(settings, systemPages, "MCP");
     await expect(settings.getByText("stdio-shell")).toBeVisible();
     await expect(settings.getByText("run_command")).toBeVisible();
-    await settings.getByRole("button", { name: "Back", exact: true }).click();
+    await settings.getByRole("button", { name: "Back to System" }).click();
 
     await openSystemPage(settings, systemPages, "Plugins");
     await expect(settings.getByText("workspace-tools")).toBeVisible();
-    await settings.getByRole("button", { name: "Back", exact: true }).click();
+    await settings.getByRole("button", { name: "Back to System" }).click();
 
     await openSystemPage(settings, systemPages, "Commands");
     await expect(settings.getByText("Global commands")).toBeVisible();
     await expect(settings.getByText("/opsx:propose")).toBeVisible();
-    await settings.getByRole("button", { name: "Back", exact: true }).click();
+    await settings.getByRole("button", { name: "Back to System" }).click();
 
     await openSystemPage(settings, systemPages, "Hooks");
     await expect(
@@ -250,16 +250,16 @@ test("keeps V1 settings sections and System secondary-page grouping", async ({
         hasText: "Session startup setup",
       }),
     ).toBeVisible();
-    await settings.getByRole("button", { name: "Back", exact: true }).click();
+    await settings.getByRole("button", { name: "Back to System" }).click();
 
     await openSystemPage(settings, systemPages, "Agent Runtime");
     await expect(settings.getByText("Codex CLI")).toBeVisible();
-    await settings.getByRole("button", { name: "Back", exact: true }).click();
+    await settings.getByRole("button", { name: "Back to System" }).click();
 
     await openSystemPage(settings, systemPages, "GitHub");
     await expect(settings.getByText("GitHub CLI", { exact: true })).toBeVisible();
     await expect(settings.getByText("Webhook base URL")).toBeVisible();
-    await settings.getByRole("button", { name: "Back", exact: true }).click();
+    await settings.getByRole("button", { name: "Back to System" }).click();
 
     await openSystemPage(settings, systemPages, "Gateway");
     await expect(settings.getByText("Feishu Main")).toBeVisible();
@@ -374,6 +374,9 @@ test("keeps workspace and session list interactions framed and compact", async (
       .toHaveAttribute("aria-expanded", "true");
 
     await page.getByRole("button", { name: "Sort by project update" }).click();
+    await expect(page.getByText("Sort by project creation")).toBeVisible();
+    await expect(page.getByText("Sort by project update")).toBeVisible();
+    await expect(page.getByText("Chronological sessions")).toBeVisible();
     await page.getByText("Sort by project creation").click();
     await expect(page.getByRole("button", { name: "Sort by project creation" }))
       .toBeVisible();
@@ -388,6 +391,71 @@ test("keeps workspace and session list interactions framed and compact", async (
     await expectComposerControlsDoNotOverlap(page);
     await page.screenshot({
       path: screenshotPath("v2-sidebar-workspace-session-inventory.png", SCREENSHOT_FOLDER),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("recovers failed workspace and session inventory inside the narrow fixed shell", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state = sidebarInventoryState();
+  let allowRecovery = false;
+  let sessionRequests = 0;
+  let workspaceRequests = 0;
+  try {
+    await page.setViewportSize({ height: 840, width: 720 });
+    await installShellState(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: async (context) => {
+        if (context.method === "GET" && context.path === "/workspaces") {
+          workspaceRequests += 1;
+          if (!allowRecovery) {
+            await context.fulfillJson({ detail: "workspace offline" }, 503);
+            return true;
+          }
+        }
+        if (context.method === "GET" && context.path === "/sessions/sidebar") {
+          sessionRequests += 1;
+          if (!allowRecovery) {
+            await context.fulfillJson({ detail: "sessions offline" }, 503);
+            return true;
+          }
+        }
+        return handleSidebarInventoryApi(context, state);
+      },
+      sessionTitle: "TS sidebar retry",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    await expect(page.locator(".at-sidebar")).toBeVisible();
+    await expect(page.getByText("Could not load sessions")).toBeVisible();
+    await page.screenshot({
+      path: screenshotPath("v2-sidebar-narrow-load-error.png", SCREENSHOT_FOLDER),
+    });
+
+    allowRecovery = true;
+    await page.getByRole("button", { name: "Retry" }).click();
+    await expect(workspaceGroup(page, "Agent Teams")).toBeVisible();
+    await expect(sessionItem(page, "Active coding session")).toBeVisible();
+    await expect(page.getByText("Could not load sessions")).toHaveCount(0);
+    await expect(page.locator(".at-session-title")).toHaveText("Active coding session");
+    await expect(page.getByText("No messages yet")).toBeVisible();
+    await expect(page.locator(".at-composer")).toBeVisible();
+    expect(workspaceRequests).toBeGreaterThan(1);
+    expect(sessionRequests).toBeGreaterThan(1);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "narrow sidebar recovery should remain inside the fixed app viewport",
+    );
+    await page.screenshot({
+      path: screenshotPath("v2-sidebar-narrow-recovered.png", SCREENSHOT_FOLDER),
     });
   } finally {
     await appServer.close();

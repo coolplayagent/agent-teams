@@ -114,6 +114,28 @@ For every row moved to `Verified`, record:
 
 ## Verification Ledger
 
+### 2026-07-10 Interrupted Session-Switch Reconnect Guard
+
+- `SESS-03`, `STREAM-02`, and `REC-01` tightened for the combined failure mode
+  where a foreground stream is interrupted after the user switches to another
+  session. The packed browser scenario now streams an initial text event,
+  switches away, dispatches an SSE error on the original source, waits for the
+  run stream to reopen at `after_event_id=2`, receives the hidden continuation,
+  then switches back.
+- The verification asserts the restored transcript contains exactly one
+  `.at-message-markdown` node with the precise concatenated text
+  `prefix + hidden recovery chunk + visible continuation`, no duplicated
+  prefix, no stale `.streaming-cursor`, and no document-level scroll or
+  composer overlap after terminal completion.
+- Automated evidence: `npm run test:browser -- v2-session-switch-stream.spec.ts
+  --project=chromium -g "resumes an interrupted stream while another session is
+  selected"` passed, and `npm run lint` passed.
+- Browser evidence reviewed:
+  `.tmp/frontend-v2-ts-session-switch/v2-interrupted-stream-session-switch-recovery.png`.
+- This does not move `SESS-03`, `STREAM-02`, or `REC-01` to `Verified`;
+  managed/real interrupted-recovery variants, true real-provider normal-stream
+  proof, and final V1/V2 visual sign-off remain open.
+
 ### 2026-07-10 Subagent Stable Markdown Hydration Guard
 
 - `SUB-01`, `MSG-02`, and `STREAM-02` tightened for the right-side subagent

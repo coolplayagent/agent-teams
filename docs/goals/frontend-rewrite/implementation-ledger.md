@@ -10159,3 +10159,18 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent decision: this strengthens subagent-panel stream/replay parity with DOM-stability evidence instead of relying on visible text alone. It does not mark `SUB-01`, `MSG-02`, `STREAM-02`, or final V2 frontend complete; real-backend variants, interrupted recovery, and final V1/V2 visual sign-off remain open.
+
+## 2026-07-10 Interrupted Session-Switch Reconnect Guard Slice
+
+### Scope
+- Continued P0 runtime closure on the combined `SESS-03`/`STREAM-02`/`REC-01` boundary after the stable streaming-container fixes.
+- Added packed browser coverage for the path where a normal assistant stream emits an initial text delta, the user switches to a different session, the original EventSource errors while hidden, the controller reconnects from the last local cursor, hidden continuation events arrive, and the user switches back.
+- The new guard asserts the reconnect URL is `after_event_id=2`, the hidden continuation does not leak into the secondary session, switching back restores one markdown message row with exact `prefix + hidden recovery + visible continuation` text, terminal completion leaves no stale streaming cursor, and fixed-shell layout constraints still hold.
+
+### Verification
+- `npm run test:browser -- v2-session-switch-stream.spec.ts --project=chromium -g "resumes an interrupted stream while another session is selected"` passed.
+- `npm run lint` passed.
+- Screenshot inspection reviewed `.tmp/frontend-v2-ts-session-switch/v2-interrupted-stream-session-switch-recovery.png`; it shows a single settled answer after the interrupted reconnect path with no loading cursor or duplicated output.
+
+### Reviewer
+- Main-agent decision: this tightens one interrupted session-switch recovery path with exact cursor and text assertions. It does not mark `SESS-03`, `STREAM-02`, `REC-01`, or final V2 frontend complete; managed/real interrupted-recovery variants, true real-provider normal assistant stream proof, and final V1/V2 visual sign-off remain open.

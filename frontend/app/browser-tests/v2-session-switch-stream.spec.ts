@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import {
+  dispatchEventSourceError,
   dispatchEventSourceMessage,
   ensureScreenshotDir,
   eventSourceOpenCount,
@@ -157,6 +158,124 @@ test("isolates an active foreground stream and restores exact content after swit
     await page.screenshot({
       path: screenshotPath(
         "v2-active-stream-session-switch.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("resumes an interrupted stream while another session is selected", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state: SessionSwitchMockState = {
+    completed: false,
+    runId: RUN_ID,
+    runCreateRequests: [],
+    secondarySessionTitle: "TS interrupt secondary session",
+    sourceSessionMode: "normal",
+    sourceSessionTitle: "TS interrupted stream source",
+  };
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await installMockEventSource(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleSessionSwitchApi(context, state),
+      sessionTitle: state.sourceSessionTitle,
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+
+    const promptText = "Switch away while an interrupted stream reconnects";
+    await page.getByRole("textbox", { name: "Prompt" }).fill(promptText);
+    await page.getByRole("button", { name: "Send" }).click();
+
+    await expect.poll(() => state.runCreateRequests.length).toBe(1);
+    await waitForEventSourceUrl(page, runEventsUrlPattern(RUN_ID, 0));
+    await waitForEventSourceOpenCount(page, 1);
+
+    const firstChunk = "Interrupted stream prefix.";
+    await dispatchRunEvent(page, {
+      eventId: 1,
+      payload: { phase: "streaming" },
+      relayEventType: "run_started",
+      type: "run.started",
+    });
+    await dispatchRunEvent(page, {
+      eventId: 2,
+      payload: { text: firstChunk },
+      relayEventType: "text_delta",
+      type: "message.text.delta",
+    });
+    await expect.poll(() => timelineMarkdownTexts(page)).toEqual([firstChunk]);
+
+    await page.getByRole("button", { name: state.secondarySessionTitle }).click();
+    await expect(page.getByText("Second session hydrated output")).toBeVisible();
+    await expect(page.getByText(firstChunk)).toHaveCount(0);
+
+    await dispatchEventSourceError(page, 0);
+    await waitForEventSourceUrl(page, runEventsUrlPattern(RUN_ID, 2));
+    await waitForEventSourceOpenCount(page, 1);
+
+    const hiddenRecoveryChunk = " Hidden recovery chunk after reconnect.";
+    await dispatchRunEvent(page, {
+      eventId: 3,
+      payload: { text: hiddenRecoveryChunk },
+      relayEventType: "text_delta",
+      sourceIndex: 1,
+      type: "message.text.delta",
+    });
+    await expect(page.getByText(hiddenRecoveryChunk.trim())).toHaveCount(0);
+
+    await page.getByRole("button", { name: state.sourceSessionTitle }).click();
+    await expect(page.getByText("Second session hydrated output")).toHaveCount(0);
+    await expect.poll(() => timelineMarkdownTexts(page)).toEqual([
+      `${firstChunk}${hiddenRecoveryChunk}`,
+    ]);
+    await expect(page.locator(".at-message-markdown")).toHaveCount(1);
+
+    const visibleContinuation = " Visible continuation after returning.";
+    await dispatchRunEvent(page, {
+      eventId: 4,
+      payload: { text: visibleContinuation },
+      relayEventType: "text_delta",
+      sourceIndex: 1,
+      type: "message.text.delta",
+    });
+    await expect.poll(() => timelineMarkdownTexts(page)).toEqual([
+      `${firstChunk}${hiddenRecoveryChunk}${visibleContinuation}`,
+    ]);
+    await expect(page.getByText(firstChunk)).toHaveCount(1);
+
+    state.completed = true;
+    await dispatchRunEvent(page, {
+      eventId: 5,
+      payload: { status: "completed" },
+      relayEventType: "run_completed",
+      sourceIndex: 1,
+      type: "run.completed",
+    });
+    await expect.poll(() => eventSourceOpenCount(page)).toBe(0);
+    await expect(page.locator(".streaming-cursor")).toHaveCount(0);
+    await expect(page.locator(".at-message-markdown")).toHaveCount(1);
+    await expect.poll(() => timelineMarkdownTexts(page)).toEqual([
+      `${firstChunk}${hiddenRecoveryChunk}${visibleContinuation}`,
+    ]);
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "interrupted stream session switch recovery should stay inside the fixed V2 shell",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-interrupted-stream-session-switch-recovery.png",
         SCREENSHOT_FOLDER,
       ),
     });
@@ -422,6 +541,15 @@ async function handleSessionSwitchApi(
 
 async function timelineMessageTexts(page: Page): Promise<string[]> {
   return page.locator(".at-timeline article.at-message")
+    .allTextContents()
+    .then((texts) =>
+      texts.map((text) => text.replace(/\s+/g, " ").trim())
+        .filter((text) => text.length > 0),
+    );
+}
+
+async function timelineMarkdownTexts(page: Page): Promise<string[]> {
+  return page.locator(".at-timeline .at-message-markdown")
     .allTextContents()
     .then((texts) =>
       texts.map((text) => text.replace(/\s+/g, " ").trim())

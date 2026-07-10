@@ -114,6 +114,26 @@ For every row moved to `Verified`, record:
 
 ## Verification Ledger
 
+### 2026-07-10 Subagent Stable Markdown Hydration Guard
+
+- `SUB-01`, `MSG-02`, and `STREAM-02` tightened for the right-side subagent
+  panel. The completed-subagent stream browser scenario now uses two explicit
+  SSE text deltas instead of expecting frontend-generated character reveal:
+  the first delta renders only the prefix, the second delta renders the final
+  text, and terminal hydration must not replay or replace the answer row.
+- The browser test marks the live subagent panel `.at-message-markdown` DOM
+  node and verifies that the same node survives terminal completion and final
+  persisted history hydration. It also reasserts that the child output is not
+  present in the parent `.at-chat-view`.
+- Automated evidence: `npm run test:browser -- v2-subagent-session.spec.ts
+  --project=chromium -g "does not replay an already complete subagent stream"`
+  passed, and `npm run lint` passed.
+- Browser evidence reviewed:
+  `.tmp/frontend-v2-ts-subagent-session/v2-subagent-complete-stream-terminal-hydration.png`.
+- This does not move `SUB-01`, `MSG-02`, or `STREAM-02` to `Verified`;
+  broader real-backend production variants, interrupted recovery, and final
+  V1/V2 visual sign-off remain open.
+
 ### 2026-07-10 Stable Streaming Markdown Container
 
 - `MSG-02` and `STREAM-02` tightened for the user-visible case where a live

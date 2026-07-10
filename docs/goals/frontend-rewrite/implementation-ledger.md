@@ -10144,3 +10144,18 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent decision: this fixes the renderer-swap class of false replay/rebuild. It does not mark `MSG-02`, `STREAM-02`, or final V2 frontend complete; broader production-backend stream variants, interrupted recovery, and final V1/V2 visual sign-off remain open.
+
+## 2026-07-10 Subagent Stable Markdown Hydration Guard Slice
+
+### Scope
+- Continued P0 runtime closure on `SUB-01`/`MSG-02`/`STREAM-02` by applying the same stable streaming-container proof to the right-side subagent panel.
+- Updated the completed-subagent stream browser scenario away from old frontend reveal assumptions. It now sends two explicit SSE text deltas, proves the first event does not show the final tail, then proves the second event completes the text.
+- Marked the live subagent panel `.at-message-markdown` DOM node and verified that exact node survives terminal completion and persisted history hydration. The scenario also keeps the existing parent isolation check so child text stays out of `.at-chat-view`.
+
+### Verification
+- `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium -g "does not replay an already complete subagent stream"` passed.
+- `npm run lint` passed.
+- Screenshot inspection reviewed `.tmp/frontend-v2-ts-subagent-session/v2-subagent-complete-stream-terminal-hydration.png`.
+
+### Reviewer
+- Main-agent decision: this strengthens subagent-panel stream/replay parity with DOM-stability evidence instead of relying on visible text alone. It does not mark `SUB-01`, `MSG-02`, `STREAM-02`, or final V2 frontend complete; real-backend variants, interrupted recovery, and final V1/V2 visual sign-off remain open.

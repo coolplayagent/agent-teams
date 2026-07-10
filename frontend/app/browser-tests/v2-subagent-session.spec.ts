@@ -583,10 +583,13 @@ test("does not replay an already complete subagent stream during terminal hydrat
   page,
 }) => {
   const appServer = await serveFrontendDist();
-  const terminalText = Array.from(
+  const terminalTokens = Array.from(
     { length: 18 },
     (_, index) => `HYDRATED_STREAM_${index}`,
-  ).join(" ");
+  );
+  const firstChunk = terminalTokens.slice(0, 8).join(" ");
+  const secondChunk = ` ${terminalTokens.slice(8).join(" ")}`;
+  const terminalText = `${firstChunk}${secondChunk}`;
   const state: SubagentSessionMockState = {
     completed: false,
     delayFinalMessages: false,
@@ -617,7 +620,7 @@ test("does not replay an already complete subagent stream during terminal hydrat
 
     await dispatchSubagentRunEvent(page, {
       eventId: 42,
-      payload: { text: terminalText },
+      payload: { text: firstChunk },
       relayEventType: "text_delta",
       type: "message.text.delta",
     });
@@ -627,18 +630,27 @@ test("does not replay an already complete subagent stream during terminal hydrat
       .filter({ hasText: "HYDRATED_STREAM_" });
     const liveText = liveRow.locator(".at-message-streaming-text");
     await expect(liveText).toBeVisible();
-    const streamSamples = await sampleLocatorTextLengths(liveText, 7, 80);
-    expect(streamSamples[0] ?? 0).toBeGreaterThan(0);
-    expect(streamSamples[0] ?? terminalText.length).toBeLessThan(terminalText.length);
-    expect(new Set(streamSamples).size).toBeGreaterThanOrEqual(3);
-    expect(Math.max(...streamSamples)).toBeLessThan(terminalText.length);
+    const liveMarkdown = liveRow.locator(".at-message-markdown");
+    await expect(liveMarkdown).toHaveCount(1);
+    await liveMarkdown.evaluate((element) => {
+      element.setAttribute("data-stability-probe", "subagent-live-markdown");
+    });
+    await expect(liveText).toHaveText(firstChunk);
+    await expect(liveRow).not.toContainText("HYDRATED_STREAM_17");
+
+    await dispatchSubagentRunEvent(page, {
+      eventId: 43,
+      payload: { text: secondChunk },
+      relayEventType: "text_delta",
+      type: "message.text.delta",
+    });
+    await expect(liveText).toHaveText(terminalText);
     await page.screenshot({
       path: screenshotPath(
         "v2-subagent-complete-stream-during-reveal.png",
         SCREENSHOT_FOLDER,
       ),
     });
-    await expect(liveText).toHaveText(terminalText, { timeout: 10_000 });
     const liveRowKey = await liveRow.first().getAttribute("data-row-key");
     expect(liveRowKey).toContain("runtime-text:");
     await expect(
@@ -647,7 +659,7 @@ test("does not replay an already complete subagent stream during terminal hydrat
 
     state.completed = true;
     await dispatchSubagentRunEvent(page, {
-      eventId: 43,
+      eventId: 44,
       payload: { status: "completed" },
       relayEventType: "run_completed",
       type: "run.completed",
@@ -661,6 +673,11 @@ test("does not replay an already complete subagent stream during terminal hydrat
     await expect(settledRow).toHaveCount(1);
     await expect.poll(() => settledRow.first().getAttribute("data-row-key"))
       .toBe(liveRowKey);
+    await expect(
+      settledRow.locator(
+        ".at-message-markdown[data-stability-probe='subagent-live-markdown']",
+      ),
+    ).toHaveCount(1);
     await expect(panel.locator(".at-message-streaming-text")).toHaveCount(0);
     await expect(panel.locator(".streaming-cursor")).toHaveCount(0);
     await expect.poll(() => panelVisibleTextOccurrences(page, terminalText))
@@ -674,6 +691,11 @@ test("does not replay an already complete subagent stream during terminal hydrat
         SCREENSHOT_FOLDER,
       ),
     });
+    await expect(
+      settledRow.locator(
+        ".at-message-markdown[data-stability-probe='subagent-live-markdown']",
+      ),
+    ).toHaveCount(1);
 
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await expectNoDocumentScroll(

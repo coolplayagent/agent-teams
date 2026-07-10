@@ -844,6 +844,7 @@ test("continues a tool-heavy replay after refresh from the hydrated cursor", asy
       runId: TOOL_REPLAY_RUN_ID,
       type: "tool_call.validation_failed",
     });
+    recoveryState.lastEventId = 6;
     const resumedText = "Resumed output after the hydrated cursor.";
     await dispatchRunEvent(page, {
       eventId: 7,
@@ -893,6 +894,49 @@ test("continues a tool-heavy replay after refresh from the hydrated cursor", asy
     await waitForEventSourceOpenCount(page, 0);
     await expect(page.getByRole("button", { name: "Stop" })).toBeHidden();
     await expect(page.getByText(resumedText)).toBeVisible();
+    await expect(page.locator(".streaming-cursor")).toHaveCount(0);
+
+    await page.reload();
+    await waitForV2Shell(page);
+    await expect(page.getByText("Hydrated tool-heavy answer before refresh."))
+      .toBeVisible();
+    await expect(page.getByText(resumedText)).toBeVisible();
+    await expect(page.getByText("Tool result: read")).toBeVisible();
+    await expect(page.getByText("Tool error: shell")).toBeVisible();
+    await expect(page.getByText("Tool validation: read")).toBeVisible();
+    await expect(page.getByText("Tool call: read")).toHaveCount(0);
+    await expect(page.getByText("Tool call: shell")).toHaveCount(0);
+    await expect(page.locator(".at-message-tool")).toHaveCount(3);
+    await expectToolChromeState(page, {
+      completedCount: 1,
+      errorCount: 1,
+      spinnerCount: 0,
+      validationCount: 1,
+    });
+    await expect(page.locator(".streaming-cursor")).toHaveCount(0);
+    await expect.poll(() =>
+      page.locator(".at-chat-view").evaluate((root, tokens) => {
+        const text = root.textContent ?? "";
+        const [hydrated, resumed] = tokens as string[];
+        return {
+          hydratedCount: text.split(hydrated).length - 1,
+          inOrder:
+            text.indexOf(hydrated) >= 0 &&
+            text.indexOf(hydrated) < text.indexOf(resumed),
+          resumedCount: text.split(resumed).length - 1,
+        };
+      }, ["Hydrated tool-heavy answer before refresh.", resumedText]),
+    ).toEqual({
+      hydratedCount: 1,
+      inOrder: true,
+      resumedCount: 1,
+    });
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-stream-tool-heavy-terminal-refresh-replay.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
   } finally {
     await appServer.close();
@@ -1146,6 +1190,17 @@ function toolReplayPersistedMessages(
             tool_call_id: "call-tool-replay-shell",
             tool_name: "shell",
           },
+          ...(recoveryState.lastEventId >= 6
+            ? [
+                {
+                  content:
+                    "Input validation failed before tool execution.\npath is required",
+                  part_kind: "retry-prompt",
+                  tool_call_id: "call-tool-replay-validation",
+                  tool_name: "read",
+                },
+              ]
+            : []),
         ],
       },
       message_id: "tool-replay-assistant",

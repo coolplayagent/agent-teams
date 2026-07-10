@@ -114,6 +114,29 @@ For every row moved to `Verified`, record:
 
 ## Verification Ledger
 
+### 2026-07-10 Tool-Heavy Terminal Refresh Guard
+
+- `STREAM-02` and `REC-01` tightened for the tool-heavy refresh/replay path.
+  The packed browser scenario now continues from a hydrated tool cursor,
+  receives a validation failure and resumed output, completes the run, then
+  hard-refreshes terminal history.
+- The terminal replay assertion verifies the successful `read` result, failed
+  `shell` result, validation card, hydrated pre-refresh answer, and resumed
+  output each render once, in order where applicable, with no stale
+  `.streaming-cursor`, no `Tool call:*` duplicate shells, and no old
+  `.at-message-tool-status` indicator.
+- Automated evidence: `npm run test:browser -- v2-stream-refresh.spec.ts
+  --project=chromium -g "continues a tool-heavy"` passed, the full
+  `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium`
+  passed with 6 Chromium tests, and `npm run lint` passed.
+- Browser evidence reviewed:
+  `.tmp/frontend-v2-ts-stream/v2-stream-tool-heavy-refresh-replay.png` and
+  `.tmp/frontend-v2-ts-stream/v2-stream-tool-heavy-terminal-refresh-replay.png`.
+- This does not move `STREAM-02` or `REC-01` to `Verified`; managed/real
+  active hard-refresh continuation, real-backend orchestration/tool-heavy
+  variants, true real-provider normal-stream proof, and final V1/V2 visual
+  sign-off remain open.
+
 ### 2026-07-10 Active Refresh Duplicate Cursor Guard
 
 - `REC-01` and `STREAM-02` tightened for the active hard-refresh continuation

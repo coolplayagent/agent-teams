@@ -10094,3 +10094,19 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent decision: this tightens active hard-refresh continuation and duplicate-cursor replay evidence. It does not mark `REC-01`, `STREAM-02`, or final V2 frontend completion as verified; managed/real active hard-refresh continuation, broader orchestration/tool-heavy recovery, true real-provider normal-stream proof, and final V1/V2 visual sign-off remain open.
+
+## 2026-07-10 Tool-Heavy Terminal Refresh Guard Slice
+
+### Scope
+- Continued P0 runtime closure on the tool-heavy `STREAM-02`/`REC-01` path.
+- Extended the packed browser tool-heavy refresh scenario beyond "resumed text is visible". It now persists a successful tool result, an error result, and a validation card, completes the run, hard-refreshes terminal history, and checks the terminal replay state.
+- The terminal assertions require one completed `read` card, one errored `shell` card, one validation `read` card, no stale spinner/cursor/status-dot chrome, no duplicated `Tool call:*` rows, and one occurrence each of the hydrated and resumed answer text in the correct order.
+
+### Verification
+- `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium -g "continues a tool-heavy"` passed.
+- `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium` passed with 6 Chromium tests.
+- `npm run lint` passed.
+- Screenshot inspection reviewed `.tmp/frontend-v2-ts-stream/v2-stream-tool-heavy-refresh-replay.png` and `.tmp/frontend-v2-ts-stream/v2-stream-tool-heavy-terminal-refresh-replay.png`.
+
+### Reviewer
+- Main-agent decision: this improves terminal hard-refresh evidence for complex tool histories. It does not mark `STREAM-02`, `REC-01`, or final V2 frontend completion as verified; managed/real active hard-refresh continuation, real-backend orchestration/tool-heavy variants, true real-provider normal-stream proof, and final V1/V2 visual sign-off remain open.

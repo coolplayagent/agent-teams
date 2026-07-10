@@ -10,7 +10,7 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 
 import {
   answerUserQuestion,
@@ -1219,7 +1219,8 @@ describe("RecoveryBar", () => {
       }),
     );
 
-    renderRecoveryBar();
+    const onPausedSubagentOpen = vi.fn();
+    renderRecoveryBar(runStreamController(), onPausedSubagentOpen);
 
     await screen.findByText("Paused subagent: spec_coder");
     expect(
@@ -1229,6 +1230,21 @@ describe("RecoveryBar", () => {
       screen.getByText("instance: inst-2 | task: task-7 | waiting for local follow-up"),
     ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Resume" })).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open subagent panel" }),
+    );
+    expect(onPausedSubagentOpen).toHaveBeenCalledWith(
+      {
+        instance_id: "inst-2",
+        role_id: "spec_coder",
+        task_id: "task-7",
+        reason: "waiting for local follow-up",
+      },
+      expect.objectContaining({
+        phase: "awaiting_subagent_followup",
+        run_id: "run-1",
+      }),
+    );
   });
 
   it("ignores reserved paused subagent roles from recovery snapshots", async () => {
@@ -1436,10 +1452,17 @@ describe("RecoveryBar", () => {
   });
 });
 
-function renderRecoveryBar(controller = runStreamController()) {
+function renderRecoveryBar(
+  controller = runStreamController(),
+  onPausedSubagentOpen?: ComponentProps<typeof RecoveryBar>["onPausedSubagentOpen"],
+) {
   render(
     <TestProviders>
-      <RecoveryBar runStreamController={controller} sessionId="session-1" />
+      <RecoveryBar
+        onPausedSubagentOpen={onPausedSubagentOpen}
+        runStreamController={controller}
+        sessionId="session-1"
+      />
     </TestProviders>,
   );
 }

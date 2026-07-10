@@ -5227,7 +5227,17 @@ body {
   gap: 2px;
 }
 
+.at-message-text,
+.at-message-streaming-text {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
 .at-message-markdown {
+  box-sizing: border-box;
+  width: 100%;
   min-width: 0;
   max-width: 100%;
   overflow-wrap: anywhere;
@@ -5298,6 +5308,8 @@ body {
 }
 
 .at-message-markdown pre {
+  box-sizing: border-box;
+  width: 100%;
   min-width: 0;
   max-width: 100%;
   padding: 10px 12px;

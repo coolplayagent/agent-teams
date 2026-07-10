@@ -2,6 +2,26 @@
 
 This file tracks implementation evidence for the React/Ant Design migration goal without changing the source goal documents.
 
+## 2026-07-11 Paired Replay, Media, And Paused Subagent Recovery Closure
+
+### Scope
+- Closed the historical replay, processed-group, and Markdown/media matrix rows from paired V1/V2 fixtures instead of one-sided V2 screenshots.
+- Complex replay now checks both products at collapsed and expanded states, repeats the collapse round trip, preserves timeline geometry and scroll, and verifies V2 has one prompt, one thinking row, one merged tool lifecycle, one final answer, and one final action block after refresh.
+- Markdown/media replay now checks all 18 long-output lines exactly once and in DOM order, constrains long highlighted code to the message column, opens and closes the V2 image preview, and proves the same ordered replay survives a hard refresh.
+- Added a direct paused-subagent action to the recovery area above the composer. It reuses the shared right-side subagent panel, preserves paused checkpoint context, and does not start a false child stream. Running child cadence, terminal refill, refresh, and parent isolation remain covered by the existing subagent suite.
+- Rebuilt `frontend/dist/app` with the current React bundle.
+
+### Verification
+- `npm run test:browser -- v2-complex-replay.spec.ts v2-markdown-media.spec.ts --project=chromium --workers=1` passed 4/4.
+- `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium --workers=1` passed 13/13.
+- `npm test -- --run src/test/RecoveryBar.test.tsx src/test/ChatWorkspace.test.tsx src/test/ShellLayoutCss.test.ts` passed 63/63.
+- `npm run lint` and `npm run build` passed.
+- Inspected paired evidence under `.tmp/frontend-v2-ts-complex-replay/`, `.tmp/frontend-v2-ts-markdown-media/`, and `.tmp/frontend-v2-ts-subagent-session/v2-subagent-paused-recovery-panel.png`.
+
+### Reviewer
+- Independent reviewer `Singer` (`019f4d4e-07af-7563-a128-570460b87972`) returned PASS after requiring true paused/no-fake-stream behavior, complete V1/V2 collapse round trips, identical screenshot scroll positions, all long-output checkpoints, and refresh replay.
+- `MSG-01`, `MSG-05`, and `MSG-06` move to `Verified`. `REC-02` and `SUB-01` remain `In progress` for broader real-backend and manual closure.
+
 ## 2026-07-09 Managed Active Refresh Stream Hydration Fix
 
 ### Scope

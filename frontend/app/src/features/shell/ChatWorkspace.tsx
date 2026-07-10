@@ -4,6 +4,10 @@ import { Composer } from "../composer/Composer";
 import { RecoveryBar } from "../recovery/RecoveryBar";
 import { MessageTimeline } from "../timeline/MessageTimeline";
 import type { TimelineSubagentReference } from "../timeline/MessageTimeline";
+import type {
+  RecoveryPausedSubagent,
+  RecoveryRun,
+} from "../../api/contracts";
 import { useTranslations } from "../../i18n";
 import type { RunStreamController } from "../../runtime/useRunStreamController";
 import { SessionTokenUsage } from "./SessionTokenUsage";
@@ -107,6 +111,18 @@ export function ChatWorkspace({
         </div>
       ) : null}
       <RecoveryBar
+        onPausedSubagentOpen={
+          onSubagentOpen === undefined || sessionId === null
+            ? undefined
+            : (pausedSubagent, activeRun) =>
+                onSubagentOpen(
+                  pausedSubagentTimelineReference(
+                    sessionId,
+                    pausedSubagent,
+                    activeRun,
+                  ),
+                )
+        }
         runStreamController={runStreamController}
         sessionId={sessionId}
       />
@@ -120,6 +136,28 @@ export function ChatWorkspace({
       />
     </div>
   );
+}
+
+function pausedSubagentTimelineReference(
+  sessionId: string,
+  pausedSubagent: RecoveryPausedSubagent,
+  activeRun: RecoveryRun | null,
+): TimelineSubagentReference {
+  const instanceId = pausedSubagent.instance_id?.trim() ?? "";
+  const roleId = pausedSubagent.role_id?.trim() ?? "";
+  const detail = pausedSubagent.reason?.trim() ?? "";
+  return {
+    description: detail,
+    instanceId,
+    prompt: detail,
+    roleId,
+    runPhase: activeRun?.phase?.trim() || "awaiting_subagent_followup",
+    runStatus: "paused",
+    sessionId,
+    sourceRunId: activeRun?.run_id,
+    status: "paused",
+    title: roleId || instanceId || "Subagent",
+  };
 }
 
 interface SessionSwitchFrame {

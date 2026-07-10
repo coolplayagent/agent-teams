@@ -3,6 +3,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   dispatchEventSourceMessage,
   ensureScreenshotDir,
+  eventSourceUrls,
   expectComposerControlsDoNotOverlap,
   expectNoDocumentScroll,
   expectNoUnhandledApiRoutes,
@@ -41,6 +42,7 @@ interface SubagentSessionMockState {
   completed: boolean;
   delayFinalMessages: boolean;
   finalMessageContent?: string;
+  pausedRecovery?: boolean;
   releaseFinalMessages: Array<() => void>;
   messageRequestCount: number;
   parentNormalRootRoleId?: string | null;
@@ -59,6 +61,64 @@ interface SubagentPressureMockState {
   sessionIndexRequestPaths: string[];
   subagentListRequestPaths: string[];
 }
+
+test("opens a genuinely paused recovery subagent without starting a false stream", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state: SubagentSessionMockState = {
+    completed: false,
+    delayFinalMessages: false,
+    messageRequestCount: 0,
+    pausedRecovery: true,
+    releaseFinalMessages: [],
+  };
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await installMockEventSource(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleSubagentSessionApi(context, state),
+      sessionTitle: "TS parent session",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+
+    const recovery = page.locator(".at-recovery");
+    await expect(recovery.getByText("Paused subagent: explorer")).toBeVisible();
+    await recovery.getByRole("button", { name: "Open subagent panel" }).click();
+
+    const panel = page.locator(".at-subagent-session-view");
+    await expect(panel.getByRole("heading", { name: "Explorer review" })).toBeVisible();
+    await expect(panel.locator(".at-subagent-session-prompt")).toContainText(
+      "Waiting for a follow-up inside the child session",
+    );
+    await expect(panel.locator(".at-subagent-session-badge")).toHaveText("Paused");
+    await expect(panel.getByText("Persisted subagent checkpoint")).toBeVisible();
+    await expect.poll(() => eventSourceUrls(page)).not.toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(`/sessions/${SESSION_ID}/subagents/events`),
+      ]),
+    );
+    await expectSubagentSplitReadable(page);
+    await expectNoDocumentScroll(
+      page,
+      "paused subagent recovery should remain in the fixed split workspace",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-subagent-paused-recovery-panel.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+  } finally {
+    await appServer.close();
+  }
+});
 
 test("opens a nested subagent session and refreshes history after terminal stream", async ({
   page,
@@ -254,6 +314,7 @@ test("keeps subagent-marked parent-run stream rows out of the main timeline", as
         `/api/ag-ui/runs/${PARENT_MARKER_RUN_ID}/events\\?after_event_id=0$`,
       ),
     );
+    await waitForEventSourceOpenCount(page, 1);
 
     await dispatchParentMarkerRunEvent(page, {
       eventId: 1,
@@ -1322,15 +1383,22 @@ test("keeps send, session switch, and subagent view responsive under sidebar loa
     await prompt.fill("你好");
     const sendStarted = Date.now();
     await page.getByRole("button", { name: "Send" }).click();
-    await expect(page.getByRole("button", { name: "Stop" })).toBeVisible({
-      timeout: 2500,
-    });
-    expect(Date.now() - sendStarted).toBeLessThan(2500);
     await expect.poll(() => state.runCreateRequests.length).toBe(1);
     expect(state.runCreateRequests[0]).toMatchObject({
       input: [{ kind: "text", text: "你好" }],
       session_id: PRESSURE_NEW_SESSION_ID,
     });
+    await waitForEventSourceUrl(
+      page,
+      new RegExp(
+        `/api/ag-ui/runs/${PRESSURE_RUN_ID}/events\\?after_event_id=0$`,
+      ),
+    );
+    await waitForEventSourceOpenCount(page, 1);
+    await expect(page.getByRole("button", { name: "Stop" })).toBeVisible({
+      timeout: 2500,
+    });
+    expect(Date.now() - sendStarted).toBeLessThan(2500);
 
     await dispatchPressureRunEvent(page, {
       eventId: 1,
@@ -1513,6 +1581,42 @@ async function handleSubagentSessionApi(
   }
   if (context.path === `/sessions/${SESSION_ID}/subagents`) {
     await context.fulfillJson([subagentRecord(state)]);
+    return true;
+  }
+  if (
+    state.pausedRecovery === true &&
+    context.path === `/sessions/${SESSION_ID}/recovery`
+  ) {
+    await context.fulfillJson({
+      active_run: {
+        last_event_id: 41,
+        phase: "awaiting_subagent_followup",
+        run_id: "run-parent-paused-subagent",
+        session_id: SESSION_ID,
+        should_show_recover: true,
+        status: "paused",
+      },
+      background_tasks: [],
+      paused_subagent: {
+        instance_id: SUBAGENT_INSTANCE_ID,
+        reason: "Waiting for a follow-up inside the child session",
+        role_id: "explorer",
+        task_id: "task-paused-subagent",
+      },
+      pending_tool_approvals: [],
+      pending_user_questions: [],
+      round_snapshot: null,
+    });
+    return true;
+  }
+  if (
+    (state.parentRunCreateRequests?.length ?? 0) > 0 &&
+    context.path === `/sessions/${SESSION_ID}/recovery`
+  ) {
+    await context.fulfillJson(activeRecoverySnapshot(
+      PARENT_MARKER_RUN_ID,
+      SESSION_ID,
+    ));
     return true;
   }
   if (
@@ -1779,7 +1883,7 @@ async function handleSubagentPressureApi(
   if (context.method === "POST") {
     if (context.path === "/sessions") {
       state.createdSessionAdded = true;
-      await context.fulfillJson(pressureSessionDetail(pressureNewSessionRecord()));
+      await context.fulfillJson(pressureSessionDetail(pressureNewSessionRecord(false)));
       return true;
     }
     if (context.path === "/ag-ui/runs") {
@@ -1854,7 +1958,11 @@ async function handleSubagentPressureApi(
     return true;
   }
   if (context.path === `/sessions/${sessionId}/recovery`) {
-    await context.fulfillJson(emptyRecoverySnapshot());
+    await context.fulfillJson(
+      sessionId === PRESSURE_NEW_SESSION_ID && state.runCreateRequests.length > 0
+        ? activeRecoverySnapshot(PRESSURE_RUN_ID, PRESSURE_NEW_SESSION_ID)
+        : emptyRecoverySnapshot(),
+    );
     return true;
   }
   if (context.path === `/sessions/${sessionId}/token-usage`) {
@@ -2015,7 +2123,7 @@ function pressureSidebarRecords(
 ): Array<Record<string, unknown>> {
   const records = [pressureParentRecord(), ...pressureSeedRecords()];
   if (state.createdSessionAdded) {
-    return [pressureNewSessionRecord(), ...records];
+    return [pressureNewSessionRecord(state.runCreateRequests.length > 0), ...records];
   }
   return records;
 }
@@ -2045,9 +2153,11 @@ function pressureSeedRecords(): Array<Record<string, unknown>> {
   }));
 }
 
-function pressureNewSessionRecord(): Record<string, unknown> {
+function pressureNewSessionRecord(runActive: boolean): Record<string, unknown> {
   return {
-    active_run_status: "running",
+    active_run_id: runActive ? PRESSURE_RUN_ID : null,
+    active_run_phase: runActive ? "running" : null,
+    active_run_status: runActive ? "running" : null,
     created_at: "2026-06-26T12:00:00Z",
     message_count: 0,
     session_id: PRESSURE_NEW_SESSION_ID,
@@ -2076,6 +2186,9 @@ function pressureSessionIdFromPath(path: string): string | null {
 
 function pressureSessionDetail(session: Record<string, unknown>): Record<string, unknown> {
   return {
+    active_run_id: session.active_run_id,
+    active_run_phase: session.active_run_phase,
+    active_run_status: session.active_run_status,
     can_switch_mode: true,
     created_at: session.created_at,
     normal_model_profile: null,
@@ -2247,16 +2360,21 @@ function subagentToolMessage({
 }
 
 function subagentRecord(state: SubagentSessionMockState): Record<string, unknown> {
+  const status = state.pausedRecovery
+    ? "paused"
+    : state.completed
+      ? "completed"
+      : "running";
   return {
     created_at: "2026-06-26T09:05:00Z",
     instance_id: SUBAGENT_INSTANCE_ID,
     last_event_id: state.completed ? 43 : 41,
     role_id: "explorer",
     run_id: SUBAGENT_RUN_ID,
-    run_phase: state.completed ? "completed" : "running",
-    run_status: state.completed ? "completed" : "running",
+    run_phase: status,
+    run_status: status,
     session_id: SESSION_ID,
-    status: state.completed ? "completed" : "running",
+    status,
     subagent_kind: "normal",
     title: "Explorer review",
     updated_at: state.completed
@@ -2441,6 +2559,27 @@ function emptyRecoverySnapshot(): Record<string, unknown> {
     pending_tool_approvals: [],
     pending_user_questions: [],
     recoverable_stopped_run: null,
+  };
+}
+
+function activeRecoverySnapshot(
+  runId: string,
+  sessionId: string,
+): Record<string, unknown> {
+  return {
+    active_run: {
+      last_event_id: 0,
+      phase: "running",
+      run_id: runId,
+      session_id: sessionId,
+      should_show_recover: false,
+      status: "running",
+    },
+    background_tasks: [],
+    paused_subagent: null,
+    pending_tool_approvals: [],
+    pending_user_questions: [],
+    round_snapshot: null,
   };
 }
 

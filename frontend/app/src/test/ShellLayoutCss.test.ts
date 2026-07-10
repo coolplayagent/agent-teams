@@ -250,10 +250,13 @@ describe("shell layout CSS", () => {
 
   it("keeps markdown code blocks constrained to the message column", () => {
     expect(themeCss).toMatch(
-      /\.at-message-markdown\s*{[\s\S]*?min-width:\s*0;[\s\S]*?max-width:\s*100%;/,
+      /\.at-message-text,[\s\S]*?\.at-message-streaming-text\s*{[\s\S]*?width:\s*100%;[\s\S]*?min-width:\s*0;[\s\S]*?max-width:\s*100%;/,
     );
     expect(themeCss).toMatch(
-      /\.at-message-markdown pre\s*{[\s\S]*?min-width:\s*0;[\s\S]*?max-width:\s*100%;[\s\S]*?overflow:\s*auto;/,
+      /\.at-message-markdown\s*{[\s\S]*?box-sizing:\s*border-box;[\s\S]*?width:\s*100%;[\s\S]*?min-width:\s*0;[\s\S]*?max-width:\s*100%;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-message-markdown pre\s*{[\s\S]*?box-sizing:\s*border-box;[\s\S]*?width:\s*100%;[\s\S]*?min-width:\s*0;[\s\S]*?max-width:\s*100%;[\s\S]*?overflow:\s*auto;/,
     );
     expect(themeCss).toMatch(
       /\.at-message-markdown pre code\s*{[\s\S]*?min-width:\s*max-content;[\s\S]*?white-space:\s*pre;/,

@@ -29,11 +29,19 @@ import type {
 const NONE_OF_THE_ABOVE_OPTION_LABEL = "__none_of_the_above__";
 
 interface RecoveryBarProps {
+  onPausedSubagentOpen?: (
+    pausedSubagent: RecoveryPausedSubagent,
+    activeRun: RecoveryRun | null,
+  ) => void;
   runStreamController: RunStreamController;
   sessionId: string | null;
 }
 
-export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps) {
+export function RecoveryBar({
+  onPausedSubagentOpen,
+  runStreamController,
+  sessionId,
+}: RecoveryBarProps) {
   const { message } = App.useApp();
   const t = useTranslations();
   const queryClient = useQueryClient();
@@ -451,7 +459,12 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
             }}
             tasks={activeBackgroundTasks}
           />
-          <PausedSubagentPanel pausedSubagent={pausedSubagent} />
+          <PausedSubagentPanel
+            activeRun={activeRun}
+            onOpen={onPausedSubagentOpen}
+            pausedSubagent={pausedSubagent}
+            t={t}
+          />
           {visibleActiveRun === null ? null : (
             <PendingApprovals
               activeRunId={visibleActiveRun.run_id}
@@ -518,10 +531,21 @@ interface BackgroundTaskStopRequest {
 }
 
 interface PausedSubagentPanelProps {
+  activeRun: RecoveryRun | null;
+  onOpen?: (
+    pausedSubagent: RecoveryPausedSubagent,
+    activeRun: RecoveryRun | null,
+  ) => void;
   pausedSubagent: RecoveryPausedSubagent | null;
+  t: Translate;
 }
 
-function PausedSubagentPanel({ pausedSubagent }: PausedSubagentPanelProps) {
+function PausedSubagentPanel({
+  activeRun,
+  onOpen,
+  pausedSubagent,
+  t,
+}: PausedSubagentPanelProps) {
   if (pausedSubagent === null) {
     return null;
   }
@@ -542,6 +566,14 @@ function PausedSubagentPanel({ pausedSubagent }: PausedSubagentPanelProps) {
             </Typography.Text>
           ) : null}
         </div>
+        {onOpen !== undefined ? (
+          <Button
+            onClick={() => onOpen(pausedSubagent, activeRun)}
+            size="small"
+          >
+            {t("timelineOpenSubagentPanel")}
+          </Button>
+        ) : null}
       </div>
     </div>
   );

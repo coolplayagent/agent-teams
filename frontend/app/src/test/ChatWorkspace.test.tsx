@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ChatWorkspace } from "../features/shell/ChatWorkspace";
@@ -11,8 +11,52 @@ vi.mock("../features/composer/Composer", () => ({
 }));
 
 vi.mock("../features/recovery/RecoveryBar", () => ({
-  RecoveryBar: ({ sessionId }: { sessionId: string | null }) => (
-    <div data-testid="recovery">{sessionId}</div>
+  RecoveryBar: ({
+    onPausedSubagentOpen,
+    sessionId,
+  }: {
+    onPausedSubagentOpen?: (
+      pausedSubagent: {
+        instance_id?: string;
+        reason?: string | null;
+        role_id?: string;
+        task_id?: string | null;
+      },
+      activeRun: {
+        phase?: string;
+        run_id: string;
+        session_id: string;
+        status: string;
+      } | null,
+    ) => void;
+    sessionId: string | null;
+  }) => (
+    <div data-testid="recovery">
+      {sessionId}
+      {onPausedSubagentOpen === undefined ? null : (
+        <button
+          onClick={() =>
+            onPausedSubagentOpen(
+              {
+                instance_id: "paused-instance",
+                reason: "Waiting for reviewer input",
+                role_id: "reviewer",
+                task_id: "paused-task",
+              },
+              {
+                phase: "awaiting_subagent_followup",
+                run_id: "parent-run",
+                session_id: sessionId ?? "",
+                status: "paused",
+              },
+            )
+          }
+          type="button"
+        >
+          Open paused recovery fixture
+        </button>
+      )}
+    </div>
   ),
 }));
 
@@ -34,6 +78,35 @@ afterEach(() => {
 });
 
 describe("ChatWorkspace", () => {
+  it("routes a paused recovery subagent through the shared panel reference", () => {
+    const onSubagentOpen = vi.fn();
+    render(
+      <ChatWorkspace
+        onSubagentOpen={onSubagentOpen}
+        primaryRoleId="MainAgent"
+        runStreamController={createRunStreamController()}
+        sessionId="session-1"
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open paused recovery fixture" }),
+    );
+
+    expect(onSubagentOpen).toHaveBeenCalledWith({
+      description: "Waiting for reviewer input",
+      instanceId: "paused-instance",
+      prompt: "Waiting for reviewer input",
+      roleId: "reviewer",
+      runPhase: "awaiting_subagent_followup",
+      runStatus: "paused",
+      sessionId: "session-1",
+      sourceRunId: "parent-run",
+      status: "paused",
+      title: "reviewer",
+    });
+  });
+
   it("moves the active run foreground without closing the stream when switching sessions", async () => {
     const runStreamController = createRunStreamController();
     const { rerender } = render(

@@ -71,6 +71,7 @@ class MockEventSource {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   vi.clearAllMocks();
   MockEventSource.latest = null;
 });
@@ -137,7 +138,7 @@ describe("openRunStream", () => {
     );
   });
 
-  it("reduces AG-UI state snapshot and delta events from named stream events", () => {
+  it("reduces AG-UI state snapshot and delta events from named stream events", async () => {
     const stream = openTestStream();
 
     stream.source.dispatchMessage(
@@ -163,7 +164,7 @@ describe("openRunStream", () => {
       ),
     );
 
-    expect(stream.states).toHaveLength(2);
+    await vi.waitFor(() => expect(stream.states).toHaveLength(2));
     expect(stream.states[1].runs["run-1"].entries).toMatchObject([
       {
         eventId: 2,
@@ -487,6 +488,81 @@ describe("openRunStream", () => {
     expect(stream.source.close).toHaveBeenCalledTimes(1);
     expect(stream.closedStates).toHaveLength(1);
     expect(stream.closedStates[0].activeRunIds).toEqual([]);
+  });
+
+  it("coalesces burst text deltas and flushes the exact terminal state immediately", () => {
+    const stream = openTestStream();
+    const chunks = Array.from({ length: 200 }, (_, index) =>
+      String.fromCharCode(65 + (index % 26)),
+    );
+
+    chunks.forEach((text, index) => {
+      stream.source.dispatchMessage(
+        "message.text.delta",
+        JSON.stringify(
+          relayEvent({
+            event_id: index + 1,
+            payload_json: JSON.stringify({ text }),
+          }),
+        ),
+      );
+    });
+    stream.source.dispatchMessage(
+      "run.completed",
+      JSON.stringify(
+        relayEvent({
+          event_id: chunks.length + 1,
+          event_type: "run_completed",
+          payload_json: JSON.stringify({ status: "completed" }),
+        }),
+      ),
+    );
+
+    expect(stream.states).toHaveLength(2);
+    const terminalState = stream.states.at(-1);
+    expect(terminalState?.runs["run-1"]).toMatchObject({
+      lastEventId: chunks.length + 1,
+      status: "closed",
+      terminalEventType: "run_completed",
+    });
+    expect(
+      terminalState?.runs["run-1"].entries
+        .filter((entry) => entry.kind === "text_delta")
+        .map((entry) => entry.text)
+        .join(""),
+    ).toBe(chunks.join(""));
+    expect(stream.closedStates).toHaveLength(1);
+    expect(stream.closedStates[0]).toBe(terminalState);
+    expect(stream.source.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("flushes an accepted batched delta before an explicit stream replacement", () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_000);
+    const stream = openTestStream();
+
+    for (const [index, text] of ["A", "B"].entries()) {
+      stream.source.dispatchMessage(
+        "message.text.delta",
+        JSON.stringify(
+          relayEvent({
+            event_id: index + 1,
+            payload_json: JSON.stringify({ text }),
+          }),
+        ),
+      );
+    }
+    expect(stream.states).toHaveLength(1);
+
+    stream.handle.close();
+
+    expect(stream.states).toHaveLength(2);
+    expect(
+      stream.states.at(-1)?.runs["run-1"].entries
+        .filter((entry) => entry.kind === "text_delta")
+        .map((entry) => entry.text)
+        .join(""),
+    ).toBe("AB");
+    expect(stream.source.close).toHaveBeenCalledTimes(1);
   });
 
   it.each([

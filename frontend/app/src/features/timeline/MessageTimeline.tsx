@@ -360,15 +360,17 @@ export function MessageTimeline({
   const timelineRowsBeforeGrouping = useMemo(
     () =>
       dropExactTextRows(
-        mergeTerminalRuntimeTextRowsIntoPersistedAnswers(
-          dropDuplicateFinalPartsFromWorkRows(
-            dropDuplicateWorkRowsAfterToolMerge(
-              mergeToolRowsByCallId(
-                mergeRuntimeThinkingRowsIntoHydratedRows(
-                  displayPersistedRows,
-                  runtimeRows.filter(timelineRowHasRenderableContent),
+        dropStrictPrefixAnswerRows(
+          mergeTerminalRuntimeTextRowsIntoPersistedAnswers(
+            dropDuplicateFinalPartsFromWorkRows(
+              dropDuplicateWorkRowsAfterToolMerge(
+                mergeToolRowsByCallId(
+                  mergeRuntimeThinkingRowsIntoHydratedRows(
+                    displayPersistedRows,
+                    runtimeRows.filter(timelineRowHasRenderableContent),
+                  ),
+                  { dedupeNonToolRows: false },
                 ),
-                { dedupeNonToolRows: false },
               ),
             ),
           ),
@@ -379,16 +381,20 @@ export function MessageTimeline({
   );
   const rows = useMemo(
     () =>
-      collapseProcessedRows(
-        insertRoundMarkerRowsIfEnabled(
-          timelineRowsBeforeGrouping,
-          displayRounds,
-          expandedHistorySegmentIds,
-          roundChromeEnabled,
+      dedupeTimelineRowsByKey(
+        dropStrictPrefixAnswerRows(
+          collapseProcessedRows(
+            insertRoundMarkerRowsIfEnabled(
+              timelineRowsBeforeGrouping,
+              displayRounds,
+              expandedHistorySegmentIds,
+              roundChromeEnabled,
+            ),
+            displayRounds,
+            runtimeState.runs,
+            terminalRunIdOverrides,
+          ),
         ),
-        displayRounds,
-        runtimeState.runs,
-        terminalRunIdOverrides,
       ),
     [
       displayRounds,
@@ -1714,6 +1720,137 @@ function mergeTerminalRuntimeTextRowsIntoPersistedAnswers(
     return rows;
   }
   return mergedRows.filter((_, index) => !consumedRuntimeIndexes.has(index));
+}
+
+function dropStrictPrefixAnswerRows(rows: TimelineRow[]): TimelineRow[] {
+  const answerRows = rows
+    .flatMap((row) => row.processedGroup?.rows ?? [row])
+    .filter(textOnlyAnswerRow)
+    .map((row) => ({
+      row,
+      text: normalizedTimelineText(rowCopyText(row.parts)),
+    }))
+    .filter((candidate) => candidate.text.length > 0);
+  if (answerRows.length < 2) {
+    return rows;
+  }
+  const rowShouldRemain = (row: TimelineRow): boolean => {
+    if (!textOnlyAnswerRow(row)) {
+      return true;
+    }
+    const text = normalizedTimelineText(rowCopyText(row.parts));
+    if (text.length === 0) {
+      return true;
+    }
+    return !answerRows.some(
+      (candidate) =>
+        candidate.row !== row &&
+        strictPrefixAnswerRowsShareStream(row, candidate.row) &&
+        candidate.text.length > text.length &&
+        candidate.text.startsWith(text),
+    );
+  };
+  return rows.flatMap((row) => {
+    if (row.processedGroup === undefined) {
+      return rowShouldRemain(row) ? [row] : [];
+    }
+    const groupedRows = row.processedGroup.rows.filter(rowShouldRemain);
+    if (groupedRows.length === 0) {
+      return [];
+    }
+    return [{
+      ...row,
+      processedGroup: {
+        ...row.processedGroup,
+        rows: groupedRows,
+      },
+    }];
+  });
+}
+
+function strictPrefixAnswerRowsShareStream(
+  left: TimelineRow,
+  right: TimelineRow,
+): boolean {
+  const leftRunId = left.runId?.trim() ?? "";
+  const rightRunId = right.runId?.trim() ?? "";
+  if (leftRunId.length > 0 && rightRunId.length > 0) {
+    return leftRunId === rightRunId;
+  }
+  return (
+    (left.source === "runtime" || right.source === "runtime") &&
+    stableTimelineRole(left.role) === stableTimelineRole(right.role)
+  );
+}
+
+function dedupeTimelineRowsByKey(rows: TimelineRow[]): TimelineRow[] {
+  const candidates = rows.flatMap((row) => row.processedGroup?.rows ?? [row]);
+  const rowsToDrop = new Set<TimelineRow>();
+  for (const candidate of candidates) {
+    if (candidate.parts.some((part) => part.kind !== "text")) {
+      continue;
+    }
+    const text = normalizedTimelineText(rowCopyText(candidate.parts));
+    if (text.length === 0) {
+      continue;
+    }
+    const identity = timelineRowRenderIdentity(candidate);
+    if (candidates.some((other) =>
+      other !== candidate &&
+      timelineRowRenderIdentity(other) === identity &&
+      other.parts.every((part) => part.kind === "text") &&
+      normalizedTimelineText(rowCopyText(other.parts)).length > text.length &&
+      normalizedTimelineText(rowCopyText(other.parts)).startsWith(text)
+    )) {
+      rowsToDrop.add(candidate);
+    }
+  }
+
+  const emittedCounts = new Map<string, number>();
+  const stabilizeRow = (row: TimelineRow): TimelineRow | null => {
+    if (rowsToDrop.has(row)) {
+      return null;
+    }
+    const identity = timelineRowRenderIdentity(row);
+    const occurrence = emittedCounts.get(identity) ?? 0;
+    emittedCounts.set(identity, occurrence + 1);
+    if (occurrence === 0) {
+      return row;
+    }
+    return {
+      ...row,
+      key: `${row.key}:segment:${occurrence}`,
+    };
+  };
+
+  return rows.flatMap((row) => {
+    if (row.processedGroup === undefined) {
+      const stabilized = stabilizeRow(row);
+      return stabilized === null ? [] : [stabilized];
+    }
+    const groupedRows = row.processedGroup.rows.flatMap((groupedRow) => {
+      const stabilized = stabilizeRow(groupedRow);
+      return stabilized === null ? [] : [stabilized];
+    });
+    if (groupedRows.length === 0) {
+      return [];
+    }
+    return [{
+      ...row,
+      processedGroup: {
+        ...row.processedGroup,
+        rows: groupedRows,
+      },
+    }];
+  });
+}
+
+function timelineRowRenderIdentity(row: TimelineRow): string {
+  return `${row.runId?.trim() ?? ""}\u0000${row.key}`;
+}
+
+function textOnlyAnswerRow(row: TimelineRow): boolean {
+  return isAnswerRole(row.role) && row.parts.every((part) => part.kind === "text");
 }
 
 function persistedRowsWithRuntimeTextAnchors(

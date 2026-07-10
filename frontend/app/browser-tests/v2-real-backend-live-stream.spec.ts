@@ -1,12 +1,31 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import {
+  expect,
+  test,
+  type Locator,
+  type Page,
+  type TestInfo,
+} from "@playwright/test";
 
 import {
   ensureScreenshotDir,
   expectComposerControlsDoNotOverlap,
   expectNoDocumentScroll,
   screenshotPath,
+  waitForV1Shell,
   waitForV2Shell,
 } from "./support/frontend-app";
+import {
+  concatenatedTextDeltas,
+  startRealAgUiSseProbe,
+  tokenUsageModelProfiles,
+  type AgUiSseEventEvidence,
+  type RealAgUiSseProbe,
+} from "./support/real-ag-ui-sse-evidence";
+import {
+  eventStreamEvidenceForRun,
+  hasPositiveRecoveryCursor,
+  observeEventStreams,
+} from "./support/stream-network-recovery";
 
 const SCREENSHOT_FOLDER = "frontend-v2-real-backend-live";
 const DEFAULT_REAL_BACKEND_URL = "http://127.0.0.1:8000";
@@ -36,62 +55,85 @@ test.skip(
 
 test.setTimeout(240_000);
 
-test("real backend normal stream receives incremental chunks and survives session switch", async ({
+test("real backend normal stream receives ordered deltas and survives an active session switch", async ({
   page,
-}) => {
+}, testInfo) => {
   const title = `real-live-normal-${Date.now()}`;
   const session = await createRealSession(title);
   let runId: string | null = null;
+  let evidenceProbe: RealAgUiSseProbe | null = null;
+  const switchTargetSessionIds: string[] = [];
   try {
+    const switchTarget = await createRealSession(
+      `real-live-switch-target-${Date.now()}`,
+    );
+    switchTargetSessionIds.push(switchTarget.session_id);
     await openRealBackendSession(page, session, title);
     await expectRealShellReady(page);
 
-    const streamTag = streamTagFromTitle(title);
-    const expectedText = slowStreamExpectedText(streamTag, 48);
-    const firstToken = slowStreamToken(streamTag, 0);
-    const lastToken = slowStreamToken(streamTag, 47);
-    const promptText = [
-      `${title}: 请不要调用任何工具。`,
-      "请只输出下面这一段文字，保持原文顺序，不要解释，不要添加额外内容：",
-      expectedText,
-    ].join("\n");
+    const nonce = realStreamNonce();
+    const promptText = longPlainTextStreamingPrompt(nonce);
+    await installUiPrefixSnapshotObserver(page, session.session_id);
 
     const runResponse = waitForRunCreateResponse(page);
     await submitPrompt(page, promptText);
     runId = await runIdFromResponse(await runResponse);
+    evidenceProbe = startRealAgUiSseProbe(realBackendUrl(), runId);
     await expect(page.getByRole("button", { name: /停止|Stop/ })).toBeVisible({
       timeout: 20_000,
     });
 
-    const samples = await collectLiveStreamTextLengthSamples(page, 90_000, 30);
-    expect(increasingSampleCount(samples)).toBeGreaterThanOrEqual(3);
-    expect(Math.max(...samples)).toBeGreaterThan(8);
-    await expect(liveStreamLocator(page)).toBeVisible({ timeout: 90_000 });
-    const liveSnippet = await stableLiveStreamSnippet(page);
+    const initialDeltas = await evidenceProbe.waitForTextDeltas(1, 90_000);
+    expect(hasTerminalEvent(evidenceProbe.events)).toBe(false);
 
-    await page.screenshot({
-      fullPage: false,
-      path: screenshotPath("real-live-normal-streaming.png", SCREENSHOT_FOLDER),
+    const lastEventBeforeSwitch = latestEventId(evidenceProbe.events);
+    expect(initialDeltas.at(-1)?.eventId ?? 0).toBeLessThanOrEqual(
+      lastEventBeforeSwitch,
+    );
+    expect(hasTerminalEvent(evidenceProbe.events)).toBe(false);
+    const createdFallbackSessionId = await switchAwayFromSession(page, title);
+    if (createdFallbackSessionId !== null) {
+      switchTargetSessionIds.push(createdFallbackSessionId);
+    }
+    const backgroundDelta = await evidenceProbe.waitForEventAfter(
+      lastEventBeforeSwitch,
+      "text_delta",
+      90_000,
+    );
+    await evidenceProbe.waitForTextDeltas(12, 90_000);
+    const streamIdentity = streamIdentityFromOutput(
+      concatenatedTextDeltas(evidenceProbe.events),
+    );
+    await expect(page.locator(".at-session-item.is-selected")).not.toContainText(title);
+    await expect
+      .poll(async () => normalizeStreamText(await mainTimelineMessageArticleText(page)))
+      .not.toContain(streamIdentity);
+
+    await switchBackToSession(page, title);
+    await expect.poll(
+      async () => normalizeStreamText(await mainTimelineMessageArticleText(page)),
+    ).toContain(streamIdentity);
+    await expect.poll(() => messageArticleContainingCount(page, streamIdentity)).toBe(1);
+    expect(backgroundDelta.eventId).toBeGreaterThan(lastEventBeforeSwitch);
+    if (!hasTerminalEvent(evidenceProbe.events)) {
+      await page.screenshot({
+        fullPage: false,
+        path: screenshotPath("real-live-normal-streaming.png", SCREENSHOT_FOLDER),
+      });
+    }
+
+    const terminal = await evidenceProbe.waitForTerminal(150_000);
+    await expectUiRunSettled(page, session.session_id, runId, testInfo);
+    const finalOutput = assertRealStreamEvidence(evidenceProbe.events, terminal);
+    await expectFinalUiConvergence(page, streamIdentity, finalOutput, testInfo);
+    const prefixSnapshots = await uiPrefixSnapshots(page);
+    assertStrictUiPrefixSnapshots(prefixSnapshots, finalOutput);
+    await recordRealStreamEvidence(testInfo, {
+      events: evidenceProbe.events,
+      modelProfiles: tokenUsageModelProfiles(evidenceProbe.events),
+      prefixSnapshots,
+      runId,
     });
-
-    await switchAwayAndBack(page, title);
-    await expect
-      .poll(() => mainTimelineMessageArticleText(page))
-      .toContain(liveSnippet);
-    await expect.poll(() => messageArticleContainingCount(page, liveSnippet))
-      .toBe(1);
-
-    await waitForRunToLeaveActive(page, session.session_id, runId, 120_000);
-    await expect
-      .poll(() => mainTimelineMessageArticleText(page), { timeout: 30_000 })
-      .toContain(lastToken);
-    await expect
-      .poll(() => mainTimelineMessageArticleText(page), { timeout: 30_000 })
-      .toContain(liveSnippet);
-    await expect.poll(() => messageArticleContainingCount(page, firstToken))
-      .toBe(1);
-    await expect.poll(() => messageArticleContainingCount(page, liveSnippet))
-      .toBe(1);
     await expect(page.locator(".streaming-cursor")).toHaveCount(0);
     await expectNoDocumentScroll(
       page,
@@ -102,79 +144,91 @@ test("real backend normal stream receives incremental chunks and survives sessio
       fullPage: false,
       path: screenshotPath("real-live-normal-after-switch.png", SCREENSHOT_FOLDER),
     });
+    await captureV1ReplayComparison(
+      page,
+      session.session_id,
+      streamIdentity,
+      finalOutput,
+    );
   } finally {
+    await evidenceProbe?.stop();
     await stopRunIfPresent(runId);
+    for (const switchTargetSessionId of switchTargetSessionIds) {
+      await deleteRealSession(switchTargetSessionId);
+    }
     await deleteRealSession(session.session_id);
   }
 });
 
-test("real backend normal stream survives terminal hard refresh without duplicate rows", async ({
+test("real backend normal stream resumes the same active run after hard refresh", async ({
   page,
-}) => {
+}, testInfo) => {
   const title = `real-live-refresh-${Date.now()}`;
   const session = await createRealSession(title);
   let runId: string | null = null;
+  let evidenceProbe: RealAgUiSseProbe | null = null;
+  const browserStreams = await observeEventStreams(page);
   try {
     await openRealBackendSession(page, session, title);
     await expectRealShellReady(page);
 
-    const refreshTag = streamTagFromTitle(title);
-    const refreshText = slowStreamExpectedText(refreshTag, REAL_REFRESH_TOKEN_COUNT);
-    const firstToken = slowStreamToken(refreshTag, 0);
-    const lastToken = slowStreamToken(refreshTag, REAL_REFRESH_TOKEN_COUNT - 1);
-    const promptText = [
-      `${title}: 请不要调用任何工具。`,
-      "请只输出下面这一段文字，保持原文顺序，不要解释，不要添加额外内容：",
-      refreshText,
-    ].join("\n");
+    const nonce = realStreamNonce();
+    const promptText = longPlainTextStreamingPrompt(nonce);
+    await installUiPrefixSnapshotObserver(page, session.session_id);
 
     const runResponse = waitForRunCreateResponse(page);
     await submitPrompt(page, promptText);
     runId = await runIdFromResponse(await runResponse);
+    evidenceProbe = startRealAgUiSseProbe(realBackendUrl(), runId);
     await expect(page.getByRole("button", { name: /停止|Stop/ })).toBeVisible({
       timeout: 20_000,
     });
-    await expect
-      .poll(() => latestLiveStreamText(page), { timeout: 90_000 })
-      .toContain(firstToken);
-
-    await waitForRunToLeaveActive(page, session.session_id, runId, 150_000);
-    await expect
-      .poll(() => mainTimelineMessageArticleText(page), { timeout: 20_000 })
-      .toContain(lastToken);
-    await expect(page.locator(".streaming-cursor")).toHaveCount(0);
-    await page.screenshot({
-      fullPage: false,
-      path: screenshotPath(
-        "real-live-normal-terminal-catchup-before-refresh.png",
-        SCREENSHOT_FOLDER,
-      ),
-    });
+    await evidenceProbe.waitForTextDeltas(1, 90_000);
+    expect(hasTerminalEvent(evidenceProbe.events)).toBe(false);
 
     await page.reload({ waitUntil: "domcontentloaded" });
     await expectRealShellReady(page);
-    await expect
-      .poll(() => mainTimelineMessageArticleText(page), { timeout: 60_000 })
-      .toContain(lastToken);
-    await expect.poll(() => messageArticleTextOccurrenceCount(page, firstToken))
-      .toBe(1);
-    await expect
-      .poll(() => strictPrefixMessageArticleCount(page, refreshText))
-      .toBe(0);
+    await installUiPrefixSnapshotObserver(page, session.session_id, true);
+    await expect.poll(() => {
+      const runStreams = eventStreamEvidenceForRun(browserStreams.requests, runId ?? "");
+      return hasPositiveRecoveryCursor(runStreams);
+    }, { timeout: 30_000 }).toBe(true);
+
+    const terminal = await evidenceProbe.waitForTerminal(150_000);
+    await expectUiRunSettled(page, session.session_id, runId, testInfo);
+    const finalOutput = assertRealStreamEvidence(evidenceProbe.events, terminal);
+    const streamIdentity = streamIdentityFromOutput(finalOutput);
+    await expectFinalUiConvergence(page, streamIdentity, finalOutput, testInfo);
+    const prefixSnapshots = await uiPrefixSnapshots(page);
+    assertStrictUiPrefixSnapshots(prefixSnapshots, finalOutput);
+    const recoveryRequests = eventStreamEvidenceForRun(
+      browserStreams.requests,
+      runId,
+    );
+    expect(hasPositiveRecoveryCursor(recoveryRequests)).toBe(true);
+    await recordRealStreamEvidence(testInfo, {
+      events: evidenceProbe.events,
+      modelProfiles: tokenUsageModelProfiles(evidenceProbe.events),
+      prefixSnapshots,
+      recoveryRequests,
+      runId,
+    });
     await expect(page.locator(".streaming-cursor")).toHaveCount(0);
     await expectNoDocumentScroll(
       page,
-      "real normal terminal refresh should stay inside the fixed V2 shell",
+      "real normal active refresh should stay inside the fixed V2 shell",
     );
     await expectComposerControlsDoNotOverlap(page);
     await page.screenshot({
       fullPage: false,
       path: screenshotPath(
-        "real-live-normal-terminal-after-refresh.png",
+        "real-live-normal-active-after-refresh.png",
         SCREENSHOT_FOLDER,
       ),
     });
   } finally {
+    await browserStreams.stop();
+    await evidenceProbe?.stop();
     await stopRunIfPresent(runId);
     await deleteRealSession(session.session_id);
   }
@@ -411,26 +465,23 @@ async function openRealBackendSession(
   });
 }
 
-const REAL_REFRESH_TOKEN_COUNT = 32;
-
 function streamTagFromTitle(title: string): string {
   return title.replace(/[^A-Za-z0-9_-]/g, "_").replace(/-/g, "_");
 }
 
-function slowStreamExpectedText(tag: string, count: number): string {
-  return Array.from({ length: count }, (_, index) =>
-    slowStreamToken(tag, index),
-  ).join(" ");
+function realStreamNonce(): string {
+  return `LIVE${Date.now().toString(36).toUpperCase()}`;
 }
 
-function subagentStreamExpectedText(tag: string, count: number): string {
-  return Array.from({ length: count }, (_, index) =>
-    subagentStreamToken(tag, index),
-  ).join(" ");
-}
-
-function slowStreamToken(tag: string, index: number): string {
-  return `SLOW_STREAM_${tag}_${String(index).padStart(2, "0")}`;
+function longPlainTextStreamingPrompt(nonce: string): string {
+  return [
+    "请不要调用任何工具，直接用中文完成写作。",
+    `请以“流式证据 ${nonce}。”开头，随后写一篇约一千五百字的连贯说明文，`,
+    "主题是大型软件系统中如何观察、恢复并验证实时文本流。",
+    "内容应覆盖事件顺序、增量拼接、终态收敛、页面切换隔离、刷新恢复游标、重复消息防护和可诊断证据。",
+    "请使用十五个自然段，每段至少三句，句式自然并提供具体技术推理。",
+    "只输出纯文本段落，不使用标题、列表、Markdown、代码块或额外说明。",
+  ].join("");
 }
 
 function subagentStreamToken(tag: string, index: number): string {
@@ -484,6 +535,17 @@ async function runIdFromResponse(response: RunCreateResponse): Promise<string> {
 }
 
 async function switchAwayAndBack(page: Page, title: string): Promise<void> {
+  const createdFallbackSessionId = await switchAwayFromSession(page, title);
+  await switchBackToSession(page, title);
+  if (createdFallbackSessionId !== null) {
+    await deleteRealSession(createdFallbackSessionId);
+  }
+}
+
+async function switchAwayFromSession(
+  page: Page,
+  title: string,
+): Promise<string | null> {
   const selected = page.locator(".at-session-item.is-selected");
   await expect(selected).toContainText(title);
   let createdFallbackSessionId: string | null = null;
@@ -498,78 +560,305 @@ async function switchAwayAndBack(page: Page, title: string): Promise<void> {
   await expect(candidates.first()).toBeVisible({ timeout: 20_000 });
   await candidates.first().click();
   await expect(selected).not.toContainText(title);
+  return createdFallbackSessionId;
+}
+
+async function switchBackToSession(page: Page, title: string): Promise<void> {
   await page.locator(".at-session-item").filter({ hasText: title }).first().click();
   await expect(page.locator(".at-session-item.is-selected")).toContainText(title);
-  if (createdFallbackSessionId !== null) {
-    await deleteRealSession(createdFallbackSessionId);
-  }
 }
 
-async function collectLiveStreamTextLengthSamples(
+async function installUiPrefixSnapshotObserver(
   page: Page,
-  timeoutMs: number,
-  delayMs: number,
-): Promise<number[]> {
-  const samples: number[] = [];
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < timeoutMs) {
-    samples.push((await latestLiveStreamText(page)).length);
-    if (
-      increasingSampleCount(samples) >= 3 &&
-      Math.max(...samples) > 8
-    ) {
-      return samples;
+  sessionId: string,
+  preserveExisting = false,
+): Promise<void> {
+  await page.evaluate(({ expectedSessionId, preserve }) => {
+    const storageKey = "agentTeams.realStreamPrefixSnapshots";
+    if (!preserve) {
+      window.sessionStorage.setItem(storageKey, "[]");
     }
-    await page.waitForTimeout(delayMs);
-  }
-  return samples;
+    const recordSnapshot = () => {
+      if (
+        window.localStorage.getItem("agentTeams.selectedSessionId") !==
+        expectedSessionId
+      ) {
+        return;
+      }
+      const streamingNodes = document.querySelectorAll(
+        ".at-chat-view .at-message-streaming-text, .at-chat-view .at-message-plain-stream",
+      );
+      const messageNodes = document.querySelectorAll(
+        ".at-chat-view article.at-message",
+      );
+      const node = streamingNodes.item(streamingNodes.length - 1) ||
+        messageNodes.item(messageNodes.length - 1);
+      const text = (node?.textContent ?? "").replace(/\s+/g, "");
+      if (text.length === 0) {
+        return;
+      }
+      const parsed: unknown = JSON.parse(
+        window.sessionStorage.getItem(storageKey) ?? "[]",
+      );
+      const snapshots = Array.isArray(parsed)
+        ? parsed.filter((entry): entry is string => typeof entry === "string")
+        : [];
+      if (snapshots.at(-1) !== text) {
+        snapshots.push(text);
+        window.sessionStorage.setItem(storageKey, JSON.stringify(snapshots));
+      }
+    };
+    const observer = new MutationObserver(recordSnapshot);
+    observer.observe(document.body, {
+      characterData: true,
+      childList: true,
+      subtree: true,
+    });
+    recordSnapshot();
+  }, { expectedSessionId: sessionId, preserve: preserveExisting });
 }
 
-async function latestLiveStreamText(page: Page): Promise<string> {
-  return liveStreamLocator(page).evaluateAll((nodes) => {
-    const text = nodes.at(-1)?.textContent ?? "";
-    return text.replace(/\s+/g, " ").trim();
+async function uiPrefixSnapshots(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const parsed: unknown = JSON.parse(
+      window.sessionStorage.getItem("agentTeams.realStreamPrefixSnapshots") ?? "[]",
+    );
+    return Array.isArray(parsed)
+      ? parsed.filter((entry): entry is string => typeof entry === "string")
+      : [];
   });
 }
 
-function liveStreamLocator(page: Page): Locator {
-  return page.locator(
-    ".at-chat-view .at-message-streaming-text, .at-chat-view .at-message-plain-stream",
+function assertStrictUiPrefixSnapshots(
+  snapshots: string[],
+  finalOutput: string,
+): void {
+  const normalizedFinal = normalizeStreamText(finalOutput);
+  const strictPrefixes = snapshots.filter(
+    (snapshot) =>
+      snapshot.length > 0 &&
+      snapshot.length < normalizedFinal.length &&
+      normalizedFinal.startsWith(snapshot),
   );
+  expect(strictPrefixes.length).toBeGreaterThanOrEqual(2);
+  for (let index = 1; index < strictPrefixes.length; index += 1) {
+    const previous = strictPrefixes[index - 1] ?? "";
+    const current = strictPrefixes[index] ?? "";
+    expect(current.startsWith(previous)).toBe(true);
+    expect(current.length).toBeGreaterThan(previous.length);
+  }
 }
 
-async function stableLiveStreamSnippet(page: Page): Promise<string> {
-  await expect
-    .poll(async () => (await latestLiveStreamText(page)).length >= 24, {
-      timeout: 90_000,
-    })
-    .toBe(true);
-  const text = await latestLiveStreamText(page);
-  return stableSnippetFromText(text);
+function assertRealStreamEvidence(
+  events: AgUiSseEventEvidence[],
+  terminal: AgUiSseEventEvidence,
+): string {
+  expect(terminal.relayEventType).toBe("run_completed");
+  const eventIds = events.map((event) => event.eventId);
+  expect(eventIds.length).toBeGreaterThan(0);
+  expect(new Set(eventIds).size).toBe(eventIds.length);
+  for (let index = 1; index < eventIds.length; index += 1) {
+    expect(eventIds[index] ?? 0).toBeGreaterThan(eventIds[index - 1] ?? 0);
+  }
+  const deltas = events.filter(
+    (event) =>
+      event.relayEventType === "text_delta" &&
+      payloadText(event.payload).length > 0,
+  );
+  expect(deltas.length).toBeGreaterThanOrEqual(3);
+  expect(deltas.every((event) => event.sequence < terminal.sequence)).toBe(true);
+  expect(deltas.at(-1)?.eventId ?? 0).toBeLessThan(terminal.eventId);
+  const finalOutput = concatenatedTextDeltas(events);
+  expect(normalizeStreamText(finalOutput).length).toBeGreaterThan(300);
+  const profiles = tokenUsageModelProfiles(events);
+  expect(profiles.length).toBeGreaterThan(0);
+  const configuredProfile = realModelProfile();
+  if (configuredProfile !== null) {
+    expect(profiles).toContain(configuredProfile);
+  }
+  return finalOutput;
 }
 
-async function stableSubagentPanelSnippet(panel: Locator): Promise<string> {
-  await expect
-    .poll(async () => (await subagentPanelRuntimeSnippet(panel)).length >= 24, {
-      timeout: 120_000,
-    })
-    .toBe(true);
-  return subagentPanelRuntimeSnippet(panel);
+async function expectFinalUiConvergence(
+  page: Page,
+  streamIdentity: string,
+  finalOutput: string,
+  testInfo: TestInfo,
+): Promise<void> {
+  const normalizedOutput = normalizeVisibleStreamText(finalOutput);
+  await expect.poll(
+    () => latestMessageArticleContainingText(page, streamIdentity),
+    { timeout: 60_000 },
+  ).toBe(normalizedOutput);
+  try {
+    await expect.poll(() => messageArticleContainingCount(page, streamIdentity)).toBe(1);
+  } catch (error) {
+    const articleDiagnostic = await page
+      .locator(".at-chat-view article.at-message")
+      .evaluateAll((nodes) =>
+        nodes.map((node) => ({
+          className: node.className,
+          rowKey: node.getAttribute("data-row-key"),
+          runId: node.getAttribute("data-run-id"),
+          text: (node.textContent ?? "").replace(/\s+/g, " ").trim(),
+        })),
+      );
+    await testInfo.attach("duplicate-article-diagnostic", {
+      body: JSON.stringify(articleDiagnostic, null, 2),
+      contentType: "application/json",
+    });
+    throw new Error(
+      `Final answer did not converge to one article. ${String(error)}\n` +
+      JSON.stringify(articleDiagnostic, null, 2),
+    );
+  }
+  await expect.poll(() => messageArticleExactTextCount(page, finalOutput)).toBe(1);
 }
 
-async function subagentPanelRuntimeSnippet(panel: Locator): Promise<string> {
-  return panel
-    .locator(
-      ".at-message-streaming-text, .at-message-plain-stream, article.at-message, .at-message-tool",
-    )
-    .evaluateAll((nodes) => {
-      const ignored = new Set(["思考", "Thinking"]);
-      const candidate = nodes
-        .map((node) => (node.textContent ?? "").replace(/\s+/g, " ").trim())
-        .find((text) => text.length >= 24 && !ignored.has(text));
-      return candidate ?? "";
-    })
-    .then(stableSnippetFromText);
+async function messageArticleExactTextCount(
+  page: Page,
+  text: string,
+): Promise<number> {
+  const normalizedExpected = normalizeVisibleStreamText(text);
+  const articleTexts = await page
+    .locator(".at-chat-view article.at-message")
+    .allTextContents();
+  return articleTexts.filter(
+    (articleText) => normalizeVisibleStreamText(articleText) === normalizedExpected,
+  ).length;
+}
+
+function normalizeVisibleStreamText(text: string): string {
+  return normalizeStreamText(text.replaceAll("`", ""));
+}
+
+async function latestMessageArticleContainingText(
+  page: Page,
+  text: string,
+): Promise<string> {
+  const normalizedNeedle = normalizeStreamText(text);
+  const articleTexts = await page
+    .locator(".at-chat-view article.at-message")
+    .allTextContents();
+  const matching = articleTexts.filter((articleText) =>
+    normalizeStreamText(articleText).includes(normalizedNeedle),
+  );
+  return normalizeVisibleStreamText(matching.at(-1) ?? "");
+}
+
+async function recordRealStreamEvidence(
+  testInfo: TestInfo,
+  evidence: Record<string, unknown>,
+): Promise<void> {
+  await testInfo.attach("real-ag-ui-stream-evidence", {
+    body: JSON.stringify(evidence, null, 2),
+    contentType: "application/json",
+  });
+}
+
+async function expectUiRunSettled(
+  page: Page,
+  sessionId: string,
+  runId: string,
+  testInfo: TestInfo,
+): Promise<void> {
+  try {
+    await expect(page.getByRole("button", { name: /停止|Stop/ })).toBeHidden({
+      timeout: 30_000,
+    });
+  } catch (error) {
+    const [session, recovery] = await Promise.all([
+      fetchJson<Record<string, unknown>>(
+        `/api/sessions/${encodeURIComponent(sessionId)}`,
+      ).catch((requestError: unknown) => ({
+        request_error: String(requestError),
+      })),
+      fetchJson<Record<string, unknown>>(
+        `/api/sessions/${encodeURIComponent(sessionId)}/recovery?force_refresh=true`,
+      ).catch((requestError: unknown) => ({
+        request_error: String(requestError),
+      })),
+    ]);
+    await testInfo.attach("ui-terminal-settle-diagnostic", {
+      body: JSON.stringify({
+        mainTimelineText: await mainTimelineMessageArticleText(page),
+        recovery,
+        runId,
+        session,
+        stopButtonCount: await page.getByRole("button", { name: /停止|Stop/ }).count(),
+      }, null, 2),
+      contentType: "application/json",
+    });
+    throw error;
+  }
+}
+
+async function captureV1ReplayComparison(
+  page: Page,
+  sessionId: string,
+  streamIdentity: string,
+  finalOutput: string,
+): Promise<void> {
+  await page.goto(`${realBackendUrl()}/`, { waitUntil: "domcontentloaded" });
+  await waitForV1Shell(page);
+  const sessionItem = page.locator(
+    `.session-item[data-session-id="${sessionId}"]`,
+  );
+  await expect(sessionItem).toBeVisible({ timeout: 30_000 });
+  await sessionItem.click();
+  await expect.poll(
+    async () => normalizeStreamText(await page.locator("#chat-messages").innerText()),
+    { timeout: 60_000 },
+  ).toContain(streamIdentity);
+  await expect.poll(
+    async () => {
+      const normalizedExpected = normalizeVisibleStreamText(finalOutput);
+      const visibleAnswers = await page
+        .locator("#chat-messages .session-round-section .message .msg-text")
+        .allTextContents();
+      return visibleAnswers.filter(
+        (answer) => normalizeVisibleStreamText(answer) === normalizedExpected,
+      ).length;
+    },
+    { timeout: 60_000 },
+  ).toBe(1);
+  await page.screenshot({
+    fullPage: false,
+    path: screenshotPath(
+      "real-live-normal-v1-replay-after-switch.png",
+      SCREENSHOT_FOLDER,
+    ),
+  });
+}
+
+function normalizeStreamText(text: string): string {
+  return text.replace(/\s+/g, "");
+}
+
+function streamIdentityFromOutput(text: string): string {
+  const normalized = normalizeStreamText(text);
+  expect(normalized.length).toBeGreaterThanOrEqual(12);
+  return normalized.slice(0, Math.min(32, normalized.length));
+}
+
+function payloadText(payload: unknown): string {
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+    return "";
+  }
+  const text = (payload as Record<string, unknown>).text;
+  return typeof text === "string" ? text : "";
+}
+
+function latestEventId(events: AgUiSseEventEvidence[]): number {
+  return events.at(-1)?.eventId ?? 0;
+}
+
+function hasTerminalEvent(events: AgUiSseEventEvidence[]): boolean {
+  return events.some((event) =>
+    ["run_completed", "run_failed", "run_stopped"].includes(
+      event.relayEventType,
+    ),
+  );
 }
 
 async function collectSubagentPanelTextLengthSamples(
@@ -606,10 +895,6 @@ async function latestSubagentPanelRuntimeText(panel: Locator): Promise<string> {
     });
 }
 
-function stableSnippetFromText(text: string): string {
-  return text.replace(/\s+/g, " ").trim().slice(0, 80);
-}
-
 function increasingSampleCount(samples: number[]): number {
   let increases = 0;
   for (let index = 1; index < samples.length; index += 1) {
@@ -622,37 +907,16 @@ function increasingSampleCount(samples: number[]): number {
   return increases;
 }
 
-async function messageArticleTextOccurrenceCount(page: Page, text: string): Promise<number> {
-  return page.locator(".at-chat-view article.at-message").evaluateAll((nodes, needle) => {
-    const haystack = nodes.map((node) => node.textContent ?? "").join("\n");
-    if (needle.length === 0) {
-      return 0;
-    }
-    return haystack.split(needle).length - 1;
-  }, text);
-}
-
 async function messageArticleContainingCount(page: Page, text: string): Promise<number> {
-  return page.locator(".at-chat-view article.at-message").evaluateAll((nodes, needle) =>
-    nodes.filter((node) => (node.textContent ?? "").includes(needle)).length,
-  text);
-}
-
-async function strictPrefixMessageArticleCount(
-  page: Page,
-  fullText: string,
-): Promise<number> {
-  return page.locator(".at-chat-view article.at-message").evaluateAll((nodes, expected) => {
-    const normalizedExpected = expected.replace(/\s+/g, " ").trim();
-    return nodes.filter((node) => {
-      const text = (node.textContent ?? "").replace(/\s+/g, " ").trim();
-      return (
-        text.length > 0 &&
-        text.length < normalizedExpected.length &&
-        normalizedExpected.startsWith(text)
-      );
-    }).length;
-  }, fullText);
+  return page.locator(".at-chat-view article.at-message").evaluateAll(
+    (nodes, needle) => {
+      const normalizedNeedle = needle.replace(/\s+/g, "");
+      return nodes.filter((node) =>
+        (node.textContent ?? "").replace(/\s+/g, "").includes(normalizedNeedle),
+      ).length;
+    },
+    text,
+  );
 }
 
 async function mainTimelineMessageArticleText(page: Page): Promise<string> {
@@ -696,11 +960,10 @@ async function currentRunStatus(
   sessionId: string,
   runId: string,
 ): Promise<"active" | "terminal" | "unknown"> {
-  const sessions = await fetchJson<SessionRecord[]>(
-    "/api/sessions?workspace_id=default",
-  ).catch(() => []);
-  const session = sessions.find((item) => item.session_id === sessionId);
-  if (session === undefined) {
+  const session = await fetchJson<SessionRecord>(
+    `/api/sessions/${encodeURIComponent(sessionId)}`,
+  ).catch(() => null);
+  if (session === null) {
     return "unknown";
   }
   if (session.active_run_id === runId) {
@@ -716,10 +979,14 @@ async function currentRunStatus(
 }
 
 async function createRealSession(title: string): Promise<SessionRecord> {
+  const modelProfile = realModelProfile();
   return fetchJson<SessionRecord>("/api/sessions", {
     method: "POST",
     body: JSON.stringify({
       metadata: { title },
+      ...(modelProfile === null
+        ? {}
+        : { normal_model_profile: modelProfile }),
       workspace_id: "default",
     }),
   });
@@ -864,4 +1131,9 @@ function realBackendUrl(): string {
     process.env.AGENT_TEAMS_REAL_BACKEND_URL?.replace(/\/$/, "") ??
     DEFAULT_REAL_BACKEND_URL
   );
+}
+
+function realModelProfile(): string | null {
+  const profile = process.env.AGENT_TEAMS_REAL_MODEL_PROFILE?.trim() ?? "";
+  return profile.length > 0 ? profile : null;
 }

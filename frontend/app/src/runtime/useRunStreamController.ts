@@ -57,6 +57,7 @@ export interface RunStreamController {
   startRunStreams: (options: StartRunStreamsOptions) => void;
   suppressedRunIds: string[];
   trackedRunIds: string[];
+  trackedSessionId?: string | null;
 }
 
 export interface ClearRunStreamOptions {
@@ -93,6 +94,7 @@ export function useRunStreamController(): RunStreamController {
   const [activeRunIds, setActiveRunIds] = useState<string[]>([]);
   const [suppressedRunIds, setSuppressedRunIds] = useState<string[]>([]);
   const [trackedRunIds, setTrackedRunIds] = useState<string[]>([]);
+  const [trackedSessionId, setTrackedSessionId] = useState<string | null>(null);
   const activeRunId = activeRunIds[0] ?? null;
 
   useEffect(() => {
@@ -182,15 +184,16 @@ export function useRunStreamController(): RunStreamController {
   };
 
   const stopActiveRunStream = () => {
-    streamGenerationRef.current += 1;
     reconnectAttemptRef.current = 0;
     clearReconnectTimer();
     stopContinuityRefresh();
     streamHandleRef.current?.close();
     streamHandleRef.current = null;
+    streamGenerationRef.current += 1;
     foregroundRunIdsRef.current = [];
     setActiveRunIdsIfChanged([]);
     setTrackedRunIds([]);
+    setTrackedSessionId(null);
   };
 
   const clearSuppressedRunTargets = (runs: StartRunStreamTarget[]) => {
@@ -256,6 +259,13 @@ export function useRunStreamController(): RunStreamController {
     sessionId: string,
     terminalTargets: StartRunStreamTarget[],
   ) => {
+    const streamGeneration = streamGenerationRef.current;
+    clearReconnectTimer();
+    reconnectAttemptRef.current = 0;
+    stopContinuityRefresh();
+    streamHandleRef.current?.close();
+    streamHandleRef.current = null;
+
     const roundSettleTargets = terminalRoundSettleTargets(
       terminalTargets,
       runtimeStateRef.current,
@@ -268,16 +278,41 @@ export function useRunStreamController(): RunStreamController {
       runtimeStateRef.current = closedRuntimeState;
       setRuntimeState(closedRuntimeState);
     }
-    const streamGeneration = streamGenerationRef.current;
-    clearReconnectTimer();
-    reconnectAttemptRef.current = 0;
-    stopContinuityRefresh();
-    streamHandleRef.current?.close();
-    streamHandleRef.current = null;
+    const terminalRunIds = new Set(normalizedRunIds(terminalTargets));
+    const remainingRunTargets = trackedRunIds
+      .filter(
+        (runId) =>
+          !terminalRunIds.has(runId) &&
+          closedRuntimeState.runs[runId]?.status !== "closed" &&
+          closedRuntimeState.runs[runId]?.status !== "failed",
+      )
+      .map((runId) => ({
+        afterEventId: closedRuntimeState.runs[runId]?.lastEventId ?? 0,
+        runId,
+      }));
+    foregroundRunIdsRef.current = foregroundRunIdsRef.current.filter(
+      (runId) => !terminalRunIds.has(runId),
+    );
     suppressRunTargets(terminalTargets);
-    foregroundRunIdsRef.current = [];
-    setActiveRunIdsIfChanged([]);
-    setTrackedRunIds([]);
+    setActiveRunIdsIfChanged(
+      activeTrackedRunIdsForSession(
+        foregroundRunIdsRef.current,
+        closedRuntimeState,
+        foregroundSessionIdRef.current,
+      ),
+    );
+    setTrackedRunIds(remainingRunTargets.map((target) => target.runId));
+    if (remainingRunTargets.length > 0) {
+      startContinuityRefresh(sessionId);
+      openTrackedRunStream(
+        {
+          foregroundRunIds: foregroundRunIdsRef.current,
+          runs: remainingRunTargets,
+          sessionId,
+        },
+        streamGeneration,
+      );
+    }
     refreshSidebarSessions();
     const refreshHydratedSession = () => {
       void queryClient.invalidateQueries({
@@ -463,12 +498,13 @@ export function useRunStreamController(): RunStreamController {
     const foregroundRunIds = normalizeForegroundRunIds(options.foregroundRunIds, runs);
     foregroundRunIdsRef.current = foregroundRunIds;
     foregroundSessionIdRef.current = options.sessionId;
-    streamGenerationRef.current += 1;
-    const streamGeneration = streamGenerationRef.current;
     reconnectAttemptRef.current = 0;
     clearReconnectTimer();
     stopContinuityRefresh();
     streamHandleRef.current?.close();
+    streamHandleRef.current = null;
+    streamGenerationRef.current += 1;
+    const streamGeneration = streamGenerationRef.current;
     clearSuppressedRunTargets(runs);
     const nextRuntimeState = runtimeStateWithStartedTargets(
       runtimeStateRef.current,
@@ -487,6 +523,7 @@ export function useRunStreamController(): RunStreamController {
       ),
     );
     setTrackedRunIds(runs.map((run) => run.runId));
+    setTrackedSessionId(options.sessionId);
     startContinuityRefresh(options.sessionId);
     openTrackedRunStream(
       {
@@ -508,6 +545,7 @@ export function useRunStreamController(): RunStreamController {
     startRunStreams,
     suppressedRunIds,
     trackedRunIds,
+    trackedSessionId,
   };
 }
 

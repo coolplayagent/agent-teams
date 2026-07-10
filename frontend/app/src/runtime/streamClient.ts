@@ -6,6 +6,8 @@ import {
 } from "./reducers";
 import { AG_UI_EVENT_NAMES, type RunEventEnvelope } from "./events";
 
+const STREAM_STATE_NOTIFICATION_INTERVAL_MS = 16;
+
 export interface RunStreamHandle {
   close: () => void;
 }
@@ -116,7 +118,46 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
   let runtimeState = options.initialState;
   let didNotifyClosed = false;
   let sourceClosed = false;
+  let pendingStateNotification: ReturnType<typeof globalThis.setTimeout> | null = null;
+  let lastStateNotificationAt = Number.NEGATIVE_INFINITY;
   const preferManualReconnect = options.trackedRunIds.length > 1;
+
+  const cancelPendingStateNotification = () => {
+    if (pendingStateNotification === null) {
+      return;
+    }
+    globalThis.clearTimeout(pendingStateNotification);
+    pendingStateNotification = null;
+  };
+
+  const notifyStateNow = () => {
+    cancelPendingStateNotification();
+    lastStateNotificationAt = Date.now();
+    options.onState(runtimeState);
+  };
+
+  const flushPendingStateNotification = () => {
+    if (pendingStateNotification === null) {
+      return;
+    }
+    notifyStateNow();
+  };
+
+  const notifyStateOnStreamCadence = () => {
+    const elapsed = Date.now() - lastStateNotificationAt;
+    if (elapsed >= STREAM_STATE_NOTIFICATION_INTERVAL_MS) {
+      notifyStateNow();
+      return;
+    }
+    if (pendingStateNotification !== null) {
+      return;
+    }
+    pendingStateNotification = globalThis.setTimeout(() => {
+      pendingStateNotification = null;
+      lastStateNotificationAt = Date.now();
+      options.onState(runtimeState);
+    }, STREAM_STATE_NOTIFICATION_INTERVAL_MS - elapsed);
+  };
 
   const closeSource = () => {
     if (sourceClosed) {
@@ -124,6 +165,11 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
     }
     sourceClosed = true;
     source.close();
+  };
+
+  const closeWithStateFlush = () => {
+    flushPendingStateNotification();
+    closeSource();
   };
 
   const notifyClosed = () => {
@@ -143,6 +189,7 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
       return;
     }
     if (isStreamErrorPayload(parsed)) {
+      flushPendingStateNotification();
       closeSource();
       options.onError(parsed.error, "server");
       return;
@@ -160,10 +207,12 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
       return;
     }
     runtimeState = nextRuntimeState;
-    options.onState(runtimeState);
     if (trackedRunsClosed(runtimeState, options.trackedRunIds)) {
+      notifyStateNow();
       notifyClosed();
+      return;
     }
+    notifyStateOnStreamCadence();
   };
 
   const handleMessage = (message: MessageEvent<string>) => {
@@ -183,6 +232,7 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
       return;
     }
     if (!isMessageEvent(event)) {
+      flushPendingStateNotification();
       if (preferManualReconnect) {
         closeSource();
       }
@@ -191,6 +241,7 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
     }
     const parsed = parseStreamPayload(event.data);
     if (parsed === null) {
+      flushPendingStateNotification();
       if (preferManualReconnect) {
         closeSource();
       }
@@ -217,7 +268,7 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
   }
 
   return {
-    close: closeSource,
+    close: closeWithStateFlush,
   };
 }
 
@@ -290,6 +341,9 @@ function runtimeStateWithReplayCursors(
         run.afterEventId,
       ),
       runId: run.runId,
+      ...(currentRun?.seenEventIdRanges !== undefined
+        ? { seenEventIdRanges: currentRun.seenEventIdRanges }
+        : {}),
       seenEventKeys: currentRun?.seenEventKeys ?? [],
       status: currentRun?.status ?? "connecting",
       terminalEventType: currentRun?.terminalEventType ?? null,
@@ -314,6 +368,9 @@ function runtimeStateWithRunScope(
     lastEventId: currentRun?.lastEventId ?? 0,
     ...optionalRuntimeRunMetadata(currentRun),
     runId,
+    ...(currentRun?.seenEventIdRanges !== undefined
+      ? { seenEventIdRanges: currentRun.seenEventIdRanges }
+      : {}),
     seenEventKeys: currentRun?.seenEventKeys ?? [],
     status: currentRun?.status ?? "connecting",
     terminalEventType: currentRun?.terminalEventType ?? null,

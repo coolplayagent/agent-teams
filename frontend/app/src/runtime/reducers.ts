@@ -32,6 +32,7 @@ export interface RuntimeRunState {
   lastEventId: number;
   hadVisibleTextStream?: boolean;
   replayAfterEventId?: number;
+  seenEventIdRanges?: Array<[number, number]>;
   seenEventKeys: string[];
   terminalEventType: RunEventType | null;
   entries: TimelineEntry[];
@@ -93,7 +94,17 @@ export function reduceRunEvent(
   if (hasPositiveEventId && rawEventId <= (existing.replayAfterEventId ?? 0)) {
     return state;
   }
-  const dedupeKey = eventDedupeKey(event);
+  const positiveEventDedupeKey = hasPositiveEventId
+    ? `${runId}:${rawEventId}`
+    : null;
+  if (
+    hasPositiveEventId &&
+    (seenEventIdRangesInclude(existing.seenEventIdRanges ?? [], rawEventId) ||
+      existing.seenEventKeys.includes(positiveEventDedupeKey ?? ""))
+  ) {
+    return state;
+  }
+  const dedupeKey = hasPositiveEventId ? null : eventDedupeKey(event);
   if (dedupeKey !== null && existing.seenEventKeys.includes(dedupeKey)) {
     return state;
   }
@@ -115,10 +126,9 @@ export function reduceRunEvent(
     occurredAt: event.occurred_at ?? "",
   } satisfies TimelineEntry;
   const entries = appendTimelineEntry(existing.entries, nextEntry);
-  const terminalEventType = terminalEventTypeFromEntries(
-    entries,
-    existing.terminalEventType,
-  );
+  const terminalEventType = isRunLifecycleEntry(nextEntry.kind)
+    ? terminalEventTypeFromEntries(entries, existing.terminalEventType)
+    : existing.terminalEventType;
   const status: StreamStatus = terminalEventType === null ? "open" : "closed";
   const nextRun: RuntimeRunState = {
     ...existing,
@@ -130,6 +140,9 @@ export function reduceRunEvent(
     seenEventKeys: dedupeKey === null
       ? existing.seenEventKeys
       : rememberSeenEventKey(existing.seenEventKeys, dedupeKey),
+    seenEventIdRanges: hasPositiveEventId
+      ? rememberSeenEventId(existing.seenEventIdRanges ?? [], rawEventId)
+      : existing.seenEventIdRanges,
     terminalEventType,
     entries,
   };
@@ -212,6 +225,9 @@ function runtimeRunStateWithScope(
       ? { targetRoleId: currentRun.targetRoleId }
       : {}),
     runId,
+    ...(currentRun?.seenEventIdRanges !== undefined
+      ? { seenEventIdRanges: currentRun.seenEventIdRanges }
+      : {}),
     seenEventKeys: currentRun?.seenEventKeys ?? [],
     sessionId: currentRun?.sessionId ?? sessionId,
     status: currentRun?.status ?? "connecting",
@@ -333,11 +349,79 @@ function rememberSeenEventKey(
   return nextKeys.slice(nextKeys.length - MAX_SEEN_EVENT_KEYS);
 }
 
+function seenEventIdRangesInclude(
+  ranges: Array<[number, number]>,
+  eventId: number,
+): boolean {
+  let lower = 0;
+  let upper = ranges.length;
+  while (lower < upper) {
+    const middle = Math.floor((lower + upper) / 2);
+    const range = ranges[middle];
+    if (range === undefined) {
+      return false;
+    }
+    if (eventId < range[0]) {
+      upper = middle;
+    } else if (eventId > range[1]) {
+      lower = middle + 1;
+    } else {
+      return true;
+    }
+  }
+  return false;
+}
+
+function rememberSeenEventId(
+  ranges: Array<[number, number]>,
+  eventId: number,
+): Array<[number, number]> {
+  let insertionIndex = 0;
+  while (
+    insertionIndex < ranges.length &&
+    (ranges[insertionIndex]?.[1] ?? Number.NEGATIVE_INFINITY) < eventId - 1
+  ) {
+    insertionIndex += 1;
+  }
+  const currentRange = ranges[insertionIndex];
+  if (currentRange === undefined) {
+    return [...ranges, [eventId, eventId]];
+  }
+  if (eventId < currentRange[0] - 1) {
+    return [
+      ...ranges.slice(0, insertionIndex),
+      [eventId, eventId],
+      ...ranges.slice(insertionIndex),
+    ];
+  }
+
+  let mergedStart = Math.min(currentRange[0], eventId);
+  let mergedEnd = Math.max(currentRange[1], eventId);
+  let mergeEndIndex = insertionIndex + 1;
+  while (
+    mergeEndIndex < ranges.length &&
+    (ranges[mergeEndIndex]?.[0] ?? Number.POSITIVE_INFINITY) <= mergedEnd + 1
+  ) {
+    const nextRange = ranges[mergeEndIndex];
+    if (nextRange !== undefined) {
+      mergedStart = Math.min(mergedStart, nextRange[0]);
+      mergedEnd = Math.max(mergedEnd, nextRange[1]);
+    }
+    mergeEndIndex += 1;
+  }
+  return [
+    ...ranges.slice(0, insertionIndex),
+    [mergedStart, mergedEnd],
+    ...ranges.slice(mergeEndIndex),
+  ];
+}
+
 function createRunState(runId: string): RuntimeRunState {
   return {
     runId,
     status: "connecting",
     lastEventId: 0,
+    seenEventIdRanges: [],
     seenEventKeys: [],
     terminalEventType: null,
     entries: [],
@@ -383,7 +467,40 @@ function appendTimelineEntry(
   if (!shouldRenderEntry(nextEntry.kind)) {
     return entries;
   }
-  return [...entries, nextEntry].sort(compareTimelineEntries);
+  const lastEntry = entries.at(-1);
+  if (
+    lastEntry === undefined ||
+    compareTimelineEntries(lastEntry, nextEntry) <= 0
+  ) {
+    return [...entries, nextEntry];
+  }
+  const insertionIndex = timelineEntryInsertionIndex(entries, nextEntry);
+  return [
+    ...entries.slice(0, insertionIndex),
+    nextEntry,
+    ...entries.slice(insertionIndex),
+  ];
+}
+
+function timelineEntryInsertionIndex(
+  entries: TimelineEntry[],
+  nextEntry: TimelineEntry,
+): number {
+  let lower = 0;
+  let upper = entries.length;
+  while (lower < upper) {
+    const middle = Math.floor((lower + upper) / 2);
+    const middleEntry = entries[middle];
+    if (
+      middleEntry !== undefined &&
+      compareTimelineEntries(middleEntry, nextEntry) <= 0
+    ) {
+      lower = middle + 1;
+    } else {
+      upper = middle;
+    }
+  }
+  return lower;
 }
 
 function shouldRenderEntry(kind: RunEventType | "message"): boolean {

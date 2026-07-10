@@ -386,6 +386,115 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText("Cra")).not.toBeInTheDocument();
   });
 
+  it("drops a persisted strict-prefix answer when the same run has its final answer", async () => {
+    const prefix = "流式证据 SAMPLE。第一段仍在输出";
+    const finalAnswer = `${prefix}，现在已经完整收敛。`;
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: prefix,
+        message_id: "assistant-persisted-prefix",
+        role_id: "MainAgent",
+        run_id: "run-persisted-prefix",
+      },
+      {
+        content: finalAnswer,
+        message_id: "assistant-persisted-final",
+        role_id: "MainAgent",
+        run_id: "run-persisted-prefix",
+      },
+    ]);
+
+    const { container } = renderTimeline();
+
+    await waitFor(() => expect(screen.getByText(finalAnswer)).toBeVisible());
+    expect(screen.queryByText(prefix, { exact: true })).not.toBeInTheDocument();
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+  });
+
+  it("drops a pre-work streamed prefix after processed grouping exposes the final text", async () => {
+    const prefix = "流式证据 SAMPLE。实时文本仍在拼接";
+    const finalAnswer = `${prefix}，现在已经完整收敛。`;
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message: {
+          parts: [
+            { content: prefix, part_kind: "text" },
+            { content: "Checking terminal hydration", part_kind: "thinking" },
+            { content: finalAnswer, part_kind: "text" },
+          ],
+        },
+        message_id: "assistant-processed-prefix-final",
+        role_id: "MainAgent",
+        run_id: "run-processed-prefix-final",
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          created_at: "2026-06-23T12:42:33Z",
+          run_id: "run-processed-prefix-final",
+          run_status: "completed",
+          run_user_message: "Processed prefix closure",
+        },
+      ],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline();
+
+    await waitFor(() => expect(screen.getByText(finalAnswer)).toBeVisible());
+    expect(screen.queryByText(prefix, { exact: true })).not.toBeInTheDocument();
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+    expect(container.querySelector("details.at-processed-group")).not.toBeNull();
+  });
+
+  it("keeps prefix-related answers when both rows belong to different runs", async () => {
+    const runtimePrefix = "共享开头仍属于新的运行";
+    const historicalAnswer = `${runtimePrefix}，这是旧运行的完整历史回答。`;
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: ["run-new-prefix"],
+        runs: {
+          "run-new-prefix": {
+            entries: [
+              {
+                eventId: 1,
+                id: "run-new-prefix:1:0",
+                kind: "text_delta",
+                occurredAt: "2026-06-23T00:00:00Z",
+                payload: { text: runtimePrefix },
+                roleId: "MainAgent",
+                runId: "run-new-prefix",
+                sessionId: "session-1",
+                text: runtimePrefix,
+              },
+            ],
+            hadVisibleTextStream: true,
+            lastEventId: 1,
+            runId: "run-new-prefix",
+            seenEventKeys: [],
+            status: "open",
+            terminalEventType: null,
+          },
+        },
+      },
+    });
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: historicalAnswer,
+        message_id: "assistant-old-prefix-answer",
+        role_id: "MainAgent",
+        run_id: "run-old-prefix",
+      },
+    ]);
+
+    renderTimeline();
+
+    expect(await screen.findByText(historicalAnswer)).toBeVisible();
+    expect(screen.getByText(runtimePrefix, { exact: true })).toBeVisible();
+  });
+
   it("renders one answer when persisted text upgrades a terminal runtime reveal", async () => {
     useRuntimeStore.setState({
       runtimeState: {
@@ -2573,7 +2682,7 @@ describe("MessageTimeline", () => {
       expect(container.querySelectorAll(".at-round-marker")).toHaveLength(2);
       expect(screen.getAllByText("Input 1.5k")[0]).toBeVisible();
       expect(screen.getAllByText("Tools 1")[0]).toBeVisible();
-      expect(screen.getAllByText("completed")[0]).toBeVisible();
+      expect(screen.getAllByText(/completed/i)[0]).toBeVisible();
       expect(screen.getByText("6s")).toBeVisible();
       expect(listSessionRoundsMock).toHaveBeenCalledWith("session-1", {
         cursorRunId: null,
@@ -3176,7 +3285,7 @@ describe("MessageTimeline", () => {
     expect(screen.queryByRole("button", {
       name: "Go to round 1: approval-only run",
     })).not.toBeInTheDocument();
-    expect(container.querySelector(".at-round-marker")).toHaveTextContent("completed");
+    expect(container.querySelector(".at-round-marker")).toHaveTextContent(/completed/i);
     expect(listSessionRoundsMock).toHaveBeenCalledTimes(2);
   });
 
@@ -3440,7 +3549,7 @@ describe("MessageTimeline", () => {
     const { container } = renderTimeline();
 
     expect(await screen.findByText("Live stream prompt")).toBeVisible();
-    expect(container.querySelector(".at-round-marker")).toHaveTextContent("running");
+    expect(container.querySelector(".at-round-marker")).toHaveTextContent(/running/i);
     expect(container.querySelectorAll("article.at-message")).toHaveLength(0);
   });
 
@@ -3476,8 +3585,8 @@ describe("MessageTimeline", () => {
     expect(await screen.findByText("Terminal answer")).toBeVisible();
     await waitFor(() => {
       const roundMarker = container.querySelector(".at-round-marker");
-      expect(roundMarker).toHaveTextContent("completed");
-      expect(roundMarker).not.toHaveTextContent("running");
+      expect(roundMarker).toHaveTextContent(/completed/i);
+      expect(roundMarker).not.toHaveTextContent(/running/i);
     });
   });
 
@@ -3718,9 +3827,9 @@ describe("MessageTimeline", () => {
     expect(await screen.findByText("Final recovered answer")).toBeVisible();
     const marker = container.querySelector(".at-round-marker");
     expect(marker).not.toBeNull();
-    expect(marker).toHaveTextContent("completed");
-    expect(marker).not.toHaveTextContent("running");
-    expect(marker).not.toHaveTextContent("streaming");
+    expect(marker).toHaveTextContent(/completed/i);
+    expect(marker).not.toHaveTextContent(/running/i);
+    expect(marker).not.toHaveTextContent(/streaming/i);
   });
 
   it("uses latest session terminal status when reload leaves a persisted round running", async () => {
@@ -3760,8 +3869,8 @@ describe("MessageTimeline", () => {
     expect(await screen.findByText("Recovered after reload.")).toBeVisible();
     const marker = container.querySelector(".at-round-marker");
     expect(marker).not.toBeNull();
-    expect(marker).toHaveTextContent("completed");
-    expect(marker).not.toHaveTextContent("running");
+    expect(marker).toHaveTextContent(/completed/i);
+    expect(marker).not.toHaveTextContent(/running/i);
   });
 
   it("polls live rounds until the refreshed history returns a terminal status", async () => {
@@ -3806,15 +3915,15 @@ describe("MessageTimeline", () => {
     await waitFor(() =>
       expect(container).toHaveTextContent("Finished after refresh."),
     );
-    expect(container.querySelector(".at-round-marker-meta")).toHaveTextContent("running");
+    expect(container.querySelector(".at-round-marker-meta")).toHaveTextContent(/running/i);
     await waitFor(() =>
       expect(listSessionRoundsMock).toHaveBeenCalledTimes(2),
       { timeout: 3000 },
     );
     await waitFor(() => {
       const markerMeta = container.querySelector(".at-round-marker-meta");
-      expect(markerMeta).toHaveTextContent("completed");
-      expect(markerMeta).not.toHaveTextContent("running");
+      expect(markerMeta).toHaveTextContent(/completed/i);
+      expect(markerMeta).not.toHaveTextContent(/running/i);
     });
   });
 
@@ -3887,8 +3996,8 @@ describe("MessageTimeline", () => {
       expect(currentMarker).not.toBeNull();
       return currentMarker as HTMLElement;
     });
-    expect(marker).toHaveTextContent("completed");
-    expect(marker).not.toHaveTextContent("running");
+    expect(marker).toHaveTextContent(/completed/i);
+    expect(marker).not.toHaveTextContent(/running/i);
   });
 
   it("surfaces round pending actions, retry details, and diagnostics", async () => {
@@ -4006,7 +4115,7 @@ describe("MessageTimeline", () => {
     expect(
       screen.getByRole("button", { name: "Go to round 1: Retry active provider call" }),
     ).toHaveClass("is-warning");
-    expect(container.querySelector(".at-round-marker")).toHaveTextContent("running");
+    expect(container.querySelector(".at-round-marker")).toHaveTextContent(/running/i);
   });
 
   it("hides raw verification diagnostics in round markers until diagnostics are visible", async () => {
@@ -4042,7 +4151,7 @@ describe("MessageTimeline", () => {
       .toHaveLength(2);
     expect(screen.queryByText(new RegExp(rawDiagnostic))).not.toBeInTheDocument();
     expect(container.querySelector(".at-round-marker")).toHaveTextContent(
-      "verification failed",
+      /verification failed/i,
     );
   });
 
@@ -4156,7 +4265,7 @@ describe("MessageTimeline", () => {
     );
     const marker = container.querySelector(".at-round-marker");
     expect(marker).not.toBeNull();
-    expect(marker).toHaveTextContent("completed");
+    expect(marker).toHaveTextContent(/completed/i);
   });
 
   it("renders live fallback targets as safe round metadata", async () => {

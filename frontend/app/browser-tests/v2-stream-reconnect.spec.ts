@@ -456,6 +456,14 @@ async function handleStreamApi(
   context: MockApiRouteContext,
   runCreateRequests: CapturedRunCreateRequest[],
 ): Promise<boolean> {
+  if (
+    context.method === "GET" &&
+    context.path === `/sessions/${SESSION_ID}/recovery` &&
+    runCreateRequests.length > 0
+  ) {
+    await context.fulfillJson(activeRecoverySnapshot());
+    return true;
+  }
   if (context.method !== "POST" || context.path !== "/ag-ui/runs") {
     return false;
   }
@@ -466,6 +474,27 @@ async function handleStreamApi(
     target_role_id: null,
   });
   return true;
+}
+
+function activeRecoverySnapshot(): Record<string, unknown> {
+  return {
+    active_run: {
+      last_event_id: 0,
+      pending_tool_approval_count: 0,
+      pending_user_question_count: 0,
+      phase: "running",
+      run_id: RUN_ID,
+      session_id: SESSION_ID,
+      should_show_recover: false,
+      status: "running",
+      stream_connected: true,
+    },
+    background_tasks: [],
+    paused_subagent: null,
+    pending_tool_approvals: [],
+    pending_user_questions: [],
+    recoverable_stopped_run: null,
+  };
 }
 
 function readRunCreateRequest(body: string | null): CapturedRunCreateRequest {

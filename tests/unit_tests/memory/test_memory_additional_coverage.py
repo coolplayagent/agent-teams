@@ -321,6 +321,32 @@ class TestAsyncSearch:
         result = await service.search_async(request)
         assert result.total_count == 0
 
+    async def test_search_fallback_stops_once_injection_limit_is_filled(
+        self, service: MemoryBankService
+    ) -> None:
+        for index in range(101):
+            await service.create_entry_async(
+                _create_request(
+                    content=MemoryContent(
+                        title=f"Bounded fallback {index}",
+                        body="shared bounded fallback text",
+                    ),
+                )
+            )
+        query_entries_async = AsyncMock(wraps=service._repo.query_entries_async)
+        service._repo.query_entries_async = query_entries_async
+
+        result = await service.search_limited_async(
+            MemorySearchRequest(
+                workspace_id="ws-async",
+                text_query="bounded fallback",
+                limit=1,
+            )
+        )
+
+        assert len(result) == 1
+        query_entries_async.assert_awaited_once()
+
 
 # ---------------------------------------------------------------------------
 # Service update edge cases

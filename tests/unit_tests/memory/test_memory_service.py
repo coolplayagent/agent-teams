@@ -1102,6 +1102,51 @@ class TestSearchFTS5:
         assert [query.offset for query in captured_queries] == [0, 100]
         assert {query.limit for query in captured_queries} == {100}
 
+    async def test_search_fts_stops_once_injection_limit_is_filled(
+        self, service: MemoryBankService
+    ) -> None:
+        keep = await service.create_entry_async(
+            _create_request(
+                content=MemoryContent(
+                    title="Immediate match",
+                    body="bounded retrieval body",
+                ),
+            )
+        )
+        raw_hits = (
+            RetrievalHit(
+                document_id=keep.id,
+                title="Immediate match",
+                snippet="bounded",
+                score=1.0,
+                rank=1,
+            ),
+            *(
+                RetrievalHit(
+                    document_id=f"missing-{index}",
+                    title=f"Missing {index}",
+                    snippet="bounded",
+                    score=0.9,
+                    rank=index + 2,
+                )
+                for index in range(99)
+            ),
+        )
+        mock_retrieval = MagicMock()
+        mock_retrieval.search_async = AsyncMock(return_value=raw_hits)
+        service._retrieval_service = mock_retrieval
+
+        result = await service.search_limited_async(
+            MemorySearchRequest(
+                workspace_id="ws-test",
+                text_query="bounded",
+                limit=1,
+            )
+        )
+
+        assert tuple(hit.entry.id for hit in result) == (keep.id,)
+        mock_retrieval.search_async.assert_awaited_once()
+
     async def test_search_fts_no_hits_returns_empty(
         self, service: MemoryBankService
     ) -> None:

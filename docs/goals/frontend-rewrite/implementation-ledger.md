@@ -10270,3 +10270,66 @@ This file tracks implementation evidence for the React/Ant Design migration goal
   satisfied by the 62/62 run above.
 - This batch verifies `SET-01`, `SET-02`, and `SET-14`. It does not mark the
   remaining Settings action/error rows or the complete V2 rewrite finished.
+
+## 2026-07-10 True-Provider Stream and Recovery Closure Batch
+
+### Scope
+- Replaced the normal-stream acceptance shortcut with an independent AG-UI SSE
+  evidence probe against the configured real provider. The probe records every
+  event ID and text delta, requires monotonic unique IDs and multiple non-empty
+  provider deltas before terminal completion, and compares the exact concatenated
+  delta text with the V2 terminal DOM.
+- Added a browser-side `MutationObserver` trace proving the visible answer grows
+  from those real runtime updates. The scenario switches to another session while
+  the source stream is still open, observes additional source deltas in the
+  background, switches back, and requires one exact final answer with no prefix,
+  duplicate, missing tail, stale cursor, or synthetic second typewriter pass.
+- Added the equivalent active hard-refresh proof, including a positive recovery
+  cursor on the resumed browser request, and paired the settled session with a V1
+  replay screenshot that contains the same output identity and final answer.
+- Removed the production performance cliff exposed by 5,000-6,000 character-level
+  events. Ordered event IDs now append without repeatedly sorting the full stream,
+  lifecycle scans only run for lifecycle events, and same-frame state notifications
+  are coalesced while the first delta and terminal state still flush immediately.
+  Every raw delta remains stored and terminal rendering reuses the accumulated
+  answer instead of rebuilding it.
+- Positive event IDs are retained as compact merged ranges for the lifetime of the
+  runtime run. Replaying event 1 after more than 6,000 later events is therefore
+  still rejected without retaining thousands of string keys. Explicit stream
+  replacement also flushes an already accepted batched state before changing the
+  callback generation, so the recovery cursor cannot move past unseen local text.
+- Added authoritative idle reconciliation for a run previously observed as active,
+  keyed by session and run. Reconciliation now settles each vanished run
+  independently, so a background task that remains active cannot leave a completed
+  foreground run stuck in the running state.
+- Scoped tracked runs to their owning session. Selecting a different session no
+  longer lets that session's empty recovery snapshot settle or close a background
+  stream; switching back restores the original stream from its last accepted event.
+- Enforced a unique final timeline render identity without deleting legitimate
+  repeated post-tool or reconnect segments. Same-run strict prefixes are removed
+  after processed-work grouping, while equal or disjoint segments receive stable
+  unique keys and remain visible in event order.
+- Bounded memory injection lookup to the requested result limit. This removes the
+  multi-page memory scan that delayed a real provider request by roughly 80 seconds
+  while preserving the full-count behavior for ordinary search callers.
+- Rebuilt `frontend/dist/app` with the runtime changes.
+
+### Verification
+- `AGENT_TEAMS_REAL_LIVE_STREAM=1 npx playwright test browser-tests/v2-real-backend-live-stream.spec.ts --project=chromium --workers=1 --grep "real backend normal stream"` passed both final true-provider scenarios in 1.8 minutes after the reviewer fixes; the active session-switch run completed in 42.9 seconds and the active hard-refresh run in 1.1 minutes. V1 replay contains exactly one full answer equal to the concatenated provider deltas.
+- `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npx playwright test browser-tests/v2-managed-backend-live-stream.spec.ts --project=chromium --grep "resumes exactly after a Chromium network cut"` passed in 1.2 minutes on the confirmation rerun against a real backend and TCP interruption harness.
+- `npx playwright test browser-tests/v2-session-switch-stream.spec.ts browser-tests/v2-stream-reconnect.spec.ts browser-tests/v2-stream-refresh.spec.ts --project=chromium --workers=1` passed all 13 tests in 57.5 seconds after the reviewer fixes, including normal and orchestration session switching, manual reconnect exhaustion, late event ordering, Last-Event-ID recovery, active refresh, terminal hydration, structured output, and tool-heavy replay.
+- `npx vitest run src/test/MessageTimeline.test.tsx src/test/RecoveryBar.test.tsx src/test/RunStreamController.test.tsx src/test/runtimeReducers.test.ts src/test/streamClient.test.ts` passed 335 tests. Coverage includes strict-prefix cleanup after processed grouping, legitimate repeated/reconnected segment retention, cross-run prefix isolation, late forced-confirmation cancellation after session changes, cross-session settlement isolation, old-event replay after 6,001 events, close-before-generation flush, mixed foreground/background settlement, and burst terminal-flush behavior.
+- Focused memory and role-injection suites passed with 151 tests; changed backend files passed Ruff and BasedPyright; the frontend passed typecheck and production build.
+- Visual inspection reviewed the active V2 stream, switch-back terminal, pre/post-refresh terminal, and V1 replay screenshots under `.tmp/frontend-v2-real-backend-live/`. The active view contains one growing answer and one inline loading point; settled views contain one answer, no running banner or stale stop control, and keep the sidebar/composer fixed.
+
+### Reviewer
+- The first final review found two blocking edge cases: a forced recovery
+  confirmation could resolve after its session was no longer selected, and role
+  fallback could treat two explicit different run IDs as one prefix stream.
+- Recovery confirmation now invalidates on effect/session cleanup, and role fallback
+  is only allowed when at least one run ID is missing. Dedicated regressions cover
+  both boundaries.
+- The independent reviewer returned PASS after inspecting those fixes and the
+  existing event retention, terminal flush, session-scoped settlement, memory
+  contract, and real-provider evidence. `SESS-03`, `MSG-02`, and `STREAM-02` can be
+  upgraded to `Verified`.

@@ -411,20 +411,70 @@ describe("useRunStreamController", () => {
       kind: "text_delta",
       payload: { text: "already displayed terminal text" },
     });
+    const pendingEntry = runtimeStateEntry({
+      eventId: 13,
+      kind: "text_delta",
+      payload: { text: "accepted immediately before settlement" },
+    });
     act(() => {
       options.onState(runtimeStateWithEntries([displayedEntry]));
+    });
+    streamMocks.handles[0]?.close.mockImplementation(() => {
+      options.onState(runtimeStateWithEntries([displayedEntry, pendingEntry]));
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Settle terminal stream" }));
 
     const settledRun = useRuntimeStore.getState().runtimeState.runs["run-1"];
     expect(settledRun).toMatchObject({
-      entries: [displayedEntry],
+      entries: [displayedEntry, pendingEntry],
       status: "closed",
     });
     expect(useRuntimeStore.getState().runtimeState.activeRunIds)
       .not.toContain("run-1");
     expect(screen.getByTestId("active-run-ids")).toBeEmptyDOMElement();
+  });
+
+  it("reopens the remaining run when one target settles authoritatively", () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+      },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Start streams" }));
+    const options = streamMocks.latestOptions as MultiplexedRunStreamOptions;
+    act(() => {
+      options.onState(runtimeStateWithRuns([
+        { lastEventId: 20, runId: "run-1" },
+        { lastEventId: 11, runId: "run-2" },
+      ]));
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Settle terminal stream" }));
+
+    expect(streamMocks.handles[0]?.close).toHaveBeenCalledTimes(1);
+    expect(streamMocks.openRunStream).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        afterEventId: 11,
+        runId: "run-2",
+      }),
+    );
+    expect(useRuntimeStore.getState().runtimeState.runs["run-1"]?.status).toBe(
+      "closed",
+    );
+    expect(useRuntimeStore.getState().runtimeState.runs["run-2"]?.status).toBe(
+      "open",
+    );
+    expect(screen.getByTestId("tracked-run-ids")).toHaveTextContent("run-2");
   });
 
   it("keeps refreshing after close until sidebar reports the terminal run", async () => {
@@ -1242,6 +1292,41 @@ describe("useRunStreamController", () => {
     expect(invalidateSpy).not.toHaveBeenCalledWith({
       queryKey: ["sessions", "sidebar"],
     });
+  });
+
+  it("accepts the previous stream's close flush before replacing its generation", () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+      },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+    const previousOptions = streamMocks.latestOptions as RunStreamOptions;
+    streamMocks.handles[0]?.close.mockImplementation(() => {
+      previousOptions.onState(runtimeStateWithRuns([
+        { lastEventId: 16, runId: "run-1" },
+      ]));
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Start background stream" }));
+
+    expect(useRuntimeStore.getState().runtimeState.runs["run-1"]).toMatchObject({
+      lastEventId: 16,
+      status: "open",
+    });
+    expect(screen.getByTestId("tracked-run-ids")).toHaveTextContent(
+      "background-run-1",
+    );
   });
 
   it("removes completed runs from the active controller targets during multiplexed streams", () => {

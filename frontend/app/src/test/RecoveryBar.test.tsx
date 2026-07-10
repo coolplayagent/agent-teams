@@ -1,6 +1,7 @@
 import { App as AntApp, ConfigProvider } from "antd";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -519,6 +520,229 @@ describe("RecoveryBar", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(controller.startRunStream).not.toHaveBeenCalled();
     expect(controller.startRunStreams).not.toHaveBeenCalled();
+  });
+
+  it("settles an observed active run when the authoritative snapshot becomes idle", async () => {
+    getRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({
+        active_run: {
+          run_id: "run-1",
+          session_id: "session-1",
+          status: "running",
+          phase: "running",
+          last_event_id: 42,
+          should_show_recover: false,
+        },
+      }),
+    );
+    const controller = runStreamController();
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, staleTime: Number.POSITIVE_INFINITY },
+      },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RecoveryBar runStreamController={controller} sessionId="session-1" />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+    await waitFor(() =>
+      expect(controller.startRunStream).toHaveBeenCalledWith({
+        afterEventId: 42,
+        foreground: true,
+        runId: "run-1",
+        sessionId: "session-1",
+      }),
+    );
+    controller.activeRunId = "run-1";
+    controller.activeRunIds = ["run-1"];
+    controller.trackedRunIds = ["run-1"];
+
+    act(() => {
+      queryClient.setQueryData(
+        ["sessions", "session-1", "recovery"],
+        recoverySnapshot({ active_run: null }),
+      );
+    });
+
+    await waitFor(() =>
+      expect(controller.settleTerminalRunStream).toHaveBeenCalledWith({
+        runIds: ["run-1"],
+        sessionId: "session-1",
+      }),
+    );
+    expect(controller.clearRunStream).not.toHaveBeenCalled();
+  });
+
+  it("force-confirms an unobserved tracked run before settling an idle snapshot", async () => {
+    getRecoverySnapshotMock
+      .mockResolvedValueOnce(recoverySnapshot({ active_run: null }))
+      .mockResolvedValueOnce(recoverySnapshot({ active_run: null }));
+    const controller = runStreamController();
+    controller.trackedRunIds = ["run-1"];
+
+    renderRecoveryBar(controller);
+
+    await waitFor(() =>
+      expect(getRecoverySnapshotMock).toHaveBeenCalledWith("session-1", true),
+    );
+    await waitFor(() =>
+      expect(controller.settleTerminalRunStream).toHaveBeenCalledWith({
+        runIds: ["run-1"],
+        sessionId: "session-1",
+      }),
+    );
+  });
+
+  it("keeps an unobserved tracked run when the forced snapshot is active", async () => {
+    getRecoverySnapshotMock
+      .mockResolvedValueOnce(recoverySnapshot({ active_run: null }))
+      .mockResolvedValueOnce(
+        recoverySnapshot({
+          active_run: {
+            run_id: "run-1",
+            session_id: "session-1",
+            status: "running",
+            phase: "running",
+            last_event_id: 15,
+            should_show_recover: false,
+          },
+        }),
+      );
+    const controller = runStreamController();
+    controller.trackedRunIds = ["run-1"];
+
+    renderRecoveryBar(controller);
+
+    await waitFor(() =>
+      expect(getRecoverySnapshotMock).toHaveBeenCalledWith("session-1", true),
+    );
+    await act(async () => Promise.resolve());
+    expect(controller.settleTerminalRunStream).not.toHaveBeenCalled();
+  });
+
+  it("does not reconcile a background run owned by another selected session", async () => {
+    getRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({ active_run: null }),
+    );
+    const controller = runStreamController();
+    controller.trackedRunIds = ["run-background-session"];
+    controller.trackedSessionId = "session-2";
+
+    renderRecoveryBar(controller);
+
+    await waitFor(() =>
+      expect(getRecoverySnapshotMock).toHaveBeenCalledWith("session-1"),
+    );
+    await act(async () => Promise.resolve());
+    expect(getRecoverySnapshotMock).not.toHaveBeenCalledWith("session-1", true);
+    expect(controller.settleTerminalRunStream).not.toHaveBeenCalled();
+  });
+
+  it("ignores a forced idle confirmation that resolves after the session changes", async () => {
+    const forcedSessionA = deferredResponse<RecoverySnapshot>();
+    getRecoverySnapshotMock.mockImplementation((sessionId, forceRefresh) => {
+      if (sessionId === "session-a" && forceRefresh === true) {
+        return forcedSessionA.promise;
+      }
+      return Promise.resolve(recoverySnapshot({ active_run: null }));
+    });
+    const controller = runStreamController();
+    controller.trackedRunIds = ["run-a"];
+    controller.trackedSessionId = "session-a";
+    const view = render(
+      <TestProviders>
+        <RecoveryBar runStreamController={controller} sessionId="session-a" />
+      </TestProviders>,
+    );
+
+    await waitFor(() =>
+      expect(getRecoverySnapshotMock).toHaveBeenCalledWith("session-a", true),
+    );
+    controller.trackedRunIds = ["run-b"];
+    controller.trackedSessionId = "session-b";
+    view.rerender(
+      <TestProviders>
+        <RecoveryBar runStreamController={controller} sessionId="session-b" />
+      </TestProviders>,
+    );
+
+    await waitFor(() =>
+      expect(getRecoverySnapshotMock).toHaveBeenCalledWith("session-b"),
+    );
+    forcedSessionA.resolve(recoverySnapshot({ active_run: null }));
+    await act(async () => Promise.resolve());
+    expect(controller.settleTerminalRunStream).not.toHaveBeenCalledWith({
+      runIds: ["run-a"],
+      sessionId: "session-a",
+    });
+  });
+
+  it("settles only a vanished foreground run while a background run remains active", async () => {
+    const backgroundTask: RecoverySnapshot["background_tasks"][number] = {
+      background_task_id: "background-task-1",
+      run_id: "background-run-1",
+      session_id: "session-1",
+      kind: "command",
+      command: "python worker.py",
+      cwd: "C:/repo",
+      execution_mode: "background",
+      status: "running",
+      recent_output: [],
+    };
+    getRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({
+        active_run: {
+          run_id: "run-1",
+          session_id: "session-1",
+          status: "running",
+          phase: "running",
+          last_event_id: 42,
+          should_show_recover: false,
+        },
+        background_tasks: [backgroundTask],
+      }),
+    );
+    const controller = runStreamController();
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, staleTime: Number.POSITIVE_INFINITY },
+      },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RecoveryBar runStreamController={controller} sessionId="session-1" />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(controller.startRunStreams).toHaveBeenCalled());
+    controller.activeRunId = "run-1";
+    controller.activeRunIds = ["run-1"];
+    controller.trackedRunIds = ["run-1", "background-run-1"];
+
+    act(() => {
+      queryClient.setQueryData(
+        ["sessions", "session-1", "recovery"],
+        recoverySnapshot({
+          active_run: null,
+          background_tasks: [backgroundTask],
+        }),
+      );
+    });
+
+    await waitFor(() =>
+      expect(controller.settleTerminalRunStream).toHaveBeenCalledWith({
+        runIds: ["run-1"],
+        sessionId: "session-1",
+      }),
+    );
   });
 
   it("does not auto-start streams for terminal active runs", async () => {

@@ -77,6 +77,9 @@ describe("runtime reducers", () => {
     expect(withLateEventEleven.runs["run-1"].lastEventId).toBe(12);
     expect(withLateEventEleven.runs["run-1"].entries.map((entry) => entry.text))
       .toEqual(["first chunk", "second chunk", "third chunk"]);
+    expect(withLateEventEleven.runs["run-1"].seenEventIdRanges).toEqual([
+      [10, 12],
+    ]);
   });
 
   it("bounds fallback dedupe keys for long streams", () => {
@@ -90,6 +93,55 @@ describe("runtime reducers", () => {
 
     expect(state.runs["run-1"].seenEventKeys).toHaveLength(MAX_SEEN_EVENT_KEYS);
     expect(state.runs["run-1"].entries).toHaveLength(MAX_SEEN_EVENT_KEYS + 8);
+  });
+
+  it("preserves every ordered delta across a provider-sized stream", () => {
+    const eventCount = 6000;
+    const streamed = Array.from({ length: eventCount }, (_value, index) =>
+      runEvent({
+        event_id: index + 1,
+        event_type: "text_delta",
+        payload_json: JSON.stringify({ text: String(index % 10) }),
+      }),
+    ).reduce(reduceRunEvent, initialRuntimeState);
+    const completed = reduceRunEvent(
+      streamed,
+      runEvent({
+        event_id: eventCount + 1,
+        event_type: "run_completed",
+        payload_json: JSON.stringify({ status: "completed" }),
+      }),
+    );
+
+    expect(completed.activeRunIds).toEqual([]);
+    expect(completed.runs["run-1"].entries).toHaveLength(eventCount + 1);
+    expect(
+      completed.runs["run-1"].entries
+        .filter((entry) => entry.kind === "text_delta")
+        .map((entry) => entry.text)
+        .join(""),
+    ).toBe(Array.from({ length: eventCount }, (_value, index) => String(index % 10)).join(""));
+    expect(completed.runs["run-1"]).toMatchObject({
+      lastEventId: eventCount + 1,
+      status: "closed",
+      terminalEventType: "run_completed",
+    });
+
+    const replayedOldestEvent = reduceRunEvent(
+      completed,
+      runEvent({
+        event_id: 1,
+        event_type: "text_delta",
+        payload_json: JSON.stringify({ text: "duplicate" }),
+      }),
+    );
+    expect(replayedOldestEvent).toBe(completed);
+    expect(replayedOldestEvent.runs["run-1"].entries).toHaveLength(
+      eventCount + 1,
+    );
+    expect(replayedOldestEvent.runs["run-1"].seenEventIdRanges).toEqual([
+      [1, eventCount + 1],
+    ]);
   });
 
   it("keeps repeated cursorless stream deltas when no stable replay key exists", () => {

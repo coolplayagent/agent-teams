@@ -401,9 +401,12 @@ test("restores orchestration thinking, tools, and text in order after session sw
     await expect(page.getByText("Second session hydrated output")).toHaveCount(0);
     await expect(page.locator(".at-message-thinking")).toHaveCount(1);
     await expect(page.locator(".at-message-thinking")).toContainText(thinkingText);
-    await expect(page.locator(".at-message-tool", { hasText: "Tool result: read" }))
-      .toHaveCount(1);
-    await expect(page.locator(".at-message-tool")).toContainText(toolResult);
+    const completedTool = page.locator(".at-message-tool", {
+      hasText: "Tool result: read",
+    });
+    await expect(completedTool).toHaveCount(1);
+    await completedTool.locator(".at-message-tool-summary").click();
+    await expect(completedTool).toContainText(toolResult);
     await expect(page.getByText(hiddenOutput)).toHaveCount(1);
     await expect(page.locator(".at-message-role")).toHaveCount(0);
     await expect.poll(() =>
@@ -517,7 +520,13 @@ async function handleSessionSwitchApi(
     context.path === `/sessions/${SESSION_ID}/recovery` ||
     context.path === `/sessions/${SECOND_SESSION_ID}/recovery`
   ) {
-    await context.fulfillJson(emptyRecoverySnapshot());
+    await context.fulfillJson(
+      context.path === `/sessions/${SESSION_ID}/recovery` &&
+        state.runCreateRequests.length > 0 &&
+        !state.completed
+        ? activeRecoverySnapshot(state.runId, SESSION_ID)
+        : emptyRecoverySnapshot(),
+    );
     return true;
   }
   if (
@@ -638,6 +647,23 @@ function emptyRecoverySnapshot(): Record<string, unknown> {
     pending_tool_approvals: [],
     pending_user_questions: [],
     recoverable_stopped_run: null,
+  };
+}
+
+function activeRecoverySnapshot(runId: string, sessionId: string): Record<string, unknown> {
+  return {
+    ...emptyRecoverySnapshot(),
+    active_run: {
+      last_event_id: 0,
+      pending_tool_approval_count: 0,
+      pending_user_question_count: 0,
+      phase: "running",
+      run_id: runId,
+      session_id: sessionId,
+      should_show_recover: false,
+      status: "running",
+      stream_connected: true,
+    },
   };
 }
 

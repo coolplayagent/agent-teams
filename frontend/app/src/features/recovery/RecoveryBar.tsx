@@ -1,6 +1,6 @@
 import { Alert, App, Button, Checkbox, Input, Radio, Space, Typography } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   answerUserQuestion,
@@ -54,6 +54,8 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
   const [collapsedBackgroundRunIds, setCollapsedBackgroundRunIds] = useState<
     Record<string, boolean>
   >({});
+  const observedActiveRunKeysRef = useRef(new Set<string>());
+  const pendingIdleConfirmationRunKeysRef = useRef(new Set<string>());
   const recoveryQuery = useQuery({
     queryKey: ["sessions", sessionId, "recovery"],
     queryFn: () => getRecoverySnapshot(sessionId ?? ""),
@@ -121,7 +123,12 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
     .map(recoveryRunStreamTargetKey)
     .join("|");
   const foregroundRecoveryRunIdsKey = foregroundRecoveryRunIds.join("|");
-  const trackedRunIdsKey = runStreamController.trackedRunIds.join("|");
+  const trackedRunIdsForSession =
+    runStreamController.trackedSessionId === undefined ||
+      runStreamController.trackedSessionId === sessionId
+      ? runStreamController.trackedRunIds
+      : [];
+  const trackedRunIdsKey = trackedRunIdsForSession.join("|");
   const suppressedRunIdsKey = runStreamController.suppressedRunIds.join("|");
   const recoverableRunId =
     visibleActiveRun?.should_show_recover === true ? visibleActiveRun.run_id : null;
@@ -132,6 +139,100 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
     pausedSubagent,
     runStreamController.activeRunIds,
   );
+
+  useEffect(() => {
+    if (sessionId === null) {
+      return;
+    }
+    for (const target of recoveryRunStreamTargets) {
+      observedActiveRunKeysRef.current.add(
+        recoveryRunObservationKey(sessionId, target.runId),
+      );
+    }
+  }, [recoveryRunStreamTargets, recoveryRunStreamTargetsKey, sessionId]);
+
+  useEffect(() => {
+    if (sessionId === null || recoveryQuery.data === undefined) {
+      return;
+    }
+    let disposed = false;
+    const authoritativeActiveRunIds = new Set(
+      recoveryRunStreamTargets.map((target) => target.runId),
+    );
+    const observedTerminalRunIds = trackedRunIdsForSession.filter(
+      (runId) =>
+        observedActiveRunKeysRef.current.has(
+          recoveryRunObservationKey(sessionId, runId),
+        ) && !authoritativeActiveRunIds.has(runId),
+    );
+    for (const runId of observedTerminalRunIds) {
+      observedActiveRunKeysRef.current.delete(
+        recoveryRunObservationKey(sessionId, runId),
+      );
+    }
+    if (observedTerminalRunIds.length > 0) {
+      runStreamController.settleTerminalRunStream({
+        runIds: observedTerminalRunIds,
+        sessionId,
+      });
+    }
+
+    const unconfirmedRunIds = trackedRunIdsForSession.filter((runId) => {
+      const observationKey = recoveryRunObservationKey(sessionId, runId);
+      return (
+        !authoritativeActiveRunIds.has(runId) &&
+        !observedActiveRunKeysRef.current.has(observationKey) &&
+        !pendingIdleConfirmationRunKeysRef.current.has(observationKey)
+      );
+    });
+    if (unconfirmedRunIds.length === 0) {
+      return;
+    }
+    const confirmationKeys = unconfirmedRunIds.map((runId) =>
+      recoveryRunObservationKey(sessionId, runId),
+    );
+    for (const confirmationKey of confirmationKeys) {
+      pendingIdleConfirmationRunKeysRef.current.add(confirmationKey);
+    }
+    void getRecoverySnapshot(sessionId, true)
+      .then((snapshot) => {
+        if (disposed) {
+          return;
+        }
+        queryClient.setQueryData(["sessions", sessionId, "recovery"], snapshot);
+        const confirmedActiveRunIds = new Set(
+          buildRecoveryRunStreamTargets(
+            snapshot.active_run,
+            snapshot.background_tasks.filter(isActiveBackgroundTask),
+          ).map((target) => target.runId),
+        );
+        const confirmedTerminalRunIds = unconfirmedRunIds.filter(
+          (runId) => !confirmedActiveRunIds.has(runId),
+        );
+        if (confirmedTerminalRunIds.length > 0) {
+          runStreamController.settleTerminalRunStream({
+            runIds: confirmedTerminalRunIds,
+            sessionId,
+          });
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        for (const confirmationKey of confirmationKeys) {
+          pendingIdleConfirmationRunKeysRef.current.delete(confirmationKey);
+        }
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [
+    queryClient,
+    recoveryQuery.data,
+    recoveryRunStreamTargets.length,
+    runStreamController,
+    sessionId,
+    trackedRunIdsKey,
+  ]);
 
   useEffect(() => {
     if (sessionId === null || streamableRecoveryRunStreamTargets.length === 0) {
@@ -1137,6 +1238,10 @@ function addRecoveryRunStreamTarget(
     return;
   }
   targets.push({ afterEventId, runId: normalizedRunId });
+}
+
+function recoveryRunObservationKey(sessionId: string, runId: string): string {
+  return `${sessionId.trim()}:${runId.trim()}`;
 }
 
 function runStreamIdsMatchTargets(

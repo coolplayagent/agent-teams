@@ -1587,7 +1587,7 @@ def _stream_fast_prompt_events(*, base_url: str, run_id: str) -> None:
 
 
 def _resolve_fast_prompt_stream_timeout_seconds() -> float:
-    raw_value = os.environ.get(FAST_PROMPT_STREAM_TIMEOUT_SECONDS_ENV)
+    raw_value = _load_fast_prompt_stream_timeout_env_value()
     if raw_value is None or not raw_value.strip():
         return DEFAULT_FAST_PROMPT_STREAM_TIMEOUT_SECONDS
     normalized = raw_value.strip()
@@ -1600,6 +1600,15 @@ def _resolve_fast_prompt_stream_timeout_seconds() -> float:
         _log_invalid_fast_prompt_stream_timeout(raw_value)
         return DEFAULT_FAST_PROMPT_STREAM_TIMEOUT_SECONDS
     return timeout_seconds
+
+
+def _load_fast_prompt_stream_timeout_env_value() -> str | None:
+    process_value = os.environ.get(FAST_PROMPT_STREAM_TIMEOUT_SECONDS_ENV)
+    if process_value is not None:
+        return process_value
+    return _load_fast_env_file(_app_config_dir() / ".env").get(
+        FAST_PROMPT_STREAM_TIMEOUT_SECONDS_ENV
+    )
 
 
 def _log_invalid_fast_prompt_stream_timeout(raw_value: str) -> None:

@@ -3729,6 +3729,7 @@ def test_fast_prompt_stream_line_prints_text_delta(
 
 
 def test_fast_prompt_stream_events_reads_sse_until_completion(
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -3777,6 +3778,7 @@ def test_fast_prompt_stream_events_reads_sse_until_completion(
             self.closed = True
 
     monkeypatch.setattr(http.client, "HTTPConnection", FakeConnection)
+    monkeypatch.setenv("RELAY_TEAMS_CONFIG_DIR", str(tmp_path / "config"))
     monkeypatch.delenv(cli_app.FAST_PROMPT_STREAM_TIMEOUT_SECONDS_ENV, raising=False)
 
     _STREAM_FAST_PROMPT_EVENTS(base_url="http://0.0.0.0:8000/root", run_id="run 1")
@@ -3844,6 +3846,106 @@ def test_fast_prompt_stream_events_uses_configured_timeout(
     _STREAM_FAST_PROMPT_EVENTS(base_url="http://127.0.0.1:8000", run_id="run-1")
 
     assert FakeConnection.instances[0].timeout == 1800.0
+
+
+def test_fast_prompt_stream_events_uses_app_env_timeout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeSseResponse:
+        status = 200
+
+        def readline(self) -> bytes:
+            return b'data: {"event_type":"run_completed","payload_json":"{}"}\n'
+
+        def read(self) -> bytes:
+            return b""
+
+    class FakeConnection:
+        instances: list[FakeConnection] = []
+
+        def __init__(self, address: str, port: int, timeout: float) -> None:
+            self.address = address
+            self.port = port
+            self.timeout = timeout
+            FakeConnection.instances.append(self)
+
+        def request(
+            self,
+            method: str,
+            path: str,
+            *,
+            headers: dict[str, str],
+        ) -> None:
+            pass
+
+        def getresponse(self) -> FakeSseResponse:
+            return FakeSseResponse()
+
+        def close(self) -> None:
+            pass
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / ".env").write_text(
+        f"{cli_app.FAST_PROMPT_STREAM_TIMEOUT_SECONDS_ENV}=1800\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(http.client, "HTTPConnection", FakeConnection)
+    monkeypatch.setenv("RELAY_TEAMS_CONFIG_DIR", str(config_dir))
+    monkeypatch.delenv(cli_app.FAST_PROMPT_STREAM_TIMEOUT_SECONDS_ENV, raising=False)
+
+    _STREAM_FAST_PROMPT_EVENTS(base_url="http://127.0.0.1:8000", run_id="run-1")
+
+    assert FakeConnection.instances[0].timeout == 1800.0
+
+
+def test_fast_prompt_stream_timeout_process_env_overrides_app_env(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / ".env").write_text(
+        f"{cli_app.FAST_PROMPT_STREAM_TIMEOUT_SECONDS_ENV}=1800\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("RELAY_TEAMS_CONFIG_DIR", str(config_dir))
+    monkeypatch.setenv(cli_app.FAST_PROMPT_STREAM_TIMEOUT_SECONDS_ENV, "1200")
+
+    assert cli_app._resolve_fast_prompt_stream_timeout_seconds() == 1200.0
+
+
+def test_fast_prompt_stream_timeout_process_env_skips_invalid_app_env(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / ".env").write_bytes(b"\xff")
+    monkeypatch.setenv("RELAY_TEAMS_CONFIG_DIR", str(config_dir))
+    monkeypatch.setenv(cli_app.FAST_PROMPT_STREAM_TIMEOUT_SECONDS_ENV, "1200")
+
+    assert cli_app._resolve_fast_prompt_stream_timeout_seconds() == 1200.0
+
+
+def test_fast_prompt_stream_timeout_defaults_when_app_env_invalid(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / ".env").write_text(
+        f"{cli_app.FAST_PROMPT_STREAM_TIMEOUT_SECONDS_ENV}=not-a-number\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("RELAY_TEAMS_CONFIG_DIR", str(config_dir))
+    monkeypatch.delenv(cli_app.FAST_PROMPT_STREAM_TIMEOUT_SECONDS_ENV, raising=False)
+
+    assert (
+        cli_app._resolve_fast_prompt_stream_timeout_seconds()
+        == cli_app.DEFAULT_FAST_PROMPT_STREAM_TIMEOUT_SECONDS
+    )
 
 
 @pytest.mark.parametrize(

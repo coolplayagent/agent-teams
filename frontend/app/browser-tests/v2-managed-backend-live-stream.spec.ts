@@ -14,6 +14,16 @@ import {
   screenshotPath,
   waitForV2Shell,
 } from "./support/frontend-app";
+import { startManagedNetworkProxy } from "./support/managed-network-proxy";
+import {
+  eventStreamEvidenceForSubagentSession,
+  eventStreamEvidenceForRun,
+  eventStreamFailuresForSubagentSession,
+  eventStreamFailuresForRun,
+  hasPositiveRecoveryCursor,
+  observeEventStreams,
+  type EventStreamProbe,
+} from "./support/stream-network-recovery";
 
 const SCREENSHOT_FOLDER = "frontend-v2-managed-backend-live";
 const MANAGED_LIVE_ENABLED = process.env.AGENT_TEAMS_MANAGED_LIVE_STREAM === "1";
@@ -23,6 +33,7 @@ const repoRoot = resolve(packageRoot, "../..");
 interface ManagedBackend {
   apiBaseUrl: string;
   close: () => Promise<void>;
+  interruptNetwork: (offlineMs?: number) => Promise<void>;
 }
 
 interface ManagedProcess {
@@ -471,11 +482,95 @@ test("managed backend active stream recovers when stored selection points elsewh
   }
 });
 
+test("managed backend normal stream resumes exactly after a Chromium network cut", async ({
+  page,
+}) => {
+  const title = `managed-live-network-cut-${Date.now()}`;
+  const session = await createSession(title);
+  const probe = await observeEventStreams(page);
+  let runId: string | null = null;
+  try {
+    await openManagedSession(page, session, title);
+    await expectManagedShellReady(page);
+
+    const streamTag = streamTagFromTitle(title);
+    const tokenCount = 72;
+    const expectedText = slowStreamExpectedText(streamTag, tokenCount);
+    const firstToken = slowStreamToken(streamTag, 0);
+    const lastToken = slowStreamToken(streamTag, tokenCount - 1);
+    const promptText = [
+      `${title}: [slow-stream tag=${streamTag} repeat=${tokenCount} delay=110 chunk=8]`,
+      "请只输出 fake LLM 返回的慢速文本。",
+    ].join("\n");
+
+    const runResponse = waitForRunCreateResponse(page);
+    await submitPrompt(page, promptText);
+    const createdRunId = await runIdFromResponse(await runResponse);
+    runId = createdRunId;
+    await expect(page.getByRole("button", { name: /停止|Stop/ })).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect
+      .poll(() => latestLiveStreamText(page), { timeout: 90_000 })
+      .toContain(firstToken);
+    const beforeCutText = await latestLiveStreamText(page);
+    expect(beforeCutText.length).toBeGreaterThan(0);
+    await expect
+      .poll(() => currentRunStatus(session.session_id, createdRunId))
+      .toBe("active");
+
+    await interruptManagedStreamAndExpectRecovery(probe, createdRunId);
+    await expect
+      .poll(() => currentRunStatus(session.session_id, createdRunId))
+      .toBe("active");
+
+    const recoveredSamples = await collectLiveStreamTextLengthSamples(page, 90_000, 80);
+    expect(increasingSampleCount([beforeCutText.length, ...recoveredSamples]))
+      .toBeGreaterThanOrEqual(2);
+    await page.screenshot({
+      fullPage: false,
+      path: screenshotPath(
+        "managed-live-network-cut-recovered-streaming.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+
+    await waitForRunToLeaveActive(session.session_id, createdRunId, 180_000);
+    await expect
+      .poll(() => mainTimelineMessageArticleText(page), { timeout: 60_000 })
+      .toContain(lastToken);
+    await expectTerminalAnswerDoesNotReplay(page, expectedText);
+    await expect.poll(() => messageArticleTextOccurrenceCount(page, firstToken))
+      .toBe(1);
+    await expect
+      .poll(() => strictPrefixMessageArticleCount(page, expectedText))
+      .toBe(0);
+    await expect(page.locator(".streaming-cursor")).toHaveCount(0);
+    await expectNoDocumentScroll(
+      page,
+      "managed network-cut stream should stay inside the fixed shell",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.screenshot({
+      fullPage: false,
+      path: screenshotPath(
+        "managed-live-network-cut-terminal.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+  } finally {
+    await probe.stop();
+    await stopRunIfPresent(runId);
+    await deleteSession(session.session_id);
+  }
+});
+
 test("managed backend normal tool pressure streams compact lifecycle cards", async ({
   page,
 }) => {
   const title = `managed-live-tool-pressure-${Date.now()}`;
   const session = await createSession(title);
+  const probe = await observeEventStreams(page);
   let runId: string | null = null;
   try {
     await openManagedSession(page, session, title);
@@ -485,7 +580,7 @@ test("managed backend normal tool pressure streams compact lifecycle cards", asy
     const toolCount = 3;
     const finalText = `[fake-llm] normal tool pressure completed ${toolCount} shell calls.`;
     const promptText = [
-      `${title}: [normal-tool-pressure count=${toolCount} delay=3500 tag=${toolTag}]`,
+      `${title}: [normal-tool-pressure count=${toolCount} delay=9000 tag=${toolTag}]`,
       "请运行 fake LLM 请求的 shell 工具并用最终文本收尾。",
     ].join("\n");
 
@@ -510,6 +605,21 @@ test("managed backend normal tool pressure streams compact lifecycle cards", asy
       fullPage: false,
       path: screenshotPath(
         "managed-live-tool-pressure-running.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+
+    await interruptManagedStreamAndExpectRecovery(probe, createdRunId);
+    await expect
+      .poll(() => currentRunStatus(session.session_id, createdRunId))
+      .toBe("active");
+    await expect.poll(() => toolCardCount(page), { timeout: 45_000 })
+      .toBeGreaterThanOrEqual(toolCount);
+    await expect.poll(() => nakedRuntimeRoleLineCount(page)).toBe(0);
+    await page.screenshot({
+      fullPage: false,
+      path: screenshotPath(
+        "managed-live-tool-pressure-after-network-recovery.png",
         SCREENSHOT_FOLDER,
       ),
     });
@@ -554,6 +664,7 @@ test("managed backend normal tool pressure streams compact lifecycle cards", asy
       ),
     });
   } finally {
+    await probe.stop();
     await stopRunIfPresent(runId);
     await deleteSession(session.session_id);
   }
@@ -564,6 +675,7 @@ test("managed backend orchestration tool stream survives active refresh without 
 }) => {
   const title = `managed-live-orchestration-tool-${Date.now()}`;
   const session = await createSession(title);
+  const probe = await observeEventStreams(page);
   let runId: string | null = null;
   try {
     await updateSessionTopology(session.session_id, {
@@ -579,7 +691,7 @@ test("managed backend orchestration tool stream survives active refresh without 
     const titleTag = streamTagFromTitle(title);
     const finalText = `[fake-llm] orchestration tool pressure completed ${taskCount} tasks.`;
     const promptText = [
-      `${title}: [orch-tool-pressure count=${taskCount} tools=2 delay=2500]`,
+      `${title}: [orch-tool-pressure count=${taskCount} tools=2 delay=5000]`,
       `请以编排模式执行工具压力验证，标记 ${titleTag}。`,
     ].join("\n");
 
@@ -604,6 +716,25 @@ test("managed backend orchestration tool stream survives active refresh without 
       fullPage: false,
       path: screenshotPath(
         "managed-live-orchestration-tool-running.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+
+    await interruptManagedStreamAndExpectRecovery(probe, createdRunId, 500);
+    await expect(page.locator(".at-composer")).toContainText(/编排模式|Orchestration/);
+    await expect
+      .poll(() => currentRunStatus(session.session_id, createdRunId))
+      .toBe("active");
+    await expect.poll(() => toolCardCount(page), { timeout: 60_000 })
+      .toBeGreaterThanOrEqual(1);
+    await expect.poll(() => nakedRuntimeRoleLineCount(page)).toBe(0);
+    await expect
+      .poll(() => mainTimelineMessageArticleText(page))
+      .not.toContain("Return only the delegation plan JSON object");
+    await page.screenshot({
+      fullPage: false,
+      path: screenshotPath(
+        "managed-live-orchestration-tool-after-network-recovery.png",
         SCREENSHOT_FOLDER,
       ),
     });
@@ -651,6 +782,7 @@ test("managed backend orchestration tool stream survives active refresh without 
       ),
     });
   } finally {
+    await probe.stop();
     await stopRunIfPresent(runId);
     await deleteSession(session.session_id);
   }
@@ -661,6 +793,7 @@ test("managed backend subagent stream receives incremental chunks in the right p
 }) => {
   const title = `managed-live-subagent-${Date.now()}`;
   const session = await createSession(title);
+  const probe = await observeEventStreams(page);
   let runId: string | null = null;
   try {
     await openManagedSession(page, session, title);
@@ -699,6 +832,28 @@ test("managed backend subagent stream receives incremental chunks in the right p
       .poll(() => latestSubagentPanelRuntimeText(panel), { timeout: 90_000 })
       .toContain(firstToken);
     expect(await latestSubagentPanelRuntimeText(panel)).not.toContain(lastToken);
+
+    await interruptManagedSubagentStreamAndExpectRecovery(
+      probe,
+      session.session_id,
+    );
+    await expect(panel).toBeVisible();
+    await expect
+      .poll(() => panel.locator(".at-subagent-session-prompt").textContent())
+      .toContain(childTag);
+    await expect
+      .poll(() => latestSubagentPanelRuntimeText(panel), { timeout: 45_000 })
+      .toContain(firstToken);
+    expect(await latestSubagentPanelRuntimeText(panel)).not.toContain(lastToken);
+    await expect.poll(() => mainTimelineMessageArticleText(page))
+      .not.toContain(firstToken);
+    await page.screenshot({
+      fullPage: false,
+      path: screenshotPath(
+        "managed-live-subagent-panel-after-network-recovery.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
 
     await page.reload({ waitUntil: "domcontentloaded" });
     await expectManagedShellReady(page);
@@ -764,6 +919,7 @@ test("managed backend subagent stream receives incremental chunks in the right p
       ),
     });
   } finally {
+    await probe.stop();
     await stopRunIfPresent(runId);
     await deleteSession(session.session_id);
   }
@@ -795,6 +951,7 @@ async function startManagedBackend(): Promise<ManagedBackend> {
     name: "fake-llm",
   });
   let backend: ManagedProcess | null = null;
+  let networkProxy: Awaited<ReturnType<typeof startManagedNetworkProxy>> | null = null;
   try {
     await waitForHttpReady(`${fakeLlmBaseUrl}/health`, fakeLlm, 20_000);
     backend = startManagedProcess({
@@ -815,17 +972,25 @@ async function startManagedBackend(): Promise<ManagedBackend> {
     });
     await waitForHttpReady(`${apiBaseUrl}/api/system/health`, backend, 90_000);
     await waitForHttpReady(`${apiBaseUrl}/api/sessions?workspace_id=default`, backend, 90_000);
+    networkProxy = await startManagedNetworkProxy(backendPort);
     return {
-      apiBaseUrl,
+      apiBaseUrl: networkProxy.baseUrl,
       close: async () => {
+        if (networkProxy !== null) {
+          await networkProxy.close();
+        }
         if (backend !== null) {
           await stopManagedProcess(backend);
         }
         await stopManagedProcess(fakeLlm);
         await rm(runtimeRoot, { force: true, recursive: true });
       },
+      interruptNetwork: networkProxy.interrupt,
     };
   } catch (error) {
+    if (networkProxy !== null) {
+      await networkProxy.close();
+    }
     if (backend !== null) {
       await stopManagedProcess(backend);
     }
@@ -1261,6 +1426,73 @@ async function expectToolPressureTerminalState(
   await expect(page.locator(".at-message-role")).toHaveCount(0);
   for (let index = 1; index <= toolCount; index += 1) {
     await expect(processed).toContainText(`tool-pressure-${index}`);
+  }
+}
+
+async function interruptManagedStreamAndExpectRecovery(
+  probe: EventStreamProbe,
+  runId: string,
+  offlineMs = 2_000,
+): Promise<void> {
+  const requestCountBeforeCut = eventStreamEvidenceForRun(
+    probe.requests,
+    runId,
+  ).length;
+  const failureCountBeforeCut = eventStreamFailuresForRun(
+    probe.failures,
+    runId,
+  ).length;
+  await managedBackend.interruptNetwork(offlineMs);
+  await expect.poll(
+    () => eventStreamFailuresForRun(probe.failures, runId).length,
+    { timeout: 20_000 },
+  ).toBeGreaterThan(failureCountBeforeCut);
+  await expect.poll(
+    () => eventStreamEvidenceForRun(probe.requests, runId).length,
+    { timeout: 30_000 },
+  ).toBeGreaterThan(requestCountBeforeCut);
+  await expect.poll(() => hasPositiveRecoveryCursor(
+    eventStreamEvidenceForRun(probe.requests, runId).slice(requestCountBeforeCut),
+  ), { timeout: 20_000 }).toBe(true);
+}
+
+async function interruptManagedSubagentStreamAndExpectRecovery(
+  probe: EventStreamProbe,
+  sessionId: string,
+): Promise<void> {
+  const requestCountBeforeCut = eventStreamEvidenceForSubagentSession(
+    probe.requests,
+    sessionId,
+  ).length;
+  const failureCountBeforeCut = eventStreamFailuresForSubagentSession(
+    probe.failures,
+    sessionId,
+  ).length;
+  await managedBackend.interruptNetwork(500);
+  await expect.poll(
+    () => eventStreamFailuresForSubagentSession(probe.failures, sessionId).length,
+    { timeout: 20_000 },
+  ).toBeGreaterThan(failureCountBeforeCut);
+  await expect.poll(
+    () => eventStreamEvidenceForSubagentSession(probe.requests, sessionId).length,
+    { timeout: 30_000 },
+  ).toBeGreaterThan(requestCountBeforeCut);
+  try {
+    await expect.poll(() => hasPositiveRecoveryCursor(
+      eventStreamEvidenceForSubagentSession(
+        probe.requests,
+        sessionId,
+      ).slice(requestCountBeforeCut),
+    ), { timeout: 20_000 }).toBe(true);
+  } catch (error) {
+    const recoveryEvidence = eventStreamEvidenceForSubagentSession(
+      probe.requests,
+      sessionId,
+    ).slice(requestCountBeforeCut);
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `${message}\nSubagent recovery evidence: ${JSON.stringify(recoveryEvidence)}`,
+    );
   }
 }
 

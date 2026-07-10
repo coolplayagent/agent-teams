@@ -1897,6 +1897,18 @@ Response fields:
   - `generated_at`
   - `refresh_error`
 
+### `GET /sessions/{session_id}/subagents/events`
+
+Streams normal-mode subagent run events for one parent session over SSE.
+
+Replay cursor:
+- `after_event_id`: optional non-negative query cursor.
+- `Last-Event-ID`: optional SSE reconnect header.
+- When both are present, the backend resumes after the newer value.
+- Events with a persisted `event_id` emit a matching SSE `id:` line, allowing native browser `EventSource` reconnects to send `Last-Event-ID` without replaying from zero.
+
+The `data:` payload uses the normal `RunEvent` JSON shape. Clients still deduplicate by event identity because a manual reconnect can overlap a native browser reconnect during transport recovery.
+
 ### `DELETE /sessions/{session_id}/subagents/{instance_id}`
 
 Deletes one normal-mode child-session subagent projection and its persisted instance/run history.

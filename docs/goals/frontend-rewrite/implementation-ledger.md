@@ -10189,3 +10189,23 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent decision: this adds managed-backend evidence for stale-selection arbitration plus active-stream continuation. It does not mark `SESS-03`, `STREAM-02`, `REC-01`, or final V2 frontend complete; real-provider interruption/reconnect, broader production orchestration/tool recovery variants, and final paired V1/V2 visual sign-off remain open.
+
+## 2026-07-10 Managed Network Interruption Recovery Batch
+
+### Scope
+- Expanded P0 recovery work from one stale-selection scenario into a reusable managed-network fault harness and four real packed-app stream paths.
+- Added a TCP proxy that can destroy active browser/backend sockets while leaving the backend run alive, plus a Chrome DevTools probe that records failed event streams, query cursors, and `Last-Event-ID` headers.
+- Applied the fault to normal text streaming, normal tool pressure, orchestration tool pressure, and the right-side subagent panel. All four paths retain their existing refresh, session-switch, terminal, uniqueness, role-isolation, fixed-shell, and composer-overlap guards.
+- Fixed the production defect exposed by the subagent path: the session subagent SSE endpoint now emits standard `id:` lines and resolves the newer query/header cursor, while `SubagentSessionView` closes failed transports and performs at most three cursor-based fallback reconnects.
+- Rebuilt `frontend/dist/app` so the served `/app/` contains the subagent fallback.
+
+### Verification
+- `npm test -- src/test/SubagentSessionView.test.tsx` passed with 29 tests.
+- `uv run --extra dev pytest -q tests/unit_tests/interfaces/server/test_sessions_router.py -k "stream_session_subagent_events"` passed with 3 tests.
+- `uv run --extra dev ruff check src/relay_teams/interfaces/server/routers/sessions.py tests/unit_tests/interfaces/server/test_sessions_router.py tests/integration_tests/support/fake_llm_server.py` passed.
+- `npm run lint` and `npm run build` passed.
+- `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "normal stream resumes exactly|normal tool pressure|orchestration tool stream|subagent stream receives incremental chunks"` passed with 4 Chromium tests after rebuilding the packed app.
+- Screenshot inspection reviewed the four network-recovery images under `.tmp/frontend-v2-managed-backend-live/`; no duplicate cards, role leakage, parent/child mixing, document scroll, or composer overlap was visible. Pixel inspection confirmed the PNGs are opaque RGB screenshots.
+
+### Reviewer
+- Main-agent decision: this closes the managed-backend network-interruption evidence gap across the main runtime variants and fixes the subagent native-reconnect contract. It does not mark P0 or final V2 complete; true real-provider interruption/reconnect, final paired V1/V2 visual sign-off, and remaining parity rows stay open.

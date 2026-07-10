@@ -380,6 +380,64 @@ describe("SubagentSessionView", () => {
     expect(latestSubagentStreamHandle().close).toHaveBeenCalledTimes(1);
   });
 
+  it("reconnects a transport interruption from the latest subagent cursor", async () => {
+    setRuntimeEntries([
+      runtimeMessageEntry({
+        instanceId: "subagent-instance-1",
+        runId: "subagent_run_1",
+        text: "Live subagent output before interruption",
+      }),
+    ]);
+    renderSubagentSessionView();
+
+    await waitFor(() =>
+      expectSubagentSessionStreamStarted({
+        afterEventId: 42,
+        runId: "subagent_run_1",
+        sessionId: "session-parent",
+      }),
+    );
+    const interruptedHandle = latestSubagentStreamHandle();
+    const interruptedOptions = latestSubagentStreamOptions();
+    act(() => {
+      interruptedOptions.onState({
+        activeRunIds: ["subagent_run_1"],
+        runs: {
+          subagent_run_1: {
+            entries: [
+              runtimeMessageEntry({
+                instanceId: "subagent-instance-1",
+                runId: "subagent_run_1",
+                text: "Live subagent output at recovery cursor",
+              }),
+            ],
+            lastEventId: 77,
+            runId: "subagent_run_1",
+            scope: "subagent",
+            seenEventKeys: ["subagent_run_1:77"],
+            sessionId: "session-parent",
+            status: "open",
+            terminalEventType: null,
+          },
+        },
+      });
+      interruptedOptions.onError("Run stream disconnected.", "transport");
+    });
+
+    expect(interruptedHandle.close).toHaveBeenCalledTimes(1);
+    await waitFor(
+      () => {
+        expect(openSessionSubagentRunStreamMock).toHaveBeenCalledTimes(2);
+        expectSubagentSessionStreamStarted({
+          afterEventId: 77,
+          runId: "subagent_run_1",
+          sessionId: "session-parent",
+        });
+      },
+      { timeout: 2_500 },
+    );
+  });
+
   it("marks opened subagent streams as subagent scoped before live events arrive", async () => {
     renderSubagentSessionView();
 

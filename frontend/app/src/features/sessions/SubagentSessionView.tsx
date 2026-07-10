@@ -33,6 +33,8 @@ import {
 
 const SUBAGENT_TERMINAL_SETTLE_DELAY_MS = 80;
 const SUBAGENT_TERMINAL_SETTLE_MAX_ATTEMPTS = 3;
+const SUBAGENT_STREAM_RECONNECT_DELAY_MS = 750;
+const SUBAGENT_STREAM_RECONNECT_MAX_ATTEMPTS = 3;
 
 interface SubagentSessionViewProps {
   subagent: ActiveSubagentSession;
@@ -51,8 +53,11 @@ export function SubagentSessionView({
   const setRuntimeState = useRuntimeStore((state) => state.setRuntimeState);
   const runtimeStateRef = useRef(runtimeState);
   const latestStreamTargetRef = useRef<SubagentStreamTarget | null>(null);
+  const subagentReconnectAttemptRef = useRef(0);
+  const subagentReconnectTimerRef = useRef<number | null>(null);
   const subagentStreamRef = useRef<RunStreamHandle | null>(null);
   const streamedRunIdRef = useRef<string | null>(null);
+  const [streamReconnectGeneration, setStreamReconnectGeneration] = useState(0);
   const [pollSubagentRecord, setPollSubagentRecord] = useState(
     () => subagentHasStreamingStatus(subagent),
   );
@@ -134,6 +139,33 @@ export function SubagentSessionView({
     };
   }, [instanceId, messageQueryKey, queryClient, sessionId]);
 
+  const clearSubagentReconnectTimer = useCallback(() => {
+    if (subagentReconnectTimerRef.current !== null) {
+      window.clearTimeout(subagentReconnectTimerRef.current);
+      subagentReconnectTimerRef.current = null;
+    }
+  }, []);
+
+  const resetSubagentReconnect = useCallback(() => {
+    clearSubagentReconnectTimer();
+    subagentReconnectAttemptRef.current = 0;
+  }, [clearSubagentReconnectTimer]);
+
+  const scheduleSubagentReconnect = useCallback(() => {
+    if (
+      subagentReconnectTimerRef.current !== null ||
+      subagentReconnectAttemptRef.current >= SUBAGENT_STREAM_RECONNECT_MAX_ATTEMPTS
+    ) {
+      return;
+    }
+    const nextAttempt = subagentReconnectAttemptRef.current + 1;
+    subagentReconnectAttemptRef.current = nextAttempt;
+    subagentReconnectTimerRef.current = window.setTimeout(() => {
+      subagentReconnectTimerRef.current = null;
+      setStreamReconnectGeneration((generation) => generation + 1);
+    }, SUBAGENT_STREAM_RECONNECT_DELAY_MS * nextAttempt);
+  }, []);
+
   useEffect(() => {
     setPollSubagentRecord(subagentHasStreamingStatus(subagent));
   }, [
@@ -176,7 +208,9 @@ export function SubagentSessionView({
     const streamHandle = openSessionSubagentRunStream({
       afterEventId: currentRuntimeState.runs[runId]?.lastEventId ?? 0,
       initialState: currentRuntimeState,
+      onActivity: resetSubagentReconnect,
       onClosed: (closedRuntimeState) => {
+        resetSubagentReconnect();
         const displayRuntimeState = subagentClosedRuntimeStateForDisplay({
           closedRuntimeState,
           currentRuntimeState: runtimeStateRef.current,
@@ -205,10 +239,14 @@ export function SubagentSessionView({
           sessionId: latestTarget.sessionId,
         });
       },
-      onError: () => {
+      onError: (_message, errorKind) => {
         if (streamedRunIdRef.current === runId) {
+          subagentStreamRef.current?.close();
           streamedRunIdRef.current = null;
           subagentStreamRef.current = null;
+        }
+        if (errorKind === "transport") {
+          scheduleSubagentReconnect();
         }
       },
       onState: (nextRuntimeState) => {
@@ -237,25 +275,35 @@ export function SubagentSessionView({
       sessionId,
     });
     subagentStreamRef.current = streamHandle;
-  }, [runId, sessionId, setRuntimeState, streamStatusKey]);
+  }, [
+    resetSubagentReconnect,
+    runId,
+    scheduleSubagentReconnect,
+    sessionId,
+    setRuntimeState,
+    streamReconnectGeneration,
+    streamStatusKey,
+  ]);
 
   useEffect(() => {
     return () => {
+      resetSubagentReconnect();
       if (streamedRunIdRef.current === runId) {
         subagentStreamRef.current?.close();
         subagentStreamRef.current = null;
         streamedRunIdRef.current = null;
       }
     };
-  }, [runId, sessionId]);
+  }, [resetSubagentReconnect, runId, sessionId]);
 
   useEffect(() => {
     return () => {
+      resetSubagentReconnect();
       subagentStreamRef.current?.close();
       subagentStreamRef.current = null;
       streamedRunIdRef.current = null;
     };
-  }, []);
+  }, [resetSubagentReconnect]);
 
   return (
     <div className="at-subagent-session-view">

@@ -681,7 +681,7 @@ def _extract_orch_tool_pressure_config(
     return _OrchToolPressureConfig(
         task_count=max(1, min(8, int(match.group(1)))),
         tool_count=max(1, min(8, int(match.group(2)))),
-        delay_ms=max(0, min(2_000, int(match.group(3)))),
+        delay_ms=max(0, min(5_000, int(match.group(3)))),
     )
 
 

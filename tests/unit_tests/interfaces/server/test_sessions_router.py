@@ -1427,8 +1427,24 @@ def test_stream_session_subagent_events_route_returns_sse_events() -> None:
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
     assert fake_service.subagent_stream_calls == [("session-1", 9)]
+    assert "id: 10" in response.text
     assert '"run_id":"subagent_run_123"' in response.text
     assert '"event_id":10' in response.text
+
+
+def test_stream_session_subagent_events_route_uses_newer_last_event_id() -> None:
+    fake_service = _FakeSessionService()
+    client = _create_client(fake_service)
+
+    response = client.get(
+        "/api/sessions/session-1/subagents/events?after_event_id=9",
+        headers={"Last-Event-ID": "12"},
+    )
+
+    assert response.status_code == 200
+    assert fake_service.subagent_stream_calls == [("session-1", 12)]
+    assert "id: 13" in response.text
+    assert '"event_id":13' in response.text
 
 
 def test_stream_session_subagent_events_route_reports_missing_session() -> None:

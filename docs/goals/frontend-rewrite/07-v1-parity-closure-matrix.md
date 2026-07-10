@@ -114,6 +114,28 @@ For every row moved to `Verified`, record:
 
 ## Verification Ledger
 
+### 2026-07-10 Active Refresh Duplicate Cursor Guard
+
+- `REC-01` and `STREAM-02` tightened for the active hard-refresh continuation
+  path. The packed browser recovery scenario now reloads after event 2 is
+  persisted, reconnects from `after_event_id=2`, replays duplicate event 2,
+  and verifies the duplicate cursor event does not append a second copy of the
+  persisted chunk.
+- The same test then streams event 3, checks the persisted and resumed chunks
+  appear once and in order, completes the run, hard-refreshes again, and
+  verifies the terminal replay still has one answer row, no stale cursor, and
+  no duplicate persisted/resumed text.
+- Automated evidence: `npm run test:browser -- v2-stream-refresh.spec.ts
+  --project=chromium -g "resumes an active stream"` passed, the full
+  `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium`
+  passed with 6 Chromium tests, and `npm run lint` passed.
+- Browser evidence reviewed:
+  `.tmp/frontend-v2-ts-stream/v2-stream-refresh-replay.png`.
+- This does not move `REC-01` or `STREAM-02` to `Verified`; managed/real active
+  hard-refresh continuation, broader orchestration/tool-heavy recovery, true
+  real-provider normal-stream proof, and final V1/V2 visual sign-off remain
+  open.
+
 ### 2026-07-10 Exact SSE Stream Rendering Guard
 
 - `MSG-02`, `STREAM-02`, and `SUB-01` tightened after review showed the

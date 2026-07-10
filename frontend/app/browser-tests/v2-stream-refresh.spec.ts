@@ -126,10 +126,24 @@ test("resumes an active stream after refresh without duplicating hydrated output
     await waitForEventSourceOpenCount(page, 1);
     await expect(page.getByRole("button", { name: "Stop" })).toBeVisible();
 
+    await dispatchRunEvent(page, {
+      eventId: 2,
+      payload: { text: persistedChunk },
+      relayEventType: "text_delta",
+      type: "message.text.delta",
+    });
+    await expect(page.locator(".at-message").filter({ hasText: persistedChunk }))
+      .toHaveCount(1);
+    await expect.poll(() =>
+      page.locator(".at-chat-view").evaluate((root, token) =>
+        (root.textContent ?? "").split(token as string).length - 1,
+      persistedChunk),
+    ).toBe(1);
+
     const resumedChunk = "TS after reload chunk.";
     await dispatchRunEvent(page, {
       eventId: 3,
-      payload: { text: resumedChunk },
+      payload: { text: ` ${resumedChunk}` },
       relayEventType: "text_delta",
       type: "message.text.delta",
     });
@@ -137,8 +151,15 @@ test("resumes an active stream after refresh without duplicating hydrated output
     await expect(page.getByText(resumedChunk)).toBeVisible();
     await expect(page.locator(".at-message").filter({ hasText: persistedChunk }))
       .toHaveCount(1);
+    await expect.poll(() =>
+      page.locator(".at-chat-view").evaluate((root, tokens) => {
+        const text = root.textContent ?? "";
+        const [first, second] = tokens as string[];
+        return text.indexOf(first) >= 0 && text.indexOf(first) < text.indexOf(second);
+      }, [persistedChunk, resumedChunk]),
+    ).toBe(true);
 
-    recoveryState.persistedAssistantText = `${persistedChunk}${resumedChunk}`;
+    recoveryState.persistedAssistantText = `${persistedChunk} ${resumedChunk}`;
     recoveryState.lastEventId = 4;
     recoveryState.completed = true;
     await dispatchRunEvent(page, {
@@ -152,6 +173,30 @@ test("resumes an active stream after refresh without duplicating hydrated output
     await expect(page.getByText(resumedChunk)).toBeVisible();
     await expect(page.locator(".at-message").filter({ hasText: persistedChunk }))
       .toHaveCount(1);
+    await expect(page.locator(".streaming-cursor")).toHaveCount(0);
+
+    await page.reload();
+    await waitForV2Shell(page);
+    await expect(page.locator(".at-message").filter({ hasText: persistedChunk }))
+      .toHaveCount(1);
+    await expect(page.locator(".at-message").filter({ hasText: resumedChunk }))
+      .toHaveCount(1);
+    await expect(page.locator(".streaming-cursor")).toHaveCount(0);
+    await expect.poll(() =>
+      page.locator(".at-chat-view").evaluate((root, tokens) => {
+        const text = root.textContent ?? "";
+        const [first, second] = tokens as string[];
+        return {
+          firstCount: text.split(first).length - 1,
+          inOrder: text.indexOf(first) >= 0 && text.indexOf(first) < text.indexOf(second),
+          secondCount: text.split(second).length - 1,
+        };
+      }, [persistedChunk, resumedChunk]),
+    ).toEqual({
+      firstCount: 1,
+      inOrder: true,
+      secondCount: 1,
+    });
 
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await expectNoDocumentScroll(

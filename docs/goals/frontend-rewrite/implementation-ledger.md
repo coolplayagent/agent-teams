@@ -10078,3 +10078,19 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent decision: this supersedes the previous frontend typewriter-cadence direction for `MSG-02`/`STREAM-02`/`SUB-01`. The correct invariant is exact SSE-buffer rendering plus stable terminal/hydration behavior. This does not claim full V2 completion, true real-provider normal-stream proof, interrupted recovery, broader production-backend orchestration/tool variants, or final V1/V2 visual sign-off.
+
+## 2026-07-10 Active Refresh Duplicate Cursor Guard Slice
+
+### Scope
+- Continued P0 runtime closure on `REC-01`/`STREAM-02` after the exact-SSE rendering fix.
+- Strengthened the active refresh browser scenario so it no longer only checks that the persisted chunk and resumed chunk appear. The scenario now reloads from a persisted event cursor, receives a duplicate cursor event after reconnect, and asserts the persisted chunk still occurs once.
+- The scenario then streams the next event, asserts persisted/resumed text order and exact occurrence counts, completes the run, hard-refreshes terminal history, and verifies one settled answer with no stale cursor.
+
+### Verification
+- `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium -g "resumes an active stream"` passed.
+- `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium` passed with 6 Chromium tests.
+- `npm run lint` passed.
+- Screenshot inspection reviewed `.tmp/frontend-v2-ts-stream/v2-stream-refresh-replay.png`; it shows one settled answer after terminal hard refresh and no streaming cursor.
+
+### Reviewer
+- Main-agent decision: this tightens active hard-refresh continuation and duplicate-cursor replay evidence. It does not mark `REC-01`, `STREAM-02`, or final V2 frontend completion as verified; managed/real active hard-refresh continuation, broader orchestration/tool-heavy recovery, true real-provider normal-stream proof, and final V1/V2 visual sign-off remain open.

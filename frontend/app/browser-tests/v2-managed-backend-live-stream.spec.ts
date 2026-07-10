@@ -353,6 +353,22 @@ test("managed backend active stream stays in one streaming row after hard refres
         SCREENSHOT_FOLDER,
       ),
     });
+
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expectManagedShellReady(page);
+    await expectTerminalAnswerDoesNotReplay(page, expectedText);
+    await expectNoDocumentScroll(
+      page,
+      "managed active terminal hard refresh should stay inside the fixed shell",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await page.screenshot({
+      fullPage: false,
+      path: screenshotPath(
+        "managed-live-active-refresh-terminal-reload.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
   } finally {
     await stopRunIfPresent(runId);
     await deleteSession(session.session_id);

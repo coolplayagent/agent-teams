@@ -114,6 +114,26 @@ For every row moved to `Verified`, record:
 
 ## Verification Ledger
 
+### 2026-07-10 Managed Active Terminal Reload Guard
+
+- `REC-01` and `STREAM-02` tightened with managed real-backend/fake-LLM
+  evidence for the active hard-refresh continuation path. The browser test now
+  starts a slow managed stream, hard-refreshes while the run is still active,
+  waits for terminal settlement, then hard-refreshes again from terminal
+  history.
+- The terminal reload path reuses the stable-answer guard: one answer row,
+  stable row identity, no strict-prefix row, no `.at-message-streaming-text`,
+  no plain-stream wrapper, no stale `.streaming-cursor`, and no document-level
+  scroll or composer overlap.
+- Automated evidence: `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser
+  -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "active
+  stream stays"` passed, and `npm run lint` passed.
+- Browser evidence reviewed:
+  `.tmp/frontend-v2-managed-backend-live/managed-live-active-refresh-terminal-reload.png`.
+- This does not move `REC-01` or `STREAM-02` to `Verified`; real-provider
+  normal stream proof, real-backend orchestration/tool-heavy active refresh
+  variants, and final V1/V2 visual sign-off remain open.
+
 ### 2026-07-10 Tool-Heavy Terminal Refresh Guard
 
 - `STREAM-02` and `REC-01` tightened for the tool-heavy refresh/replay path.

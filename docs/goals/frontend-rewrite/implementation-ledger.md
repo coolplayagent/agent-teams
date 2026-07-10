@@ -10110,3 +10110,18 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent decision: this improves terminal hard-refresh evidence for complex tool histories. It does not mark `STREAM-02`, `REC-01`, or final V2 frontend completion as verified; managed/real active hard-refresh continuation, real-backend orchestration/tool-heavy variants, true real-provider normal-stream proof, and final V1/V2 visual sign-off remain open.
+
+## 2026-07-10 Managed Active Terminal Reload Guard Slice
+
+### Scope
+- Continued P0 runtime closure on `REC-01`/`STREAM-02`, moving from mock SSE and packed dist fixtures to the managed backend/fake-LLM path.
+- Strengthened the managed active-refresh scenario: after hard-refreshing during an active slow stream and waiting for terminal settlement, the test now hard-refreshes the completed session again and applies the terminal no-replay guard.
+- The terminal reload guard asserts one final answer row, stable row identity, no strict-prefix leftover row, no streaming wrappers, no stale cursor, no document scroll, and no composer control overlap.
+
+### Verification
+- `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "active stream stays"` passed.
+- `npm run lint` passed.
+- Screenshot inspection reviewed `.tmp/frontend-v2-managed-backend-live/managed-live-active-refresh-terminal-reload.png`.
+
+### Reviewer
+- Main-agent decision: this closes one managed-backend active-refresh evidence gap for `REC-01`/`STREAM-02`. It does not mark the rows or final V2 frontend complete; true real-provider normal-stream proof, real-backend orchestration/tool-heavy active refresh variants, and final V1/V2 visual sign-off remain open.

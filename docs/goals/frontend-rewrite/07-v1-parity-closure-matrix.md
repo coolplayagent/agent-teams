@@ -114,6 +114,30 @@ For every row moved to `Verified`, record:
 
 ## Verification Ledger
 
+### 2026-07-10 Stable Streaming Markdown Container
+
+- `MSG-02` and `STREAM-02` tightened for the user-visible case where a live
+  answer had already fully rendered, then terminal/history settlement replaced
+  the inner renderer and looked like a second rebuild. `MessageTimeline` no
+  longer switches live text through separate inline/plain-stream renderers;
+  streaming and completed text now share the same markdown container and only
+  add/remove the live cursor and streaming class.
+- Browser coverage now marks the actual `.at-message-markdown` DOM node during
+  live streaming and asserts the same node survives terminal completion and
+  persisted history catch-up. Long runtime streams are also covered through the
+  stable markdown path, with the retired `.at-message-plain-stream` renderer
+  absent.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx` passed
+  with 202 tests, `npm test -- src/test/ShellLayoutCss.test.ts` passed,
+  `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium -g
+  "does not rebuild a fully displayed live answer"` passed, `npm run lint`
+  passed, and `npm run build` passed.
+- Browser evidence reviewed:
+  `.tmp/frontend-v2-ts-stream/v2-stream-terminal-catchup-after-history.png`.
+- This does not move `MSG-02` or `STREAM-02` to `Verified`; broader
+  production-backend stream variants, interrupted recovery, and final V1/V2
+  visual sign-off remain open.
+
 ### 2026-07-10 Managed Active Terminal Reload Guard
 
 - `REC-01` and `STREAM-02` tightened with managed real-backend/fake-LLM

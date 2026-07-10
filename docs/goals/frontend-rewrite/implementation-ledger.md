@@ -10125,3 +10125,22 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 
 ### Reviewer
 - Main-agent decision: this closes one managed-backend active-refresh evidence gap for `REC-01`/`STREAM-02`. It does not mark the rows or final V2 frontend complete; true real-provider normal-stream proof, real-backend orchestration/tool-heavy active refresh variants, and final V1/V2 visual sign-off remain open.
+
+## 2026-07-10 Stable Streaming Markdown Container Slice
+
+### Scope
+- Continued P0 runtime closure on `MSG-02`/`STREAM-02` after the user-visible report that a fully displayed live answer could still look like it was rebuilt when terminal/history data arrived.
+- Removed the separate streaming inline/plain-text renderer path from `MessageTimeline`. Live and completed assistant text now use the same markdown container; settlement only removes the cursor and streaming class instead of swapping the inner renderer.
+- Retired the `.at-message-plain-stream` CSS path and updated long-stream coverage to require the stable markdown container. The packed browser guard marks the live `.at-message-markdown` DOM node and proves that exact node survives terminal completion and persisted history catch-up.
+- Rebuilt `frontend/dist/app` so the served `/app/` bundle contains the stable streaming container behavior.
+
+### Verification
+- `npm test -- src/test/MessageTimeline.test.tsx` passed with 202 tests.
+- `npm test -- src/test/ShellLayoutCss.test.ts` passed.
+- `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium -g "does not rebuild a fully displayed live answer"` passed.
+- `npm run lint` passed.
+- `npm run build` passed and regenerated the packed `/app/` bundle.
+- Screenshot inspection reviewed `.tmp/frontend-v2-ts-stream/v2-stream-terminal-catchup-after-history.png`.
+
+### Reviewer
+- Main-agent decision: this fixes the renderer-swap class of false replay/rebuild. It does not mark `MSG-02`, `STREAM-02`, or final V2 frontend complete; broader production-backend stream variants, interrupted recovery, and final V1/V2 visual sign-off remain open.

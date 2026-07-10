@@ -266,7 +266,7 @@ describe("shell layout CSS", () => {
       /\.streaming-cursor\s*{[\s\S]*?width:\s*6px;[\s\S]*?height:\s*6px;[\s\S]*?border-radius:\s*50%;[\s\S]*?animation:\s*at-streaming-cursor-pulse 0\.9s ease-in-out infinite alternate;/,
     );
     expect(themeCss).toMatch(
-      /\.at-message-plain-stream\s*{[\s\S]*?overflow-wrap:\s*anywhere;[\s\S]*?white-space:\s*pre-wrap;/,
+      /\.at-message-streaming-text \.at-message-markdown,[\s\S]*?\.at-message-streaming-text \.at-message-markdown > p:only-child\s*{[\s\S]*?display:\s*inline;/,
     );
   });
 

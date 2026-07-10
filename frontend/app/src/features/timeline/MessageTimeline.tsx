@@ -30,7 +30,6 @@ import { RoundRail } from "./RoundRail";
 import { roundPromptText, roundTitle } from "./roundMetadata";
 
 const TIMELINE_BOTTOM_FOLLOW_THRESHOLD_PX = 96;
-const LONG_STREAM_TEXT_THRESHOLD = 12000;
 const ROUND_RAIL_PAGE_LIMIT = 100;
 const ROUND_RAIL_MAX_PAGES = 10;
 const TOOL_RESULT_MAX_LINES = 200;
@@ -6664,14 +6663,6 @@ function MessageText({
   const visuallyStreaming = part.streaming;
   const cursorVisible = part.streaming;
   const text = part.text;
-  if (visuallyStreaming && text.length >= LONG_STREAM_TEXT_THRESHOLD) {
-    return (
-      <pre className="at-message-plain-stream" data-render-mode="plain-stream">
-        {text}
-        {cursorVisible ? <StreamingCursor /> : null}
-      </pre>
-    );
-  }
   return (
     <div
       className={[
@@ -6680,25 +6671,10 @@ function MessageText({
       ].filter(Boolean).join(" ")}
       data-streaming={visuallyStreaming ? "true" : undefined}
     >
-      {visuallyStreaming && timelineStreamingTextCanRenderInline(text)
-        ? (
-            <span className="at-message-streaming-inline">
-              {text}
-              {cursorVisible ? <StreamingCursor /> : null}
-            </span>
-          )
-        : (
-            <>
-              <MarkdownMessage text={text} />
-              {cursorVisible ? <StreamingCursor /> : null}
-            </>
-          )}
+      <MarkdownMessage text={text} />
+      {cursorVisible ? <StreamingCursor /> : null}
     </div>
   );
-}
-
-function timelineStreamingTextCanRenderInline(text: string): boolean {
-  return !/[\r\n`*#[\]<>|]/u.test(text);
 }
 
 function StreamingCursor() {

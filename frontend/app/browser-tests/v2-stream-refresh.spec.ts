@@ -273,6 +273,11 @@ test("does not rebuild a fully displayed live answer when persisted history catc
     const streamingText = liveAnswerRow.locator(".at-message-streaming-text");
     await expect(streamingText).toBeVisible();
     await expect(streamingText).toHaveText(finalText);
+    const markdownNode = liveAnswerRow.locator(".at-message-markdown");
+    await expect(markdownNode).toHaveCount(1);
+    await markdownNode.evaluate((element) => {
+      element.setAttribute("data-stability-probe", "live-markdown");
+    });
     await page.screenshot({
       path: screenshotPath(
         "v2-stream-terminal-catchup-live-complete.png",
@@ -306,6 +311,11 @@ test("does not rebuild a fully displayed live answer when persisted history catc
     await expect(liveAnswerRow).toContainText(finalText);
     await expect(liveAnswerRow.locator(".at-message-streaming-text")).toHaveCount(0);
     await expect(liveAnswerRow.locator(".streaming-cursor")).toHaveCount(0);
+    await expect(
+      liveAnswerRow.locator(
+        ".at-message-markdown[data-stability-probe='live-markdown']",
+      ),
+    ).toHaveCount(1);
     await expect.poll(() => liveAnswerRow.first().getAttribute("data-row-key"))
       .toBe(liveRowKey);
     await expect.poll(() => recoveryState.messageRequestCount)
@@ -316,6 +326,11 @@ test("does not rebuild a fully displayed live answer when persisted history catc
       finalText),
     ).toBe(1);
     await expectSettledAnswerDoesNotReplay(page, liveAnswerRow, finalText, liveRowKey);
+    await expect(
+      liveAnswerRow.locator(
+        ".at-message-markdown[data-stability-probe='live-markdown']",
+      ),
+    ).toHaveCount(1);
 
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await expectNoDocumentScroll(

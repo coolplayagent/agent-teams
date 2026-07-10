@@ -5316,16 +5316,6 @@ body {
   color: var(--at-text-muted);
 }
 
-.at-message-plain-stream {
-  max-width: 100%;
-  margin: 0;
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-  color: var(--at-text);
-  font: inherit;
-  line-height: var(--at-message-line-height);
-}
-
 .at-message-streaming-text {
   max-width: 100%;
 }

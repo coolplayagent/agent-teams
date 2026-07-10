@@ -907,6 +907,58 @@ describe("MessageTimeline", () => {
     expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
   });
 
+  it("keeps the streaming markdown node mounted when a completed stream settles", async () => {
+    const finalAnswer = [
+      "LIVE_STREAM_ALPHA",
+      "LIVE_STREAM_BETA",
+      "LIVE_STREAM_GAMMA",
+      "LIVE_STREAM_DELTA",
+    ].join(" ");
+    const textEvent = relayRunEvent({
+      event_id: 1,
+      event_type: "text_delta",
+      payload_json: JSON.stringify({ text: finalAnswer }),
+      run_id: "run-live-markdown-node-stable",
+      trace_id: "run-live-markdown-node-stable",
+    });
+    setRuntimeStateFromEvents([textEvent]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText(finalAnswer)).toBeVisible();
+    const rowBefore = container.querySelector<HTMLElement>("article.at-message");
+    const textNodeBefore = container.querySelector<HTMLElement>(".at-message-text");
+    const markdownBefore = container.querySelector<HTMLElement>(".at-message-markdown");
+    expect(rowBefore).not.toBeNull();
+    expect(textNodeBefore).not.toBeNull();
+    expect(markdownBefore).not.toBeNull();
+    expect(textNodeBefore).toHaveClass("at-message-streaming-text");
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
+
+    await act(async () => {
+      setRuntimeStateFromEvents([
+        textEvent,
+        relayRunEvent({
+          event_id: 2,
+          event_type: "run_completed",
+          payload_json: JSON.stringify({ status: "completed" }),
+          run_id: "run-live-markdown-node-stable",
+          trace_id: "run-live-markdown-node-stable",
+        }),
+      ]);
+    });
+
+    expect(container.querySelector<HTMLElement>("article.at-message")).toBe(rowBefore);
+    expect(container.querySelector<HTMLElement>(".at-message-text"))
+      .toBe(textNodeBefore);
+    expect(container.querySelector<HTMLElement>(".at-message-markdown"))
+      .toBe(markdownBefore);
+    expect(textNodeBefore).not.toHaveClass("at-message-streaming-text");
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
+    expect(screen.getByText(finalAnswer)).toBeVisible();
+  });
+
   it("does not re-render a completed runtime text segment after the full delta arrives", async () => {
     vi.stubEnv("MODE", "production");
     vi.useFakeTimers();
@@ -1285,6 +1337,73 @@ describe("MessageTimeline", () => {
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
     expect(container.querySelector<HTMLElement>("article.at-message")?.dataset.rowKey)
       .toBe("runtime-text:run-live-reveal-boundary:MainAgent:0");
+  });
+
+  it("does not preserve a closed runtime prefix when hydrated history has the final answer", async () => {
+    const streamedPrefix = "LIVE_STREAM_ALPHA LIVE_STREAM_BETA";
+    const finalAnswer = [
+      streamedPrefix,
+      "LIVE_STREAM_GAMMA",
+      "LIVE_STREAM_DELTA",
+      "LIVE_STREAM_EPSILON",
+    ].join(" ");
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "text_delta",
+        payload_json: JSON.stringify({ text: streamedPrefix }),
+        run_id: "run-live-prefix-tool-hydrate",
+        trace_id: "run-live-prefix-tool-hydrate",
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "tool_call",
+        payload_json: JSON.stringify({
+          args: { cmd: "echo ok" },
+          tool_call_id: "call-live-prefix-tool-hydrate",
+          tool_name: "shell",
+        }),
+        run_id: "run-live-prefix-tool-hydrate",
+        trace_id: "run-live-prefix-tool-hydrate",
+      }),
+      relayRunEvent({
+        event_id: 3,
+        event_type: "tool_result",
+        payload_json: JSON.stringify({
+          content: "ok",
+          tool_call_id: "call-live-prefix-tool-hydrate",
+          tool_name: "shell",
+        }),
+        run_id: "run-live-prefix-tool-hydrate",
+        trace_id: "run-live-prefix-tool-hydrate",
+      }),
+      relayRunEvent({
+        event_id: 4,
+        event_type: "run_completed",
+        payload_json: JSON.stringify({ status: "completed" }),
+        run_id: "run-live-prefix-tool-hydrate",
+        trace_id: "run-live-prefix-tool-hydrate",
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: finalAnswer,
+        message_id: "assistant-live-prefix-tool-hydrate-final",
+        role_id: "MainAgent",
+        run_id: "run-live-prefix-tool-hydrate",
+      },
+    ]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText(finalAnswer)).toBeVisible();
+    expect(screen.queryByText(streamedPrefix, { exact: true }))
+      .not.toBeInTheDocument();
+    expect(container.querySelectorAll(".at-message-streaming-text")).toHaveLength(0);
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+    expect(container.querySelector<HTMLElement>("article.at-message")?.dataset.rowKey)
+      .toBe("runtime-text:run-live-prefix-tool-hydrate:MainAgent:0");
   });
 
   it("keeps terminal structured output mounted when history hydrates the answer", async () => {
@@ -8244,7 +8363,7 @@ describe("MessageTimeline", () => {
     expect(screen.getByText("Tool result: execute_command")).toBeVisible();
   });
 
-  it("renders long open runtime text streams as one plain text block", async () => {
+  it("renders long open runtime text streams through the stable markdown container", async () => {
     const prefix = "x".repeat(10000);
     const suffix = "y".repeat(3000);
     setRuntimeEntries([
@@ -8264,14 +8383,16 @@ describe("MessageTimeline", () => {
     const { container } = renderTimeline();
 
     await waitFor(() =>
-      expect(container.querySelector(".at-message-plain-stream")).not.toBeNull(),
+      expect(container.querySelector(".at-message-streaming-text")).not.toBeNull(),
     );
-    const plainStream = container.querySelector<HTMLElement>(".at-message-plain-stream");
-    expect(plainStream).toHaveAttribute("data-render-mode", "plain-stream");
-    expect(plainStream?.textContent).toHaveLength(13000);
-    expect(plainStream?.textContent).toBe(`${prefix}${suffix}`);
+    const streamingText = container.querySelector<HTMLElement>(
+      ".at-message-streaming-text",
+    );
+    expect(streamingText?.textContent).toHaveLength(13000);
+    expect(streamingText?.textContent).toBe(`${prefix}${suffix}`);
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
-    expect(container.querySelector(".at-message-markdown")).toBeNull();
+    expect(container.querySelector(".at-message-markdown")).not.toBeNull();
+    expect(container.querySelector(".at-message-plain-stream")).toBeNull();
     expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
   });
 

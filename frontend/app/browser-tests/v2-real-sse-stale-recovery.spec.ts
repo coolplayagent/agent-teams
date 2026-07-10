@@ -354,6 +354,8 @@ interface RealSseTerminalOptions {
 }
 
 interface RealSseState {
+  activeStreamResponse: ServerResponse | null;
+  activeStreamWasOpenDuringAction: boolean;
   approvalResolutions: RealSseRecoveryActionRequest[];
   backgroundSubagentRecovery: boolean;
   completed: boolean;
@@ -361,6 +363,7 @@ interface RealSseState {
   lastEventId: number;
   messageRequestCount: number;
   multiplexRequests: RealSseMultiplexRequest[];
+  openStreamActions: string[];
   pendingToolApproval: boolean;
   pendingUserQuestion: boolean;
   persistedAssistantText: string;
@@ -392,8 +395,8 @@ interface RealSseParentMarkerState {
 }
 
 interface RealSseInjectionRequest {
-  content?: unknown;
-  mode?: unknown;
+  content: string;
+  mode: string;
 }
 
 interface RealSseRecoveryActionRequest {
@@ -541,15 +544,20 @@ async function runRealSseActiveControlScenario(
   page: Page,
   options: RealSseActiveControlOptions,
 ): Promise<void> {
-  const appServer = await serveFrontendDist();
   const state = createRealSseState();
   const unhandledApiRoutes: string[] = [];
+  const appServer = await serveFrontendDist({
+    handleRequest: (request, response) =>
+      handleComposerControlHttpApi(
+        request,
+        response,
+        state,
+        options.mode,
+        unhandledApiRoutes,
+      ),
+  });
   try {
     await installShellState(page);
-    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
-      handleRequest: (context) => handleRealSseApi(context, state, options.mode),
-      sessionTitle: `TS ${options.mode}`,
-    });
     await ensureScreenshotDir(SCREENSHOT_FOLDER);
 
     await page.goto(`${appServer.url}/app/`);
@@ -569,6 +577,7 @@ async function runRealSseActiveControlScenario(
     ]);
     await expect(page.getByText(FIRST_CHUNK)).toBeVisible();
     await expect(page.getByRole("button", { exact: true, name: "Stop" })).toBeVisible();
+    await expect.poll(() => state.activeStreamResponse !== null).toBe(true);
 
     if (options.mode === "active-inject") {
       await expect(page.getByRole("button", { exact: true, name: "Queue" })).toBeVisible();
@@ -585,6 +594,8 @@ async function runRealSseActiveControlScenario(
       ]);
       expect(state.runCreateCount).toBe(1);
       expect(state.stopRequests).toEqual([]);
+      expect(state.activeStreamWasOpenDuringAction).toBe(true);
+      expect(state.openStreamActions).toEqual(["queued", "interrupt"]);
       await page.mouse.move(320, 120);
       await page.screenshot({
         path: screenshotPath(options.screenshotName, SCREENSHOT_FOLDER),
@@ -593,6 +604,12 @@ async function runRealSseActiveControlScenario(
 
     await page.getByRole("button", { exact: true, name: "Stop" }).click();
     await expect.poll(() => state.stopRequests).toEqual([{ scope: "main" }]);
+    expect(state.activeStreamWasOpenDuringAction).toBe(true);
+    expect(state.openStreamActions).toEqual(
+      options.mode === "active-inject"
+        ? ["queued", "interrupt", "stop"]
+        : ["stop"],
+    );
     await expect(page.getByRole("button", { exact: true, name: "Stop" })).toBeHidden({
       timeout: 15_000,
     });
@@ -731,19 +748,24 @@ async function runRealSseStandaloneResumeScenario(
   page: Page,
   options: RealSseStandaloneResumeOptions,
 ): Promise<void> {
-  const appServer = await serveFrontendDist();
   const state = createRealSseState({
     lastEventId: RECOVERY_ACTION_LAST_EVENT_ID,
     runCreated: true,
     shouldShowRecover: true,
   });
   const unhandledApiRoutes: string[] = [];
+  const appServer = await serveFrontendDist({
+    handleRequest: (request, response) =>
+      handleComposerControlHttpApi(
+        request,
+        response,
+        state,
+        options.mode,
+        unhandledApiRoutes,
+      ),
+  });
   try {
     await installShellState(page);
-    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
-      handleRequest: (context) => handleRealSseApi(context, state, options.mode),
-      sessionTitle: "TS recoverable resume",
-    });
     await ensureScreenshotDir(SCREENSHOT_FOLDER);
 
     await page.goto(`${appServer.url}/app/`);
@@ -751,7 +773,8 @@ async function runRealSseStandaloneResumeScenario(
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
 
     const recovery = page.locator(".at-recovery");
-    await expect(recovery.getByText(`Run ${RUN_ID} is stopped`)).toBeVisible();
+    await expect(recovery.getByText("Run stopped")).toBeVisible();
+    await expect(recovery).not.toContainText(RUN_ID);
     await expect(recovery.getByRole("button", { name: "Resume" })).toBeVisible();
 
     await recovery.getByRole("button", { name: "Resume" }).click();
@@ -990,8 +1013,8 @@ async function runRealSseRichReplayScenario(
     await expect(page.getByRole("button", { exact: true, name: "Send" })).toBeVisible();
     await expect(page.getByText(`Run ${RUN_ID} is streaming`)).toBeHidden();
     const roundMarker = page.locator(".at-round-marker").first();
-    await expect(roundMarker).toContainText("completed");
-    await expect(roundMarker).not.toContainText("running");
+    await expect(roundMarker).toContainText(/completed/i);
+    await expect(roundMarker).not.toContainText(/running/i);
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await expectNoDocumentScroll(
       page,
@@ -1858,6 +1881,177 @@ async function handleRealSseSubagentStdoutHttpApi(
   return true;
 }
 
+async function handleComposerControlHttpApi(
+  request: IncomingMessage,
+  response: ServerResponse,
+  state: RealSseState,
+  mode: RealSseActiveControlOptions["mode"] | RealSseStandaloneResumeOptions["mode"],
+  unhandledApiRoutes: string[],
+): Promise<boolean> {
+  const url = new URL(request.url ?? "/", "http://127.0.0.1");
+  if (!url.pathname.startsWith("/api/")) {
+    return false;
+  }
+  const path = url.pathname.replace(/^\/api/, "");
+  const method = request.method ?? "GET";
+  if (method === "GET" && path === "/system/configs/ui-language") {
+    sendJson(response, { language: "en-US" });
+    return true;
+  }
+  if (method === "POST" && path === "/ag-ui/runs") {
+    await readIncomingJson(request);
+    state.runCreated = true;
+    state.runCreateCount += 1;
+    sendJson(response, {
+      run_id: RUN_ID,
+      session_id: SESSION_ID,
+      target_role_id: null,
+    });
+    return true;
+  }
+  if (method === "GET" && path === `/ag-ui/runs/${RUN_ID}/events`) {
+    handleComposerControlSse(request, response, state, mode, url);
+    return true;
+  }
+  if (method === "POST" && path === `/ag-ui/runs/${RUN_ID}:resume`) {
+    await readIncomingJson(request);
+    state.activeStreamWasOpenDuringAction = state.activeStreamResponse !== null;
+    state.resumeRequests.push(RUN_ID);
+    state.requestSequence.push("resume");
+    state.shouldShowRecover = false;
+    sendJson(response, {
+      run_id: RUN_ID,
+      session_id: SESSION_ID,
+      status: "running",
+    });
+    return true;
+  }
+  if (method === "POST" && path === `/ag-ui/runs/${RUN_ID}:stop`) {
+    const payload = await readIncomingJson(request);
+    state.activeStreamWasOpenDuringAction = state.activeStreamResponse !== null;
+    if (state.activeStreamResponse !== null) {
+      state.openStreamActions.push("stop");
+    }
+    state.stopRequests.push(payload);
+    state.completed = true;
+    sendJson(response, { scope: "main", status: "ok" });
+    const activeStream = state.activeStreamResponse;
+    if (activeStream !== null) {
+      setTimeout(() => {
+        activeStream.end();
+      }, 50);
+    }
+    return true;
+  }
+  if (method === "POST" && path === `/ag-ui/runs/${RUN_ID}/inject`) {
+    const payload = await readIncomingJson(request);
+    state.activeStreamWasOpenDuringAction = state.activeStreamResponse !== null;
+    const injection = readInjectionRequest(payload);
+    if (state.activeStreamResponse !== null) {
+      state.openStreamActions.push(injection.mode);
+    }
+    state.injectionRequests.push(injection);
+    sendJson(response, { status: "ok" });
+    return true;
+  }
+  return handleRuntimeCursorHttpApi(
+    request,
+    response,
+    state,
+    unhandledApiRoutes,
+  );
+}
+
+function handleComposerControlSse(
+  request: IncomingMessage,
+  response: ServerResponse,
+  state: RealSseState,
+  mode: RealSseActiveControlOptions["mode"] | RealSseStandaloneResumeOptions["mode"],
+  url: URL,
+): void {
+  const afterEventId = url.searchParams.get("after_event_id") ?? "0";
+  const lastEventIdHeader = request.headers["last-event-id"];
+  const lastEventId = Array.isArray(lastEventIdHeader)
+    ? lastEventIdHeader[0] ?? null
+    : lastEventIdHeader ?? null;
+  state.streamRequests.push({ afterEventId, lastEventId });
+  state.requestSequence.push("stream");
+  response.writeHead(200, {
+    "Cache-Control": "no-cache",
+    "Content-Type": "text/event-stream",
+    "X-Accel-Buffering": "no",
+  });
+  response.write("retry: 100\n\n");
+  state.activeStreamResponse = response;
+  response.once("close", () => {
+    if (state.activeStreamResponse === response) {
+      state.activeStreamResponse = null;
+    }
+  });
+
+  if (mode === "recoverable-resume") {
+    void writeComposerResumeSse(response, state, afterEventId);
+    return;
+  }
+  response.write(sseFrame({
+    data: runEvent({
+      eventId: 1,
+      payload: { phase: "streaming" },
+      relayEventType: "run_started",
+      type: "run.started",
+    }),
+    event: "run.started",
+    id: 1,
+  }));
+  response.write(sseFrame({
+    data: runEvent({
+      eventId: 2,
+      payload: { text: FIRST_CHUNK },
+      relayEventType: "text_delta",
+      type: "message.text.delta",
+    }),
+    event: "message.text.delta",
+    id: 2,
+  }));
+  state.lastEventId = 2;
+}
+
+async function writeComposerResumeSse(
+  response: ServerResponse,
+  state: RealSseState,
+  afterEventId: string,
+): Promise<void> {
+  if (afterEventId !== String(RECOVERY_ACTION_LAST_EVENT_ID)) {
+    response.end();
+    return;
+  }
+  await delayMs(100);
+  response.write(sseFrame({
+    data: runEvent({
+      eventId: RECOVERY_ACTION_LAST_EVENT_ID + 1,
+      payload: { text: RECOVERY_ACTION_RESUMED_CHUNK },
+      relayEventType: "text_delta",
+      type: "message.text.delta",
+    }),
+    event: "message.text.delta",
+    id: RECOVERY_ACTION_LAST_EVENT_ID + 1,
+  }));
+  await delayMs(120);
+  response.write(sseFrame({
+    data: runEvent({
+      eventId: RECOVERY_ACTION_LAST_EVENT_ID + 2,
+      payload: { status: "completed" },
+      relayEventType: "run_completed",
+      type: "run.completed",
+    }),
+    event: "run.completed",
+    id: RECOVERY_ACTION_LAST_EVENT_ID + 2,
+  }));
+  state.completed = true;
+  state.lastEventId = RECOVERY_ACTION_LAST_EVENT_ID + 2;
+  response.end();
+}
+
 async function handleRealSseParentMarkerHttpApi(
   request: IncomingMessage,
   response: ServerResponse,
@@ -1918,13 +2112,13 @@ async function handleRealSseParentMarkerHttpApi(
   if (path === `/workspaces/${WORKSPACE_ID}/sessions/sidebar`) {
     sendJson(response, {
       has_more: false,
-      items: [realSseParentMarkerSidebarSession()],
+      items: [realSseParentMarkerSidebarSession(state.completed)],
       next_cursor: null,
     });
     return true;
   }
   if (path === "/sessions/sidebar") {
-    sendJson(response, [realSseParentMarkerSidebarSession()]);
+    sendJson(response, [realSseParentMarkerSidebarSession(state.completed)]);
     return true;
   }
   if (path === `/sessions/${SESSION_ID}`) {
@@ -2859,10 +3053,19 @@ function realSseParentMarkerWorkspace(): Record<string, unknown> {
   };
 }
 
-function realSseParentMarkerSidebarSession(): Record<string, unknown> {
+function realSseParentMarkerSidebarSession(
+  completed = false,
+): Record<string, unknown> {
   return {
     active_run_status: null,
     created_at: "2026-06-25T08:00:00Z",
+    ...(completed
+      ? {
+          latest_terminal_run_id: RUN_ID,
+          latest_terminal_run_status: "completed",
+          latest_terminal_run_updated_at: "2026-06-26T12:00:06Z",
+        }
+      : {}),
     message_count: 2,
     session_id: SESSION_ID,
     title: "TS real SSE parent marker",
@@ -2971,6 +3174,23 @@ function sendJson(response: ServerResponse, body: unknown, status = 200): void {
     "Content-Type": "application/json; charset=utf-8",
   });
   response.end(JSON.stringify(body));
+}
+
+async function readIncomingJson(
+  request: IncomingMessage,
+): Promise<Record<string, unknown>> {
+  const chunks: Uint8Array[] = [];
+  for await (const chunk of request) {
+    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+  }
+  if (chunks.length === 0) {
+    return {};
+  }
+  const parsed: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return {};
+  }
+  return parsed as Record<string, unknown>;
 }
 
 function recoverySnapshot(state: RealSseState): Record<string, unknown> {
@@ -3746,6 +3966,8 @@ function richReplaySseFrames(): string {
 
 function createRealSseState(overrides: Partial<RealSseState> = {}): RealSseState {
   return {
+    activeStreamResponse: null,
+    activeStreamWasOpenDuringAction: false,
     approvalResolutions: [],
     backgroundSubagentRecovery: false,
     completed: false,
@@ -3753,6 +3975,7 @@ function createRealSseState(overrides: Partial<RealSseState> = {}): RealSseState
     lastEventId: 0,
     messageRequestCount: 0,
     multiplexRequests: [],
+    openStreamActions: [],
     pendingToolApproval: false,
     pendingUserQuestion: false,
     persistedAssistantText: "",
@@ -3986,12 +4209,12 @@ function runOffsetsFromSearchParams(
 
 function readInjectionRequest(payload: unknown): RealSseInjectionRequest {
   if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
-    return {};
+    return { content: "", mode: "" };
   }
   const record = payload as Record<string, unknown>;
   return {
-    content: record.content,
-    mode: record.mode,
+    content: typeof record.content === "string" ? record.content : "",
+    mode: typeof record.mode === "string" ? record.mode : "",
   };
 }
 

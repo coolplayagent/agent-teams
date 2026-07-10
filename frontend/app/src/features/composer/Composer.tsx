@@ -822,7 +822,9 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
             </div>
             <div className="at-composer-field at-composer-role-field">
               <Typography.Text className="at-composer-field-label">
-                {t("composerRole")}
+                {selectedSessionMode === "normal"
+                  ? t("composerRole")
+                  : t("composerPreset")}
               </Typography.Text>
               {selectedSessionMode === "normal" ? (
                 <Select

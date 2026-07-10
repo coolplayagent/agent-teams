@@ -1,6 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import {
+  captureStableElementScreenshot,
+  captureStableViewportScreenshot,
+  dispatchEventSourceMessage,
   ensureScreenshotDir,
   expectComposerControlsDoNotOverlap,
   expectNoDocumentScroll,
@@ -12,6 +15,7 @@ import {
   serveFrontendDist,
   SESSION_ID,
   waitForEventSourceUrl,
+  waitForV1Shell,
   waitForV2Shell,
   WORKSPACE_ID,
   type MockApiRouteContext,
@@ -21,19 +25,92 @@ const RUN_ID = "run-v2-composer-controls";
 const SCREENSHOT_FOLDER = "frontend-v2-ts-composer-controls";
 const IMAGE_NAME = "composer-chart.png";
 const PROMPT_TEXT = "Composer browser line one\nline two after shift enter";
+const RUNNING_PARITY_PROMPT = "Composer running visual parity";
+const RUNNING_PARITY_OUTPUT = "Composer running checkpoint output";
 
 interface ComposerControlsState {
+  activeRunId: string | null;
   modelProfilePatchRequests: Array<string | null>;
   runCreateRequests: Array<Record<string, unknown>>;
   session: Record<string, unknown>;
   topologyPatchRequests: Array<Record<string, unknown>>;
 }
 
+test("captures paired V1 and V2 running composer states", async ({ page }) => {
+  const appServer = await serveFrontendDist();
+  const state: ComposerControlsState = {
+    activeRunId: null,
+    modelProfilePatchRequests: [],
+    runCreateRequests: [],
+    session: initialSession(),
+    topologyPatchRequests: [],
+  };
+  try {
+    await installShellState(page);
+    await installMockEventSource(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleComposerControlsApi(context, state),
+      sessionTitle: RUNNING_PARITY_PROMPT,
+    });
+    await ensureScreenshotDir("frontend-v2-ts-composer-closure");
+    await page.setViewportSize({ height: 900, width: 1280 });
+
+    await page.goto(`${appServer.url}/`);
+    await waitForV1Shell(page);
+    const v1Prompt = page.locator("#prompt-input");
+    await v1Prompt.fill(RUNNING_PARITY_PROMPT);
+    await page.getByRole("button", { name: "Send" }).click();
+    await expect.poll(() => state.runCreateRequests.length).toBe(1);
+    await waitForEventSourceUrl(
+      page,
+      new RegExp(`/api/runs/events\\?run_id=${RUN_ID}&after_event_id=0$`),
+    );
+    await dispatchRunningCheckpoint(page, true);
+    await expect(page.getByText(RUNNING_PARITY_OUTPUT)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Stop" })).toBeVisible();
+    await expectNoDocumentScroll(page, "V1 running composer pair should stay framed");
+    await captureStableViewportScreenshot(
+      page,
+      screenshotPath(
+        "composer-pair-v1-running.png",
+        "frontend-v2-ts-composer-closure",
+      ),
+    );
+
+    await page.getByRole("link", { name: "Open new interface" }).click();
+    await page.waitForURL(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    await waitForEventSourceUrl(
+      page,
+      new RegExp(`/api/ag-ui/runs/${RUN_ID}/events\\?after_event_id=0$`),
+    );
+    await dispatchRunningCheckpoint(page, false);
+    await expect(page.getByText(RUNNING_PARITY_OUTPUT)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Stop" })).toBeVisible();
+    await expectNoDocumentScroll(page, "V2 running composer pair should stay framed");
+    await expectComposerControlsDoNotOverlap(page);
+    await captureStableViewportScreenshot(
+      page,
+      screenshotPath(
+        "composer-pair-v2-running.png",
+        "frontend-v2-ts-composer-closure",
+      ),
+    );
+
+    expect(state.runCreateRequests).toHaveLength(1);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+  } finally {
+    await appServer.close();
+  }
+});
+
 test("submits multiline image prompt with composer topology and run option controls", async ({
   page,
 }) => {
   const appServer = await serveFrontendDist();
   const state: ComposerControlsState = {
+    activeRunId: null,
     modelProfilePatchRequests: [],
     runCreateRequests: [],
     session: initialSession(),
@@ -80,6 +157,7 @@ test("submits multiline image prompt with composer topology and run option contr
     });
 
     await selectComposerOption(page, ".at-orchestration-preset-select", "Ship");
+    await expect(page.locator(".at-composer-role-field")).toContainText("Preset");
     await expect.poll(() => state.topologyPatchRequests.length).toBe(3);
     expect(state.topologyPatchRequests.at(-1)).toMatchObject({
       normal_root_role_id: null,
@@ -101,8 +179,23 @@ test("submits multiline image prompt with composer topology and run option contr
     await pasteImageIntoPrompt(page, IMAGE_NAME);
     await expect(page.getByLabel("Prompt attachments")).toBeVisible();
     await expect(page.getByText(IMAGE_NAME)).toBeVisible();
+    const attachmentPreview = page.getByRole("img", { name: IMAGE_NAME });
+    await expect.poll(() =>
+      attachmentPreview.evaluate((image: HTMLImageElement) =>
+        image.complete && image.naturalWidth > 0,
+      )).toBe(true);
+    await expect(page.locator(".ant-message-notice")).toHaveCount(0, {
+      timeout: 6_000,
+    });
+    await captureStableViewportScreenshot(
+      page,
+      screenshotPath(
+        "v2-composer-controls-ready-to-submit.png",
+        SCREENSHOT_FOLDER,
+      ),
+    );
 
-    await page.getByRole("button", { name: "Send" }).click();
+    await prompt.press("Enter");
     await expect.poll(() => state.runCreateRequests.length).toBe(1);
     assertRunCreateRequest(state.runCreateRequests[0]);
     await waitForEventSourceUrl(
@@ -126,16 +219,71 @@ test("submits multiline image prompt with composer topology and run option contr
       "composer controls flow should stay inside the fixed V2 shell",
     );
     await expectComposerControlsDoNotOverlap(page);
-    await page.screenshot({
-      path: screenshotPath(
-        "v2-composer-controls-options.png",
+    await captureStableElementScreenshot(
+      page.locator(".at-composer"),
+      screenshotPath(
+        "v2-composer-controls-running.png",
         SCREENSHOT_FOLDER,
       ),
-    });
+    );
   } finally {
     await appServer.close();
   }
 });
+
+async function dispatchRunningCheckpoint(
+  page: Page,
+  legacyMessageEvent: boolean,
+): Promise<void> {
+  await dispatchComposerRunEvent(page, {
+    eventId: 1,
+    payload: { phase: "streaming" },
+    relayEventType: "run_started",
+    type: "run.started",
+  }, legacyMessageEvent);
+  await dispatchComposerRunEvent(page, {
+    eventId: 2,
+    payload: { text: RUNNING_PARITY_OUTPUT },
+    relayEventType: "text_delta",
+    type: "message.text.delta",
+  }, legacyMessageEvent);
+}
+
+async function dispatchComposerRunEvent(
+  page: Page,
+  event: {
+    eventId: number;
+    payload: Record<string, unknown>;
+    relayEventType: string;
+    type: string;
+  },
+  legacyMessageEvent: boolean,
+): Promise<void> {
+  const commonEvent = {
+    event_id: event.eventId,
+    occurred_at: `2026-07-10T08:00:${String(event.eventId).padStart(2, "0")}Z`,
+    role_id: "MainAgent",
+    run_id: RUN_ID,
+    session_id: SESSION_ID,
+    trace_id: "trace-composer-running-parity",
+  };
+  await dispatchEventSourceMessage(page, {
+    data: legacyMessageEvent
+      ? {
+          ...commonEvent,
+          event_type: event.relayEventType,
+          payload_json: JSON.stringify(event.payload),
+        }
+      : {
+          ...commonEvent,
+          payload: event.payload,
+          relay_event_type: event.relayEventType,
+          type: event.type,
+        },
+    lastEventId: String(event.eventId),
+    type: legacyMessageEvent ? "message" : event.type,
+  });
+}
 
 async function handleComposerControlsApi(
   context: MockApiRouteContext,
@@ -143,6 +291,17 @@ async function handleComposerControlsApi(
 ): Promise<boolean> {
   if (context.method === "GET" && context.path === `/sessions/${SESSION_ID}`) {
     await context.fulfillJson(state.session);
+    return true;
+  }
+  if (context.method === "GET" && context.path === `/sessions/${SESSION_ID}/recovery`) {
+    await context.fulfillJson(composerRecoverySnapshot(state.activeRunId));
+    return true;
+  }
+  if (
+    context.method === "GET" &&
+    context.path === `/sessions/${SESSION_ID}/runs/${RUN_ID}/token-usage`
+  ) {
+    await context.fulfillJson({ by_role: {}, input_tokens: 0, output_tokens: 0 });
     return true;
   }
   if (context.method === "GET" && context.path === "/roles:options") {
@@ -202,9 +361,13 @@ async function handleComposerControlsApi(
     await context.fulfillJson(state.session);
     return true;
   }
-  if (context.method === "POST" && context.path === "/ag-ui/runs") {
+  if (
+    context.method === "POST" &&
+    (context.path === "/ag-ui/runs" || context.path === "/runs")
+  ) {
     const request = readRequestBody(context);
     state.runCreateRequests.push(request);
+    state.activeRunId = RUN_ID;
     await context.fulfillJson({
       run_id: RUN_ID,
       session_id: SESSION_ID,
@@ -216,6 +379,29 @@ async function handleComposerControlsApi(
     return true;
   }
   return false;
+}
+
+function composerRecoverySnapshot(activeRunId: string | null): Record<string, unknown> {
+  return {
+    active_run:
+      activeRunId === null
+        ? null
+        : {
+            last_event_id: 0,
+            phase: "running",
+            run_id: activeRunId,
+            session_id: SESSION_ID,
+            should_show_recover: false,
+            status: "running",
+          },
+    background_tasks: [],
+    paused_subagent: null,
+    paused_subagents: [],
+    pending_tool_approvals: [],
+    pending_user_questions: [],
+    recoverable_stopped_run: null,
+    round_snapshot: null,
+  };
 }
 
 async function selectComposerOption(
@@ -234,7 +420,10 @@ async function selectComposerOption(
 
 async function pasteImageIntoPrompt(page: Page, filename: string): Promise<void> {
   await page.getByRole("textbox", { name: "Prompt" }).evaluate((element, name) => {
-    const bytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+    const binary = window.atob(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+    );
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
     const file = new File([bytes], name, { type: "image/png" });
     const event = new ClipboardEvent("paste", {
       bubbles: true,
@@ -277,7 +466,7 @@ function assertRunCreateRequest(request: Record<string, unknown> | undefined): v
     mime_type: "image/png",
     modality: "image",
     name: IMAGE_NAME,
-    size_bytes: 8,
+    size_bytes: 68,
     width: null,
   });
   expect(stringValue(recordValue(input[1])?.base64_data).length).toBeGreaterThan(0);

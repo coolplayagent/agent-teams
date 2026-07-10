@@ -20,7 +20,7 @@ import type {
   UserQuestionPrompt,
   RecoveryRun,
 } from "../../api/contracts";
-import { useTranslations } from "../../i18n";
+import { useTranslations, type Translate } from "../../i18n";
 import type {
   RunStreamController,
   StartRunStreamTarget,
@@ -405,7 +405,11 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
 
   return (
     <Alert
-      className="at-recovery"
+      className={
+        showResumeAction && !hasPendingRecoveryItems
+          ? "at-recovery is-resume-only"
+          : "at-recovery"
+      }
       message={
         <div className="at-recovery-body">
           {showResumeAction || activeBackgroundTasks.length > 0 ? (
@@ -414,6 +418,7 @@ export function RecoveryBar({ runStreamController, sessionId }: RecoveryBarProps
                 {recoveryStatusText(
                   showResumeAction ? visibleActiveRun : null,
                   activeBackgroundTasks,
+                  t,
                 )}
               </span>
               {showResumeAction ? (
@@ -630,17 +635,22 @@ function BackgroundTasksPanel({
 function recoveryStatusText(
   activeRun: RecoveryRun | null,
   activeBackgroundTasks: RecoveryBackgroundTask[],
+  t: Translate,
 ): string {
   if (activeRun !== null) {
-    return `Run ${activeRun.run_id} is ${activeRun.phase ?? activeRun.status}`;
+    return activeRun.status === "stopped" || activeRun.phase === "stopped"
+      ? t("recoveryRunStopped")
+      : t("recoveryRunPaused");
   }
   if (activeBackgroundTasks.length === 1) {
-    return "Background task is still active";
+    return t("recoveryBackgroundTaskActive");
   }
   if (activeBackgroundTasks.length > 1) {
-    return `${activeBackgroundTasks.length} background tasks are still active`;
+    return t("recoveryBackgroundTasksActive", {
+      count: activeBackgroundTasks.length,
+    });
   }
-  return "Recovery needs attention";
+  return t("recoveryNeedsAttention");
 }
 
 function recoveryPanelRunKey(

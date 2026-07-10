@@ -1,6 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import {
+  captureStableElementScreenshot,
+  captureStableViewportScreenshot,
   ensureScreenshotDir,
   expectComposerControlsDoNotOverlap,
   expectNoDocumentScroll,
@@ -13,6 +15,7 @@ import {
   SESSION_ID,
   WORKSPACE_ID,
   waitForEventSourceUrl,
+  waitForV1Shell,
   waitForV2Shell,
   type MockApiRouteContext,
 } from "./support/frontend-app";
@@ -22,15 +25,78 @@ const SCREENSHOT_FOLDER = "frontend-v2-ts-composer-affordances";
 const MENTION_PROMPT = "Draft the browser mention update";
 
 interface ComposerAffordanceState {
+  activeRunId: string | null;
   runCreateRequests: Array<Record<string, unknown>>;
   speechConfigured: boolean;
 }
+
+test("captures paired V1 and V2 leading mention menus", async ({ page }) => {
+  const appServer = await serveFrontendDist();
+  const state: ComposerAffordanceState = {
+    activeRunId: null,
+    runCreateRequests: [],
+    speechConfigured: true,
+  };
+  try {
+    await installVoiceRuntimeSupport(page);
+    await installShellState(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleComposerAffordanceApi(context, state),
+      sessionTitle: "TS paired composer mention",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+    await ensureScreenshotDir("frontend-v2-ts-composer-closure");
+
+    await page.setViewportSize({ height: 900, width: 1280 });
+    await page.goto(`${appServer.url}/`);
+    await waitForV1Shell(page);
+
+    const v1Prompt = page.locator("#prompt-input");
+    await v1Prompt.fill("@W");
+    const v1Suggestions = page.locator("#prompt-mention-menu");
+    await expect(v1Suggestions).toBeVisible();
+    await expect(v1Suggestions).toContainText("Writer");
+    await expectNoDocumentScroll(page, "V1 mention comparison should stay framed");
+    await captureStableViewportScreenshot(
+      page,
+      screenshotPath(
+        "composer-pair-v1-mention.png",
+        "frontend-v2-ts-composer-closure",
+      ),
+    );
+
+    await page.getByRole("link", { name: "Open new interface" }).click();
+    await page.waitForURL(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+
+    const v2Prompt = page.getByRole("textbox", { name: "Prompt" });
+    await v2Prompt.fill("@W");
+    const v2Suggestions = page.getByLabel("Prompt suggestions");
+    await expect(v2Suggestions).toBeVisible();
+    await expect(v2Suggestions).toContainText("Writer");
+    await expectNoDocumentScroll(page, "V2 mention comparison should stay framed");
+    await expectComposerControlsDoNotOverlap(page);
+    await captureStableViewportScreenshot(
+      page,
+      screenshotPath(
+        "composer-pair-v2-mention.png",
+        "frontend-v2-ts-composer-closure",
+      ),
+    );
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+  } finally {
+    await appServer.close();
+  }
+});
 
 test("selects a leading role mention and keeps voice input reachable", async ({
   page,
 }) => {
   const appServer = await serveFrontendDist();
   const state: ComposerAffordanceState = {
+    activeRunId: null,
     runCreateRequests: [],
     speechConfigured: true,
   };
@@ -59,12 +125,13 @@ test("selects a leading role mention and keeps voice input reachable", async ({
     await expect(suggestions).toBeVisible();
     const writerOption = page.getByRole("option", { name: /@Writer/ });
     await expect(writerOption).toContainText("Writes browser fixtures");
-    await page.screenshot({
-      path: screenshotPath(
+    await captureStableElementScreenshot(
+      page.locator(".at-composer"),
+      screenshotPath(
         "v2-composer-mention-menu-voice.png",
         SCREENSHOT_FOLDER,
       ),
-    });
+    );
     await writerOption.click();
     await expect(prompt).toHaveValue("@Writer ");
     await expect(suggestions).toHaveCount(0);
@@ -89,12 +156,13 @@ test("selects a leading role mention and keeps voice input reachable", async ({
       "composer mention and voice affordances should stay inside the fixed shell",
     );
     await expectComposerControlsDoNotOverlap(page);
-    await page.screenshot({
-      path: screenshotPath(
+    await captureStableElementScreenshot(
+      page.locator(".at-composer"),
+      screenshotPath(
         "v2-composer-mention-voice-ready.png",
         SCREENSHOT_FOLDER,
       ),
-    });
+    );
   } finally {
     await appServer.close();
   }
@@ -105,6 +173,7 @@ test("shows configured voice input as disabled when runtime support is missing",
 }) => {
   const appServer = await serveFrontendDist();
   const state: ComposerAffordanceState = {
+    activeRunId: null,
     runCreateRequests: [],
     speechConfigured: true,
   };
@@ -144,6 +213,10 @@ async function handleComposerAffordanceApi(
     await context.fulfillJson(roleOptions());
     return true;
   }
+  if (context.method === "GET" && context.path === `/sessions/${SESSION_ID}/recovery`) {
+    await context.fulfillJson(composerRecoverySnapshot(state.activeRunId));
+    return true;
+  }
   if (context.method === "GET" && context.path === "/speech/config") {
     await context.fulfillJson({
       configured: state.speechConfigured,
@@ -167,6 +240,7 @@ async function handleComposerAffordanceApi(
   if (context.method === "POST" && context.path === "/ag-ui/runs") {
     const request = readRequestBody(context);
     state.runCreateRequests.push(request);
+    state.activeRunId = RUN_ID;
     await context.fulfillJson({
       run_id: RUN_ID,
       session_id: SESSION_ID,
@@ -178,6 +252,29 @@ async function handleComposerAffordanceApi(
     return true;
   }
   return false;
+}
+
+function composerRecoverySnapshot(activeRunId: string | null): Record<string, unknown> {
+  return {
+    active_run:
+      activeRunId === null
+        ? null
+        : {
+            last_event_id: 0,
+            phase: "running",
+            run_id: activeRunId,
+            session_id: SESSION_ID,
+            should_show_recover: false,
+            status: "running",
+          },
+    background_tasks: [],
+    paused_subagent: null,
+    paused_subagents: [],
+    pending_tool_approvals: [],
+    pending_user_questions: [],
+    recoverable_stopped_run: null,
+    round_snapshot: null,
+  };
 }
 
 async function installVoiceRuntimeSupport(page: Page): Promise<void> {

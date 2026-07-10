@@ -833,6 +833,9 @@ describe("RecoveryBar", () => {
     renderRecoveryBar(controller);
 
     await screen.findByRole("button", { name: "Resume" });
+    expect(screen.getByText("Run stopped")).toBeVisible();
+    expect(screen.queryByText(/run-1/)).not.toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveClass("is-resume-only");
     expect(controller.startRunStream).not.toHaveBeenCalled();
     expect(controller.startRunStreams).not.toHaveBeenCalled();
   });
@@ -1249,7 +1252,7 @@ describe("RecoveryBar", () => {
 
     renderRecoveryBar();
 
-    await screen.findByText("Run run-1 is awaiting_subagent_followup");
+    await screen.findByText("Run paused");
     expect(screen.queryByText(/Paused subagent:/)).not.toBeInTheDocument();
   });
 
@@ -1337,7 +1340,7 @@ describe("RecoveryBar", () => {
 
     await waitFor(() => expect(getRecoverySnapshotMock).toHaveBeenCalledOnce());
     expect(screen.queryByText("python script.py")).not.toBeInTheDocument();
-    expect(screen.queryByText("Background task is still active"))
+    expect(screen.queryByText("A background task is still active"))
       .not.toBeInTheDocument();
     expect(controller.startRunStream).not.toHaveBeenCalled();
     expect(controller.startRunStreams).not.toHaveBeenCalled();
@@ -1379,7 +1382,7 @@ describe("RecoveryBar", () => {
 
     renderRecoveryBar(controller);
 
-    await screen.findByText("Background task is still active");
+    await screen.findByText("A background task is still active");
     expect(screen.getByText("python worker.py")).toBeInTheDocument();
     await waitFor(() =>
       expect(controller.startRunStream).toHaveBeenCalledWith({

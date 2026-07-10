@@ -417,7 +417,8 @@ test("resumes a stopped recovery run from its checkpoint", async ({ page }) => {
     await waitForV2Shell(page);
 
     const recovery = page.locator(".at-recovery");
-    await expect(recovery.getByText(`Run ${RUN_ID} is stopped`)).toBeVisible();
+    await expect(recovery.getByText("Run stopped")).toBeVisible();
+    await expect(recovery).not.toContainText(RUN_ID);
     await expect(recovery.getByRole("button", { name: "Resume" })).toBeVisible();
     await expect.poll(() => eventSourceUrls(page)).toEqual([]);
     await page.mouse.move(320, 120);
@@ -730,13 +731,6 @@ test("stops a recovered background task and refreshes the snapshot", async ({
       ),
     });
 
-    await dispatchRunEvent(page, {
-      eventId: 1,
-      payload: { status: "stopped" },
-      relayEventType: "run_stopped",
-      runId: BACKGROUND_RUN_ID,
-      type: "run.stopped",
-    });
     await waitForEventSourceOpenCount(page, 0);
   } finally {
     await appServer.close();

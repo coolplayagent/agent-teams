@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, type Page, type Route } from "@playwright/test";
+import { expect, type Locator, type Page, type Route } from "@playwright/test";
 
 export const SESSION_ID = "session-react-shell";
 export const WORKSPACE_ID = "workspace-react-shell";
@@ -12,6 +12,14 @@ const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const repoRoot = resolve(packageRoot, "../..");
 const distRoot = resolve(packageRoot, "../dist");
 const appRoot = join(distRoot, "app");
+const chromiumUnsafePorts = new Set([
+  1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77,
+  79, 87, 95, 101, 102, 103, 104, 109, 110, 111, 113, 115, 117, 119, 123,
+  135, 137, 139, 143, 161, 179, 389, 427, 465, 512, 513, 514, 515, 526, 530,
+  531, 532, 540, 548, 554, 556, 563, 587, 601, 636, 989, 990, 993, 995,
+  1719, 1720, 1723, 2049, 3659, 4045, 5060, 5061, 6000, 6566, 6665, 6666,
+  6667, 6668, 6669, 6697, 10080,
+]);
 
 export interface FrontendTestServer {
   close: () => Promise<void>;
@@ -78,20 +86,70 @@ export async function ensureScreenshotDir(
   });
 }
 
+export async function captureStableViewportScreenshot(
+  page: Page,
+  path: string,
+): Promise<void> {
+  await waitForStablePaint(page);
+  await page.screenshot({
+    animations: "disabled",
+    path,
+  });
+}
+
+export async function captureStableElementScreenshot(
+  locator: Locator,
+  path: string,
+): Promise<void> {
+  await locator.scrollIntoViewIfNeeded();
+  await waitForStablePaint(locator.page());
+  await locator.screenshot({
+    animations: "disabled",
+    path,
+  });
+}
+
+async function waitForStablePaint(page: Page): Promise<void> {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolveFrame) => {
+        window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(() => resolveFrame());
+        });
+      }),
+  );
+}
+
 export async function serveFrontendDist(
   options: FrontendTestServerOptions = {},
 ): Promise<FrontendTestServer> {
-  return new Promise((resolveServer) => {
+  return new Promise((resolveServer, rejectServer) => {
     const server = createServer(async (request, response) => {
       if (await options.handleRequest?.(request, response)) {
         return;
       }
       serveStaticFile(request, response);
     });
-    server.listen(0, "127.0.0.1", () => {
+    server.on("error", rejectServer);
+
+    const listen = (): void => {
+      server.listen(0, "127.0.0.1", onListening);
+    };
+    const onListening = (): void => {
       const address = server.address();
       if (address === null || typeof address === "string") {
-        throw new Error("Expected frontend test server to bind a TCP port.");
+        rejectServer(new Error("Expected frontend test server to bind a TCP port."));
+        return;
+      }
+      if (chromiumUnsafePorts.has(address.port)) {
+        server.close((error) => {
+          if (error) {
+            rejectServer(error);
+            return;
+          }
+          listen();
+        });
+        return;
       }
       resolveServer({
         close: () =>
@@ -106,7 +164,9 @@ export async function serveFrontendDist(
           }),
         url: `http://127.0.0.1:${address.port}`,
       });
-    });
+    };
+
+    listen();
   });
 }
 

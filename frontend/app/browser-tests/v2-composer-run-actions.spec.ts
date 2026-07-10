@@ -1,6 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import {
+  captureStableElementScreenshot,
+  captureStableViewportScreenshot,
   dispatchEventSourceMessage,
   ensureScreenshotDir,
   eventSourceUrls,
@@ -66,6 +68,15 @@ test("queues, interrupts, stops, and resumes a running composer session", async 
 
     const prompt = page.getByRole("textbox", { name: "Prompt" });
     await prompt.fill(QUEUED_INJECTION);
+    await expect(page.locator(".at-topbar")).toBeVisible();
+    await expect(page.locator(".at-sidebar-nav")).toBeVisible();
+    await captureStableElementScreenshot(
+      page.locator(".at-composer"),
+      screenshotPath(
+        "v2-composer-run-actions-queue-ready.png",
+        SCREENSHOT_FOLDER,
+      ),
+    );
     await page.getByRole("button", { name: "Queue" }).click();
     await expect.poll(() => state.injectRequests.length).toBe(1);
     expect(state.injectRequests[0]).toEqual({
@@ -75,6 +86,8 @@ test("queues, interrupts, stops, and resumes a running composer session", async 
     await expect(prompt).toHaveValue("");
 
     await prompt.fill(INTERRUPT_INJECTION);
+    await expect(prompt).toHaveValue(INTERRUPT_INJECTION);
+    await expect(page.getByRole("button", { name: "Interrupt" })).toBeEnabled();
     await page.getByRole("button", { name: "Interrupt" }).click();
     await expect.poll(() => state.injectRequests.length).toBe(2);
     expect(state.injectRequests[1]).toEqual({
@@ -93,12 +106,16 @@ test("queues, interrupts, stops, and resumes a running composer session", async 
     await page.reload();
     await waitForV2Shell(page);
     const recovery = page.locator(".at-recovery");
-    await expect(recovery.getByText(`Run ${RUN_ID} is stopped`)).toBeVisible();
+    await expect(recovery.getByText("Run stopped")).toBeVisible();
+    await expect(recovery).not.toContainText(RUN_ID);
+    await expect(page.locator(".at-topbar")).toBeVisible();
+    await expect(page.locator(".at-sidebar-nav")).toBeVisible();
     await expect(recovery.getByRole("button", { name: "Resume" })).toBeVisible();
     await expect.poll(() => eventSourceUrls(page)).toEqual([]);
-    await page.screenshot({
-      path: screenshotPath("v2-composer-run-actions-resume-ready.png", SCREENSHOT_FOLDER),
-    });
+    await captureStableViewportScreenshot(
+      page,
+      screenshotPath("v2-composer-run-actions-resume-ready.png", SCREENSHOT_FOLDER),
+    );
 
     await recovery.getByRole("button", { name: "Resume" }).click();
     await expect.poll(() => state.resumeRequests).toEqual([RUN_ID]);
@@ -117,9 +134,30 @@ test("queues, interrupts, stops, and resumes a running composer session", async 
       type: "message.text.delta",
     });
     await expect(page.getByText(RESUMED_TEXT)).toBeVisible();
-    await page.screenshot({
-      path: screenshotPath("v2-composer-run-actions-resumed.png", SCREENSHOT_FOLDER),
-    });
+    await captureStableViewportScreenshot(
+      page,
+      screenshotPath(
+        "v2-composer-run-actions-resumed-complete.png",
+        SCREENSHOT_FOLDER,
+      ),
+    );
+
+    await page.setViewportSize({ height: 840, width: 720 });
+    await expect(page.getByRole("button", { name: "Stop" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Queue" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Interrupt" })).toBeVisible();
+    await expectNoDocumentScroll(
+      page,
+      "resumed composer actions should remain inside the narrow fixed shell",
+    );
+    await expectComposerControlsDoNotOverlap(page);
+    await captureStableViewportScreenshot(
+      page,
+      screenshotPath(
+        "v2-composer-run-actions-resumed-narrow.png",
+        SCREENSHOT_FOLDER,
+      ),
+    );
 
     await dispatchRunEvent(page, {
       eventId: 10,

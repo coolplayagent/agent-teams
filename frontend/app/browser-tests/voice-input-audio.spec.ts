@@ -1,4 +1,4 @@
-import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import { chromium, expect, test, type BrowserContext, type Page } from "@playwright/test";
 
 import {
   expectComposerControlsDoNotOverlap,
@@ -115,6 +115,50 @@ test("V2 composer voice input sends PCM bytes and writes the transcript", async 
       "v2 voice input should stay inside the fixed app shell",
     );
   } finally {
+    await appServer.close();
+  }
+});
+
+test("V2 composer captures Chromium media-device audio without media API mocks", async () => {
+  const appServer = await serveFrontendDist();
+  const browser = await chromium.launch({
+    args: [
+      "--use-fake-device-for-media-stream",
+      "--use-fake-ui-for-media-stream",
+    ],
+    headless: true,
+  });
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  try {
+    await page.setViewportSize({
+      height: VIEWPORT_HEIGHT,
+      width: VIEWPORT_WIDTH,
+    });
+    await prepareV2VoiceInputPage(context, page, appServer.url, {
+      probeScript: voiceSocketProbeScript("browser media captured"),
+    });
+
+    const prompt = page.getByRole("textbox", { name: "Prompt" });
+    await page.getByRole("button", { exact: true, name: "Voice input" }).click();
+    await waitForV2VoiceState(page, "listening");
+    await page.waitForFunction(
+      () =>
+        (window as unknown as VoiceProbeWindow).__voiceProbe.sent.some((item) =>
+          String(item).startsWith("bytes:"),
+        ),
+      undefined,
+      { timeout: WAIT_TIMEOUT_MS },
+    );
+
+    await page.getByRole("button", { name: "Stop voice input" }).click();
+    await waitForV2VoiceState(page, "idle");
+    await expect(prompt).toHaveValue("browser media captured");
+    const result = await readV2VoiceRuntime(page);
+    expect(result.sent.some((item) => item.startsWith("bytes:"))).toBe(true);
+  } finally {
+    await context.close();
+    await browser.close();
     await appServer.close();
   }
 });
@@ -795,6 +839,72 @@ function voiceAudioProbeScript(
     }
     throw new Error(\`Unexpected WebSocket URL: \${url}\`);
   };
+  window.WebSocket.CONNECTING = 0;
+  window.WebSocket.OPEN = 1;
+  window.WebSocket.CLOSING = 2;
+  window.WebSocket.CLOSED = 3;
+})();
+`;
+}
+
+function voiceSocketProbeScript(completedText: string): string {
+  return `
+(() => {
+  window.__voiceProbe = { closed: 0, sent: [] };
+
+  class BrowserMediaSocket extends EventTarget {
+    constructor(url) {
+      super();
+      if (!String(url).includes("/api/speech/stt/stream")) {
+        throw new Error(\`Unexpected WebSocket URL: \${url}\`);
+      }
+      this.readyState = 0;
+      this.bufferedAmount = 0;
+      window.setTimeout(() => {
+        this.readyState = 1;
+        this._emit("open", new Event("open"));
+        window.setTimeout(() => {
+          this._message({ type: "status", status: "ready", sample_rate: 24000 });
+        }, 5);
+      }, 20);
+    }
+
+    send(data) {
+      const value = typeof data === "string"
+        ? data
+        : \`bytes:\${data.byteLength || data.size || 0}\`;
+      window.__voiceProbe.sent.push(value);
+      if (typeof data === "string" && data.includes("stop")) {
+        window.setTimeout(() => {
+          this._message({ type: "completed", text: ${JSON.stringify(completedText)} });
+        }, 5);
+      }
+    }
+
+    close() {
+      if (this.readyState === 3) return;
+      this.readyState = 3;
+      window.__voiceProbe.closed += 1;
+      this._emit("close", new CloseEvent("close"));
+    }
+
+    _message(payload) {
+      if (this.readyState !== 1) return;
+      this._emit("message", new MessageEvent("message", {
+        data: JSON.stringify(payload),
+      }));
+    }
+
+    _emit(type, event) {
+      this.dispatchEvent(event);
+      const handler = this[\`on\${type}\`];
+      if (typeof handler === "function") {
+        handler.call(this, event);
+      }
+    }
+  }
+
+  window.WebSocket = BrowserMediaSocket;
   window.WebSocket.CONNECTING = 0;
   window.WebSocket.OPEN = 1;
   window.WebSocket.CLOSING = 2;

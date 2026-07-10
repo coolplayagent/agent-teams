@@ -302,6 +302,7 @@ describe("Composer", () => {
     expect(
       await screen.findByRole("combobox", { name: "Orchestration preset" }),
     ).toBeVisible();
+    expect(screen.getByText("Preset")).toBeVisible();
     expect(
       screen.queryByRole("combobox", { name: "Root role" }),
     ).not.toBeInTheDocument();

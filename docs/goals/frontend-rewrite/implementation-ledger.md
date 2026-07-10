@@ -10380,3 +10380,54 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - This batch verifies `SHELL-02`, `SESS-01`, and `SESS-02`; the total moves to
   22 `Verified` and 22 `In progress`. It does not claim the remaining timeline,
   composer, subagent, module-page, desktop, or cleanup rows are complete.
+
+## 2026-07-10 Composer And Run Control Closure Batch
+
+### Scope
+- Closed `COMP-01` through `COMP-03` as one end-to-end run creation and control
+  batch: multiline input, attachment serialization, mention selection, voice,
+  normal/orchestration options, target/model/preset controls, thinking, Shell,
+  YOLO, busy locks, queued/interrupt injection, Stop, and checkpoint Resume.
+- Corrected the orchestration field label to `Preset` and localized the compact
+  stopped/paused/background recovery copy. Standalone Resume remains directly
+  above the composer, does not expose a raw run ID, and uses the full available
+  row width.
+- Replaced the route-fulfilled Stop/inject/Resume proof with a real Node HTTP
+  SSE server. It retains the live `ServerResponse` while Queue and Interrupt
+  arrive, records which actions happened while the stream was open, ends once
+  after Stop, and uses a 100 ms retry window to prove no native EventSource
+  reconnect. Resume continues from event 7 through timed event 8 and terminal
+  event 9.
+- Added deterministic same-fixture V1/V2 visual pairs for the leading mention
+  menu and active run. The running pair uses one normal-mode run, one prompt,
+  one event checkpoint, one output, and one 1280x900 viewport before and after
+  the real V1-to-new-interface route switch.
+- Rebuilt `frontend/dist/app` with the Composer and Recovery changes.
+
+### Verification
+- `npm test -- src/test/Composer.test.tsx src/test/RecoveryBar.test.tsx
+  src/test/ComposerVoiceInput.test.tsx` passed 114 tests.
+- `npm run test:browser -- v2-composer-controls.spec.ts
+  v2-composer-input-affordances.spec.ts v2-composer-run-actions.spec.ts
+  v2-recovery.spec.ts v2-real-sse-stale-recovery.spec.ts
+  voice-input-audio.spec.ts --project=chromium --workers=1` passed 45 tests.
+- The final focused real HTTP Stop/inject/Resume rerun passed 3/3 after the
+  retry interval was reduced to 100 ms.
+- `npm run lint` and `npm run build` passed. The native voice case launches
+  Chromium with its fake media device but does not mock `getUserMedia` or
+  `AudioContext`; only the STT WebSocket endpoint is replaced.
+- Manual image inspection covered paired V1/V2 idle desktop, idle 720px,
+  mention, running, and stopped/Resume states under
+  `.tmp/frontend-v2-ts-composer-closure/`.
+
+### Reviewer
+- The first independent review rejected route-fulfilled SSE evidence and
+  mismatched running screenshots. Both were replaced with retained HTTP
+  streaming and a single-fixture pair.
+- Reviewer `Beauvoir` (`019f4d09-8fdd-72f1-aa1b-795e09a2ac38`) then rejected a
+  60-second SSE retry paired with only a four-second observation window. The
+  retry was changed to 100 ms while preserving the exact single-request
+  assertion.
+- Final reviewer result: PASS with no findings. `COMP-01`, `COMP-02`, and
+  `COMP-03` move to `Verified`; totals are now 25 `Verified` and 19
+  `In progress`.

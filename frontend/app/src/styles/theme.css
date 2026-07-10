@@ -1250,6 +1250,16 @@ body {
   min-width: 0;
 }
 
+.at-recovery.is-resume-only .ant-alert-message,
+.at-recovery.is-resume-only .at-recovery-body,
+.at-recovery.is-resume-only .at-recovery-body > .ant-space {
+  width: 100%;
+}
+
+.at-recovery.is-resume-only .at-recovery-body > .ant-space {
+  justify-content: space-between;
+}
+
 .at-recovery-panel {
   display: grid;
   gap: 8px;

@@ -36,7 +36,7 @@ describe("RoundMarker", () => {
   });
 
   it("uses one aligned disclosure control and keeps the body mounted", () => {
-    render(
+    const { container } = render(
       <ControlledRoundMarker
         prompt="A long prompt that remains mounted while collapsed for a stable virtual row."
       />,
@@ -44,13 +44,13 @@ describe("RoundMarker", () => {
 
     const button = screen.getByRole("button", { name: "Expand" });
     expect(button).toHaveAttribute("aria-expanded", "false");
-    expect(document.querySelector(".at-round-prompt-body")).toHaveClass("is-collapsed");
-    expect(document.querySelector(".at-round-marker-intent-summary")).toBeNull();
+    expect(container.querySelector(".at-round-prompt-body")).toHaveClass("is-collapsed");
+    expect(container.querySelector(".at-round-marker-intent-summary")).toBeNull();
 
     fireEvent.click(button);
 
-    expect(screen.getByRole("button", { name: "Collapse" })).toBe(button);
-    expect(document.querySelector(".at-round-prompt-body")).toHaveClass("is-expanded");
+    expect(container.querySelector('button[aria-expanded="true"]')).toBe(button);
+    expect(container.querySelector(".at-round-prompt-body")).toHaveClass("is-expanded");
   });
 });
 

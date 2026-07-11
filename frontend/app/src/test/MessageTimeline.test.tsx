@@ -1062,8 +1062,10 @@ describe("MessageTimeline", () => {
     expect(container.querySelector<HTMLElement>("article.at-message")).toBe(rowBefore);
     expect(container.querySelector<HTMLElement>(".at-message-text"))
       .toBe(textNodeBefore);
-    expect(container.querySelector<HTMLElement>(".at-message-markdown"))
-      .not.toBe(markdownBefore);
+    const markdownAfter = container.querySelector<HTMLElement>(".at-message-markdown");
+    expect(markdownAfter).toBe(markdownBefore);
+    expect(markdownAfter).not.toHaveClass("at-message-streaming-plain");
+    expect(markdownAfter?.querySelector("p")).toHaveTextContent(finalAnswer);
     expect(textNodeBefore).not.toHaveClass("at-message-streaming-text");
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
     expect(screen.getByText(finalAnswer)).toBeVisible();

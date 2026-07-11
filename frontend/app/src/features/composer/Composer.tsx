@@ -237,6 +237,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
   const queryClient = useQueryClient();
   const t = useTranslations();
   const inputRef = useRef<SenderRef | null>(null);
+  const mentionAnchorRef = useRef<HTMLDivElement | null>(null);
   const sessionIdRef = useRef(sessionId);
   const [draft, setDraft] = useState("");
   const [promptAttachments, setPromptAttachments] = useState<PromptAttachment[]>([]);
@@ -443,6 +444,21 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       : promptResourceContext !== null
         ? resourceMentionOptions
         : leadingMentionOptions;
+  const mentionMenuOpen =
+    promptCommandContext !== null || promptResourceContext !== null;
+  const mentionMenuLoading =
+    promptCommandContext !== null
+      ? commandCatalogQuery.isLoading || roleOptionsQuery.isLoading
+      : promptResourceContext !== null
+        ? roleOptionsQuery.isLoading ||
+          (promptResourceContext.query.length > 0 && resourceSearchQuery.isLoading)
+        : false;
+  const mentionMenuEmptyLabel =
+    promptCommandContext !== null
+      ? t("settingsCommandsNoMatches")
+      : promptResourceContext?.query
+        ? t("workspaceNoFileMatches")
+        : t("settingsNoRoles");
   const effectiveTargetRoleId = leadingRoleMention.roleId ?? targetRoleId;
   const effectivePromptText =
     leadingRoleMention.roleId === null ? draft.trim() : leadingRoleMention.promptText;
@@ -744,44 +760,51 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       }}
     >
       <div className="at-composer-inner">
-        <Sender
-          ref={inputRef}
-          aria-label={t("composerPrompt")}
-          autoSize={{ minRows: 1, maxRows: 7 }}
-          disabled={busy || sessionId === null}
-          className="at-composer-sender"
-          loading={createRunMutation.isPending || injectMessageMutation.isPending}
-          onChange={(value) => {
-            if (voiceInput.isBusy) {
-              voiceInput.stop({ ignoreTextUpdates: true });
-            }
-            setDraft(value);
-          }}
-          onPaste={(event) => {
-            void handlePromptPaste(event);
-          }}
-          onKeyDown={(event) => {
-            handlePromptKeyDown(event);
-          }}
-          onSubmit={() => {
-            if (canCreateRun) {
-              createRunMutation.mutate();
-              return;
-            }
-            if (canInject) {
-              injectMessageMutation.mutate("queued");
-            }
-          }}
-          placeholder={t("composerPromptPlaceholder")}
-          submitType="enter"
-          value={draft}
-          actions={false}
-        />
-        <PromptMentionMenu
-          activeIndex={activeMentionIndex}
-          onSelect={selectPromptMentionOption}
-          options={promptMentionOptions}
-        />
+        <div className="at-composer-prompt-anchor" ref={mentionAnchorRef}>
+          <Sender
+            ref={inputRef}
+            aria-label={t("composerPrompt")}
+            autoSize={{ minRows: 1, maxRows: 7 }}
+            disabled={busy || sessionId === null}
+            className="at-composer-sender"
+            loading={createRunMutation.isPending || injectMessageMutation.isPending}
+            onChange={(value) => {
+              if (voiceInput.isBusy) {
+                voiceInput.stop({ ignoreTextUpdates: true });
+              }
+              setDraft(value);
+            }}
+            onPaste={(event) => {
+              void handlePromptPaste(event);
+            }}
+            onKeyDown={(event) => {
+              handlePromptKeyDown(event);
+            }}
+            onSubmit={() => {
+              if (canCreateRun) {
+                createRunMutation.mutate();
+                return;
+              }
+              if (canInject) {
+                injectMessageMutation.mutate("queued");
+              }
+            }}
+            placeholder={t("composerPromptPlaceholder")}
+            submitType="enter"
+            value={draft}
+            actions={false}
+          />
+          <PromptMentionMenu
+            activeIndex={activeMentionIndex}
+            anchorRef={mentionAnchorRef}
+            emptyLabel={mentionMenuEmptyLabel}
+            loading={mentionMenuLoading}
+            loadingLabel={t("connectorsRuntimeToolsStatusLoading")}
+            onSelect={selectPromptMentionOption}
+            open={mentionMenuOpen}
+            options={promptMentionOptions}
+          />
+        </div>
         <PromptAttachments
           attachments={promptAttachments}
           hasError={Boolean(attachmentValidationMessage)}

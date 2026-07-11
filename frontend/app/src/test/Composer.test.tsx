@@ -1380,8 +1380,8 @@ describe("Composer", () => {
         80,
       ),
     );
-    await waitFor(() =>
-      expect(screen.queryByLabelText("Prompt suggestions")).toBeNull(),
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "No matching files.",
     );
 
     fireEvent.change(prompt, { target: { value: "@Src/Relay_Teams/Media/" } });

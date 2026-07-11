@@ -47,4 +47,19 @@ describe("composer control layout CSS", () => {
       /\.at-composer \.at-composer-actions\.ant-space\s*{[\s\S]*?flex:\s*0 0 auto;[\s\S]*?justify-content:\s*flex-end;/,
     );
   });
+
+  it("renders mention suggestions as a bounded floating surface", () => {
+    expect(composerCss).toMatch(
+      /\.at-prompt-mention-menu\.at-prompt-mention-menu\s*{[\s\S]*?position:\s*fixed;[\s\S]*?z-index:\s*1100;[\s\S]*?max-width:\s*calc\(100vw - 24px\);[\s\S]*?overflow:\s*hidden;/,
+    );
+    expect(composerCss).toMatch(
+      /\.at-prompt-mention-menu \.at-prompt-mention-menu-list\s*{[\s\S]*?max-height:\s*inherit;[\s\S]*?overflow-y:\s*auto;/,
+    );
+    expect(composerCss).toMatch(
+      /\.at-prompt-mention-menu \.at-prompt-mention-description\s*{[\s\S]*?overflow:\s*hidden;[\s\S]*?-webkit-line-clamp:\s*2;/,
+    );
+    expect(composerSource).toContain(
+      'className="at-composer-prompt-anchor"',
+    );
+  });
 });

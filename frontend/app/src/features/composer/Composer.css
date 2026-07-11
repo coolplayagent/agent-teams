@@ -3,6 +3,66 @@
   container-type: inline-size;
 }
 
+.at-composer .at-composer-prompt-anchor {
+  min-width: 0;
+}
+
+.at-prompt-mention-menu.at-prompt-mention-menu {
+  position: fixed;
+  z-index: 1100;
+  max-width: calc(100vw - 24px);
+  border: 1px solid var(--at-border);
+  border-radius: 10px;
+  background: var(--at-surface);
+  box-shadow: 0 12px 32px rgba(32, 35, 31, 0.18);
+  overflow: hidden;
+}
+
+.at-prompt-mention-menu .at-prompt-mention-menu-list {
+  max-height: inherit;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.at-prompt-mention-menu .at-prompt-mention-item {
+  min-width: 0;
+  padding: 9px 11px;
+}
+
+.at-prompt-mention-menu .at-prompt-mention-name-row,
+.at-prompt-mention-menu .at-prompt-mention-name {
+  min-width: 0;
+}
+
+.at-prompt-mention-menu .at-prompt-mention-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.at-prompt-mention-menu .at-prompt-mention-kind {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.at-prompt-mention-menu .at-prompt-mention-description {
+  display: -webkit-box;
+  overflow: hidden;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.at-prompt-mention-state {
+  padding: 14px 16px;
+  color: var(--at-text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
 .at-composer .at-composer-controls {
   display: flex;
   align-items: center;

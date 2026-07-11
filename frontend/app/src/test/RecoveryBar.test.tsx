@@ -20,7 +20,10 @@ import {
   stopBackgroundTask,
 } from "../api/client";
 import type { RecoverySnapshot } from "../api/contracts";
-import { RecoveryBar } from "../features/recovery/RecoveryBar";
+import {
+  RecoveryBar,
+  SubagentQuestionBar,
+} from "../features/recovery/RecoveryBar";
 import { useUiStore } from "../runtime/uiStore";
 import type { RunStreamController } from "../runtime/useRunStreamController";
 
@@ -465,6 +468,107 @@ describe("RecoveryBar", () => {
       .not.toBeInTheDocument();
   });
 
+  it("keeps root questions in place and opens subagent questions contextually", async () => {
+    const subagentQuestion = {
+      instance_id: "subagent-explorer",
+      question_id: "question-subagent",
+      questions: [{
+        multiple: false,
+        options: [{ label: "Inspect" }],
+        question: "Choose the child path",
+      }],
+      role_id: "Explorer",
+      run_id: "run-subagent",
+    };
+    getRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({
+        pending_user_questions: [
+          {
+            question_id: "question-root",
+            questions: [{
+              multiple: false,
+              options: [{ label: "Continue" }],
+              question: "Choose the root path",
+            }],
+            role_id: "MainAgent",
+            run_id: "run-1",
+          },
+          subagentQuestion,
+        ],
+      }),
+    );
+    const onOpen = vi.fn();
+
+    render(
+      <TestProviders>
+        <RecoveryBar
+          onPendingSubagentQuestionOpen={onOpen}
+          runStreamController={runStreamController()}
+          sessionId="session-1"
+        />
+      </TestProviders>,
+    );
+
+    expect(await screen.findByText("Choose the root path")).toBeVisible();
+    expect(screen.queryByText("Choose the child path")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Open subagent panel" }));
+    expect(onOpen).toHaveBeenCalledWith(subagentQuestion);
+  });
+
+  it("answers only the question routed to the selected subagent panel", async () => {
+    getRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({
+        pending_user_questions: [
+          {
+            instance_id: "subagent-explorer",
+            question_id: "question-explorer",
+            questions: [{
+              multiple: false,
+              options: [{ label: "Inspect" }],
+              question: "Explorer decision",
+            }],
+            role_id: "Explorer",
+            run_id: "run-explorer",
+          },
+          {
+            instance_id: "subagent-reviewer",
+            question_id: "question-reviewer",
+            questions: [{
+              multiple: false,
+              options: [{ label: "Verify" }],
+              question: "Reviewer decision",
+            }],
+            role_id: "Reviewer",
+            run_id: "run-reviewer",
+          },
+        ],
+      }),
+    );
+    answerUserQuestionMock.mockResolvedValue({ status: "ok" });
+
+    render(
+      <TestProviders>
+        <SubagentQuestionBar
+          instanceId="subagent-explorer"
+          runId="run-explorer"
+          sessionId="session-1"
+        />
+      </TestProviders>,
+    );
+
+    expect(await screen.findByText("Explorer decision")).toBeVisible();
+    expect(screen.queryByText("Reviewer decision")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Inspect"));
+    fireEvent.click(screen.getByRole("button", { name: "Answer" }));
+    await waitFor(() =>
+      expect(answerUserQuestionMock).toHaveBeenCalledWith(
+        "run-explorer",
+        "question-explorer",
+        { answers: [{ selections: [{ label: "Inspect" }] }] },
+      ),
+    );
+  });
+
   it("resumes a shared stopped run once for concurrent question answers", async () => {
     const questions = ["First decision", "Second decision"].map((question, index) => ({
       question_id: `question-${index + 1}`,
@@ -489,7 +593,11 @@ describe("RecoveryBar", () => {
         pending_user_questions: questions,
       }),
     );
-    const resumed = deferredResponse<{ run_id: string; session_id: string }>();
+    const resumed = deferredResponse<{
+      run_id: string;
+      session_id: string;
+      status: string;
+    }>();
     resumeRunMock.mockReturnValue(resumed.promise);
     answerUserQuestionMock.mockResolvedValue({ status: "ok" });
 
@@ -503,7 +611,11 @@ describe("RecoveryBar", () => {
     await waitFor(() => expect(resumeRunMock).toHaveBeenCalledTimes(1));
     expect(answerUserQuestionMock).not.toHaveBeenCalled();
 
-    resumed.resolve({ run_id: "run-shared", session_id: "session-1" });
+    resumed.resolve({
+      run_id: "run-shared",
+      session_id: "session-1",
+      status: "running",
+    });
     await waitFor(() => expect(answerUserQuestionMock).toHaveBeenCalledTimes(2));
     expect(answerUserQuestionMock).toHaveBeenCalledWith(
       "run-shared",

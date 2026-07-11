@@ -29,6 +29,7 @@ import type {
 const NONE_OF_THE_ABOVE_OPTION_LABEL = "__none_of_the_above__";
 
 interface RecoveryBarProps {
+  onPendingSubagentQuestionOpen?: (question: PendingUserQuestion) => void;
   onPausedSubagentOpen?: (
     pausedSubagent: RecoveryPausedSubagent,
     activeRun: RecoveryRun | null,
@@ -38,6 +39,7 @@ interface RecoveryBarProps {
 }
 
 export function RecoveryBar({
+  onPendingSubagentQuestionOpen,
   onPausedSubagentOpen,
   runStreamController,
   sessionId,
@@ -102,7 +104,13 @@ export function RecoveryBar({
 
   const activeRun = recoveryQuery.data?.active_run ?? null;
   const pendingApprovals = recoveryQuery.data?.pending_tool_approvals ?? [];
-  const pendingQuestions = recoveryQuery.data?.pending_user_questions ?? [];
+  const allPendingQuestions = recoveryQuery.data?.pending_user_questions ?? [];
+  const pendingQuestions = onPendingSubagentQuestionOpen === undefined
+    ? allPendingQuestions
+    : allPendingQuestions.filter((question) => question.run_id === activeRun?.run_id);
+  const pendingSubagentQuestions = onPendingSubagentQuestionOpen === undefined
+    ? []
+    : allPendingQuestions.filter((question) => question.run_id !== activeRun?.run_id);
   const pausedSubagent = visiblePausedSubagent(
     recoveryQuery.data?.paused_subagent ?? null,
   );
@@ -114,6 +122,7 @@ export function RecoveryBar({
   const hasPendingRecoveryItems =
     pendingApprovals.length > 0 ||
     pendingQuestions.length > 0 ||
+    pendingSubagentQuestions.length > 0 ||
     pausedSubagent !== null ||
     activeBackgroundTasks.length > 0;
   const visibleActiveRun =
@@ -537,10 +546,109 @@ export function RecoveryBar({
             selections={questionSelections}
             supplements={questionSupplements}
           />
+          <PendingSubagentQuestionIndicators
+            onOpen={onPendingSubagentQuestionOpen}
+            questions={pendingSubagentQuestions}
+            t={t}
+          />
         </div>
       }
       showIcon
       type={recoverableRunId !== null ? "warning" : "info"}
+    />
+  );
+}
+
+export function SubagentQuestionBar({
+  instanceId,
+  runId,
+  sessionId,
+}: {
+  instanceId: string;
+  runId: string;
+  sessionId: string;
+}) {
+  const { message } = App.useApp();
+  const queryClient = useQueryClient();
+  const [busyQuestionIds, setBusyQuestionIds] = useState<Record<string, boolean>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [selections, setSelections] = useState<Record<string, string[]>>({});
+  const [supplements, setSupplements] = useState<Record<string, string>>({});
+  const recoveryQuery = useQuery({
+    queryKey: ["sessions", sessionId, "recovery"],
+    queryFn: () => getRecoverySnapshot(sessionId),
+    refetchOnWindowFocus: false,
+    refetchInterval: 10000,
+  });
+  const questions = (recoveryQuery.data?.pending_user_questions ?? []).filter(
+    (question) =>
+      question.run_id === runId &&
+      (!question.instance_id?.trim() || question.instance_id === instanceId),
+  );
+
+  useEffect(() => {
+    setBusyQuestionIds({});
+    setErrors({});
+    setSelections({});
+    setSupplements({});
+  }, [instanceId, runId, sessionId]);
+
+  const answerQuestion = async (question: PendingUserQuestion) => {
+    const questionId = question.question_id;
+    const answers = buildQuestionAnswer(question, selections, supplements);
+    if (answers === null) {
+      return;
+    }
+    setErrors((current) => removeRecordKey(current, questionId));
+    setBusyQuestionIds((current) => ({ ...current, [questionId]: true }));
+    try {
+      await answerUserQuestion(question.run_id, questionId, answers);
+      setSelections((current) => removeQuestionInputKeys(current, questionId));
+      setSupplements((current) => removeQuestionInputKeys(current, questionId));
+      await queryClient.invalidateQueries({
+        queryKey: ["sessions", sessionId, "recovery"],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Question answer failed.";
+      setErrors((current) => ({ ...current, [questionId]: errorMessage }));
+      void message.error(errorMessage);
+    } finally {
+      setBusyQuestionIds((current) => removeRecordKey(current, questionId));
+    }
+  };
+
+  if (questions.length === 0) {
+    return null;
+  }
+  return (
+    <Alert
+      className="at-recovery at-subagent-question-recovery"
+      message={
+        <PendingQuestions
+          busyQuestionIds={busyQuestionIds}
+          errors={errors}
+          onAnswer={(question) => void answerQuestion(question)}
+          onSelectionChange={(questionId, promptIndex, selectedLabels) => {
+            setSelections((current) => ({
+              ...current,
+              [selectionKey(questionId, promptIndex)]: selectedLabels,
+            }));
+          }}
+          onSupplementChange={(questionId, promptIndex, label, supplement) => {
+            setSupplements((current) => ({
+              ...current,
+              [supplementKey(questionId, promptIndex, label)]: supplement,
+            }));
+          }}
+          questions={questions}
+          selections={selections}
+          supplements={supplements}
+        />
+      }
+      showIcon
+      type="info"
     />
   );
 }
@@ -865,6 +973,36 @@ interface PendingQuestionsProps {
   questions: PendingUserQuestion[];
   selections: Record<string, string[]>;
   supplements: Record<string, string>;
+}
+
+function PendingSubagentQuestionIndicators({
+  onOpen,
+  questions,
+  t,
+}: {
+  onOpen?: (question: PendingUserQuestion) => void;
+  questions: PendingUserQuestion[];
+  t: Translate;
+}) {
+  if (questions.length === 0) {
+    return null;
+  }
+  return (
+    <div className="at-recovery-panel at-recovery-subagent-questions">
+      {questions.map((question) => (
+        <div className="at-recovery-item" key={question.question_id}>
+          <Typography.Text strong>
+            {question.role_id?.trim() || "Subagent"} needs input
+          </Typography.Text>
+          {onOpen === undefined ? null : (
+            <Button onClick={() => onOpen(question)} size="small">
+              {t("timelineOpenSubagentPanel")}
+            </Button>
+          )}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function PendingQuestions({

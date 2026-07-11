@@ -7,6 +7,7 @@ import type { TimelineSubagentReference } from "../timeline/MessageTimeline";
 import type {
   RecoveryPausedSubagent,
   RecoveryRun,
+  PendingUserQuestion,
 } from "../../api/contracts";
 import { useTranslations } from "../../i18n";
 import type { RunStreamController } from "../../runtime/useRunStreamController";
@@ -111,6 +112,13 @@ export function ChatWorkspace({
         </div>
       ) : null}
       <RecoveryBar
+        onPendingSubagentQuestionOpen={
+          onSubagentOpen === undefined || sessionId === null
+            ? undefined
+            : (question) => onSubagentOpen(
+                pendingQuestionTimelineReference(sessionId, question),
+              )
+        }
         onPausedSubagentOpen={
           onSubagentOpen === undefined || sessionId === null
             ? undefined
@@ -136,6 +144,28 @@ export function ChatWorkspace({
       />
     </div>
   );
+}
+
+function pendingQuestionTimelineReference(
+  sessionId: string,
+  question: PendingUserQuestion,
+): TimelineSubagentReference {
+  const instanceId = question.instance_id?.trim() ?? "";
+  const roleId = question.role_id?.trim() ?? "";
+  const prompt = question.questions.map((item) => item.question).join("\n");
+  return {
+    description: prompt,
+    instanceId,
+    prompt,
+    roleId,
+    runId: question.run_id,
+    runPhase: "awaiting_manual_action",
+    runStatus: "paused",
+    sessionId,
+    sourceRunId: question.run_id,
+    status: "paused",
+    title: roleId || instanceId || "Subagent",
+  };
 }
 
 function pausedSubagentTimelineReference(

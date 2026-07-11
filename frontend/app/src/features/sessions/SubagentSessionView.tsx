@@ -26,6 +26,7 @@ import type { RunStreamController } from "../../runtime/useRunStreamController";
 import { useTranslations, type Translate } from "../../i18n";
 import { MarkdownMessage } from "../timeline/MarkdownMessage";
 import { MessageTimeline } from "../timeline/MessageTimeline";
+import { SubagentQuestionBar } from "../recovery/RecoveryBar";
 import {
   normalizeSessionSubagent,
   type ActiveSubagentSession,
@@ -334,6 +335,13 @@ export function SubagentSessionView({
           <div className="at-subagent-session-prompt">
             <MarkdownMessage text={subagentPromptText} />
           </div>
+        ) : null}
+        {runId ? (
+          <SubagentQuestionBar
+            instanceId={instanceId}
+            runId={runId}
+            sessionId={sessionId}
+          />
         ) : null}
         {canRenderTimeline ? (
           <MessageTimeline

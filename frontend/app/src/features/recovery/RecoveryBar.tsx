@@ -65,6 +65,9 @@ export function RecoveryBar({
   >({});
   const observedActiveRunKeysRef = useRef(new Set<string>());
   const pendingIdleConfirmationRunKeysRef = useRef(new Set<string>());
+  const pendingRunResumePromisesRef = useRef(
+    new Map<string, ReturnType<typeof resumeRun>>(),
+  );
   const recoveryQuery = useQuery({
     queryKey: ["sessions", sessionId, "recovery"],
     queryFn: () => getRecoverySnapshot(sessionId ?? ""),
@@ -283,13 +286,26 @@ export function RecoveryBar({
   ]);
 
   const resumeRecoverableRun = async (runId: string) => {
-    const result = await resumeRun(runId);
-    runStreamController.startRunStream({
-      runId: result.run_id,
-      sessionId: result.session_id,
-      afterEventId: activeRun?.last_event_id,
-    });
-    return result;
+    const pendingResume = pendingRunResumePromisesRef.current.get(runId);
+    if (pendingResume !== undefined) {
+      return pendingResume;
+    }
+    const resumePromise = resumeRun(runId)
+      .then((result) => {
+        runStreamController.startRunStream({
+          runId: result.run_id,
+          sessionId: result.session_id,
+          afterEventId: activeRun?.last_event_id,
+        });
+        return result;
+      })
+      .finally(() => {
+        if (pendingRunResumePromisesRef.current.get(runId) === resumePromise) {
+          pendingRunResumePromisesRef.current.delete(runId);
+        }
+      });
+    pendingRunResumePromisesRef.current.set(runId, resumePromise);
+    return resumePromise;
   };
 
   const resumeMutation = useMutation({

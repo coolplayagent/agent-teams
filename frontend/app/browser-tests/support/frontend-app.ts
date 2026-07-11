@@ -587,7 +587,12 @@ export async function expectComposerControlsDoNotOverlap(page: Page): Promise<vo
         page.evaluate(() => {
           const controls = Array.from(
             document.querySelectorAll<HTMLElement>(
-              ".at-composer-control-set > .ant-space-item, .at-composer-controls > .ant-space:last-child",
+              [
+                ".at-composer-toolbar-start > *",
+                ".at-composer-actions > *",
+                ".at-composer-control-set > .ant-space-item",
+                ".at-composer-controls > .ant-space:last-child",
+              ].join(", "),
             ),
           )
             .filter((element) => {
@@ -635,6 +640,7 @@ export async function expectComposerControlsDoNotOverlap(page: Page): Promise<vo
               [
                 ".at-session-mode-control .ant-segmented-item-label",
                 ".at-role-select .ant-select-selection-placeholder",
+                ".at-composer-summary-copy",
               ].join(", "),
             ),
           )

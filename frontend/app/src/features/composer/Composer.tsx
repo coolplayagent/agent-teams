@@ -1224,7 +1224,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
             {activeRunId !== null ? (
               <Tooltip title={t("composerStopRun")}>
                 <Button
-                  aria-label={t("composerStopRun")}
+                  aria-label={t("composerStop")}
                   className="at-composer-primary-action at-composer-stop-action"
                   danger
                   icon={<Square fill="currentColor" size={13} />}
@@ -1251,6 +1251,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
                     }
                     onClick={() => injectMessageMutation.mutate("interrupt")}
                     shape="circle"
+                    title={injectionButtonTitle || undefined}
                     type="text"
                   />
                 </Tooltip>
@@ -1266,6 +1267,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
                     }
                     onClick={() => injectMessageMutation.mutate("queued")}
                     shape="circle"
+                    title={injectionButtonTitle || undefined}
                     type="primary"
                   />
                 </Tooltip>

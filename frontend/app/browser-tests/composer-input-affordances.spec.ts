@@ -141,6 +141,82 @@ test("shows configured voice input as disabled when runtime support is missing",
   }
 });
 
+test("keeps the contextual composer and primary action inside supported viewports", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state: ComposerAffordanceState = {
+    activeRunId: null,
+    runCreateRequests: [],
+    speechConfigured: true,
+  };
+  try {
+    await installVoiceRuntimeSupport(page);
+    await installShellState(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleComposerAffordanceApi(context, state),
+      sessionTitle: "TS responsive composer",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    for (const width of [1440, 1280, 1024, 768]) {
+      await page.setViewportSize({ height: width === 768 ? 768 : 900, width });
+      await page.goto(`${appServer.url}/`);
+      await waitForAppShell(page);
+
+      const composer = page.locator(".at-composer-inner");
+      const send = page.getByRole("button", { name: "Send" });
+      await expect(composer).toBeVisible();
+      await expect(send).toBeVisible();
+      const [composerBox, sendBox] = await Promise.all([
+        composer.boundingBox(),
+        send.boundingBox(),
+      ]);
+      expect(composerBox).not.toBeNull();
+      expect(sendBox).not.toBeNull();
+      if (composerBox === null || sendBox === null) {
+        throw new Error("Composer bounds were unavailable.");
+      }
+      expect(composerBox.x).toBeGreaterThanOrEqual(0);
+      expect(composerBox.x + composerBox.width).toBeLessThanOrEqual(width);
+      expect(sendBox.x + sendBox.width).toBeLessThanOrEqual(
+        composerBox.x + composerBox.width,
+      );
+      expect(sendBox.y + sendBox.height).toBeLessThanOrEqual(
+        composerBox.y + composerBox.height,
+      );
+
+      await page.getByRole("button", { name: "Add context or command" }).click();
+      const menu = page.getByLabel("Prompt suggestions");
+      await expect(menu).toBeVisible();
+      const menuBox = await menu.boundingBox();
+      expect(menuBox).not.toBeNull();
+      if (menuBox !== null) {
+        expect(menuBox.x).toBeGreaterThanOrEqual(0);
+        expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(width);
+      }
+      await page.keyboard.press("Escape");
+      await expect(menu).toHaveCount(0);
+
+      if (width === 1280 || width === 768) {
+        await captureStableElementScreenshot(
+          composer,
+          screenshotPath(`v2-contextual-composer-${width}.png`, SCREENSHOT_FOLDER),
+        );
+      }
+      await expectComposerControlsDoNotOverlap(page);
+      await expectNoDocumentScroll(
+        page,
+        `contextual composer should stay in the ${width}px shell`,
+      );
+    }
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+  } finally {
+    await appServer.close();
+  }
+});
+
 async function handleComposerAffordanceApi(
   context: MockApiRouteContext,
   state: ComposerAffordanceState,

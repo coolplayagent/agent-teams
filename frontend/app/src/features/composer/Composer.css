@@ -123,6 +123,39 @@
 .at-composer .at-prompt-attachments {
   order: -1;
   padding: 0 4px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+}
+
+.at-composer .at-prompt-attachment {
+  position: relative;
+  flex: 0 0 54px;
+  display: block;
+  width: 54px;
+  max-width: 54px;
+  min-height: 54px;
+  padding: 4px;
+}
+
+.at-composer .at-prompt-attachment-copy {
+  display: none;
+}
+
+.at-composer .at-prompt-attachment > .ant-btn {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  z-index: 1;
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--at-border);
+  border-radius: 50%;
+  background: var(--at-text);
+  color: var(--at-surface);
 }
 
 .at-composer .at-composer-controls {
@@ -360,6 +393,20 @@
 
   .at-composer .at-composer-controls {
     gap: 4px;
+  }
+}
+
+@container composer (max-width: 380px) {
+  .at-composer .at-composer-summary-copy,
+  .at-composer .at-composer-summary-button > svg:last-child,
+  .at-composer .at-composer-state-button {
+    display: none;
+  }
+
+  .at-composer .at-composer-summary-button {
+    width: 30px;
+    min-width: 30px;
+    padding: 0;
   }
 }
 

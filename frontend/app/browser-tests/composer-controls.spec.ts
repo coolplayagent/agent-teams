@@ -60,6 +60,7 @@ interface ComposerControlsState {
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await expect(page.getByText("No messages yet")).toBeVisible();
 
+    await openComposerModeControls(page);
     await selectComposerOption(page, ".at-normal-root-role-select", "Writer");
     await expect.poll(() => state.topologyPatchRequests.length).toBe(1);
     expect(state.topologyPatchRequests.at(-1)).toMatchObject({
@@ -68,6 +69,7 @@ interface ComposerControlsState {
       session_mode: "normal",
     });
 
+    await openComposerModelControls(page);
     await selectComposerOption(
       page,
       ".at-model-profile-select",
@@ -75,6 +77,7 @@ interface ComposerControlsState {
     );
     await expect.poll(() => state.modelProfilePatchRequests.at(-1)).toBe("vision");
 
+    await openComposerModeControls(page);
     await page.locator(".at-session-mode-control").getByText("Orchestration")
       .click();
     await expect.poll(() => state.topologyPatchRequests.length).toBe(2);
@@ -106,7 +109,6 @@ interface ComposerControlsState {
     await expect(prompt).toHaveValue(PROMPT_TEXT);
     await pasteImageIntoPrompt(page, IMAGE_NAME);
     await expect(page.getByLabel("Prompt attachments")).toBeVisible();
-    await expect(page.getByText(IMAGE_NAME)).toBeVisible();
     const attachmentPreview = page.getByRole("img", { name: IMAGE_NAME });
     await expect.poll(() =>
       attachmentPreview.evaluate((image: HTMLImageElement) =>
@@ -132,6 +134,8 @@ interface ComposerControlsState {
     );
     await expect(page.getByRole("button", { name: "Stop" })).toBeVisible();
     await expect(prompt).toBeEnabled();
+    await openComposerModeControls(page);
+    await openComposerModelControls(page);
     await expect(page.locator(".at-role-select")).toHaveClass(/ant-select-disabled/);
     await expect(page.locator(".at-model-profile-select"))
       .toHaveClass(/ant-select-disabled/);
@@ -344,6 +348,22 @@ async function selectComposerOption(
     .last();
   await expect(option).toBeVisible();
   await option.click();
+}
+
+async function openComposerModeControls(page: Page): Promise<void> {
+  if (await page.locator(".at-session-mode-control").isVisible()) {
+    return;
+  }
+  await page.getByRole("button", { name: /^Mode:/ }).click();
+  await expect(page.locator(".at-session-mode-control")).toBeVisible();
+}
+
+async function openComposerModelControls(page: Page): Promise<void> {
+  if (await page.locator(".at-model-profile-select").isVisible()) {
+    return;
+  }
+  await page.getByRole("button", { name: "Model profile" }).click();
+  await expect(page.locator(".at-model-profile-select")).toBeVisible();
 }
 
 async function pasteImageIntoPrompt(page: Page, filename: string): Promise<void> {

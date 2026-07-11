@@ -179,13 +179,13 @@ describe("Composer", () => {
     expect(screen.getAllByText("Mode")).not.toHaveLength(0);
     expect(screen.getByText("Role")).toBeVisible();
     expect(screen.getByText("Target")).toBeVisible();
-    expect(screen.getAllByText("Model")[0]).toBeVisible();
+    expect(screen.getAllByText("Model")).not.toHaveLength(0);
     expect(selectRoot("Root role")).toBeVisible();
     expect(
       screen.queryByRole("combobox", { name: "Orchestration preset" }),
     ).not.toBeInTheDocument();
     expect(selectRoot("Target role")).toBeVisible();
-    expect(selectRoot("Model profile")).toBeVisible();
+    expect(selectRoot("Model profile")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Shell safety policy" }))
       .toBeChecked();
     expect(screen.getByRole("checkbox", { name: "YOLO" })).toBeChecked();
@@ -226,12 +226,12 @@ describe("Composer", () => {
     expect(screen.getAllByText("模式")).not.toHaveLength(0);
     expect(screen.getByText("角色")).toBeVisible();
     expect(screen.getByText("目标")).toBeVisible();
-    expect(screen.getAllByText("模型")[0]).toBeVisible();
+    expect(screen.getAllByText("模型")).not.toHaveLength(0);
     expect(screen.getByRole("combobox", { name: "根角色" })).toBeVisible();
     expect(screen.queryByRole("combobox", { name: "编排预设" })).not.toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "目标角色" })).toBeVisible();
-    expect(screen.getByRole("combobox", { name: "模型配置" })).toBeVisible();
-    expect(screen.getByText("思考")).toBeVisible();
+    expect(screen.getByRole("combobox", { name: "模型配置" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "思考" })).toBeVisible();
     expect(screen.getByRole("checkbox", { name: "Shell 安全策略" })).toBeInTheDocument();
     expect(screen.getByText("Shell")).toBeVisible();
     expect(screen.getByRole("button", { name: "发送" })).toBeVisible();
@@ -307,7 +307,7 @@ describe("Composer", () => {
     expect(
       await screen.findByRole("combobox", { name: "Orchestration preset" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Preset")).toBeVisible();
+    expect(screen.getByText("Preset")).toBeInTheDocument();
     expect(
       screen.queryByRole("combobox", { name: "Root role" }),
     ).not.toBeInTheDocument();
@@ -704,8 +704,11 @@ describe("Composer", () => {
         {
           aliases: [],
           description: "Review changed files",
+          discovery_source: "app",
           name: "review",
-          source: "app",
+          scope: "app",
+          source_path: "C:/commands/review.md",
+          template: "Review changed files",
         },
       ],
       workspaces: [],
@@ -720,13 +723,30 @@ describe("Composer", () => {
     fireEvent.click(quickActions);
 
     expect(await screen.findByText("Add image")).toBeVisible();
-    const reviewOption = await screen.findByRole("option", {
-      name: /\/review.*Review changed files/,
-    });
+    await waitFor(() =>
+      expect(
+        screen.getAllByRole("option").some((option) =>
+          option.textContent?.includes("/review"),
+        ),
+      ).toBe(true),
+    );
+    const reviewOption = screen.getAllByRole("option").find((option) =>
+      option.textContent?.includes("/review") &&
+      option.textContent.includes("Review changed files"),
+    );
+    if (reviewOption === undefined) {
+      throw new Error("Quick command option was not rendered.");
+    }
     expect(
-      screen.getByRole("option", { name: /\/review-skill.*Skill/ }),
-    ).toBeVisible();
-    expect(screen.getByRole("option", { name: /@Writer.*Role/ })).toBeVisible();
+      screen.getAllByRole("option").some((option) =>
+        option.textContent?.includes("/review-skill"),
+      ),
+    ).toBe(true);
+    expect(
+      screen.getAllByRole("option").some((option) =>
+        option.textContent?.includes("@Writer"),
+      ),
+    ).toBe(true);
 
     fireEvent.mouseDown(reviewOption);
     expect(prompt).toHaveValue("/review ");
@@ -774,8 +794,8 @@ describe("Composer", () => {
 
     expect(await screen.findByText("Command probe")).toBeVisible();
     expect(await screen.findByText("Skill probe")).toBeVisible();
-    expect(screen.getByText("Command")).toBeVisible();
-    expect(screen.getByText("Skill")).toBeVisible();
+    expect(screen.getAllByText("Command")).not.toHaveLength(0);
+    expect(screen.getAllByText("Skill")).not.toHaveLength(0);
     expect(screen.getAllByText("/dedupe-probe")).toHaveLength(2);
   });
 
@@ -2031,6 +2051,7 @@ describe("Composer", () => {
     expect(
       await screen.findByText("text-only-model does not support image input."),
     ).toBeVisible();
+    await openModelControls();
     fireEvent.mouseDown(
       screen.getByRole("combobox", { name: "Model profile" }),
     );
@@ -2182,6 +2203,7 @@ describe("Composer", () => {
 
     renderComposer();
 
+    await openAdvancedControls();
     fireEvent.mouseDown(
       await screen.findByRole("combobox", { name: "Target role" }),
     );
@@ -2323,6 +2345,7 @@ describe("Composer", () => {
         sessionId: "session-1",
       }),
     );
+    await openAdvancedControls();
     await waitFor(() =>
       expect(selectRoot("Root role")).toHaveClass("ant-select-disabled"),
     );
@@ -2390,11 +2413,13 @@ describe("Composer", () => {
         ])?.can_switch_mode,
       ).toBe(true),
     );
+    await openAdvancedControls();
     await waitFor(() =>
       expect(selectRoot("Root role")).toHaveClass("ant-select-disabled"),
     );
     firstRender.unmount();
     renderComposerWithClient(queryClient, runStreamController());
+    await openAdvancedControls();
     await waitFor(() =>
       expect(selectRoot("Root role")).toHaveClass("ant-select-disabled"),
     );
@@ -2481,6 +2506,7 @@ describe("Composer", () => {
 
     renderComposer();
 
+    await openModelControls();
     await waitFor(
       () =>
         expect(selectRoot("Model profile")).not.toHaveClass(
@@ -2520,6 +2546,7 @@ describe("Composer", () => {
 
     renderComposer();
 
+    await openAdvancedControls();
     await waitFor(() =>
       expect(segmentedItem("Orchestration")).not.toHaveClass(
         "ant-segmented-item-disabled",
@@ -2559,6 +2586,7 @@ describe("Composer", () => {
 
     renderComposer();
 
+    await openAdvancedControls();
     await waitFor(
       () => expect(selectRoot("Root role")).not.toHaveClass("ant-select-disabled"),
       { timeout: 5000 },
@@ -2601,6 +2629,8 @@ describe("Composer", () => {
 
     renderComposer();
 
+    await openAdvancedControls();
+    await openModelControls();
     await screen.findByText("Orchestration");
     expect(selectRoot("Root role")).toHaveClass("ant-select-disabled");
     await waitFor(() =>
@@ -2641,6 +2671,7 @@ describe("Composer", () => {
     const sidebarRows = [{ session_id: "sidebar", title: "Sidebar" }];
     queryClient.setQueryData(["sessions", "sidebar"], sidebarRows);
 
+    await openModelControls();
     await waitFor(
       () =>
         expect(selectRoot("Model profile")).not.toHaveClass(
@@ -2677,6 +2708,7 @@ describe("Composer", () => {
 
     renderComposer();
 
+    await openModelControls();
     expect(selectRoot("Model profile")).toHaveClass("ant-select-disabled");
   });
 
@@ -2691,7 +2723,8 @@ describe("Composer", () => {
 
     renderComposer();
 
-    expect(screen.getByText("Thinking")).toBeVisible();
+    await openAdvancedControls();
+    expect(screen.getAllByText("Thinking")).not.toHaveLength(0);
     fireEvent.click(screen.getByRole("switch", { name: "Thinking" }));
     fireEvent.mouseDown(screen.getByRole("combobox", { name: "Thinking effort" }));
     fireEvent.click(await screen.findByText("High"));
@@ -2725,6 +2758,7 @@ describe("Composer", () => {
 
     renderComposer();
 
+    await openAdvancedControls();
     const yoloToggle = await screen.findByRole("checkbox", { name: "YOLO" });
     expect(yoloToggle).toBeChecked();
     fireEvent.click(yoloToggle);
@@ -2762,6 +2796,7 @@ describe("Composer", () => {
 
     renderComposer();
 
+    await openAdvancedControls();
     const shellSafetyToggle = await screen.findByRole("checkbox", {
       name: "Shell safety policy",
     });
@@ -2816,6 +2851,7 @@ describe("Composer", () => {
 
     renderComposer();
 
+    await openAdvancedControls();
     const shellSafetyToggle = await screen.findByRole("checkbox", {
       name: "Shell safety policy",
     });

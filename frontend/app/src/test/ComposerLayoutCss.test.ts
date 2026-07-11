@@ -40,6 +40,19 @@ describe("contextual composer layout", () => {
     );
   });
 
+  it("keeps attachments and narrow layouts from displacing the primary action", () => {
+    expect(composerCss).toMatch(
+      /\.at-composer \.at-prompt-attachments\s*{[\s\S]*?flex-wrap:\s*nowrap;[\s\S]*?overflow-x:\s*auto;/,
+    );
+    expect(composerCss).toMatch(
+      /\.at-composer \.at-prompt-attachment\s*{[\s\S]*?flex:\s*0 0 54px;[\s\S]*?max-width:\s*54px;/,
+    );
+    expect(composerCss).toMatch(
+      /@container composer \(max-width:\s*380px\)[\s\S]*?\.at-composer \.at-composer-summary-copy,[\s\S]*?display:\s*none;/,
+    );
+    expect(composerCss).toContain("@media (prefers-reduced-motion: reduce)");
+  });
+
   it("renders suggestions as a bounded floating surface", () => {
     expect(composerCss).toMatch(
       /\.at-prompt-mention-menu\.at-prompt-mention-menu\s*{[\s\S]*?position:\s*fixed;[\s\S]*?z-index:\s*1100;[\s\S]*?max-width:\s*calc\(100vw - 24px\);[\s\S]*?overflow:\s*hidden;/,

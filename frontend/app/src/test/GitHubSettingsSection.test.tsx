@@ -204,7 +204,7 @@ describe("GitHubSettingsSection", () => {
         token: "ghp_replacement",
       }),
     );
-  }, 15000);
+  });
 
   it("updates webhook previews, blocks empty probes, and saves webhook config", async () => {
     renderSection();
@@ -329,7 +329,7 @@ describe("GitHubSettingsSection", () => {
     );
     await waitFor(() => expect(screen.getByLabelText("Webhook base URL")).toHaveValue(""));
     expect(screen.getByText("Tunnel stopped.")).toBeVisible();
-  }, 15000);
+  });
 });
 
 function renderSection() {

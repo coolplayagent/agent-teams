@@ -214,7 +214,7 @@ describe("HooksSettingsSection", () => {
         },
       }),
     );
-  }, 15000);
+  });
 
   it("validates edited command hooks through the structured serializer", async () => {
     renderSection();

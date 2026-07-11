@@ -349,7 +349,7 @@ describe("MemoryView", () => {
       expect(applyMemorySkillDraftMock).toHaveBeenCalledWith("draft-1"),
     );
     expect(await screen.findByText("Applied skill draft: app:workspace-frame")).toBeVisible();
-  }, 10_000);
+  });
 
   it("shows a distinct error when the selected skill draft detail fails", async () => {
     getMemorySkillDraftMock.mockRejectedValue(new Error("draft detail unavailable"));

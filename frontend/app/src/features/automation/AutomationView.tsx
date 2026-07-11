@@ -347,6 +347,7 @@ export function AutomationView({
           t={t}
         />
         <div
+          aria-busy={projectsQuery.isFetching}
           aria-labelledby="automation-schedules-tab"
           className="at-automation-loading"
           hidden={activeTab !== "schedules"}
@@ -398,9 +399,19 @@ export function AutomationView({
           id="automation-schedules-panel"
           role="tabpanel"
         >
-          <Empty
-            description={t("automationLoadError")}
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
+          <Alert
+            action={
+              <Button
+                loading={projectsQuery.isFetching}
+                onClick={() => void projectsQuery.refetch()}
+                size="small"
+              >
+                {t("automationRefresh")}
+              </Button>
+            }
+            message={t("automationLoadError")}
+            showIcon
+            type="error"
           />
         </div>
         {githubVisited ? (
@@ -439,8 +450,13 @@ export function AutomationView({
         t={t}
       />
       <div
+        aria-busy={projectsQuery.isFetching}
         aria-labelledby="automation-schedules-tab"
-        className="at-automation-content"
+        className={
+          projectsQuery.isFetching
+            ? "at-automation-content is-refreshing"
+            : "at-automation-content"
+        }
         hidden={activeTab !== "schedules"}
         id="automation-schedules-panel"
         role="tabpanel"
@@ -493,14 +509,24 @@ export function AutomationView({
             </div>
           ) : (
             <AutomationProjectDetail
-              busy={
-                runMutation.isPending ||
-                enableMutation.isPending ||
-                disableMutation.isPending ||
-                deleteMutation.isPending ||
-                updateMutation.isPending
-              }
+              actionPending={{
+                delete:
+                  deleteMutation.isPending &&
+                  deleteMutation.variables === selectedProject.automation_project_id,
+                run:
+                  runMutation.isPending &&
+                  runMutation.variables === selectedProject.automation_project_id,
+                toggle:
+                  (enableMutation.isPending &&
+                    enableMutation.variables === selectedProject.automation_project_id) ||
+                  (disableMutation.isPending &&
+                    disableMutation.variables === selectedProject.automation_project_id),
+                update:
+                  updateMutation.isPending &&
+                  editingProjectId === selectedProject.automation_project_id,
+              }}
               loading={projectQuery.isLoading || sessionsQuery.isLoading}
+              refreshing={projectQuery.isFetching || sessionsQuery.isFetching}
               errorMessage={
                 projectQuery.isError
                   ? t("automationProjectLoadError")
@@ -523,6 +549,10 @@ export function AutomationView({
                 });
               }}
               onEdit={() => openEdit(selectedProject)}
+              onRetry={() => {
+                void projectQuery.refetch();
+                void sessionsQuery.refetch();
+              }}
               onRun={() => runMutation.mutate(selectedProject.automation_project_id)}
               onSessionSelected={onSessionSelected}
               onToggle={() => {
@@ -688,28 +718,37 @@ function AutomationProjectButton({
 }
 
 function AutomationProjectDetail({
-  busy,
+  actionPending,
   errorMessage,
   loading,
   onDelete,
   onEdit,
+  onRetry,
   onRun,
   onSessionSelected,
   onToggle,
   project,
+  refreshing,
   sessions,
   t,
   workspace,
 }: {
-  busy: boolean;
+  actionPending: {
+    delete: boolean;
+    run: boolean;
+    toggle: boolean;
+    update: boolean;
+  };
   errorMessage: string | null;
   loading: boolean;
   onDelete: () => void;
   onEdit: () => void;
+  onRetry: () => void;
   onRun: () => void;
   onSessionSelected?: (sessionId: string, workspaceId?: string | null) => void;
   onToggle: () => void;
   project: AutomationProjectRecord;
+  refreshing: boolean;
   sessions: AutomationProjectSessionRecord[];
   t: Translate;
   workspace: WorkspaceRecord | null;
@@ -722,8 +761,21 @@ function AutomationProjectDetail({
     );
   }
   if (errorMessage !== null) {
-    return <Alert message={errorMessage} showIcon type="error" />;
+    return (
+      <Alert
+        action={
+          <Button loading={refreshing} onClick={onRetry} size="small">
+            {t("automationRefresh")}
+          </Button>
+        }
+        message={errorMessage}
+        showIcon
+        type="error"
+      />
+    );
   }
+
+  const busy = Object.values(actionPending).some(Boolean);
 
   const runMode =
     project.run_config.session_mode === "orchestration"
@@ -738,7 +790,14 @@ function AutomationProjectDetail({
     : t("automationDeliveryDisabled");
 
   return (
-    <div className="at-automation-detail-grid">
+    <div
+      aria-busy={refreshing || busy}
+      className={
+        refreshing
+          ? "at-automation-detail-grid is-refreshing"
+          : "at-automation-detail-grid"
+      }
+    >
       <section className="at-automation-document">
         <div className="at-automation-detail-head">
           <div>
@@ -751,6 +810,7 @@ function AutomationProjectDetail({
             <Button
               disabled={busy}
               icon={<Pencil size={15} />}
+              loading={actionPending.update}
               onClick={onEdit}
             >
               {t("automationEdit")}
@@ -758,7 +818,7 @@ function AutomationProjectDetail({
             <Button
               disabled={busy}
               icon={<Play size={15} />}
-              loading={busy}
+              loading={actionPending.run}
               onClick={onRun}
             >
               {t("automationRunNow")}
@@ -772,6 +832,7 @@ function AutomationProjectDetail({
                   <RotateCw size={15} />
                 )
               }
+              loading={actionPending.toggle}
               onClick={onToggle}
             >
               {project.status === "enabled"
@@ -782,6 +843,7 @@ function AutomationProjectDetail({
               danger
               disabled={busy}
               icon={<Trash2 size={15} />}
+              loading={actionPending.delete}
               onClick={onDelete}
             >
               {t("automationDelete")}

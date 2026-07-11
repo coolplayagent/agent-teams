@@ -248,6 +248,32 @@ describe("AutomationView", () => {
     expect(await screen.findByRole("button", { name: "Enable" })).toBeVisible();
   });
 
+  it("shows pending feedback only on the action that is running", async () => {
+    let resolveDisable: ((project: AutomationProjectRecord) => void) | undefined;
+    disableAutomationProjectMock.mockImplementationOnce(
+      () =>
+        new Promise<AutomationProjectRecord>((resolve) => {
+          resolveDisable = resolve;
+        }),
+    );
+    renderAutomation();
+
+    expect(await screen.findByText("Daily triage")).toBeVisible();
+    const runButton = screen.getByRole("button", { name: "Run now" });
+    const disableButton = screen.getByRole("button", { name: "Disable" });
+    fireEvent.click(disableButton);
+
+    await waitFor(() => expect(disableButton).toHaveClass("ant-btn-loading"));
+    expect(runButton).not.toHaveClass("ant-btn-loading");
+    resolveDisable?.(
+      automationProject({
+        automation_project_id: "aut-daily",
+        status: "disabled",
+      }),
+    );
+    await waitFor(() => expect(disableAutomationProjectMock).toHaveBeenCalled());
+  });
+
   it("does not render failed project or session requests as empty valid data", async () => {
     getAutomationProjectMock.mockRejectedValueOnce(new Error("detail unavailable"));
     const first = renderAutomation();

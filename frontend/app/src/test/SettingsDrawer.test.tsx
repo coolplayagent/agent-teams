@@ -5012,6 +5012,13 @@ function renderDrawer() {
       </ConfigProvider>
     </QueryClientProvider>,
   );
+  // Unit tests exercise settings behavior, while browser coverage owns the
+  // entrance animation. Keep rc-motion's prepare frame from making otherwise
+  // mounted controls appear invisible for several jsdom polling intervals.
+  const modal = document.querySelector<HTMLElement>(".at-settings-modal");
+  if (modal !== null) {
+    modal.style.opacity = "1";
+  }
 }
 
 async function clickFirstOpenSelectOption() {

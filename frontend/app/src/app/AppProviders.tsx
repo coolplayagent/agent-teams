@@ -29,6 +29,9 @@ interface AppProvidersProps {
 export function AppProviders({ children }: AppProvidersProps) {
   const themeMode = useUiStore((state) => state.themeMode);
   const [appearanceSettings, setAppearanceSettings] = useState(readAppearanceSettings);
+  const [systemPrefersReducedMotion, setSystemPrefersReducedMotion] = useState(
+    () => window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+  );
   const [systemThemeMode, setSystemThemeMode] = useState(currentSystemThemeMode);
   const resolvedThemeMode = themeMode === "system" ? systemThemeMode : resolveThemeMode(themeMode);
   const algorithm = resolvedThemeMode === "dark" ? theme.darkAlgorithm : theme.defaultAlgorithm;
@@ -55,6 +58,18 @@ export function AppProviders({ children }: AppProvidersProps) {
     return () => mediaQuery.removeEventListener("change", updateSystemThemeMode);
   }, []);
 
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const updateMotionPreference = () =>
+      setSystemPrefersReducedMotion(mediaQuery.matches);
+    mediaQuery.addEventListener("change", updateMotionPreference);
+    return () => mediaQuery.removeEventListener("change", updateMotionPreference);
+  }, []);
+
+  const motionEnabled =
+    appearanceSettings.motion === "full" ||
+    (appearanceSettings.motion === "system" && !systemPrefersReducedMotion);
+
   const tokens = useMemo(
     () => ({
       borderRadius: 8,
@@ -62,8 +77,9 @@ export function AppProviders({ children }: AppProvidersProps) {
       fontFamily:
         appearanceSettings.uiFont.trim()
         || '"Aptos", "Helvetica Neue", ui-sans-serif, system-ui, -apple-system, sans-serif',
+      motion: motionEnabled,
     }),
-    [appearanceSettings.accent, appearanceSettings.uiFont],
+    [appearanceSettings.accent, appearanceSettings.uiFont, motionEnabled],
   );
 
   return (

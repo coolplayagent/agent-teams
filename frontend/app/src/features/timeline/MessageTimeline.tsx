@@ -1,9 +1,15 @@
 import { App, Button, Empty, Image, Skeleton, Tooltip, Typography } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Copy, Volume2, Wrench } from "lucide-react";
+import { ArrowDown, Copy, Volume2, Wrench } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { MouseEvent, PointerEvent, ReactNode, SyntheticEvent } from "react";
+import type {
+  MouseEvent,
+  PointerEvent,
+  ReactNode,
+  SyntheticEvent,
+  UIEvent,
+} from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import {
@@ -40,6 +46,7 @@ import { indexesWithLongerStrictPrefix } from "./timelinePerformance";
 import "./ToolCallDetails.css";
 
 const TIMELINE_BOTTOM_FOLLOW_THRESHOLD_PX = 96;
+const TIMELINE_SCROLL_SCOPE_CACHE_LIMIT = 100;
 const ROUND_RAIL_PAGE_LIMIT = 100;
 const ROUND_RAIL_MAX_PAGES = 10;
 const TOOL_RESULT_MAX_LINES = 200;
@@ -165,8 +172,15 @@ export function MessageTimeline({
   const t = useTranslations();
   const parentRef = useRef<HTMLDivElement | null>(null);
   const pendingRoundRunIdRef = useRef<string | null>(null);
-  const scrollSessionIdRef = useRef<string | null>(sessionId);
+  const scrollScopeKey = timelineScrollScopeKey(sessionId, variant, runtimeRunId);
+  const scrollScopeKeyRef = useRef(scrollScopeKey);
   const scrollSnapshotRef = useRef<TimelineScrollSnapshot | null>(null);
+  const scrollSnapshotsByScopeRef = useRef(
+    new Map<string, TimelineScrollSnapshot>(),
+  );
+  const contentSignaturesByScrollScopeRef = useRef(
+    new Map<string, TimelineContentSignature>(),
+  );
   const expandedDisclosureIdsBySessionRef = useRef(
     new Map<string, ReadonlySet<string>>(),
   );
@@ -177,6 +191,7 @@ export function MessageTimeline({
   const [expandedDisclosureIds, setExpandedDisclosureIds] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
+  const [newContentAvailable, setNewContentAvailable] = useState(false);
   const runtimeRunList = useRuntimeStore(useShallow((state) =>
     Object.values(state.runtimeState.runs).filter((runState) =>
       runtimeRunStateMatchesScope(runState, {
@@ -493,13 +508,25 @@ export function MessageTimeline({
   const timelineHeight = virtualItems.length > 0
     ? virtualizer.getTotalSize()
     : fallbackTotalSize(rows);
-  const handleTimelineScroll = useCallback(() => {
+  const handleTimelineScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
+    if (isProgrammaticTimelineScrollEvent(event.nativeEvent)) {
+      return;
+    }
     const container = parentRef.current;
     if (container !== null) {
-      scrollSnapshotRef.current = captureTimelineScrollSnapshot(container);
+      const snapshot = captureTimelineScrollSnapshot(container);
+      scrollSnapshotRef.current = snapshot;
+      rememberTimelineScopeValue(
+        scrollSnapshotsByScopeRef.current,
+        scrollScopeKey,
+        snapshot,
+      );
+      if (snapshot.shouldFollow) {
+        setNewContentAvailable(false);
+      }
       syncActiveRunIdFromViewport(container, pendingRoundRunIdRef, setActiveRunId);
     }
-  }, []);
+  }, [scrollScopeKey]);
   const handleTimelinePointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
     const target = event.target;
     if (!(target instanceof Element)) {
@@ -525,6 +552,21 @@ export function MessageTimeline({
       virtualizer.scrollToIndex(rowIndex, { align: "start" });
     }
   }, [rows, virtualizer]);
+  const handleJumpToLatest = useCallback(() => {
+    const container = parentRef.current;
+    if (container === null) {
+      return;
+    }
+    syncTimelineScrollPosition(container, timelineMaxScrollTop(container));
+    const snapshot = captureTimelineScrollSnapshot(container);
+    scrollSnapshotRef.current = snapshot;
+    rememberTimelineScopeValue(
+      scrollSnapshotsByScopeRef.current,
+      scrollScopeKey,
+      snapshot,
+    );
+    setNewContentAvailable(false);
+  }, [scrollScopeKey]);
   const handleToggleHistorySegment = useCallback((segmentId: string) => {
     setExpandedHistorySegmentIds((current) => {
       const next = new Set(current);
@@ -576,15 +618,28 @@ export function MessageTimeline({
   }, [sessionId]);
 
   useLayoutEffect(() => {
-    if (scrollSessionIdRef.current !== sessionId) {
-      scrollSessionIdRef.current = sessionId;
-      scrollSnapshotRef.current = null;
+    if (scrollScopeKeyRef.current !== scrollScopeKey) {
+      scrollScopeKeyRef.current = scrollScopeKey;
+      scrollSnapshotRef.current =
+        scrollSnapshotsByScopeRef.current.get(scrollScopeKey) ?? null;
+      setNewContentAvailable(false);
     }
     const container = parentRef.current;
     if (container === null || timelineContainerIsHidden(container)) {
       return;
     }
     const snapshot = scrollSnapshotRef.current;
+    const previousContentSignature =
+      contentSignaturesByScrollScopeRef.current.get(scrollScopeKey);
+    const nextContentSignature = timelineContentSignature(rows);
+    if (
+      previousContentSignature !== undefined &&
+      timelineContentWasAppended(previousContentSignature, nextContentSignature) &&
+      snapshot !== null &&
+      !snapshot.shouldFollow
+    ) {
+      setNewContentAvailable(true);
+    }
     syncTimelineScrollPosition(
       container,
       snapshot === null
@@ -592,8 +647,18 @@ export function MessageTimeline({
         : timelineScrollTopForSnapshot(container, snapshot, rows),
     );
     scrollSnapshotRef.current = captureTimelineScrollSnapshot(container);
+    rememberTimelineScopeValue(
+      scrollSnapshotsByScopeRef.current,
+      scrollScopeKey,
+      scrollSnapshotRef.current,
+    );
+    rememberTimelineScopeValue(
+      contentSignaturesByScrollScopeRef.current,
+      scrollScopeKey,
+      nextContentSignature,
+    );
     syncActiveRunIdFromViewport(container, pendingRoundRunIdRef, setActiveRunId);
-  }, [rows, sessionId, timelineHeight]);
+  }, [rows, scrollScopeKey, timelineHeight]);
 
   if (sessionId === null) {
     return (
@@ -679,6 +744,17 @@ export function MessageTimeline({
           )}
         </div>
       </div>
+      {newContentAvailable ? (
+        <Button
+          aria-label={t("timelineJumpToLatest")}
+          className="at-timeline-new-content"
+          icon={<ArrowDown aria-hidden="true" size={14} />}
+          onClick={handleJumpToLatest}
+          size="small"
+        >
+          {t("timelineNewContent")}
+        </Button>
+      ) : null}
       {hasRoundRail ? (
         <RoundRail
           activeRunId={activeRoundRunId}
@@ -834,6 +910,12 @@ interface TimelineScrollSnapshot {
   shouldFollow: boolean;
 }
 
+interface TimelineContentSignature {
+  lastRowContentLength: number;
+  lastRowKey: string;
+  rowCount: number;
+}
+
 interface MessageRoundLookup {
   boundaries: RoundBoundary[];
   runIdByCreatedAt: Map<number, string>;
@@ -847,6 +929,66 @@ interface RoundBoundary {
 
 function timelineContainerIsHidden(container: HTMLElement): boolean {
   return container.closest("[hidden]") !== null;
+}
+
+function timelineScrollScopeKey(
+  sessionId: string | null,
+  variant: "session" | "subagent-panel",
+  runtimeRunId: string | null,
+): string {
+  return [variant, sessionId ?? "", runtimeRunId?.trim() ?? ""].join(":");
+}
+
+function timelineContentSignature(rows: TimelineRow[]): TimelineContentSignature {
+  const lastRow = rows.at(-1);
+  return {
+    lastRowContentLength: lastRow === undefined
+      ? 0
+      : timelineRowContentLength(lastRow),
+    lastRowKey: lastRow?.key ?? "",
+    rowCount: rows.length,
+  };
+}
+
+function timelineRowContentLength(row: TimelineRow): number {
+  return row.parts.reduce((total, part) => {
+    if (part.kind === "text" || part.kind === "thinking") {
+      return total + part.text.length;
+    }
+    if (part.kind === "tool") {
+      return total + part.body.length + (part.inputBody?.length ?? 0) +
+        (part.outputBody?.length ?? 0);
+    }
+    return total + part.name.length + part.url.length;
+  }, row.text.length);
+}
+
+function timelineContentWasAppended(
+  previous: TimelineContentSignature,
+  next: TimelineContentSignature,
+): boolean {
+  if (next.rowCount > previous.rowCount) {
+    return true;
+  }
+  return next.rowCount === previous.rowCount &&
+    next.lastRowKey === previous.lastRowKey &&
+    next.lastRowContentLength > previous.lastRowContentLength;
+}
+
+function rememberTimelineScopeValue<Value>(
+  values: Map<string, Value>,
+  key: string,
+  value: Value,
+): void {
+  values.delete(key);
+  values.set(key, value);
+  while (values.size > TIMELINE_SCROLL_SCOPE_CACHE_LIMIT) {
+    const oldestKey = values.keys().next().value;
+    if (typeof oldestKey !== "string") {
+      return;
+    }
+    values.delete(oldestKey);
+  }
 }
 
 function captureTimelineScrollSnapshot(
@@ -945,8 +1087,17 @@ function syncTimelineScrollPosition(
   container.scrollTop = nextScrollTop;
   const ownerWindow = container.ownerDocument.defaultView;
   ownerWindow?.setTimeout(() => {
-    container.dispatchEvent(new Event("scroll"));
+    container.dispatchEvent(new ownerWindow.CustomEvent("scroll", {
+      detail: { timelineProgrammatic: true },
+    }));
   }, 0);
+}
+
+function isProgrammaticTimelineScrollEvent(event: Event): boolean {
+  return event instanceof CustomEvent &&
+    typeof event.detail === "object" &&
+    event.detail !== null &&
+    (event.detail as { timelineProgrammatic?: unknown }).timelineProgrammatic === true;
 }
 
 function isTimelineNearBottom(container: HTMLElement): boolean {

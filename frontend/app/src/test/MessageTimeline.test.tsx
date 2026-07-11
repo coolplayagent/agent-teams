@@ -11314,6 +11314,82 @@ describe("MessageTimeline", () => {
         expect(timelineMaxScrollTop(timeline)).toBeGreaterThan(previousMaxScrollTop),
       );
       expect(timeline.scrollTop).toBe(80);
+      const jumpToLatest = screen.getByRole("button", {
+        name: "Jump to latest content",
+      });
+      expect(jumpToLatest).toBeVisible();
+      fireEvent.click(jumpToLatest);
+      expect(timeline.scrollTop).toBe(timelineMaxScrollTop(timeline));
+      expect(screen.queryByRole("button", { name: "Jump to latest content" }))
+        .not.toBeInTheDocument();
+    } finally {
+      restoreMeasurements();
+    }
+  });
+
+  it("restores independent timeline anchors after switching sessions", async () => {
+    const restoreMeasurements = mockElementMeasurements({
+      clientHeight: 320,
+      rowHeight: 120,
+    });
+    try {
+      listSessionMessagesMock.mockImplementation(async (sessionId) =>
+        Array.from({ length: 8 }, (_, index) => ({
+          content: `${sessionId} history ${index + 1}`,
+          message_id: `${sessionId}-message-${index + 1}`,
+          role_id: "MainAgent",
+        }))
+      );
+
+      function SessionScrollHarness() {
+        const [sessionId, setSessionId] = useState("session-1");
+        const [queryClient] = useState(() => new QueryClient({
+          defaultOptions: {
+            queries: { retry: false, staleTime: Number.POSITIVE_INFINITY },
+          },
+        }));
+        return (
+          <QueryClientProvider client={queryClient}>
+            <ConfigProvider>
+              <AntApp>
+                <button onClick={() => setSessionId("session-1")} type="button">
+                  Scroll session 1
+                </button>
+                <button onClick={() => setSessionId("session-2")} type="button">
+                  Scroll session 2
+                </button>
+                <MessageTimeline sessionId={sessionId} />
+              </AntApp>
+            </ConfigProvider>
+          </QueryClientProvider>
+        );
+      }
+
+      const { container } = render(<SessionScrollHarness />);
+      expect(await screen.findByText("session-1 history 8")).toBeVisible();
+      const sessionOneTimeline = timelineElement(container);
+      sessionOneTimeline.scrollTop = 120;
+      fireEvent.scroll(sessionOneTimeline);
+
+      fireEvent.click(screen.getByRole("button", { name: "Scroll session 2" }));
+      expect(await screen.findByText("session-2 history 8")).toBeVisible();
+      const sessionTwoTimeline = timelineElement(container);
+      sessionTwoTimeline.scrollTop = 360;
+      fireEvent.scroll(sessionTwoTimeline);
+
+      fireEvent.click(screen.getByRole("button", { name: "Scroll session 1" }));
+      expect(await screen.findByText("session-1 history 8")).toBeVisible();
+      await waitFor(() =>
+        expect(Math.abs(timelineElement(container).scrollTop - 120))
+          .toBeLessThanOrEqual(12),
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: "Scroll session 2" }));
+      expect(await screen.findByText("session-2 history 8")).toBeVisible();
+      await waitFor(() =>
+        expect(Math.abs(timelineElement(container).scrollTop - 360))
+          .toBeLessThanOrEqual(12),
+      );
     } finally {
       restoreMeasurements();
     }
@@ -11362,6 +11438,8 @@ describe("MessageTimeline", () => {
       fireEvent.click(toolSummary as HTMLElement);
       const toolDetails = toolSummary?.closest("details.at-message-tool");
       expect(toolDetails).toHaveAttribute("open");
+      expect(screen.queryByRole("button", { name: "Jump to latest content" }))
+        .not.toBeInTheDocument();
 
       act(() => {
         setRuntimeEntries([

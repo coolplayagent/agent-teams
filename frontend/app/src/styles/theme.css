@@ -1444,6 +1444,17 @@ body {
   padding: 18px 26px 12px;
 }
 
+.at-timeline-new-content.ant-btn {
+  position: absolute;
+  z-index: 4;
+  right: 18px;
+  bottom: 14px;
+  border-color: color-mix(in srgb, var(--at-primary) 38%, var(--at-border));
+  background: var(--at-surface-elevated);
+  box-shadow: 0 6px 18px var(--at-shadow-color);
+  color: var(--at-primary);
+}
+
 .at-surface-view {
   flex: 1 1 auto;
   min-height: 0;

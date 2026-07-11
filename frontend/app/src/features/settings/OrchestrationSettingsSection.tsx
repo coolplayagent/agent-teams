@@ -322,7 +322,6 @@ function OrchestrationPresetDetail({
   const [form] = Form.useForm<OrchestrationPresetForm>();
   const formId = "at-orchestration-preset-form";
   const roleIds = preset.role_ids?.map((roleId) => roleId.trim()).filter(Boolean) ?? [];
-  const policyRows = orchestrationPolicyRows(preset.policy);
   const isDefault = preset.preset_id === defaultPresetId;
   const canDelete = !creating && (config.presets?.length ?? 0) > 1;
   const checkboxOptions = orchestrationRoleCheckboxOptions(roleOptions, roleIds);
@@ -336,7 +335,6 @@ function OrchestrationPresetDetail({
       <div className="at-settings-detail-header">
         <div className="at-settings-list-main">
           <span>{preset.name ?? preset.preset_id}</span>
-          <Typography.Text>{orchestrationPresetDetail(preset)}</Typography.Text>
         </div>
         <div className="at-settings-detail-actions">
           {!creating && !isDefault ? (
@@ -362,13 +360,11 @@ function OrchestrationPresetDetail({
           <Button onClick={onBack}>{t("settingsBack")}</Button>
         </div>
       </div>
-      <div className="at-settings-facts at-settings-workspace-facts">
-        <Fact label={t("settingsOrchestrationPresetId")} value={preset.preset_id} />
+      <div className="at-settings-facts at-settings-workspace-facts at-orchestration-preset-metadata">
         <Fact
           label={t("settingsModelDefault")}
           value={isDefault ? t("settingsEnabled") : t("settingsDisabled")}
         />
-        <Fact label={t("settingsOrchestrationRoles")} value={String(roleIds.length)} />
       </div>
       <Form
         className="at-settings-form at-settings-form-layout at-orchestration-preset-form"
@@ -451,11 +447,6 @@ function OrchestrationPresetDetail({
           />
         </Form.Item>
       </Form>
-      <div className="at-settings-list at-orchestration-preset-properties">
-        {policyRows.map((row) => (
-          <PropertyRow key={row.label} label={row.label} value={row.value} />
-        ))}
-      </div>
     </div>
   );
 }
@@ -764,51 +755,8 @@ function orchestrationRoleCheckboxOptions(
   }));
 }
 
-function orchestrationPolicyRows(
-  policy: OrchestrationPolicy | undefined,
-): Array<{ label: string; value: string }> {
-  if (policy === undefined) {
-    return [];
-  }
-  return [
-    ["max_orchestration_cycles", policy.max_orchestration_cycles],
-    ["max_parallel_delegated_tasks", policy.max_parallel_delegated_tasks],
-    ["auto_plan_long_tasks", policy.auto_plan_long_tasks],
-    ["planner_role_id", policy.planner_role_id],
-    ["coordinator_inline_budget_steps", policy.coordinator_inline_budget_steps],
-    ["max_temporary_roles_per_run", policy.max_temporary_roles_per_run],
-    [
-      "prefer_temporary_roles_for_long_tasks",
-      policy.prefer_temporary_roles_for_long_tasks,
-    ],
-  ]
-    .map(([label, value]) => ({
-      label: String(label),
-      value: policyValue(value),
-    }))
-    .filter((row) => row.value !== "");
-}
-
 function textValue(value: string | undefined): string {
   return value?.trim() ?? "";
-}
-
-function policyValue(value: boolean | number | string | null | undefined): string {
-  if (value === null || value === undefined || value === "") {
-    return "";
-  }
-  return String(value);
-}
-
-function PropertyRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="at-settings-property-row">
-      <Typography.Text className="at-settings-list-meta">{label}</Typography.Text>
-      <Typography.Text ellipsis title={value}>
-        {value}
-      </Typography.Text>
-    </div>
-  );
 }
 
 function Fact({ label, value }: { label: string; value: string }) {

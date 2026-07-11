@@ -56,6 +56,12 @@
   padding-top: 2px;
 }
 
+.at-orchestration-preset-detail,
+.at-orchestration-preset-detail .at-orchestration-preset-form {
+  width: 100%;
+  max-width: none;
+}
+
 @media (max-width: 720px) {
   .at-settings-form-layout {
     gap: 12px;

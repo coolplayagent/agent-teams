@@ -769,14 +769,11 @@ function RoleConfigDetail({
   }, [document, form]);
 
   const title = document?.name?.trim() || summary?.name?.trim() || roleId;
-  const detail = roleConfigDetail(document ?? summary);
-
   return (
     <div className="at-settings-detail-page at-role-config-detail">
       <div className="at-settings-detail-header">
         <div className="at-settings-list-main">
           <span>{title}</span>
-          <Typography.Text>{detail}</Typography.Text>
         </div>
         <div className="at-settings-detail-actions">
           {document !== undefined ? (
@@ -815,14 +812,9 @@ function RoleConfigDetail({
       <SettingsQueryState error={error} loading={loading} onRetry={onRetry} />
       {document !== undefined ? (
         <>
-          <div className="at-settings-facts at-settings-workspace-facts">
-            <Fact label={t("settingsRoleId")} value={document.role_id} />
+          <div className="at-settings-facts at-settings-workspace-facts at-role-config-metadata">
             <Fact label={t("settingsRoleSource")} value={document.source ?? "-"} />
             <Fact label={t("settingsRoleFile")} value={document.file_name ?? "-"} />
-            <Fact
-              label={t("settingsRoleModelProfile")}
-              value={document.model_profile ?? "-"}
-            />
           </div>
           <Form
             className="at-settings-form at-settings-wide-form at-role-config-form"
@@ -1455,12 +1447,6 @@ function ModelProfileDetail({
   const [providerOverride, setProviderOverride] = useState<string | null>(null);
   const effectiveProfile =
     catalogProfilePatch !== null ? { ...profile, ...catalogProfilePatch } : profile;
-  const input = capabilityModes(
-    effectiveProfile.resolved_capabilities?.input ?? effectiveProfile.capabilities?.input,
-  );
-  const output = capabilityModes(
-    effectiveProfile.resolved_capabilities?.output ?? effectiveProfile.capabilities?.output,
-  );
   const probeMessage = modelProbeStateMessage(probeState ?? undefined, t);
   const probeTone =
     probeState?.status === "error"
@@ -1544,7 +1530,6 @@ function ModelProfileDetail({
       <div className="at-settings-detail-header">
         <div className="at-settings-list-main">
           <span>{profileId}</span>
-          <Typography.Text>{modelProfileDetail(profile)}</Typography.Text>
         </div>
         <div className="at-settings-detail-actions">
           <Button loading={saving} onClick={() => form.submit()} type="primary">
@@ -1755,21 +1740,6 @@ function ModelProfileDetail({
           </Form.Item>
         </div>
       </Form>
-      <details className="at-model-capability-disclosure">
-        <summary>{t("settingsModelCapabilities")}</summary>
-        <div className="at-model-capability-grid">
-          <Fact label={t("settingsModelInput")} value={input || "-"} />
-          <Fact label={t("settingsModelOutput")} value={output || "-"} />
-          <Fact
-            label={t("settingsModelModalities")}
-            value={modalityList(effectiveProfile.input_modalities ?? []) || "-"}
-          />
-          <Fact
-            label={t("settingsModelSpeechRealtime")}
-            value={effectiveProfile.speech_realtime?.model ?? "-"}
-          />
-        </div>
-      </details>
     </div>
   );
 }

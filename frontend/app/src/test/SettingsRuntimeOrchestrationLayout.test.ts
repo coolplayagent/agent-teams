@@ -20,5 +20,7 @@ describe("runtime and orchestration settings layouts", () => {
       "at-settings-form-layout at-orchestration-preset-form",
     );
     expect(orchestration).toContain("at-settings-form-grid-layout");
+    expect(orchestration).not.toContain("at-orchestration-preset-properties");
+    expect(orchestration).toContain("at-orchestration-preset-metadata");
   });
 });

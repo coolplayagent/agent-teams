@@ -23,5 +23,8 @@ describe("role settings editor", () => {
     expect(source).toContain('<details className="at-role-advanced-disclosure">');
     expect(css).toMatch(/\.at-role-primary-grid\s*{[\s\S]*?repeat\(4,/);
     expect(source).not.toContain('className="at-settings-list at-role-config-properties"');
+    expect(source).toContain("at-role-config-metadata");
+    expect(source).not.toMatch(/at-role-config-metadata[\s\S]{0,300}?settingsRoleModelProfile/);
+    expect(css).toMatch(/\.at-role-config-detail \.at-role-config-form[\s\S]*?max-width:\s*none;/);
   });
 });

@@ -1,5 +1,8 @@
+.at-role-config-detail,
+.at-role-config-detail .at-role-config-form,
 .at-role-config-form .at-settings-form-layout {
-  max-width: 920px;
+  width: 100%;
+  max-width: none;
 }
 
 .at-role-primary-grid {
@@ -44,7 +47,7 @@
   }
 }
 
-@media (max-width: 560px) {
+@media (max-width: 720px) {
   .at-role-primary-grid,
   .at-role-capability-grid {
     grid-template-columns: minmax(0, 1fr);

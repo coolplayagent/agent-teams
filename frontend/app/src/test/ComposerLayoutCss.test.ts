@@ -58,7 +58,7 @@ describe("contextual composer layout", () => {
     expect(composerSource).toContain("abbreviateComposerModeLabel(composerModeLabel)");
     expect(composerSource).toContain("title={composerTopologySummary}");
     expect(composerCss).toMatch(
-      /\.at-composer \.at-composer-topology-summary\s*{[\s\S]*?flex:\s*0 0 auto;/,
+      /\.at-composer \.at-composer-topology-summary\s*{[\s\S]*?flex:\s*0 0 auto;[\s\S]*?max-width:\s*260px;/,
     );
     expect(composerCss).toMatch(
       /@container composer \(max-width:\s*680px\)[\s\S]*?\.at-composer \.at-composer-summary-full\s*{[\s\S]*?display:\s*none;[\s\S]*?\.at-composer \.at-composer-summary-compact\s*{[\s\S]*?display:\s*inline;/,

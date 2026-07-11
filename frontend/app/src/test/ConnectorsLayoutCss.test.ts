@@ -20,6 +20,9 @@ describe("connectors workbench layout", () => {
     expect(css).toMatch(
       /\.at-connectors-workbench\s*{[\s\S]*?overflow:\s*auto;/,
     );
+    expect(css).toMatch(
+      /\.at-connectors-content\s*{[\s\S]*?overflow:\s*hidden;/,
+    );
   });
 
   it("opens detail and gateway work in responsive centered modals", () => {

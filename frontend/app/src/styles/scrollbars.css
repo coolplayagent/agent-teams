@@ -135,3 +135,180 @@
     transition: none;
   }
 }
+
+/* Scroll owners that cannot carry the shared utility class (rendered markdown,
+   third-party modal bodies, and compact contextual menus) still use the same
+   low-noise treatment. Keep this list aligned with explicit overflow owners. */
+:where(
+  .at-message-export-selection-list,
+  .at-board-modal .ant-modal-body,
+  .at-prompt-mention-menu-list,
+  .at-connectors-modal .ant-modal-body,
+  .at-connectors-controls .ant-segmented,
+  .at-settings-modal .ant-modal-body,
+  .at-skills-detail-modal .ant-modal-body,
+  .at-timeline,
+  .at-surface-view,
+  .at-automation-github-panel,
+  .at-automation-list,
+  .at-automation-detail,
+  .at-automation-create-modal .ant-modal-body,
+  .at-skills-detail-markdown,
+  .at-spec-lineage.is-standalone,
+  .at-spec-diff-field pre,
+  .at-connectors-table-frame,
+  .at-memory-list,
+  .at-memory-detail,
+  .at-memory-drafts,
+  .at-memory-draft-list,
+  .at-memory-draft-editor,
+  .at-board-columns,
+  .at-workspace-file-pane-list,
+  .at-workspace-file-body,
+  .at-workspace-diff-body,
+  .at-project-state,
+  .at-round-rail-list,
+  .at-round-rail-detail,
+  .at-message-markdown pre,
+  .at-message-markdown table,
+  .at-message-tool pre,
+  .at-composer,
+  .at-appearance-preset-menu,
+  .at-role-prompt-preview,
+  .at-commands-preview,
+  .at-mcp-json-preview pre
+) {
+  scrollbar-color: var(--at-scrollbar-thumb) transparent;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+:where(
+  .at-message-export-selection-list,
+  .at-board-modal .ant-modal-body,
+  .at-prompt-mention-menu-list,
+  .at-connectors-modal .ant-modal-body,
+  .at-connectors-controls .ant-segmented,
+  .at-settings-modal .ant-modal-body,
+  .at-skills-detail-modal .ant-modal-body,
+  .at-timeline,
+  .at-surface-view,
+  .at-automation-github-panel,
+  .at-automation-list,
+  .at-automation-detail,
+  .at-automation-create-modal .ant-modal-body,
+  .at-skills-detail-markdown,
+  .at-spec-lineage.is-standalone,
+  .at-spec-diff-field pre,
+  .at-connectors-table-frame,
+  .at-memory-list,
+  .at-memory-detail,
+  .at-memory-drafts,
+  .at-memory-draft-list,
+  .at-memory-draft-editor,
+  .at-board-columns,
+  .at-workspace-file-pane-list,
+  .at-workspace-file-body,
+  .at-workspace-diff-body,
+  .at-project-state,
+  .at-round-rail-list,
+  .at-round-rail-detail,
+  .at-message-markdown pre,
+  .at-message-markdown table,
+  .at-message-tool pre,
+  .at-composer,
+  .at-appearance-preset-menu,
+  .at-role-prompt-preview,
+  .at-commands-preview,
+  .at-mcp-json-preview pre
+)::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+:where(
+  .at-message-export-selection-list,
+  .at-board-modal .ant-modal-body,
+  .at-prompt-mention-menu-list,
+  .at-connectors-modal .ant-modal-body,
+  .at-connectors-controls .ant-segmented,
+  .at-settings-modal .ant-modal-body,
+  .at-skills-detail-modal .ant-modal-body,
+  .at-timeline,
+  .at-surface-view,
+  .at-automation-github-panel,
+  .at-automation-list,
+  .at-automation-detail,
+  .at-automation-create-modal .ant-modal-body,
+  .at-skills-detail-markdown,
+  .at-spec-lineage.is-standalone,
+  .at-spec-diff-field pre,
+  .at-connectors-table-frame,
+  .at-memory-list,
+  .at-memory-detail,
+  .at-memory-drafts,
+  .at-memory-draft-list,
+  .at-memory-draft-editor,
+  .at-board-columns,
+  .at-workspace-file-pane-list,
+  .at-workspace-file-body,
+  .at-workspace-diff-body,
+  .at-project-state,
+  .at-round-rail-list,
+  .at-round-rail-detail,
+  .at-message-markdown pre,
+  .at-message-markdown table,
+  .at-message-tool pre,
+  .at-composer,
+  .at-appearance-preset-menu,
+  .at-role-prompt-preview,
+  .at-commands-preview,
+  .at-mcp-json-preview pre
+)::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+:where(
+  .at-message-export-selection-list,
+  .at-board-modal .ant-modal-body,
+  .at-prompt-mention-menu-list,
+  .at-connectors-modal .ant-modal-body,
+  .at-connectors-controls .ant-segmented,
+  .at-settings-modal .ant-modal-body,
+  .at-skills-detail-modal .ant-modal-body,
+  .at-timeline,
+  .at-surface-view,
+  .at-automation-github-panel,
+  .at-automation-list,
+  .at-automation-detail,
+  .at-automation-create-modal .ant-modal-body,
+  .at-skills-detail-markdown,
+  .at-spec-lineage.is-standalone,
+  .at-spec-diff-field pre,
+  .at-connectors-table-frame,
+  .at-memory-list,
+  .at-memory-detail,
+  .at-memory-drafts,
+  .at-memory-draft-list,
+  .at-memory-draft-editor,
+  .at-board-columns,
+  .at-workspace-file-pane-list,
+  .at-workspace-file-body,
+  .at-workspace-diff-body,
+  .at-project-state,
+  .at-round-rail-list,
+  .at-round-rail-detail,
+  .at-message-markdown pre,
+  .at-message-markdown table,
+  .at-message-tool pre,
+  .at-composer,
+  .at-appearance-preset-menu,
+  .at-role-prompt-preview,
+  .at-commands-preview,
+  .at-mcp-json-preview pre
+)::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: var(--at-scrollbar-thumb);
+  background-clip: padding-box;
+}

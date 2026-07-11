@@ -5,6 +5,7 @@
 
 .at-connectors-content {
   gap: 10px;
+  overflow: hidden;
   padding: 10px 14px 14px;
 }
 

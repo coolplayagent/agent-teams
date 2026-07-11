@@ -32,6 +32,21 @@ describe("scoped native scrollbars", () => {
     );
   });
 
+  it.each([
+    ".at-timeline",
+    ".at-automation-list",
+    ".at-memory-list",
+    ".at-board-modal .ant-modal-body",
+    ".at-connectors-modal .ant-modal-body",
+    ".at-settings-modal .ant-modal-body",
+    ".at-skills-detail-modal .ant-modal-body",
+    ".at-workspace-diff-body",
+    ".at-message-markdown pre",
+    ".at-prompt-mention-menu-list",
+  ])("styles the explicit scroll owner %s", (selector) => {
+    expect(css).toContain(selector);
+  });
+
   it("removes thumb motion when reduced motion is requested", () => {
     expect(css).toMatch(
       /@media \(prefers-reduced-motion: reduce\)[\s\S]*?transition:\s*none;/,

@@ -181,25 +181,27 @@ export function AppShell() {
       nextView: ShellPrimaryView,
       historyMode: ShellHistoryMode = "push",
     ) => {
-      const shouldClearForegroundStream =
-        runStreamController.activeRunIds.length > 0 &&
-        (nextView !== "chat" || selectedSessionId === null);
-      if (shouldClearForegroundStream) {
+      if (
+        selectedSessionId === null
+        && runStreamController.activeRunIds.length > 0
+      ) {
         runStreamController.clearRunStream();
       }
-      const leavingSubagentView = activeSubagentForSelectedSession !== null;
       setSettingsOpen(false);
-      if (nextView === "chat" && (activeView !== "chat" || leavingSubagentView)) {
-        setChatContentLoadingKey((currentKey) => currentKey + 1);
+      if (nextView === "chat") {
+        setSessionSearchOpen(false);
+        if (activeView === "chat" && activeSubagentForSelectedSession !== null) {
+          setChatContentLoadingKey((currentKey) => currentKey + 1);
+        }
       }
       navigateShellView(nextView, historyMode);
     },
     [
+      activeSubagentForSelectedSession,
       activeView,
       navigateShellView,
       runStreamController,
       selectedSessionId,
-      activeSubagentForSelectedSession,
     ],
   );
   const handleTimelineSubagentOpen = useCallback(
@@ -841,6 +843,63 @@ export function AppShell() {
           </Sider>
         ) : null}
         <Content className="at-workspace">
+          <div
+            aria-hidden={activeView === "chat" ? undefined : "true"}
+            hidden={activeView !== "chat"}
+            className={
+              visibleActiveSubagent === null
+                ? "at-workspace-chat-shell"
+                : "at-workspace-chat-shell has-subagent-panel"
+            }
+            ref={chatShellRef}
+            style={
+              visibleActiveSubagent === null
+                ? undefined
+                : subagentPanelStyle(subagentPanelWidth)
+            }
+          >
+            <ChatWorkspace
+              contentLoadingKey={chatContentLoadingKey}
+              latestTerminalRunId={latestTerminalRunId}
+              latestTerminalRunStatus={latestTerminalRunStatus}
+              onSubagentOpen={handleTimelineSubagentOpen}
+              primaryRoleId={sessionDetailQuery.data?.normal_root_role_id ?? null}
+              runStreamController={runStreamController}
+              sessionId={selectedSessionId}
+              workspaceId={
+                sessionDetailQuery.data?.workspace_id
+                ?? selectedSession?.workspace_id
+                ?? null
+              }
+            />
+            {visibleActiveSubagent !== null ? (
+              <>
+                <div
+                  aria-label={t("appSubagentPanelResize")}
+                  aria-orientation="vertical"
+                  aria-valuemax={subagentPanelLayoutMax}
+                  aria-valuemin={subagentPanelWidthMin}
+                  aria-valuenow={subagentPanelWidth}
+                  className={
+                    subagentPanelResizing
+                      ? "at-subagent-panel-resizer is-resizing"
+                      : "at-subagent-panel-resizer"
+                  }
+                  onKeyDown={handleSubagentPanelResizeKeyDown}
+                  onPointerDown={handleSubagentPanelResizePointerDown}
+                  role="separator"
+                  tabIndex={0}
+                />
+                <aside className="at-subagent-side-panel">
+                  <SubagentSessionView
+                    onBack={() => setActiveSubagent(null)}
+                    runStreamController={runStreamController}
+                    subagent={visibleActiveSubagent}
+                  />
+                </aside>
+              </>
+            ) : null}
+          </div>
           {activeView === "spec-lineage" ? (
             <SpecLineagePanel
               onBack={handleSpecLineageBack}
@@ -892,63 +951,7 @@ export function AppShell() {
               onBack={() => openPrimaryShellView("chat", "replace")}
               selectedWorkspaceId={selectedWorkspaceId}
             />
-          ) : (
-            <div
-              className={
-                visibleActiveSubagent === null
-                  ? "at-workspace-chat-shell"
-                  : "at-workspace-chat-shell has-subagent-panel"
-              }
-              ref={chatShellRef}
-              style={
-                visibleActiveSubagent === null
-                  ? undefined
-                  : subagentPanelStyle(subagentPanelWidth)
-              }
-            >
-              <ChatWorkspace
-                contentLoadingKey={chatContentLoadingKey}
-                latestTerminalRunId={
-                  latestTerminalRunId
-                }
-                latestTerminalRunStatus={
-                  latestTerminalRunStatus
-                }
-                onSubagentOpen={handleTimelineSubagentOpen}
-                primaryRoleId={sessionDetailQuery.data?.normal_root_role_id ?? null}
-                runStreamController={runStreamController}
-                sessionId={selectedSessionId}
-                workspaceId={sessionDetailQuery.data?.workspace_id ?? selectedSession?.workspace_id ?? null}
-              />
-              {visibleActiveSubagent !== null ? (
-                <>
-                  <div
-                    aria-label={t("appSubagentPanelResize")}
-                    aria-orientation="vertical"
-                    aria-valuemax={subagentPanelLayoutMax}
-                    aria-valuemin={subagentPanelWidthMin}
-                    aria-valuenow={subagentPanelWidth}
-                    className={
-                      subagentPanelResizing
-                        ? "at-subagent-panel-resizer is-resizing"
-                        : "at-subagent-panel-resizer"
-                    }
-                    onKeyDown={handleSubagentPanelResizeKeyDown}
-                    onPointerDown={handleSubagentPanelResizePointerDown}
-                    role="separator"
-                    tabIndex={0}
-                  />
-                <aside className="at-subagent-side-panel">
-                  <SubagentSessionView
-                    onBack={() => setActiveSubagent(null)}
-                    runStreamController={runStreamController}
-                    subagent={visibleActiveSubagent}
-                  />
-                </aside>
-                </>
-              ) : null}
-            </div>
-          )}
+          ) : null}
         </Content>
       </Layout>
       <SettingsDrawer

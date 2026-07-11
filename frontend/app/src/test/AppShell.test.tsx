@@ -957,7 +957,7 @@ describe("AppShell", () => {
 
     expect(await screen.findByTestId("board-todos-view")).toBeVisible();
     expect(screen.getByTestId("sessions-sidebar")).toBeVisible();
-    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
+    expect(screen.getByTestId("timeline")).not.toBeVisible();
   });
 
   it("keeps observability and settings out of the primary sidebar", async () => {
@@ -1127,7 +1127,7 @@ describe("AppShell", () => {
     fireEvent.click(within(sidebar).getByRole("button", { name: "Automation" }));
 
     expect(await screen.findByTestId("automation-view")).toBeVisible();
-    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
+    expect(screen.getByTestId("timeline")).not.toBeVisible();
 
     fireEvent.click(within(sidebar).getByRole("button", { name: "Chat" }));
 
@@ -1136,12 +1136,12 @@ describe("AppShell", () => {
     fireEvent.click(within(sidebar).getByRole("button", { name: "Skills" }));
 
     expect(await screen.findByTestId("skills-view")).toBeVisible();
-    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
+    expect(screen.getByTestId("timeline")).not.toBeVisible();
 
     fireEvent.click(within(sidebar).getByRole("button", { name: "Board" }));
 
     expect(await screen.findByTestId("board-todos-view")).toBeVisible();
-    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
+    expect(screen.getByTestId("timeline")).not.toBeVisible();
 
     fireEvent.click(
       within(sidebar).getByRole("button", { name: "Search sessions" }),
@@ -1158,12 +1158,12 @@ describe("AppShell", () => {
     fireEvent.click(within(sidebar).getByRole("button", { name: "Connectors" }));
 
     expect(await screen.findByTestId("connectors-view")).toBeVisible();
-    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
+    expect(screen.getByTestId("timeline")).not.toBeVisible();
 
     fireEvent.click(within(sidebar).getByRole("button", { name: "Memory" }));
 
     expect(await screen.findByTestId("memory-view")).toBeVisible();
-    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
+    expect(screen.getByTestId("timeline")).not.toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
 
@@ -1171,14 +1171,56 @@ describe("AppShell", () => {
     fireEvent.click(within(topbar).getByRole("button", { name: "Observability" }));
 
     expect(await screen.findByTestId("observability")).toBeVisible();
-    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
+    expect(screen.getByTestId("timeline")).not.toBeVisible();
 
     fireEvent.click(within(topbar).getByRole("button", { name: "Settings" }));
 
     expect(await screen.findByRole("dialog")).toHaveTextContent("Settings");
   });
 
-  it("detaches the active foreground stream before opening a primary feature surface", async () => {
+  it("returns from every feature surface without remounting the selected chat", async () => {
+    renderShell();
+
+    const sidebar = await screen.findByTestId("sessions-sidebar");
+    const topbar = htmlElement(document.querySelector(".at-topbar"), "topbar");
+    const timeline = await screen.findByTestId("timeline");
+    const composer = screen.getByTestId("composer");
+    const featureDestinations = [
+      ["Automation", "automation-view"],
+      ["Board", "board-todos-view"],
+      ["Connectors", "connectors-view"],
+      ["Skills", "skills-view"],
+      ["Memory", "memory-view"],
+    ] as const;
+
+    for (const [label, testId] of featureDestinations) {
+      fireEvent.click(within(sidebar).getByRole("button", { name: label }));
+      expect(await screen.findByTestId(testId)).toBeVisible();
+      expect(timeline).not.toBeVisible();
+
+      fireEvent.click(within(sidebar).getByRole("button", { name: "Chat" }));
+
+      expect(timeline).toBeVisible();
+      expect(screen.getByTestId("timeline")).toBe(timeline);
+      expect(screen.getByTestId("composer")).toBe(composer);
+      expect(useUiStore.getState().selectedSessionId).toBe("session-1");
+    }
+
+    fireEvent.click(within(topbar).getByRole("button", { name: "Observability" }));
+    expect(await screen.findByTestId("observability")).toBeVisible();
+    fireEvent.click(within(sidebar).getByRole("button", { name: "Chat" }));
+    expect(screen.getByTestId("timeline")).toBe(timeline);
+
+    fireEvent.click(within(topbar).getByRole("button", { name: "Settings" }));
+    expect(await screen.findByRole("dialog")).toHaveTextContent("Settings");
+    fireEvent.click(within(sidebar).getByRole("button", { name: "Chat" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByTestId("timeline")).toBe(timeline);
+
+    expect(runStreamControllerMock.clearRunStream).not.toHaveBeenCalled();
+  });
+
+  it("preserves the active foreground stream while visiting a feature surface", async () => {
     runStreamControllerMock = createRunStreamController({
       activeRunId: "run-active",
       activeRunIds: ["run-active"],
@@ -1194,8 +1236,8 @@ describe("AppShell", () => {
     fireEvent.click(within(sidebar).getByRole("button", { name: "Skills" }));
 
     expect(await screen.findByTestId("skills-view")).toBeVisible();
-    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
-    expect(runStreamControllerMock.clearRunStream).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("timeline")).not.toBeVisible();
+    expect(runStreamControllerMock.clearRunStream).not.toHaveBeenCalled();
   });
 
   it("settles a foreground stream when the selected session reaches terminal state", async () => {
@@ -1281,9 +1323,9 @@ describe("AppShell", () => {
     );
 
     expect(await screen.findByTestId("workspace-project-view")).toBeVisible();
-    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("composer")).not.toBeInTheDocument();
-    expect(runStreamControllerMock.clearRunStream).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("timeline")).not.toBeVisible();
+    expect(screen.getByTestId("composer")).not.toBeVisible();
+    expect(runStreamControllerMock.clearRunStream).not.toHaveBeenCalled();
     expect(useUiStore.getState().selectedSessionId).toBe("session-1");
     expect(useUiStore.getState().selectedWorkspaceId).toBe("workspace-1");
   });
@@ -1297,7 +1339,7 @@ describe("AppShell", () => {
     fireEvent.click(within(topbar).getByRole("button", { name: "Observability" }));
 
     expect(await screen.findByTestId("observability")).toBeVisible();
-    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
+    expect(screen.getByTestId("timeline")).not.toBeVisible();
 
     fireEvent.click(within(topbar).getByRole("button", { name: "Settings" }));
 
@@ -1361,8 +1403,8 @@ describe("AppShell", () => {
     );
 
     expect(await screen.findByTestId("workspace-project-view")).toBeVisible();
-    expect(document.querySelector(".at-chat-view")).toBeNull();
-    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
+    expect(document.querySelector(".at-chat-view")).not.toBeVisible();
+    expect(screen.getByTestId("timeline")).not.toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Back to chat" }));
 
@@ -1376,7 +1418,7 @@ describe("AppShell", () => {
     renderShell();
 
     expect(await screen.findByTestId("workspace-project-view")).toBeVisible();
-    expect(screen.queryByTestId("timeline")).not.toBeInTheDocument();
+    expect(screen.getByTestId("timeline")).not.toBeVisible();
     expect(window.localStorage.getItem("agentTeams.shellView")).toBe("workspace");
   });
 

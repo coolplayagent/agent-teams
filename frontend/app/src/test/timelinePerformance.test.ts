@@ -4,6 +4,7 @@ import { terminalRuntimeDerivationSignature } from "../features/timeline/Message
 import {
   indexesWithLongerStrictPrefix,
   timelineDerivedValue,
+  timelineFallbackVirtualItems,
   type TimelineDerivationCacheEntry,
 } from "../features/timeline/timelinePerformance";
 import type { RuntimeRunState } from "../runtime/reducers";
@@ -96,6 +97,24 @@ describe("terminal timeline derivation cache", () => {
 
     expect(deriveRows).toHaveBeenCalledTimes(2);
     expect(cache).toHaveLength(0);
+  });
+});
+
+describe("timeline fallback virtual window", () => {
+  it("renders only the tail budget with offsets in the full timeline", () => {
+    const sizes = Array.from({ length: 20 }, (_value, index) => 20 + index);
+
+    const items = timelineFallbackVirtualItems(sizes, 8);
+    const totalSize = sizes.reduce((total, size) => total + size, 0);
+    const lastItem = items.at(-1);
+
+    expect(items).toHaveLength(8);
+    expect(items[0]).toEqual({
+      index: 12,
+      start: sizes.slice(0, 12).reduce((total, size) => total + size, 0),
+    });
+    expect(lastItem?.index).toBe(19);
+    expect((lastItem?.start ?? 0) + (sizes[19] ?? 0)).toBe(totalSize);
   });
 });
 

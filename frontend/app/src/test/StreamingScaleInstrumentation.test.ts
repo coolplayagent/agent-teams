@@ -40,12 +40,11 @@ describe("streaming scale instrumentation", () => {
 
   it("bounds the synchronous fallback while the virtualizer measures", () => {
     expect(timelineSource).toContain(
-      "const TIMELINE_FALLBACK_RENDER_LIMIT = 24;",
+      "const TIMELINE_FALLBACK_RENDER_LIMIT = 8;",
     );
     expect(timelineSource).toContain(
-      "rows.length - TIMELINE_FALLBACK_RENDER_LIMIT",
+      "timelineFallbackVirtualItems(",
     );
-    expect(timelineSource).toContain("rows.slice(firstIndex).map");
     expect(timelineSource).not.toContain("return rows.map((row, index)");
   });
 });

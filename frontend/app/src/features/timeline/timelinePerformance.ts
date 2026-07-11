@@ -10,6 +10,11 @@ export interface TimelineDerivationCacheEntry<Value> {
   value: Value;
 }
 
+export interface TimelineFallbackVirtualItem {
+  index: number;
+  start: number;
+}
+
 interface TimelineDerivationOptions<Value> {
   cache: Map<string, TimelineDerivationCacheEntry<Value>>;
   derive: () => Value;
@@ -48,6 +53,21 @@ export function timelineDerivedValue<Value>({
     );
   }
   return value;
+}
+
+export function timelineFallbackVirtualItems(
+  itemSizes: readonly number[],
+  limit: number,
+): TimelineFallbackVirtualItem[] {
+  const firstIndex = Math.max(0, itemSizes.length - Math.max(0, limit));
+  let start = itemSizes
+    .slice(0, firstIndex)
+    .reduce((total, size) => total + size, 0);
+  return itemSizes.slice(firstIndex).map((size, offset) => {
+    const item = { index: firstIndex + offset, start };
+    start += size;
+    return item;
+  });
 }
 
 export function indexesWithLongerStrictPrefix(

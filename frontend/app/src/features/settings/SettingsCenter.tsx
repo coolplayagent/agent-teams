@@ -1648,12 +1648,18 @@ function ModelProfileDetail({
                 label={t("settingsModelCodeAgentAuthMethod")}
                 name="codeagent_auth_method"
               >
-                <select className="at-settings-native-select">
-                  <option value="sso">{t("settingsModelCodeAgentAuthMethodSso")}</option>
-                  <option value="password">
-                    {t("settingsModelCodeAgentAuthMethodPassword")}
-                  </option>
-                </select>
+                <Select
+                  options={[
+                    {
+                      label: t("settingsModelCodeAgentAuthMethodSso"),
+                      value: "sso",
+                    },
+                    {
+                      label: t("settingsModelCodeAgentAuthMethodPassword"),
+                      value: "password",
+                    },
+                  ]}
+                />
               </Form.Item>
               <Form.Item
                 label={t("settingsModelCodeAgentUsername")}
@@ -1677,11 +1683,19 @@ function ModelProfileDetail({
             </>
           ) : null}
           <Form.Item label={t("settingsModelImageCapability")} name="image_capability">
-            <select className="at-settings-native-select">
-              <option value="follow">{t("settingsModelImageCapabilityFollow")}</option>
-              <option value="supported">{t("settingsModelImageCapabilitySupported")}</option>
-              <option value="unsupported">{t("settingsModelImageCapabilityUnsupported")}</option>
-            </select>
+            <Select
+              options={[
+                { label: t("settingsModelImageCapabilityFollow"), value: "follow" },
+                {
+                  label: t("settingsModelImageCapabilitySupported"),
+                  value: "supported",
+                },
+                {
+                  label: t("settingsModelImageCapabilityUnsupported"),
+                  value: "unsupported",
+                },
+              ]}
+            />
           </Form.Item>
           <Form.Item label={t("settingsModelFallbackPolicy")} name="fallback_policy_id">
             <Input />
@@ -1690,11 +1704,13 @@ function ModelProfileDetail({
             <Input inputMode="numeric" type="number" />
           </Form.Item>
           <Form.Item label={t("settingsModelSslVerify")} name="ssl_verify">
-            <select className="at-settings-native-select">
-              <option value="">{t("settingsProxySslInherit")}</option>
-              <option value="true">{t("settingsProxySslVerifyOption")}</option>
-              <option value="false">{t("settingsProxySslSkipOption")}</option>
-            </select>
+            <Select
+              options={[
+                { label: t("settingsProxySslInherit"), value: "" },
+                { label: t("settingsProxySslVerifyOption"), value: "true" },
+                { label: t("settingsProxySslSkipOption"), value: "false" },
+              ]}
+            />
           </Form.Item>
           <Form.Item
             className="at-model-profile-switch-field"

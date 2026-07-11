@@ -1,4 +1,4 @@
-import { App, Button, Checkbox, Form, Switch, Typography } from "antd";
+import { App, Button, Form, Typography } from "antd";
 import type { FormInstance } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
@@ -10,6 +10,7 @@ import type {
   NotificationRule,
   NotificationTypeId,
 } from "../../api/contracts";
+import { ChoiceControl } from "../../components/ChoiceControl";
 import { useTranslations } from "../../i18n";
 import { SettingsQueryState, SettingsSection } from "./SettingsShared";
 import "./NotificationSettingsSection.css";
@@ -154,18 +155,20 @@ function NotificationRuleRow({
               className="at-notification-rule-controls"
               data-enabled={enabled}
             >
-              <div className="at-notification-rule-toggle">
-                <Typography.Text strong>
-                  {enabled ? t("settingsEnabled") : t("settingsDisabled")}
-                </Typography.Text>
-                <Form.Item
-                  name={[typeId, "enabled"]}
-                  noStyle
-                  valuePropName="checked"
-                >
-                  <Switch aria-label={`${title} · ${t("settingsEnabled")}`} />
-                </Form.Item>
-              </div>
+              <Form.Item
+                name={[typeId, "enabled"]}
+                noStyle
+                valuePropName="checked"
+              >
+                <ChoiceControl
+                  ariaLabel={`${title} · ${t("settingsEnabled")}`}
+                  checked={enabled}
+                  className="at-notification-rule-toggle"
+                  kind="switch"
+                  label={enabled ? t("settingsEnabled") : t("settingsDisabled")}
+                  onChange={() => undefined}
+                />
+              </Form.Item>
               <div
                 aria-label={`${title} · ${t("settingsNotifications")}`}
                 className="at-notification-rule-channels"
@@ -176,14 +179,26 @@ function NotificationRuleRow({
                   noStyle
                   valuePropName="checked"
                 >
-                  <Checkbox disabled={!enabled}>{t("settingsChannelBrowser")}</Checkbox>
+                  <ChoiceControl
+                    checked={form.getFieldValue([typeId, "browser"]) === true}
+                    disabled={!enabled}
+                    label={t("settingsChannelBrowser")}
+                    onChange={() => undefined}
+                    variant="chip"
+                  />
                 </Form.Item>
                 <Form.Item
                   name={[typeId, "toast"]}
                   noStyle
                   valuePropName="checked"
                 >
-                  <Checkbox disabled={!enabled}>{t("settingsChannelToast")}</Checkbox>
+                  <ChoiceControl
+                    checked={form.getFieldValue([typeId, "toast"]) === true}
+                    disabled={!enabled}
+                    label={t("settingsChannelToast")}
+                    onChange={() => undefined}
+                    variant="chip"
+                  />
                 </Form.Item>
               </div>
             </div>

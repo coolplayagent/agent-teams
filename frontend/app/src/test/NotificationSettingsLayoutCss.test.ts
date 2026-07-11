@@ -14,11 +14,12 @@ describe("notification settings layout", () => {
       /\.at-notification-rule\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) minmax\(240px, 300px\);/,
     );
     expect(css).toMatch(
-      /\.at-notification-rule-toggle\s*{[\s\S]*?justify-content:\s*space-between;/,
+      /\.at-notification-rule-toggle\s*{[\s\S]*?width:\s*100%;/,
     );
     expect(css).toMatch(
       /\.at-notification-rule-channels\s*{[\s\S]*?flex-wrap:\s*wrap;/,
     );
+    expect(css).toContain(".at-notification-rule-channels .at-choice-control");
   });
 
   it("stacks each rule in order on narrow windows", () => {

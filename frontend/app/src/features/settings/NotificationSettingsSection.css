@@ -45,19 +45,15 @@
 }
 
 .at-notification-rule-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  width: 100%;
 }
 
-.at-notification-rule-toggle > .ant-typography {
-  color: var(--at-text);
+.at-notification-rule-toggle .at-choice-control-label {
   font-size: 12px;
 }
 
 .at-notification-rule-controls[data-enabled="false"]
-  .at-notification-rule-toggle > .ant-typography {
+  .at-notification-rule-toggle .at-choice-control-label {
   color: var(--at-text-muted);
 }
 
@@ -68,14 +64,13 @@
   min-height: 22px;
 }
 
-.at-notification-rule-channels .ant-checkbox-wrapper {
+.at-notification-rule-channels .at-choice-control {
   margin: 0;
   color: var(--at-text);
   font-size: 12px;
 }
 
-.at-notification-rule-channels .ant-checkbox-wrapper-disabled,
-.at-notification-rule-channels .ant-checkbox-wrapper-disabled > span:last-child {
+.at-notification-rule-channels .at-choice-control:has(input:disabled) {
   color: var(--at-text-muted);
 }
 

@@ -19,7 +19,7 @@ const EDGE_EXECUTABLE =
 const PROVIDER_SLOT_COUNT = 4;
 const SLOW_PROVIDER_CALL_BUDGET_MS = 70_000;
 const SUBAGENT_PROVIDER_CALL_COUNT = 3;
-const SUBAGENT_TOKEN_COUNT = 48;
+const SUBAGENT_TOKEN_COUNT = 96;
 
 interface SessionRecord {
   active_run_id?: string | null;
@@ -335,6 +335,10 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
       subagentPanel,
       subagentRun,
     );
+    expect(
+      beforeSubagentWheelIndex,
+      "the subagent fixture must retain at least 24 tokens after overflow begins",
+    ).toBeLessThanOrEqual(SUBAGENT_TOKEN_COUNT - 25);
     await subagentTimeline.hover();
     await recordInteraction(page, () => page.mouse.wheel(0, -700));
     const subagentAway = await timelineMetrics(subagentTimeline);

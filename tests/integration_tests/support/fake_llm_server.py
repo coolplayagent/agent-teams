@@ -980,7 +980,7 @@ def _plan_hook_subagent_worker_response(messages: list[object]) -> dict[str, obj
             "kind": "text",
             "content": " ".join(
                 f"SUBAGENT_STREAM_{tag}_{index:02d}"
-                for index in range(max(4, min(48, repeat)))
+                for index in range(max(4, min(96, repeat)))
             ),
             "chunk_size": max(1, min(80, chunk_size)),
             "delay_before_ms": 200,

@@ -38,6 +38,9 @@ times. Its gates are under 500 ms for wheel interactions, under 750 ms for back,
 under 1.5 seconds for open, reentry, and session switching, no long task at or
 above 300 ms, under 2 seconds cumulative long-task time, and less than 32 MiB heap
 growth between post-GC samples. It records both long-task count and per-action
-segments. It also requires zero unexpected HTTP/console failures, page errors,
-renderer crashes, or leaked EventSource subscriptions. A mock run must never be
-reported as satisfying these live release gates.
+segments. Each segment also samples one reused CDP Performance session and records
+Task, Script, Layout, and RecalcStyle duration deltas so a failed budget can be
+attributed without a separate profiling run. It also requires zero unexpected
+HTTP/console failures, page errors, renderer crashes, or leaked EventSource
+subscriptions. A mock run must never be reported as satisfying these live release
+gates.

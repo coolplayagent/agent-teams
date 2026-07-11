@@ -1,5 +1,11 @@
 import { writeFile } from "node:fs/promises";
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import {
+  expect,
+  test,
+  type CDPSession,
+  type Locator,
+  type Page,
+} from "@playwright/test";
 
 import {
   ensureScreenshotDir,
@@ -29,6 +35,23 @@ interface LongTaskSample {
 interface PerformanceSegment {
   endTime: number;
   label: string;
+  layoutDurationMs: number;
+  recalcStyleDurationMs: number;
+  scriptDurationMs: number;
+  startTime: number;
+  taskDurationMs: number;
+}
+
+interface CdpPerformanceSnapshot {
+  layoutDuration: number;
+  recalcStyleDuration: number;
+  scriptDuration: number;
+  taskDuration: number;
+}
+
+interface PendingPerformanceSegment {
+  label: string;
+  startMetrics: CdpPerformanceSnapshot;
   startTime: number;
 }
 
@@ -39,6 +62,8 @@ interface PerformanceWithMemory extends Performance {
 }
 
 test.setTimeout(60_000);
+
+const cdpPerformanceSessions = new WeakMap<Page, CDPSession>();
 
 test("scrolls and reopens a completed subagent from a live local deployment", async ({
   page,
@@ -76,6 +101,7 @@ test("scrolls and reopens a completed subagent from a live local deployment", as
     waitUntil: "domcontentloaded",
   });
   await waitForAppShell(page);
+  await installCdpPerformanceSession(page);
 
   const card = completedSubagentCard(page);
   await expect(card).not.toHaveCount(0);
@@ -473,22 +499,71 @@ async function readLongTasks(page: Page): Promise<LongTaskSample[]> {
 async function beginPerformanceSegment(
   page: Page,
   label: string,
-): Promise<Omit<PerformanceSegment, "endTime">> {
+): Promise<PendingPerformanceSegment> {
   return {
     label,
+    startMetrics: await readCdpPerformanceMetrics(page),
     startTime: await page.evaluate(() => performance.now()),
   };
 }
 
 async function endPerformanceSegment(
   page: Page,
-  segment: Omit<PerformanceSegment, "endTime">,
+  segment: PendingPerformanceSegment,
   segments: PerformanceSegment[],
 ): Promise<void> {
+  const endMetrics = await readCdpPerformanceMetrics(page);
   segments.push({
-    ...segment,
     endTime: await page.evaluate(() => performance.now()),
+    label: segment.label,
+    layoutDurationMs: durationDeltaMs(
+      endMetrics.layoutDuration,
+      segment.startMetrics.layoutDuration,
+    ),
+    recalcStyleDurationMs: durationDeltaMs(
+      endMetrics.recalcStyleDuration,
+      segment.startMetrics.recalcStyleDuration,
+    ),
+    scriptDurationMs: durationDeltaMs(
+      endMetrics.scriptDuration,
+      segment.startMetrics.scriptDuration,
+    ),
+    startTime: segment.startTime,
+    taskDurationMs: durationDeltaMs(
+      endMetrics.taskDuration,
+      segment.startMetrics.taskDuration,
+    ),
   });
+}
+
+async function installCdpPerformanceSession(page: Page): Promise<void> {
+  const session = await page.context().newCDPSession(page);
+  await session.send("Performance.enable");
+  cdpPerformanceSessions.set(page, session);
+}
+
+async function readCdpPerformanceMetrics(
+  page: Page,
+): Promise<CdpPerformanceSnapshot> {
+  const session = cdpPerformanceSessions.get(page);
+  if (session === undefined) {
+    throw new Error("CDP performance session is not installed.");
+  }
+  const response = await session.send("Performance.getMetrics");
+  const metrics = new Map(response.metrics.map((metric) => [
+    metric.name,
+    metric.value,
+  ]));
+  return {
+    layoutDuration: metrics.get("LayoutDuration") ?? 0,
+    recalcStyleDuration: metrics.get("RecalcStyleDuration") ?? 0,
+    scriptDuration: metrics.get("ScriptDuration") ?? 0,
+    taskDuration: metrics.get("TaskDuration") ?? 0,
+  };
+}
+
+function durationDeltaMs(endValue: number, startValue: number): number {
+  return Math.max(0, (endValue - startValue) * 1_000);
 }
 
 async function usedJsHeapSize(page: Page): Promise<number | null> {
@@ -498,12 +573,11 @@ async function usedJsHeapSize(page: Page): Promise<number | null> {
 }
 
 async function collectGarbage(page: Page): Promise<void> {
-  const session = await page.context().newCDPSession(page);
-  try {
-    await session.send("HeapProfiler.collectGarbage");
-  } finally {
-    await session.detach();
+  const session = cdpPerformanceSessions.get(page);
+  if (session === undefined) {
+    throw new Error("CDP performance session is not installed.");
   }
+  await session.send("HeapProfiler.collectGarbage");
 }
 
 async function captureStableScreenshot(

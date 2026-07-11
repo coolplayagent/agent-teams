@@ -3,6 +3,7 @@ import {
   Button,
   Form,
   Input,
+  Select,
   Tag,
   Typography,
 } from "antd";
@@ -251,10 +252,18 @@ export function CommandsSettingsSection() {
                 {editor.mode === "create" ? (
                   <>
                     <Form.Item label={t("settingsCommandsScope")} name="scope">
-                      <select className="at-settings-native-select">
-                        <option value="project">{t("settingsCommandsScopeProject")}</option>
-                        <option value="global">{t("settingsCommandsScopeGlobal")}</option>
-                      </select>
+                      <Select
+                        options={[
+                          {
+                            label: t("settingsCommandsScopeProject"),
+                            value: "project",
+                          },
+                          {
+                            label: t("settingsCommandsScopeGlobal"),
+                            value: "global",
+                          },
+                        ]}
+                      />
                     </Form.Item>
                     {scope !== "global" ? (
                       <>
@@ -262,31 +271,23 @@ export function CommandsSettingsSection() {
                           label={t("settingsCommandsWorkspace")}
                           name="workspace_id"
                         >
-                          <select className="at-settings-native-select">
-                            {writableWorkspaces.length > 0 ? (
-                              writableWorkspaces.map((workspace) => (
-                                <option
-                                  key={workspace.workspace_id}
-                                  value={workspace.workspace_id}
-                                >
-                                  {workspaceLabel(workspace)}
-                                </option>
-                              ))
-                            ) : (
-                              <option value="">
-                                {t("settingsCommandsNoWorkspaces")}
-                              </option>
-                            )}
-                          </select>
+                          <Select
+                            notFoundContent={t("settingsCommandsNoWorkspaces")}
+                            optionFilterProp="label"
+                            options={writableWorkspaces.map((workspace) => ({
+                              label: workspaceLabel(workspace),
+                              value: workspace.workspace_id,
+                            }))}
+                            showSearch
+                          />
                         </Form.Item>
                         <Form.Item label={t("settingsCommandsSource")} name="source">
-                          <select className="at-settings-native-select">
-                            {projectSources.map((source) => (
-                              <option key={source.value} value={source.value}>
-                                {t(source.labelKey)}
-                              </option>
-                            ))}
-                          </select>
+                          <Select
+                            options={projectSources.map((source) => ({
+                              label: t(source.labelKey),
+                              value: source.value,
+                            }))}
+                          />
                         </Form.Item>
                       </>
                     ) : null}

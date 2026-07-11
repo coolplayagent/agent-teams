@@ -3,6 +3,7 @@ import {
   Button,
   Form,
   Input,
+  Select,
   Switch,
   Tag,
   Typography,
@@ -642,13 +643,12 @@ function McpEditor({
             <Input autoComplete="off" disabled={editor.mode === "edit"} spellCheck={false} />
           </Form.Item>
           <Form.Item label={t("settingsMcpTransport")} name="transport">
-            <select className="at-settings-native-select">
-              {transportOptions.map((option) => (
-                <option key={option} value={option}>
-                  {transportLabel(option, t)}
-                </option>
-              ))}
-            </select>
+            <Select
+              options={transportOptions.map((option) => ({
+                label: transportLabel(option, t),
+                value: option,
+              }))}
+            />
           </Form.Item>
           {isStdio ? (
             <>

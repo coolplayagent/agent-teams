@@ -106,7 +106,7 @@ export const ChatWorkspace = memo(function ChatWorkspace({
         onSubagentOpen={onSubagentOpen}
         primaryRoleId={primaryRoleId}
         sessionId={sessionId}
-        visible={visible}
+        visible={visible && !switching}
         workspaceId={workspaceId ?? null}
       />
       {switching ? (

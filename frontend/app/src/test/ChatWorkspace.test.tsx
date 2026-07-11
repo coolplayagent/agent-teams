@@ -69,9 +69,19 @@ vi.mock("../features/shell/SessionTokenUsage", () => ({
 }));
 
 vi.mock("../features/timeline/MessageTimeline", () => ({
-  MessageTimeline: ({ sessionId }: { sessionId: string | null }) => {
+  MessageTimeline: ({
+    sessionId,
+    visible,
+  }: {
+    sessionId: string | null;
+    visible?: boolean;
+  }) => {
     timelineRenderMock(sessionId);
-    return <div data-testid="timeline">{sessionId}</div>;
+    return (
+      <div data-testid="timeline" data-visible={visible === false ? "false" : "true"}>
+        {sessionId}
+      </div>
+    );
   },
 }));
 
@@ -250,6 +260,10 @@ describe("ChatWorkspace", () => {
       expect(chatView).toHaveClass("is-session-switching");
       expect(chatView).toHaveAttribute("aria-busy", "true");
       expect(screen.getByRole("status")).toHaveTextContent("Loading session...");
+      expect(screen.getByTestId("timeline")).toHaveAttribute(
+        "data-visible",
+        "false",
+      );
       expect(renderedSessionIds()).toEqual({
         composer: "session-2",
         recovery: "session-2",
@@ -270,6 +284,10 @@ describe("ChatWorkspace", () => {
       await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
       expect(chatView).not.toHaveClass("is-session-switching");
       expect(chatView).not.toHaveAttribute("aria-busy");
+      expect(screen.getByTestId("timeline")).toHaveAttribute(
+        "data-visible",
+        "true",
+      );
     } finally {
       animationFrame.restore();
     }

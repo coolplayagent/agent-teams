@@ -132,7 +132,7 @@ test("manages market and installed skills from the Skills surface", async ({
       name: "ClawHub settings",
     });
     await expect(settings).toBeVisible();
-    const tokenInput = settings.getByPlaceholder("************");
+    const tokenInput = settings.locator('input[type="password"]');
     await expect(tokenInput).toBeVisible();
     await tokenInput.fill("new-token");
     await settings.getByRole("button", { name: "Test connection" }).click();
@@ -145,7 +145,7 @@ test("manages market and installed skills from the Skills surface", async ({
     await settings.getByRole("button", { name: "Save" }).click();
     await expect
       .poll(() => state.savePayloads)
-      .toEqual([{ token: "new-token" }]);
+      .toEqual([{ preserve_token: false, token: "new-token" }]);
     await expect(page.getByText("ClawHub settings saved.")).toBeVisible();
     await page.screenshot({
       path: screenshotPath("v2-skills-clawhub-settings.png", SCREENSHOT_FOLDER),
@@ -536,7 +536,7 @@ async function handleSkillsApi(
     return true;
   }
   if (context.method === "GET" && context.path === "/system/configs/clawhub") {
-    await context.fulfillJson({ token: "saved-token" });
+    await context.fulfillJson({ token_configured: true });
     return true;
   }
   if (context.method === "POST" && context.path === "/system/configs/clawhub:probe") {

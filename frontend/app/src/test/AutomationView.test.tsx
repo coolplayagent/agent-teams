@@ -11,6 +11,8 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  createAutomationProject,
+  deleteAutomationProject,
   disableAutomationProject,
   enableAutomationProject,
   getAutomationProject,
@@ -19,6 +21,7 @@ import {
   listAutomationProjectSessions,
   listWorkspaces,
   runAutomationProject,
+  updateAutomationProject,
 } from "../api/client";
 import type {
   AutomationProjectRecord,
@@ -28,6 +31,8 @@ import { AutomationView } from "../features/automation/AutomationView";
 import { useUiStore } from "../runtime/uiStore";
 
 vi.mock("../api/client", () => ({
+  createAutomationProject: vi.fn(),
+  deleteAutomationProject: vi.fn(),
   disableAutomationProject: vi.fn(),
   enableAutomationProject: vi.fn(),
   getAutomationProject: vi.fn(),
@@ -36,8 +41,11 @@ vi.mock("../api/client", () => ({
   listAutomationProjects: vi.fn(),
   listWorkspaces: vi.fn(),
   runAutomationProject: vi.fn(),
+  updateAutomationProject: vi.fn(),
 }));
 
+const createAutomationProjectMock = vi.mocked(createAutomationProject);
+const deleteAutomationProjectMock = vi.mocked(deleteAutomationProject);
 const disableAutomationProjectMock = vi.mocked(disableAutomationProject);
 const enableAutomationProjectMock = vi.mocked(enableAutomationProject);
 const getAutomationProjectMock = vi.mocked(getAutomationProject);
@@ -46,6 +54,7 @@ const listAutomationProjectSessionsMock = vi.mocked(listAutomationProjectSession
 const listAutomationProjectsMock = vi.mocked(listAutomationProjects);
 const listWorkspacesMock = vi.mocked(listWorkspaces);
 const runAutomationProjectMock = vi.mocked(runAutomationProject);
+const updateAutomationProjectMock = vi.mocked(updateAutomationProject);
 
 beforeEach(() => {
   useUiStore.setState({ language: "en" });
@@ -113,6 +122,22 @@ beforeEach(() => {
     run_id: "run-1",
     session_id: "session-automation",
   });
+  createAutomationProjectMock.mockResolvedValue(
+    automationProject({ automation_project_id: "aut-created" }),
+  );
+  updateAutomationProjectMock.mockImplementation((projectId, request) =>
+    Promise.resolve(
+      automationProject({
+        automation_project_id: projectId,
+        display_name: request.display_name ?? "Daily triage",
+        interval_every: request.interval_every ?? null,
+        interval_unit: request.interval_unit ?? null,
+        run_at: request.run_at ?? null,
+        schedule_mode: request.schedule_mode ?? "cron",
+      }),
+    ),
+  );
+  deleteAutomationProjectMock.mockResolvedValue({ status: "deleted" });
   disableAutomationProjectMock.mockResolvedValue(
     automationProject({
       automation_project_id: "aut-daily",
@@ -197,6 +222,94 @@ describe("AutomationView", () => {
       expect(disableAutomationProjectMock).toHaveBeenCalledWith("aut-daily"),
     );
     expect(await screen.findByRole("button", { name: "Enable" })).toBeVisible();
+  });
+
+  it("does not render failed project or session requests as empty valid data", async () => {
+    getAutomationProjectMock.mockRejectedValueOnce(new Error("detail unavailable"));
+    const first = renderAutomation();
+
+    expect(
+      await screen.findByText("Could not load automation project details."),
+    ).toBeVisible();
+    expect(screen.queryByText("No runs yet.")).not.toBeInTheDocument();
+    first.unmount();
+    cleanup();
+
+    listAutomationProjectSessionsMock.mockRejectedValueOnce(
+      new Error("runs unavailable"),
+    );
+    renderAutomation();
+    expect(
+      await screen.findByText("Could not load recent automation runs."),
+    ).toBeVisible();
+    expect(screen.queryByText("No runs yet.")).not.toBeInTheDocument();
+  });
+
+  it("edits an existing project and persists an interval schedule through PATCH", async () => {
+    renderAutomation();
+
+    expect(await screen.findByText("Daily triage")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+
+    expect(await screen.findByRole("dialog", { name: "Edit" })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Display name"), {
+      target: { value: "Focused triage" },
+    });
+    fireEvent.mouseDown(screen.getByLabelText("Schedule preset"));
+    fireEvent.click(await screen.findByText("Interval", { selector: ".ant-select-item-option-content" }));
+    fireEvent.change(screen.getByLabelText("Every"), { target: { value: "3" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() =>
+      expect(updateAutomationProjectMock).toHaveBeenCalledWith(
+        "aut-daily",
+        expect.objectContaining({
+          cron_expression: null,
+          display_name: "Focused triage",
+          interval_every: 3,
+          interval_unit: "hours",
+          run_at: null,
+          schedule_mode: "interval",
+        }),
+      ),
+    );
+  }, 10_000);
+
+  it("creates a one-shot project without leaking cron or interval fields", async () => {
+    renderAutomation();
+
+    fireEvent.click(await screen.findByRole("button", { name: "New automation" }));
+    fireEvent.change(screen.getByLabelText("Display name"), {
+      target: { value: "Release reminder" },
+    });
+    fireEvent.change(screen.getByLabelText("Project ID"), {
+      target: { value: "release_reminder" },
+    });
+    fireEvent.change(screen.getByLabelText("Prompt"), {
+      target: { value: "Review the release checklist." },
+    });
+    fireEvent.mouseDown(screen.getByLabelText("Schedule preset"));
+    fireEvent.click(
+      await screen.findByText("Runs once", {
+        selector: ".ant-select-item-option-content",
+      }),
+    );
+    fireEvent.change(screen.getByLabelText("Run at"), {
+      target: { value: "2026-07-12T09:30" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    await waitFor(() =>
+      expect(createAutomationProjectMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cron_expression: null,
+          interval_every: null,
+          interval_unit: null,
+          run_at: "2026-07-12T09:30",
+          schedule_mode: "one_shot",
+        }),
+      ),
+    );
   });
 });
 

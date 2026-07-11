@@ -6,8 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   addRuntimeToolsSystemPath,
   getRuntimeToolDownload,
+  getW3Connector,
   listConnectors,
   listRuntimeTools,
+  saveW3Connector,
   startRuntimeToolDownload,
   testConnector,
 } from "../api/client";
@@ -21,16 +23,20 @@ import { useUiStore } from "../runtime/uiStore";
 vi.mock("../api/client", () => ({
   addRuntimeToolsSystemPath: vi.fn(),
   getRuntimeToolDownload: vi.fn(),
+  getW3Connector: vi.fn(),
   listConnectors: vi.fn(),
   listRuntimeTools: vi.fn(),
+  saveW3Connector: vi.fn(),
   startRuntimeToolDownload: vi.fn(),
   testConnector: vi.fn(),
 }));
 
 const addRuntimeToolsSystemPathMock = vi.mocked(addRuntimeToolsSystemPath);
 const getRuntimeToolDownloadMock = vi.mocked(getRuntimeToolDownload);
+const getW3ConnectorMock = vi.mocked(getW3Connector);
 const listConnectorsMock = vi.mocked(listConnectors);
 const listRuntimeToolsMock = vi.mocked(listRuntimeTools);
+const saveW3ConnectorMock = vi.mocked(saveW3Connector);
 const startRuntimeToolDownloadMock = vi.mocked(startRuntimeToolDownload);
 const testConnectorMock = vi.mocked(testConnector);
 
@@ -53,6 +59,26 @@ beforeEach(() => {
     status: "connected",
   });
   listRuntimeToolsMock.mockResolvedValue(defaultRuntimeToolsResponse());
+  getW3ConnectorMock.mockResolvedValue({
+    has_password: true,
+    last_error: null,
+    last_login_failed_at: null,
+    last_login_error_code: null,
+    last_verified_at: "2026-06-24T03:00:00Z",
+    last_sync: null,
+    status: "connected",
+    updated_at: "2026-06-24T03:00:00Z",
+    username: "w3-user",
+  });
+  saveW3ConnectorMock.mockResolvedValue({
+    error_code: null,
+    has_password: true,
+    message: "W3 credentials saved.",
+    ok: true,
+    status: "connected",
+    sync: null,
+    username: "w3-user",
+  });
   startRuntimeToolDownloadMock.mockResolvedValue({
     downloaded_bytes: 100,
     error_message: null,
@@ -170,6 +196,129 @@ describe("ConnectorsView", () => {
     expect(
       await screen.findByText("GitHub connection is healthy."),
     ).toBeVisible();
+  }, 10_000);
+
+  it("keeps V1 action routing real and saves W3 credentials through its API", async () => {
+    listConnectorsMock.mockResolvedValue({
+      summary: {
+        connected: 1,
+        disabled: 0,
+        error: 0,
+        needs_config: 2,
+        total: 3,
+      },
+      items: [
+        defaultConnectorsResponse().items[0],
+        {
+          account_count: 0,
+          auth_type: "username_password",
+          capabilities: ["w3_auth"],
+          category: "auth",
+          connector_id: "w3",
+          description: "Connect W3 authentication.",
+          display_name: "W3",
+          enabled_count: 0,
+          last_activity_at: null,
+          last_error: null,
+          provider: "w3",
+          status: "needs_config",
+        },
+        {
+          account_count: 0,
+          auth_type: "api_token",
+          capabilities: ["direct_messages"],
+          category: "im",
+          connector_id: "discord",
+          description: "Connect Discord.",
+          display_name: "Discord",
+          enabled_count: 0,
+          last_activity_at: null,
+          last_error: null,
+          provider: "discord",
+          status: "needs_config",
+        },
+      ],
+    });
+
+    renderView();
+
+    expect(await screen.findByTestId("connector-action-github")).toHaveTextContent(
+      "Configure",
+    );
+    expect(screen.getByTestId("connector-action-w3")).toHaveTextContent("Configure");
+    expect(screen.queryByTestId("connector-action-discord")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("connector-action-w3"));
+    expect(await screen.findByDisplayValue("w3-user")).toBeVisible();
+    fireEvent.change(screen.getByLabelText("Username"), {
+      target: { value: "next-user" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(saveW3ConnectorMock).toHaveBeenCalledWith({
+        password: null,
+        username: "next-user",
+      }),
+    );
+  });
+
+  it("routes supported provider configuration to the existing Settings entry", async () => {
+    const onOpenSettings = vi.fn();
+
+    listConnectorsMock.mockResolvedValue({
+      summary: {
+        connected: 0,
+        disabled: 0,
+        error: 0,
+        needs_config: 1,
+        total: 1,
+      },
+      items: [
+        {
+          account_count: 0,
+          auth_type: "api_key",
+          capabilities: ["messages"],
+          category: "im",
+          connector_id: "feishu",
+          description: "Connect Feishu.",
+          display_name: "Feishu",
+          enabled_count: 0,
+          last_activity_at: null,
+          last_error: null,
+          provider: "feishu",
+          status: "needs_config",
+        },
+      ],
+    });
+
+    renderView(onOpenSettings);
+    fireEvent.click(await screen.findByTestId("connector-action-feishu"));
+
+    await waitFor(() => expect(onOpenSettings).toHaveBeenCalledWith("triggers"));
+  });
+
+  it("keeps the W3 editor open and shows an HTTP-200 rejected save", async () => {
+    saveW3ConnectorMock.mockResolvedValue({
+      error_code: "invalid_credentials",
+      has_password: false,
+      message: "W3 credentials were rejected.",
+      ok: false,
+      status: "error",
+      username: "w3-user",
+    });
+
+    renderView();
+    fireEvent.change(
+      await screen.findByRole("searchbox", { name: "Search connectors" }),
+      { target: { value: "w3" } },
+    );
+    fireEvent.click(await screen.findByTestId("connector-action-w3"));
+    expect(await screen.findByDisplayValue("w3-user")).toBeVisible();
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText("W3 credentials were rejected.")).toBeVisible();
+    expect(screen.getByLabelText("Username")).toBeVisible();
   });
 
   it("does not show connector empty states before connector items load", async () => {
@@ -302,7 +451,7 @@ describe("ConnectorsView", () => {
   });
 });
 
-function renderView() {
+function renderView(onOpenSettings = vi.fn()) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -315,7 +464,7 @@ function renderView() {
     <QueryClientProvider client={queryClient}>
       <ConfigProvider button={{ autoInsertSpace: false }}>
         <AntApp>
-          <ConnectorsView />
+          <ConnectorsView onOpenSettings={onOpenSettings} />
         </AntApp>
       </ConfigProvider>
     </QueryClientProvider>,

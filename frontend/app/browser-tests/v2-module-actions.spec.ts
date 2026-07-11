@@ -26,14 +26,23 @@ declare global {
 
 interface ModuleActionState {
   automationCreatePayloads: Record<string, unknown>[];
+  automationCronExpression: string | null;
   automationDeleteRequests: Array<{
     payload: Record<string, unknown>;
     projectId: string;
   }>;
   automationDisableRequests: string[];
+  automationDisplayName: string;
   automationEnableRequests: string[];
+  automationIntervalEvery: number | null;
+  automationIntervalUnit: "days" | "hours" | "minutes" | null;
   automationRunRequests: string[];
+  automationUpdatePayloads: Array<{
+    payload: Record<string, unknown>;
+    projectId: string;
+  }>;
   automationStatus: "disabled" | "enabled";
+  automationScheduleMode: "cron" | "interval" | "one_shot";
   createdAutomationProject: Record<string, unknown> | null;
   createdAutomationSessionVisible: boolean;
   requestedPaths: string[];
@@ -221,6 +230,34 @@ test("toggles an automation project through the real endpoints", async ({
     expect(state.automationEnableRequests).toEqual(["aut-daily"]);
     expect(state.requestedPaths).toContain("/automation/projects/aut-daily:enable");
 
+    await automationDetail.getByRole("button", { name: "Edit" }).click();
+    const editDialog = page.getByRole("dialog", { name: "Edit" });
+    await expect(editDialog).toBeVisible();
+    await editDialog.getByLabel("Display name").fill("Focused daily triage");
+    await editDialog.locator("#schedulePreset").press("ArrowDown");
+    await page
+      .locator(".ant-select-item-option-content")
+      .filter({ hasText: "Interval" })
+      .click();
+    await editDialog.getByLabel("Every").fill("3");
+    await editDialog.getByRole("button", { name: "Save changes" }).click();
+    await expect(editDialog).toBeHidden();
+    await expect(
+      automationDetail.getByRole("heading", { name: "Focused daily triage" }),
+    ).toBeVisible();
+    expect(state.automationUpdatePayloads).toEqual([
+      {
+        payload: expect.objectContaining({
+          cron_expression: null,
+          display_name: "Focused daily triage",
+          interval_every: 3,
+          interval_unit: "hours",
+          schedule_mode: "interval",
+        }),
+        projectId: "aut-daily",
+      },
+    ]);
+
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await expectNoDocumentScroll(page, "v2 automation detail should stay framed");
     await page.screenshot({
@@ -390,11 +427,17 @@ async function installShellStatePreservingSidebarWidth(
 function moduleActionState(): ModuleActionState {
   return {
     automationCreatePayloads: [],
+    automationCronExpression: "0 9 * * *",
     automationDeleteRequests: [],
     automationDisableRequests: [],
+    automationDisplayName: "Daily triage",
     automationEnableRequests: [],
+    automationIntervalEvery: null,
+    automationIntervalUnit: null,
     automationRunRequests: [],
+    automationUpdatePayloads: [],
     automationStatus: "enabled",
+    automationScheduleMode: "cron",
     createdAutomationProject: null,
     createdAutomationSessionVisible: false,
     requestedPaths: [],
@@ -408,6 +451,26 @@ async function handleModuleActionApi(
   state: ModuleActionState,
 ): Promise<boolean> {
   state.requestedPaths.push(context.path);
+  if (context.method === "PATCH") {
+    if (context.path === "/automation/projects/aut-daily") {
+      const payload = readRecordPayload(context.route.request().postData());
+      state.automationUpdatePayloads.push({ payload, projectId: "aut-daily" });
+      state.automationDisplayName = stringField(payload, "display_name");
+      state.automationCronExpression = nullableStringField(
+        payload,
+        "cron_expression",
+      );
+      state.automationIntervalEvery = nullableNumberField(
+        payload,
+        "interval_every",
+      );
+      state.automationIntervalUnit = intervalUnitField(payload);
+      state.automationScheduleMode = scheduleModeField(payload);
+      await context.fulfillJson(automationProject(state));
+      return true;
+    }
+    return false;
+  }
   if (context.method === "DELETE") {
     if (context.path === `/automation/projects/${CREATED_AUTOMATION_PROJECT_ID}`) {
       const payload = readRecordPayload(context.route.request().postData());
@@ -593,12 +656,12 @@ function automationProject(state: ModuleActionState): Record<string, unknown> {
   return {
     automation_project_id: "aut-daily",
     created_at: "2026-06-25T08:00:00Z",
-    cron_expression: "0 9 * * *",
+    cron_expression: state.automationCronExpression,
     delivery_binding: null,
     delivery_events: ["completed"],
-    display_name: "Daily triage",
-    interval_every: null,
-    interval_unit: null,
+    display_name: state.automationDisplayName,
+    interval_every: state.automationIntervalEvery,
+    interval_unit: state.automationIntervalUnit,
     last_error: null,
     last_run_started_at: "2026-06-25T08:15:00Z",
     last_session_id: "session-automation",
@@ -614,7 +677,7 @@ function automationProject(state: ModuleActionState): Record<string, unknown> {
       thinking: { effort: "medium", enabled: true },
       yolo: false,
     },
-    schedule_mode: "cron",
+    schedule_mode: state.automationScheduleMode,
     status: state.automationStatus,
     timezone: "Asia/Shanghai",
     trigger_id: "trigger-daily",
@@ -716,6 +779,38 @@ function readRecordPayload(rawPayload: string | null): Record<string, unknown> {
 function stringField(payload: Record<string, unknown>, key: string): string {
   const value = payload[key];
   return typeof value === "string" ? value : "";
+}
+
+function nullableStringField(
+  payload: Record<string, unknown>,
+  key: string,
+): string | null {
+  const value = payload[key];
+  return typeof value === "string" ? value : null;
+}
+
+function nullableNumberField(
+  payload: Record<string, unknown>,
+  key: string,
+): number | null {
+  const value = payload[key];
+  return typeof value === "number" ? value : null;
+}
+
+function intervalUnitField(
+  payload: Record<string, unknown>,
+): ModuleActionState["automationIntervalUnit"] {
+  const value = payload.interval_unit;
+  return value === "days" || value === "hours" || value === "minutes"
+    ? value
+    : null;
+}
+
+function scheduleModeField(
+  payload: Record<string, unknown>,
+): ModuleActionState["automationScheduleMode"] {
+  const value = payload.schedule_mode;
+  return value === "interval" || value === "one_shot" ? value : "cron";
 }
 
 function arrayField(

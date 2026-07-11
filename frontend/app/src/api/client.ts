@@ -49,6 +49,9 @@ import type {
   ClawHubSkillMarketUninstallResponse,
   ConnectorListResponse,
   ConnectorTestResult,
+  W3ConnectorSaveRequest,
+  W3ConnectorSaveResponse,
+  W3ConnectorStatus,
   EnvironmentVariableCatalog,
   EnvironmentVariableSaveRequest,
   EnvironmentVariableScope,
@@ -1349,6 +1352,19 @@ export function getNotificationConfig(): Promise<NotificationConfig> {
 
 export function listConnectors(): Promise<ConnectorListResponse> {
   return requestJson<ConnectorListResponse>("/connectors");
+}
+
+export function getW3Connector(): Promise<W3ConnectorStatus> {
+  return requestJson<W3ConnectorStatus>("/connectors/w3");
+}
+
+export function saveW3Connector(
+  request: W3ConnectorSaveRequest,
+): Promise<W3ConnectorSaveResponse> {
+  return requestJson<W3ConnectorSaveResponse>("/connectors/w3", {
+    body: JSON.stringify(request),
+    method: "PUT",
+  });
 }
 
 export function testConnector(connectorId: string): Promise<ConnectorTestResult> {

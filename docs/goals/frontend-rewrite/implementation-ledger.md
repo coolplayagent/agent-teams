@@ -10451,3 +10451,54 @@ This file tracks implementation evidence for the React/Ant Design migration goal
 - Final reviewer result: PASS with no findings. `COMP-01`, `COMP-02`, and
   `COMP-03` move to `Verified`; totals are now 25 `Verified` and 19
   `In progress`.
+
+## 2026-07-11 Primary Module Surface Closure Batch
+
+### Scope
+- Closed Skills, Board, and Search as one V1/V2 comparison batch instead of
+  continuing isolated page tweaks. One browser fixture now opens Skills,
+  Board, Search, and Memory in V1 and V2 with shared backend data and captures
+  paired desktop evidence plus V2 720x760 evidence.
+- Search now proves result-level parity: both interfaces query `release`, show
+  `Release handoff notes`, select the same session, and hydrate the same marker.
+  The fixture supplies V1's `metadata.title` and V2's top-level title contracts.
+- Board narrow evidence asserts readable column width and an intentional
+  internal horizontal scroller while the shell and page stay fixed. Skills
+  narrow evidence uses the public ClawHub `token_configured` response and
+  verifies a failed probe without breaking the page.
+- Expanded Automation with edit/PATCH, interval and one-shot scheduling,
+  Running/Paused/Current grouping, synchronized detail caches, and explicit
+  project/session errors. Expanded Connectors with W3 configuration, rejected
+  HTTP-200 handling, explicit System-secondary routing, and loading/error
+  narrow states. Restored Observability KPI inventory, absent-value rendering,
+  Gateway gating, and narrow skeleton loading.
+- Rebuilt `frontend/dist/app` from the TypeScript source.
+
+### Verification
+- Same-fixture primary comparison passed 2/2 after the V1 title contract and
+  stable screenshot wait were corrected.
+- Skills passed 3/3; Board and Search passed 8/8; Connectors passed 2/2;
+  Observability passed 3/3; Automation/runtime module actions passed 4/4.
+- Primary Skills/Board/Search/Memory component suites passed 28/28. The focused
+  Automation/Connectors/Observability suites passed 22/23 initially, exposed a
+  W3-load test race, and passed after the test waited for persisted username
+  hydration. Settings/AppShell routing tests also passed.
+- `npm run lint`, `npm run build`, and `git diff --check` passed. Manual review
+  covered paired and narrow images under
+  `.tmp/frontend-v1-v2-primary-surfaces/`, connector/observability states, and
+  the live backend `/app/` Automation, Connectors, Observability, and GitHub
+  secondary Settings route.
+
+### Reviewer
+- Independent reviewer `Jason`
+  (`019f4f11-958c-72d1-9e7a-469f23c383b2`) first rejected the stale ClawHub
+  mock and V1 Search result whose visible title still fell back to
+  `New conversation` despite a shared session ID.
+- The ClawHub fixture was moved to `token_configured: true`; the complete
+  Skills browser spec then passed 3/3. V1 Search was supplied its real
+  `metadata.title` contract, gained an explicit visible-title assertion, and
+  regenerated a fully settled screenshot showing the same title as V2.
+- Final independent review returned PASS and approved `PAGE-02`, `PAGE-03`,
+  and `PAGE-04` as `Verified`. Closure totals move to 31 `Verified` and 13
+  `In progress`. Automation, Connectors, Memory, and Observability retain their
+  explicitly listed remaining gaps and are not overclaimed.

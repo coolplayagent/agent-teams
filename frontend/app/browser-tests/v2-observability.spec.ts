@@ -51,6 +51,21 @@ test("opens observability from the top bar and renders spec lineage", async ({
       }),
     ).toBeVisible();
     await expect(observability.getByText("Agent loop")).toBeVisible();
+    await expect(
+      observability.locator('[data-observability-metric="cached_input_tokens"]'),
+    ).toContainText("80,000");
+    await expect(
+      observability.locator('[data-observability-metric="cached_token_ratio"]'),
+    ).toContainText("71.3%");
+    await expect(
+      observability.locator('[data-observability-metric="retrieval_searches"]'),
+    ).toContainText("9");
+    await expect(
+      observability.locator('[data-observability-metric="skill_calls"]'),
+    ).toContainText("6");
+    await expect(
+      observability.locator('[data-observability-metric="mcp_calls"]'),
+    ).toContainText("4");
     const trends = observability.locator(
       '[data-observability-section="trends"]',
     );
@@ -167,7 +182,13 @@ test("opens observability from the top bar and renders spec lineage", async ({
 test("renders observability trend empty and error states", async ({ page }) => {
   const appServer = await serveFrontendDist();
   let failSessionOverview = false;
+  let releaseInitialOverview: () => void = () => undefined;
+  const initialOverview = new Promise<void>((resolve) => {
+    releaseInitialOverview = resolve;
+  });
+  let initialOverviewPending = true;
   try {
+    await page.setViewportSize({ height: 760, width: 720 });
     await installShellState(page);
     const unhandledApiRoutes: string[] = [];
     await mockShellApi(page, appServer.url, unhandledApiRoutes, {
@@ -176,6 +197,10 @@ test("renders observability trend empty and error states", async ({ page }) => {
           return false;
         }
         if (context.path === "/observability/overview") {
+          if (initialOverviewPending) {
+            await initialOverview;
+            initialOverviewPending = false;
+          }
           const scope = context.url.searchParams.get("scope") ?? "global";
           if (scope === "session" && failSessionOverview) {
             await context.fulfillJson({ detail: "metrics unavailable" }, 500);
@@ -215,6 +240,16 @@ test("renders observability trend empty and error states", async ({ page }) => {
     const observability = page.locator(".at-surface-view").filter({
       hasText: "Observability",
     });
+    await expect(
+      observability.getByTestId("observability-overview-loading"),
+    ).toBeVisible();
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-observability-loading-narrow.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+    releaseInitialOverview();
     const trends = observability.locator(
       '[data-observability-section="trends"]',
     );
@@ -244,6 +279,7 @@ test("renders observability trend empty and error states", async ({ page }) => {
     });
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
   } finally {
+    releaseInitialOverview();
     await appServer.close();
   }
 });
@@ -436,8 +472,16 @@ function observabilityOverviewResponse(
   }
   return {
     kpis: {
+      cached_input_tokens: 80000,
+      cached_token_ratio: 0.714,
       input_tokens: 112000,
+      mcp_calls: 4,
       output_tokens: 790,
+      retrieval_avg_duration_ms: 54,
+      retrieval_document_count: 27,
+      retrieval_failure_rate: 0.111,
+      retrieval_searches: 9,
+      skill_calls: 6,
       gateway_calls: 3,
       gateway_cold_start_calls: 1,
       gateway_prompt_avg_first_update_ms: 180,
@@ -445,6 +489,7 @@ function observabilityOverviewResponse(
       tool_avg_duration_ms: 88,
       tool_calls: 7,
       tool_success_rate: 0.9,
+      uncached_input_tokens: 32000,
     },
     scope: "global",
     trends: [

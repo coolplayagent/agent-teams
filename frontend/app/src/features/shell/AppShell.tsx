@@ -43,6 +43,7 @@ import type {
 import { AutomationView } from "../automation/AutomationView";
 import { BoardTodosView } from "../boards/BoardTodosView";
 import { ConnectorsView } from "../connectors/ConnectorsView";
+import type { SystemSettingsPage } from "../settings/settingsNavigation";
 import { ChatWorkspace } from "./ChatWorkspace";
 import { CurrentSessionIndicator } from "./CurrentSessionIndicator";
 import { MemoryView } from "../memory/MemoryView";
@@ -132,6 +133,8 @@ export function AppShell() {
   );
   const [subagentPanelResizing, setSubagentPanelResizing] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSystemPage, setSettingsSystemPage] =
+    useState<SystemSettingsPage | null>(null);
   const terminalViewMarksRef = useRef(new Set<string>());
   const terminalViewRetryTimersRef = useRef(new Set<number>());
   const chatShellRef = useRef<HTMLDivElement | null>(null);
@@ -613,7 +616,10 @@ export function AppShell() {
         icon: <Settings size={15} />,
         key: "settings",
         label: t("appSettings"),
-        onSelect: () => setSettingsOpen(true),
+        onSelect: () => {
+          setSettingsSystemPage(null);
+          setSettingsOpen(true);
+        },
       },
     ],
     [activeView, openPrimaryShellView, settingsOpen, t],
@@ -809,7 +815,10 @@ export function AppShell() {
             <Button
               aria-label={t("appSettings")}
               icon={<Settings size={17} />}
-              onClick={() => setSettingsOpen(true)}
+              onClick={() => {
+                setSettingsSystemPage(null);
+                setSettingsOpen(true);
+              }}
               type="text"
             />
           </Tooltip>
@@ -902,7 +911,12 @@ export function AppShell() {
               workspaces={workspacesQuery.data ?? []}
             />
           ) : activeView === "connectors" ? (
-            <ConnectorsView />
+            <ConnectorsView
+              onOpenSettings={(page) => {
+                setSettingsSystemPage(page);
+                setSettingsOpen(true);
+              }}
+            />
           ) : activeView === "memory" ? (
             <MemoryView selectedWorkspaceId={selectedWorkspaceId} />
           ) : activeView === "skills" ? (
@@ -980,7 +994,14 @@ export function AppShell() {
           )}
         </Content>
       </Layout>
-      <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsDrawer
+        initialSystemPage={settingsSystemPage}
+        open={settingsOpen}
+        onClose={() => {
+          setSettingsOpen(false);
+          setSettingsSystemPage(null);
+        }}
+      />
     </Layout>
   );
 

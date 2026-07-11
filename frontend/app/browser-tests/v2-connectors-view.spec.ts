@@ -68,6 +68,15 @@ test("filters connector statuses and probes the selected connector", async ({
     await expect(page.getByTestId("connector-detail-w3"))
       .toContainText("Missing credentials");
     await expect(page.getByTestId("connector-card-github")).toHaveCount(0);
+    await page.getByTestId("connector-action-w3").click();
+    const w3Detail = page.getByTestId("connector-detail-w3");
+    await expect(w3Detail.getByLabel("Username")).toHaveValue("w3-user");
+    await w3Detail.getByLabel("Username").fill("w3-next");
+    await w3Detail.getByLabel("Password").fill("secret-next");
+    await w3Detail.getByRole("button", { name: "Save" }).click();
+    await expect.poll(() => state.w3SaveRequests).toEqual([
+      { password: "secret-next", username: "w3-next" },
+    ]);
     await page.screenshot({
       path: screenshotPath("v2-connectors-search-w3.png", SCREENSHOT_FOLDER),
     });
@@ -113,13 +122,84 @@ test("filters connector statuses and probes the selected connector", async ({
   }
 });
 
+test("keeps connector loading and retryable error states framed at 720px", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state = connectorsViewState();
+  let failConnectors = false;
+  let releaseInitialLoad: () => void = () => undefined;
+  const initialLoad = new Promise<void>((resolve) => {
+    releaseInitialLoad = resolve;
+  });
+  let initialLoadPending = true;
+  try {
+    await page.setViewportSize({ height: 760, width: 720 });
+    await installShellState(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: async (context) => {
+        if (context.method === "GET" && context.path === "/connectors") {
+          if (initialLoadPending) {
+            await initialLoad;
+            initialLoadPending = false;
+          }
+          if (failConnectors) {
+            await context.fulfillJson({ detail: "connectors unavailable" }, 500);
+          } else {
+            await context.fulfillJson(connectorsResponse());
+          }
+          return true;
+        }
+        return handleConnectorsApi(context, state);
+      },
+      sessionTitle: "TS connectors states",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    await page
+      .getByRole("navigation", { name: "Primary navigation" })
+      .getByRole("button", { name: "Connectors" })
+      .click();
+
+    const connectorsView = page.getByTestId("connectors-view");
+    await expect(connectorsView.locator(".ant-skeleton")).toBeVisible();
+    await page.screenshot({
+      path: screenshotPath("v2-connectors-loading-narrow.png", SCREENSHOT_FOLDER),
+    });
+
+    releaseInitialLoad();
+    await expect(page.getByTestId("connector-card-github")).toBeVisible();
+    failConnectors = true;
+    await connectorsView
+      .getByRole("button", { name: "Refresh connectors" })
+      .click();
+    await expect(connectorsView.getByText("Could not load connectors.")).toBeVisible();
+    await expectNoDocumentScroll(
+      page,
+      "connector loading and error states should stay inside the 720px shell",
+    );
+    await page.screenshot({
+      path: screenshotPath("v2-connectors-error-narrow.png", SCREENSHOT_FOLDER),
+    });
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+  } finally {
+    releaseInitialLoad();
+    await appServer.close();
+  }
+});
+
 interface ConnectorsViewState {
   connectorTestRequests: string[];
+  w3SaveRequests: Array<{ password: string | null; username: string }>;
 }
 
 function connectorsViewState(): ConnectorsViewState {
   return {
     connectorTestRequests: [],
+    w3SaveRequests: [],
   };
 }
 
@@ -136,7 +216,35 @@ async function handleConnectorsApi(
       await context.fulfillJson(runtimeToolsResponse());
       return true;
     }
+    if (context.path === "/connectors/w3") {
+      await context.fulfillJson({
+        has_password: true,
+        last_error: null,
+        last_verified_at: "2026-06-25T08:00:00Z",
+        status: "needs_config",
+        username: "w3-user",
+      });
+      return true;
+    }
     return false;
+  }
+  if (context.method === "PUT" && context.path === "/connectors/w3") {
+    const payload = JSON.parse(context.route.request().postData() ?? "{}") as {
+      password?: string | null;
+      username?: string;
+    };
+    state.w3SaveRequests.push({
+      password: payload.password ?? null,
+      username: payload.username ?? "",
+    });
+    await context.fulfillJson({
+      has_password: true,
+      message: "W3 credentials saved.",
+      ok: true,
+      status: "connected",
+      username: payload.username ?? "",
+    });
+    return true;
   }
   if (
     context.method === "POST"

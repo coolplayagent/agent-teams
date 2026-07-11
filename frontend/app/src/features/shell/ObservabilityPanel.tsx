@@ -1,4 +1,13 @@
-import { Alert, Empty, Segmented, Space, Statistic, Table, Typography } from "antd";
+import {
+  Alert,
+  Empty,
+  Segmented,
+  Skeleton,
+  Space,
+  Statistic,
+  Table,
+  Typography,
+} from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
@@ -8,7 +17,7 @@ import {
   jsonRecord,
 } from "../../api/client";
 import type { JsonValue } from "../../api/contracts";
-import { useTranslations } from "../../i18n";
+import { useTranslations, type Translate } from "../../i18n";
 import { SpecLineagePanel } from "./SpecLineagePanel";
 import { ObservabilityTrends } from "./ObservabilityTrends";
 
@@ -18,6 +27,7 @@ interface ObservabilityPanelProps {
 
 export function ObservabilityPanel({ sessionId }: ObservabilityPanelProps) {
   const t = useTranslations();
+  const copy = observabilityCopy(t);
   const [scope, setScope] = useState<"global" | "session">("global");
   const effectiveScope = scope === "session" && sessionId === null ? "global" : scope;
   const scopeId = effectiveScope === "session" ? sessionId ?? "" : "";
@@ -31,13 +41,24 @@ export function ObservabilityPanel({ sessionId }: ObservabilityPanelProps) {
   });
 
   const kpis = jsonRecord(overviewQuery.data?.kpis);
+  const hasOverviewMetrics = Object.keys(kpis).length > 0;
+  const hasGatewayMetrics = [
+    kpis.gateway_calls,
+    kpis.gateway_failure_rate,
+    kpis.gateway_avg_duration_ms,
+    kpis.gateway_prompt_avg_start_ms,
+    kpis.gateway_prompt_avg_first_update_ms,
+    kpis.gateway_mcp_calls,
+    kpis.gateway_cold_start_calls,
+  ].some((value) => typeof value === "number" && Number.isFinite(value));
   const rows = rowsFromJson(breakdownsQuery.data?.rows);
   const gatewayRows = gatewayRowsFromJson(breakdownsQuery.data?.gateway_rows);
   const gatewaySummary = gatewaySummaryFromRows(gatewayRows);
-  const hasGatewayMetrics =
-    hasNumber(kpis.gateway_calls) ||
-    hasNumber(kpis.gateway_prompt_avg_first_update_ms) ||
-    hasNumber(kpis.gateway_cold_start_calls) ||
+  const showPrimaryMetrics = overviewQuery.isLoading || hasOverviewMetrics;
+  const showGatewayMetrics =
+    overviewQuery.isLoading ||
+    breakdownsQuery.isLoading ||
+    hasGatewayMetrics ||
     gatewayRows.length > 0;
 
   return (
@@ -61,16 +82,56 @@ export function ObservabilityPanel({ sessionId }: ObservabilityPanelProps) {
       {overviewQuery.isError || breakdownsQuery.isError ? (
         <Alert message={t("observabilityError")} type="error" showIcon />
       ) : null}
-      {Object.keys(kpis).length === 0 && !overviewQuery.isLoading ? (
+      {overviewQuery.isLoading && !hasOverviewMetrics ? (
+        <Space
+          className="at-stat-grid"
+          data-testid="observability-overview-loading"
+          size={12}
+          wrap
+        >
+          {Array.from({ length: 15 }, (_, index) => (
+            <LoadingStatCard key={`overview-loading-${index}`} />
+          ))}
+        </Space>
+      ) : !hasOverviewMetrics ? (
         <Empty description={t("observabilityNoMetrics")} image={Empty.PRESENTED_IMAGE_SIMPLE} />
       ) : (
         <Space className="at-stat-grid" size={12} wrap>
           {stat(t("observabilitySteps"), kpis.steps)}
           {stat(t("observabilityInputTokens"), kpis.input_tokens)}
+          {stat(copy.cachedInputTokens, kpis.cached_input_tokens, "number", "cached_input_tokens")}
+          {stat(
+            copy.uncachedInputTokens,
+            kpis.uncached_input_tokens,
+            "number",
+            "uncached_input_tokens",
+          )}
           {stat(t("observabilityOutputTokens"), kpis.output_tokens)}
           {stat(t("observabilityToolCalls"), kpis.tool_calls)}
+          {stat(copy.cachedRatio, kpis.cached_token_ratio, "percent", "cached_token_ratio")}
           {stat(t("observabilityToolSuccess"), kpis.tool_success_rate, "percent")}
           {stat(t("observabilityAvgToolMs"), kpis.tool_avg_duration_ms)}
+          {stat(copy.retrievalSearches, kpis.retrieval_searches, "number", "retrieval_searches")}
+          {stat(
+            copy.retrievalFailureRate,
+            kpis.retrieval_failure_rate,
+            "percent",
+            "retrieval_failure_rate",
+          )}
+          {stat(
+            copy.avgRetrievalMs,
+            kpis.retrieval_avg_duration_ms,
+            "number",
+            "retrieval_avg_duration_ms",
+          )}
+          {stat(
+            copy.retrievalDocumentCount,
+            kpis.retrieval_document_count,
+            "number",
+            "retrieval_document_count",
+          )}
+          {stat(copy.skillCalls, kpis.skill_calls, "number", "skill_calls")}
+          {stat(copy.mcpCalls, kpis.mcp_calls, "number", "mcp_calls")}
         </Space>
       )}
       <ObservabilityTrends
@@ -89,11 +150,14 @@ export function ObservabilityPanel({ sessionId }: ObservabilityPanelProps) {
         ]}
         dataSource={rows}
         loading={breakdownsQuery.isLoading}
+        locale={{
+          emptyText: breakdownsQuery.isLoading ? null : t("observabilityNoMetrics"),
+        }}
         pagination={false}
         rowKey="key"
         size="small"
       />
-      {hasGatewayMetrics ? (
+      {showGatewayMetrics ? (
         <section
           className="at-observability-section"
           data-observability-section="gateway-signals"
@@ -101,31 +165,68 @@ export function ObservabilityPanel({ sessionId }: ObservabilityPanelProps) {
           <Typography.Title level={4}>
             {t("observabilityGatewaySignals")}
           </Typography.Title>
-          <Space className="at-stat-grid" size={12} wrap>
-            {stat(
-              t("observabilityGatewayCalls"),
-              kpis.gateway_calls,
-              "number",
-              "gateway_calls",
-            )}
-            {stat(
-              t("observabilityGatewayFirstUpdateMs"),
-              kpis.gateway_prompt_avg_first_update_ms,
-              "number",
-              "gateway_prompt_avg_first_update_ms",
-            )}
-            {stat(
-              t("observabilityGatewayColdStarts"),
-              kpis.gateway_cold_start_calls,
-              "number",
-              "gateway_cold_start_calls",
-            )}
-          </Space>
-          {gatewayRows.length > 0 ? (
-            <div data-observability-section="gateway-breakdowns">
-              <Typography.Title level={4}>
-                {t("observabilityGatewayBreakdown")}
-              </Typography.Title>
+          {overviewQuery.isLoading && !hasOverviewMetrics ? (
+            <Space
+              className="at-stat-grid"
+              data-testid="observability-gateway-loading"
+              size={12}
+              wrap
+            >
+              {Array.from({ length: 7 }, (_, index) => (
+                <LoadingStatCard key={`gateway-loading-${index}`} />
+              ))}
+            </Space>
+          ) : (
+            <Space className="at-stat-grid" size={12} wrap>
+              {stat(
+                t("observabilityGatewayCalls"),
+                kpis.gateway_calls,
+                "number",
+                "gateway_calls",
+              )}
+              {stat(
+                copy.gatewayFailureRate,
+                kpis.gateway_failure_rate,
+                "percent",
+                "gateway_failure_rate",
+              )}
+              {stat(
+                copy.gatewayAvgDurationMs,
+                kpis.gateway_avg_duration_ms,
+                "number",
+                "gateway_avg_duration_ms",
+              )}
+              {stat(
+                copy.gatewayPromptStartMs,
+                kpis.gateway_prompt_avg_start_ms,
+                "number",
+                "gateway_prompt_avg_start_ms",
+              )}
+              {stat(
+                t("observabilityGatewayFirstUpdateMs"),
+                kpis.gateway_prompt_avg_first_update_ms,
+                "number",
+                "gateway_prompt_avg_first_update_ms",
+              )}
+              {stat(
+                copy.gatewayMcpCalls,
+                kpis.gateway_mcp_calls,
+                "number",
+                "gateway_mcp_calls",
+              )}
+              {stat(
+                t("observabilityGatewayColdStarts"),
+                kpis.gateway_cold_start_calls,
+                "number",
+                "gateway_cold_start_calls",
+              )}
+            </Space>
+          )}
+          <div data-observability-section="gateway-breakdowns">
+            <Typography.Title level={4}>
+              {t("observabilityGatewayBreakdown")}
+            </Typography.Title>
+            {gatewayRows.length > 0 ? (
               <Space className="at-stat-grid" size={12} wrap>
                 {stat(
                   t("observabilityGatewayCalls"),
@@ -149,57 +250,68 @@ export function ObservabilityPanel({ sessionId }: ObservabilityPanelProps) {
                   "gateway-breakdown-cold-starts",
                 )}
               </Space>
-              <Table
-                className="at-breakdown-table"
-                columns={[
-                  {
-                    dataIndex: "operation",
-                    key: "operation",
-                    title: t("observabilityGatewayOperation"),
-                  },
-                  {
-                    dataIndex: "phase",
-                    key: "phase",
-                    title: t("observabilityGatewayPhase"),
-                  },
-                  {
-                    dataIndex: "transport",
-                    key: "transport",
-                    title: t("observabilityGatewayTransport"),
-                  },
-                  {
-                    dataIndex: "calls",
-                    key: "calls",
-                    title: t("observabilityCalls"),
-                  },
-                  {
-                    dataIndex: "success",
-                    key: "success",
-                    title: t("observabilitySuccess"),
-                  },
-                  {
-                    dataIndex: "duration",
-                    key: "duration",
-                    title: t("observabilityGatewayLatency"),
-                  },
-                  {
-                    dataIndex: "coldStarts",
-                    key: "coldStarts",
-                    title: t("observabilityGatewayColdStarts"),
-                  },
-                ]}
-                dataSource={gatewayRows}
-                loading={breakdownsQuery.isLoading}
-                pagination={false}
-                rowKey="key"
-                size="small"
-              />
-            </div>
-          ) : null}
+            ) : null}
+            <Table
+              className="at-breakdown-table"
+              columns={[
+                {
+                  dataIndex: "operation",
+                  key: "operation",
+                  title: t("observabilityGatewayOperation"),
+                },
+                {
+                  dataIndex: "phase",
+                  key: "phase",
+                  title: t("observabilityGatewayPhase"),
+                },
+                {
+                  dataIndex: "transport",
+                  key: "transport",
+                  title: t("observabilityGatewayTransport"),
+                },
+                {
+                  dataIndex: "calls",
+                  key: "calls",
+                  title: t("observabilityCalls"),
+                },
+                {
+                  dataIndex: "success",
+                  key: "success",
+                  title: t("observabilitySuccess"),
+                },
+                {
+                  dataIndex: "duration",
+                  key: "duration",
+                  title: t("observabilityGatewayLatency"),
+                },
+                {
+                  dataIndex: "coldStarts",
+                  key: "coldStarts",
+                  title: t("observabilityGatewayColdStarts"),
+                },
+              ]}
+              dataSource={gatewayRows}
+              loading={breakdownsQuery.isLoading}
+              locale={{
+                emptyText: breakdownsQuery.isLoading ? null : t("observabilityNoMetrics"),
+              }}
+              pagination={false}
+              rowKey="key"
+              size="small"
+            />
+          </div>
         </section>
       ) : null}
       <SpecLineagePanel sessionId={sessionId} />
     </section>
+  );
+}
+
+function LoadingStatCard() {
+  return (
+    <div className="at-stat" data-testid="observability-loading-stat">
+      <Skeleton active paragraph={{ rows: 1 }} title={{ width: "70%" }} />
+    </div>
   );
 }
 
@@ -210,7 +322,8 @@ function stat(
   metricId?: string,
   chartId?: string,
 ) {
-  const numeric = typeof value === "number" ? value : 0;
+  const hasValue = typeof value === "number" && Number.isFinite(value);
+  const numeric = hasValue ? value : 0;
   return (
     <div
       className="at-stat"
@@ -220,9 +333,9 @@ function stat(
     >
       <Statistic
         title={label}
-        value={mode === "percent" ? numeric * 100 : numeric}
+        value={hasValue ? (mode === "percent" ? numeric * 100 : numeric) : "—"}
         precision={mode === "percent" ? 1 : 0}
-        suffix={mode === "percent" ? "%" : undefined}
+        suffix={mode === "percent" && hasValue ? "%" : undefined}
       />
     </div>
   );
@@ -305,10 +418,6 @@ function gatewaySummaryFromRows(rows: GatewayBreakdownRow[]) {
   };
 }
 
-function hasNumber(value: JsonValue | undefined): boolean {
-  return typeof value === "number" && Number.isFinite(value) && value > 0;
-}
-
 function numberValue(value: JsonValue | undefined): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
@@ -318,4 +427,23 @@ function percentValue(value: JsonValue | undefined): string {
     return "";
   }
   return `${(value * 100).toFixed(1)}%`;
+}
+
+function observabilityCopy(t: Translate) {
+  const isZh = t("observabilityTitle") === "观测";
+  return {
+    avgRetrievalMs: isZh ? "平均检索耗时 ms" : "Avg retrieval ms",
+    cachedInputTokens: isZh ? "缓存输入 tokens" : "Cached input tokens",
+    cachedRatio: isZh ? "缓存占比" : "Cached ratio",
+    gatewayAvgDurationMs: isZh ? "Gateway 平均时延 ms" : "Gateway Avg ms",
+    gatewayFailureRate: isZh ? "Gateway 失败率" : "Gateway Failure Rate",
+    gatewayMcpCalls: isZh ? "Gateway MCP 调用" : "Gateway MCP Calls",
+    gatewayPromptStartMs: isZh ? "Prompt 启动 ms" : "Prompt Start ms",
+    mcpCalls: isZh ? "MCP 调用" : "MCP calls",
+    retrievalDocumentCount: isZh ? "检索文档数" : "Retrieved docs",
+    retrievalFailureRate: isZh ? "检索失败率" : "Retrieval failure rate",
+    retrievalSearches: isZh ? "检索搜索次数" : "Retrieval searches",
+    skillCalls: isZh ? "技能调用" : "Skill calls",
+    uncachedInputTokens: isZh ? "未缓存输入 tokens" : "Uncached input tokens",
+  };
 }

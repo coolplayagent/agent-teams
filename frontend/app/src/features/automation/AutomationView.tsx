@@ -1,10 +1,12 @@
 import {
+  Alert,
   App,
   Button,
   Checkbox,
   Empty,
   Form,
   Input,
+  InputNumber,
   Modal,
   Select,
   Skeleton,
@@ -16,6 +18,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
 import {
   PauseCircle,
+  Pencil,
   Play,
   Plus,
   RefreshCcw,
@@ -36,12 +39,15 @@ import {
   listAutomationProjectSessions,
   listWorkspaces,
   runAutomationProject,
+  updateAutomationProject,
 } from "../../api/client";
 import type {
   AutomationDeliveryBinding,
   AutomationDeliveryBindingCandidate,
   AutomationDeliveryEvent,
   AutomationProjectCreateRequest,
+  AutomationProjectUpdateRequest,
+  AutomationIntervalUnit,
   AutomationProjectRecord,
   AutomationProjectSessionRecord,
   WorkspaceRecord,
@@ -52,7 +58,12 @@ interface AutomationViewProps {
   onSessionSelected?: (sessionId: string, workspaceId?: string | null) => void;
 }
 
-type AutomationSchedulePreset = "custom" | "daily" | "weekdays";
+type AutomationSchedulePreset =
+  | "custom"
+  | "daily"
+  | "interval"
+  | "one_shot"
+  | "weekdays";
 const DISABLED_DELIVERY_TARGET = "none";
 
 interface AutomationEditorValues {
@@ -60,8 +71,11 @@ interface AutomationEditorValues {
   deliveryEvents: AutomationDeliveryEvent[];
   deliveryTargetId: string;
   displayName: string;
+  intervalEvery: number;
+  intervalUnit: AutomationIntervalUnit;
   name: string;
   prompt: string;
+  runAt: string;
   schedulePreset: AutomationSchedulePreset;
   time: string;
   timezone: string;
@@ -74,6 +88,7 @@ export function AutomationView({ onSessionSelected }: AutomationViewProps) {
   const queryClient = useQueryClient();
   const t = useTranslations();
   const [createOpen, setCreateOpen] = useState(false);
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
 
@@ -138,6 +153,7 @@ export function AutomationView({ onSessionSelected }: AutomationViewProps) {
     null;
   const selectedSessions = sessionsQuery.data ?? [];
   const openCreate = () => {
+    setEditingProjectId(null);
     createForm.setFieldsValue(
       defaultAutomationEditorValues(
         workspacesQuery.data?.[0]?.workspace_id ??
@@ -150,6 +166,12 @@ export function AutomationView({ onSessionSelected }: AutomationViewProps) {
   };
   const closeCreate = () => {
     setCreateOpen(false);
+    setEditingProjectId(null);
+  };
+  const openEdit = (project: AutomationProjectRecord) => {
+    createForm.setFieldsValue(automationEditorValuesFromProject(project));
+    setEditingProjectId(project.automation_project_id);
+    setCreateOpen(true);
   };
 
   const runMutation = useMutation({
@@ -237,6 +259,31 @@ export function AutomationView({ onSessionSelected }: AutomationViewProps) {
       );
     },
   });
+  const updateMutation = useMutation({
+    mutationFn: (values: AutomationEditorValues) => {
+      if (editingProjectId === null) {
+        throw new Error(t("automationUpdateFailed"));
+      }
+      return updateAutomationProject(
+        editingProjectId,
+        automationUpdateRequest(values, deliveryBindingCandidates),
+      );
+    },
+    onSuccess: (project) => {
+      void message.success(t("automationUpdated"));
+      closeCreate();
+      updateAutomationProjectCache(queryClient, project);
+      void queryClient.invalidateQueries({
+        exact: true,
+        queryKey: ["automation", "projects"],
+      });
+    },
+    onError: (error) => {
+      void message.error(
+        error instanceof Error ? error.message : t("automationUpdateFailed"),
+      );
+    },
+  });
   const deleteMutation = useMutation({
     mutationFn: (automationProjectId: string) =>
       deleteAutomationProject(automationProjectId, { cascade: true }),
@@ -288,11 +335,16 @@ export function AutomationView({ onSessionSelected }: AutomationViewProps) {
         </div>
         <AutomationCreateModal
           form={createForm}
-          loading={createMutation.isPending}
+          loading={createMutation.isPending || updateMutation.isPending}
+          mode={editingProjectId === null ? "create" : "edit"}
           deliveryBindingCandidates={deliveryBindingCandidates}
           deliveryBindingsLoading={deliveryBindingsQuery.isLoading}
           onCancel={closeCreate}
-          onSubmit={(values) => createMutation.mutate(values)}
+          onSubmit={(values) =>
+            editingProjectId === null
+              ? createMutation.mutate(values)
+              : updateMutation.mutate(values)
+          }
           open={createOpen}
           t={t}
           workspaces={workspacesQuery.data ?? []}
@@ -320,11 +372,16 @@ export function AutomationView({ onSessionSelected }: AutomationViewProps) {
         </div>
         <AutomationCreateModal
           form={createForm}
-          loading={createMutation.isPending}
+          loading={createMutation.isPending || updateMutation.isPending}
+          mode={editingProjectId === null ? "create" : "edit"}
           deliveryBindingCandidates={deliveryBindingCandidates}
           deliveryBindingsLoading={deliveryBindingsQuery.isLoading}
           onCancel={closeCreate}
-          onSubmit={(values) => createMutation.mutate(values)}
+          onSubmit={(values) =>
+            editingProjectId === null
+              ? createMutation.mutate(values)
+              : updateMutation.mutate(values)
+          }
           open={createOpen}
           t={t}
           workspaces={workspacesQuery.data ?? []}
@@ -357,14 +414,28 @@ export function AutomationView({ onSessionSelected }: AutomationViewProps) {
               />
             </div>
           ) : (
-            filteredProjects.map((project) => (
-              <AutomationProjectButton
-                key={project.automation_project_id}
-                onSelect={() => setSelectedProjectId(project.automation_project_id)}
-                project={project}
-                selected={project.automation_project_id === currentProjectId}
-                t={t}
-              />
+            automationProjectGroups(filteredProjects, t).map((group) => (
+              <section
+                aria-labelledby={`automation-group-${group.id}`}
+                className="at-automation-project-group"
+                key={group.id}
+              >
+                <div className="at-automation-project-group-head">
+                  <strong id={`automation-group-${group.id}`}>{group.label}</strong>
+                  <span>{group.projects.length}</span>
+                </div>
+                {group.projects.map((project) => (
+                  <AutomationProjectButton
+                    key={project.automation_project_id}
+                    onSelect={() =>
+                      setSelectedProjectId(project.automation_project_id)
+                    }
+                    project={project}
+                    selected={project.automation_project_id === currentProjectId}
+                    t={t}
+                  />
+                ))}
+              </section>
             ))
           )}
         </aside>
@@ -382,9 +453,17 @@ export function AutomationView({ onSessionSelected }: AutomationViewProps) {
                 runMutation.isPending ||
                 enableMutation.isPending ||
                 disableMutation.isPending ||
-                deleteMutation.isPending
+                deleteMutation.isPending ||
+                updateMutation.isPending
               }
               loading={projectQuery.isLoading || sessionsQuery.isLoading}
+              errorMessage={
+                projectQuery.isError
+                  ? t("automationProjectLoadError")
+                  : sessionsQuery.isError
+                    ? t("automationSessionsLoadError")
+                    : null
+              }
               onDelete={() => {
                 modal.confirm({
                   cancelText: t("sidebarRenameCancel"),
@@ -399,6 +478,7 @@ export function AutomationView({ onSessionSelected }: AutomationViewProps) {
                   }),
                 });
               }}
+              onEdit={() => openEdit(selectedProject)}
               onRun={() => runMutation.mutate(selectedProject.automation_project_id)}
               onSessionSelected={onSessionSelected}
               onToggle={() => {
@@ -418,11 +498,16 @@ export function AutomationView({ onSessionSelected }: AutomationViewProps) {
       </div>
       <AutomationCreateModal
         form={createForm}
-        loading={createMutation.isPending}
+        loading={createMutation.isPending || updateMutation.isPending}
+        mode={editingProjectId === null ? "create" : "edit"}
         deliveryBindingCandidates={deliveryBindingCandidates}
         deliveryBindingsLoading={deliveryBindingsQuery.isLoading}
         onCancel={closeCreate}
-        onSubmit={(values) => createMutation.mutate(values)}
+        onSubmit={(values) =>
+          editingProjectId === null
+            ? createMutation.mutate(values)
+            : updateMutation.mutate(values)
+        }
         open={createOpen}
         t={t}
         workspaces={workspacesQuery.data ?? []}
@@ -515,8 +600,10 @@ function AutomationProjectButton({
 
 function AutomationProjectDetail({
   busy,
+  errorMessage,
   loading,
   onDelete,
+  onEdit,
   onRun,
   onSessionSelected,
   onToggle,
@@ -526,8 +613,10 @@ function AutomationProjectDetail({
   workspace,
 }: {
   busy: boolean;
+  errorMessage: string | null;
   loading: boolean;
   onDelete: () => void;
+  onEdit: () => void;
   onRun: () => void;
   onSessionSelected?: (sessionId: string, workspaceId?: string | null) => void;
   onToggle: () => void;
@@ -542,6 +631,9 @@ function AutomationProjectDetail({
         <Skeleton active paragraph={{ rows: 8 }} />
       </div>
     );
+  }
+  if (errorMessage !== null) {
+    return <Alert message={errorMessage} showIcon type="error" />;
   }
 
   const runMode =
@@ -567,6 +659,13 @@ function AutomationProjectDetail({
             </Typography.Text>
           </div>
           <div className="at-automation-detail-actions">
+            <Button
+              disabled={busy}
+              icon={<Pencil size={15} />}
+              onClick={onEdit}
+            >
+              {t("automationEdit")}
+            </Button>
             <Button
               disabled={busy}
               icon={<Play size={15} />}
@@ -681,6 +780,7 @@ function AutomationCreateModal({
   deliveryBindingsLoading,
   form,
   loading,
+  mode,
   onCancel,
   onSubmit,
   open,
@@ -691,6 +791,7 @@ function AutomationCreateModal({
   deliveryBindingsLoading: boolean;
   form: FormInstance<AutomationEditorValues>;
   loading: boolean;
+  mode: "create" | "edit";
   onCancel: () => void;
   onSubmit: (values: AutomationEditorValues) => void;
   open: boolean;
@@ -722,12 +823,12 @@ function AutomationCreateModal({
       cancelText={t("sidebarRenameCancel")}
       className="at-automation-create-modal"
       confirmLoading={loading}
-      okText={t("automationCreate")}
+      okText={mode === "edit" ? t("automationSave") : t("automationCreate")}
       onCancel={onCancel}
       onOk={() => form.submit()}
       open={open}
       style={{ top: 32 }}
-      title={t("automationNew")}
+      title={mode === "edit" ? t("automationEdit") : t("automationNew")}
       width={620}
     >
       <Form
@@ -813,6 +914,8 @@ function AutomationCreateModal({
                 { label: t("automationWeekdays"), value: "weekdays" },
                 { label: t("automationDaily"), value: "daily" },
                 { label: t("automationCustomCron"), value: "custom" },
+                { label: t("automationInterval"), value: "interval" },
+                { label: t("automationOneShot"), value: "one_shot" },
               ]}
             />
           </Form.Item>
@@ -836,6 +939,37 @@ function AutomationCreateModal({
                   ]}
                 >
                   <Input autoComplete="off" />
+                </Form.Item>
+              ) : getFieldValue("schedulePreset") === "interval" ? (
+                <div className="at-automation-form-grid at-automation-form-grid-compact">
+                  <Form.Item
+                    label={t("automationIntervalEvery")}
+                    name="intervalEvery"
+                    rules={[{ required: true, message: t("automationIntervalRequired") }]}
+                  >
+                    <InputNumber min={1} precision={0} />
+                  </Form.Item>
+                  <Form.Item
+                    label={t("automationIntervalUnit")}
+                    name="intervalUnit"
+                    rules={[{ required: true, message: t("automationIntervalUnitRequired") }]}
+                  >
+                    <Select
+                      options={[
+                        { label: t("automationMinutes"), value: "minutes" },
+                        { label: t("automationHours"), value: "hours" },
+                        { label: t("automationDays"), value: "days" },
+                      ]}
+                    />
+                  </Form.Item>
+                </div>
+              ) : getFieldValue("schedulePreset") === "one_shot" ? (
+                <Form.Item
+                  label={t("automationRunAt")}
+                  name="runAt"
+                  rules={[{ required: true, message: t("automationRunAtRequired") }]}
+                >
+                  <Input type="datetime-local" />
                 </Form.Item>
               ) : (
                 <Form.Item
@@ -929,8 +1063,11 @@ function defaultAutomationEditorValues(workspaceId: string): AutomationEditorVal
     deliveryEvents: ["completed"],
     deliveryTargetId: DISABLED_DELIVERY_TARGET,
     displayName: "",
+    intervalEvery: 1,
+    intervalUnit: "hours",
     name: "",
     prompt: "",
+    runAt: "",
     schedulePreset: "weekdays",
     time: "09:00",
     timezone: browserTimezone(),
@@ -948,7 +1085,10 @@ function automationCreateRequest(
     deliveryBindingCandidates,
   );
   return {
-    cron_expression: cronExpressionFromEditor(values),
+    cron_expression:
+      values.schedulePreset === "interval" || values.schedulePreset === "one_shot"
+        ? null
+        : cronExpressionFromEditor(values),
     delivery_binding: deliveryBinding,
     delivery_events: deliveryBinding
       ? deliveryEventsFromEditor(values.deliveryEvents)
@@ -964,10 +1104,102 @@ function automationCreateRequest(
       thinking: { effort: "medium", enabled: true },
       yolo: false,
     },
-    schedule_mode: "cron",
+    interval_every:
+      values.schedulePreset === "interval" ? values.intervalEvery : null,
+    interval_unit:
+      values.schedulePreset === "interval" ? values.intervalUnit : null,
+    run_at: values.schedulePreset === "one_shot" ? values.runAt : null,
+    schedule_mode: scheduleModeFromEditor(values),
     timezone: values.timezone.trim() || "UTC",
     workspace_id: values.workspaceId.trim(),
   };
+}
+
+function automationUpdateRequest(
+  values: AutomationEditorValues,
+  deliveryBindingCandidates: AutomationDeliveryBindingCandidate[],
+): AutomationProjectUpdateRequest {
+  const request = automationCreateRequest(values, deliveryBindingCandidates);
+  return {
+    cron_expression: request.cron_expression,
+    delivery_binding: request.delivery_binding,
+    delivery_events: request.delivery_events,
+    display_name: request.display_name,
+    interval_every: request.interval_every,
+    interval_unit: request.interval_unit,
+    name: request.name,
+    prompt: request.prompt,
+    run_at: request.run_at,
+    schedule_mode: request.schedule_mode,
+    timezone: request.timezone,
+    workspace_id: request.workspace_id,
+  };
+}
+
+function automationEditorValuesFromProject(
+  project: AutomationProjectRecord,
+): AutomationEditorValues {
+  const cronPreset = cronPresetFromProject(project);
+  return {
+    cronExpression: project.cron_expression?.trim() || "0 9 * * 1-5",
+    deliveryEvents: project.delivery_events,
+    deliveryTargetId: deliveryBindingValue(project.delivery_binding ?? null),
+    displayName: project.display_name,
+    intervalEvery: project.interval_every ?? 1,
+    intervalUnit: project.interval_unit ?? "hours",
+    name: project.name,
+    prompt: project.prompt,
+    runAt: dateTimeLocalValue(project.run_at),
+    schedulePreset:
+      project.schedule_mode === "cron" ? cronPreset : project.schedule_mode,
+    time: timeFromCron(project.cron_expression),
+    timezone: project.timezone,
+    workspaceId: project.workspace_id,
+  };
+}
+
+function scheduleModeFromEditor(
+  values: AutomationEditorValues,
+): AutomationProjectCreateRequest["schedule_mode"] {
+  if (values.schedulePreset === "interval") {
+    return "interval";
+  }
+  if (values.schedulePreset === "one_shot") {
+    return "one_shot";
+  }
+  return "cron";
+}
+
+function cronPresetFromProject(
+  project: AutomationProjectRecord,
+): AutomationSchedulePreset {
+  const expression = project.cron_expression?.trim() ?? "";
+  if (/^\d+\s+\d+\s+\*\s+\*\s+1-5$/.test(expression)) {
+    return "weekdays";
+  }
+  if (/^\d+\s+\d+\s+\*\s+\*\s+\*$/.test(expression)) {
+    return "daily";
+  }
+  return "custom";
+}
+
+function timeFromCron(expression: string | null | undefined): string {
+  const [minute = "0", hour = "9"] = (expression?.trim() ?? "").split(/\s+/);
+  return `${hour.padStart(2, "0")}:${minute.padStart(2, "0")}`;
+}
+
+function dateTimeLocalValue(value: string | null | undefined): string {
+  return value?.trim() ? value.trim().slice(0, 16) : "";
+}
+
+function deliveryBindingValue(binding: AutomationDeliveryBinding | null): string {
+  if (binding === null) {
+    return DISABLED_DELIVERY_TARGET;
+  }
+  if (binding.provider === "feishu") {
+    return `feishu::${binding.trigger_id}::${binding.session_id ?? ""}`;
+  }
+  return `xiaoluban::${binding.account_id}`;
 }
 
 function deliveryEventsFromEditor(
@@ -1105,6 +1337,36 @@ function filterAutomationProjects(
       .toLowerCase()
       .includes(normalized),
   );
+}
+
+function automationProjectGroups(
+  projects: AutomationProjectRecord[],
+  t: Translate,
+): Array<{
+  id: "current" | "paused" | "running";
+  label: string;
+  projects: AutomationProjectRecord[];
+}> {
+  const groups: Array<{
+    id: "current" | "paused" | "running";
+    label: string;
+    projects: AutomationProjectRecord[];
+  }> = [
+    { id: "running", label: t("automationGroupRunning"), projects: [] },
+    { id: "paused", label: t("automationGroupPaused"), projects: [] },
+    { id: "current", label: t("automationGroupCurrent"), projects: [] },
+  ];
+  for (const project of projects) {
+    const activeStatus = project.active_run_status?.trim().toLowerCase();
+    const groupId =
+      activeStatus === "running"
+        ? "running"
+        : project.status === "disabled"
+          ? "paused"
+          : "current";
+    groups.find((group) => group.id === groupId)?.projects.push(project);
+  }
+  return groups.filter((group) => group.projects.length > 0);
 }
 
 function automationTitle(project: AutomationProjectRecord): string {

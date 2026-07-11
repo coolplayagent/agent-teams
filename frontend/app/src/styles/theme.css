@@ -1441,6 +1441,33 @@ body {
   border-right: 1px solid var(--at-border);
 }
 
+.at-automation-project-group {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.at-automation-project-group + .at-automation-project-group {
+  margin-top: 8px;
+}
+
+.at-automation-project-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 2px 4px;
+  color: var(--at-text-muted);
+  font-size: 11px;
+}
+
+.at-automation-project-group-head strong {
+  color: inherit;
+  font-size: inherit;
+  font-weight: 600;
+}
+
 .at-automation-project {
   display: grid;
   gap: 7px;
@@ -1532,7 +1559,13 @@ body {
   padding: 14px;
 }
 
-.at-automation-detail-head,
+.at-automation-detail-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  min-width: 0;
+}
+
 .at-automation-section-title {
   display: flex;
   align-items: flex-start;
@@ -1548,9 +1581,9 @@ body {
 }
 
 .at-automation-detail-actions {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  flex: 0 0 auto;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -1681,6 +1714,14 @@ body {
 
 .at-automation-form-grid .ant-form-item {
   min-width: 0;
+}
+
+.at-automation-form-grid .ant-input-number {
+  width: 100%;
+}
+
+.at-automation-form-grid-compact {
+  align-items: start;
 }
 
 .at-automation-state,
@@ -2525,6 +2566,26 @@ body {
   gap: 10px;
   min-width: 0;
   padding-top: 2px;
+}
+
+.at-connectors-card-select {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.at-connectors-card-select:focus-visible {
+  outline: 2px solid var(--at-primary);
+  outline-offset: 3px;
 }
 
 .at-connectors-detail {
@@ -6725,6 +6786,57 @@ body {
   .at-appearance-panel-actions,
   .at-appearance-row-control {
     justify-content: flex-start;
+  }
+
+  .at-board-controls,
+  .at-session-search-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .at-board-columns,
+  .at-board-columns.is-archived-visible {
+    grid-auto-columns: minmax(248px, calc(100vw - var(--at-sidebar-width, 280px) - 54px));
+    grid-auto-flow: column;
+    grid-template-columns: none;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .at-session-search-input {
+    width: 100%;
+    max-width: none;
+  }
+
+  .at-session-search-result {
+    grid-template-columns: 1.35rem minmax(0, 1fr) 3.4rem;
+  }
+
+  .at-session-search-result-root {
+    display: none;
+  }
+
+  .at-connectors-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow: visible;
+  }
+
+  .at-connectors-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .at-connectors-controls .ant-segmented {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .at-connectors-workbench {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .at-connectors-card-list,
+  .at-connectors-detail {
+    max-height: 320px;
   }
 }
 

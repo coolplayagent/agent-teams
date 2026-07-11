@@ -10,10 +10,15 @@ import {
   Typography,
 } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { PlugZap, RefreshCcw, Search, TestTube2 } from "lucide-react";
+import { PlugZap, RefreshCcw, Search, Settings2, TestTube2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import { listConnectors, testConnector } from "../../api/client";
+import {
+  getW3Connector,
+  listConnectors,
+  saveW3Connector,
+  testConnector,
+} from "../../api/client";
 import type {
   ConnectorAuthType,
   ConnectorCategory,
@@ -21,10 +26,13 @@ import type {
   ConnectorStatus,
   ConnectorSummary,
   ConnectorTestResult,
+  W3ConnectorSaveRequest,
+  W3ConnectorStatus,
 } from "../../api/contracts";
 import { useTranslations } from "../../i18n";
 import { useUiStore, type Language } from "../../runtime/uiStore";
 import { RuntimeToolsSection } from "./RuntimeToolsSection";
+import type { SystemSettingsPage } from "../settings/settingsNavigation";
 
 type ConnectorFilter = "all" | ConnectorStatus;
 
@@ -37,7 +45,11 @@ const defaultSummary: ConnectorSummary = {
 };
 const HIDDEN_CONNECTOR_IDS = new Set(["relay-knowledge"]);
 
-export function ConnectorsView() {
+interface ConnectorsViewProps {
+  onOpenSettings: (page: SystemSettingsPage) => void;
+}
+
+export function ConnectorsView({ onOpenSettings }: ConnectorsViewProps) {
   const t = useTranslations();
   const queryClient = useQueryClient();
   const language = useUiStore((state) => state.language);
@@ -47,6 +59,7 @@ export function ConnectorsView() {
   const [latestResult, setLatestResult] = useState<ConnectorTestResult | null>(
     null,
   );
+  const [w3ConfigOpen, setW3ConfigOpen] = useState(false);
 
   const connectorsQuery = useQuery({
     queryKey: ["connectors"],
@@ -58,6 +71,25 @@ export function ConnectorsView() {
       setLatestResult(result);
       setSelectedConnectorId(result.connector_id);
       void queryClient.invalidateQueries({ queryKey: ["connectors"] });
+    },
+  });
+  const w3Query = useQuery({
+    enabled: w3ConfigOpen,
+    queryFn: getW3Connector,
+    queryKey: ["connectors", "w3"],
+  });
+  const w3SaveMutation = useMutation({
+    mutationFn: async (request: W3ConnectorSaveRequest) => {
+      const result = await saveW3Connector(request);
+      if (!result.ok) {
+        throw new Error(result.message.trim() || t("connectorsSaveFailed"));
+      }
+      return result;
+    },
+    onSuccess: () => {
+      setW3ConfigOpen(false);
+      void queryClient.invalidateQueries({ queryKey: ["connectors"] });
+      void queryClient.invalidateQueries({ queryKey: ["connectors", "w3"] });
     },
   });
 
@@ -228,7 +260,23 @@ export function ConnectorsView() {
                 <ConnectorCard
                   item={item}
                   key={item.connector_id}
-                  onSelect={() => setSelectedConnectorId(item.connector_id)}
+                  onAction={() => {
+                    if (connectorActionFor(item) === "open") {
+                      setW3ConfigOpen(false);
+                      setSelectedConnectorId(item.connector_id);
+                      return;
+                    }
+                    if (item.provider === "w3") {
+                      setSelectedConnectorId(item.connector_id);
+                      setW3ConfigOpen(true);
+                      return;
+                    }
+                    onOpenSettings(connectorSettingsPage(item.provider));
+                  }}
+                  onSelect={() => {
+                    setW3ConfigOpen(false);
+                    setSelectedConnectorId(item.connector_id);
+                  }}
                   selected={item.connector_id === selectedConnectorId}
                   t={t}
                 />
@@ -237,9 +285,23 @@ export function ConnectorsView() {
             <ConnectorDetail
               item={selectedConnector}
               language={language}
+              onAction={(connector) => {
+                if (connector.provider === "w3") {
+                  setW3ConfigOpen(true);
+                  return;
+                }
+                onOpenSettings(connectorSettingsPage(connector.provider));
+              }}
               onTest={(connectorId) => testMutation.mutate(connectorId)}
               t={t}
               testingConnectorId={testingConnectorId}
+              w3ConfigError={w3Query.error ?? w3SaveMutation.error}
+              w3ConfigLoading={w3Query.isLoading}
+              w3ConfigOpen={w3ConfigOpen}
+              w3ConfigSaving={w3SaveMutation.isPending}
+              w3Status={w3Query.data}
+              onW3Cancel={() => setW3ConfigOpen(false)}
+              onW3Save={(request) => w3SaveMutation.mutate(request)}
             />
           </div>
         ) : null}
@@ -268,33 +330,40 @@ function SummaryCell({
 
 function ConnectorCard({
   item,
+  onAction,
   onSelect,
   selected,
   t,
 }: {
   item: ConnectorItem;
+  onAction: () => void;
   onSelect: () => void;
   selected: boolean;
   t: ReturnType<typeof useTranslations>;
 }) {
+  const action = connectorActionFor(item);
   return (
-    <button
-      aria-label={t("connectorsOpenDetails", { connector: item.display_name })}
-      aria-pressed={selected}
+    <article
       className={selected ? "at-connectors-card is-selected" : "at-connectors-card"}
       data-testid={`connector-card-${item.connector_id}`}
-      onClick={onSelect}
-      type="button"
     >
-      <span aria-hidden="true" className="at-connectors-card-icon">
-        {connectorInitial(item)}
-      </span>
-      <span className="at-connectors-card-body">
-        <strong>{item.display_name}</strong>
-        <span>{item.description}</span>
-        {item.last_error ? <em title={item.last_error}>{item.last_error}</em> : null}
-      </span>
-      <span className="at-connectors-card-footer">
+      <button
+        aria-label={t("connectorsOpenDetails", { connector: item.display_name })}
+        aria-pressed={selected}
+        className="at-connectors-card-select"
+        onClick={onSelect}
+        type="button"
+      >
+        <span aria-hidden="true" className="at-connectors-card-icon">
+          {connectorInitial(item)}
+        </span>
+        <span className="at-connectors-card-body">
+          <strong>{item.display_name}</strong>
+          <span>{item.description}</span>
+          {item.last_error ? <em title={item.last_error}>{item.last_error}</em> : null}
+        </span>
+      </button>
+      <div className="at-connectors-card-footer">
         <span className={`at-connectors-status is-${item.status}`}>
           <span aria-hidden="true" />
           {connectorStatusLabel(item.status, t)}
@@ -305,23 +374,51 @@ function ConnectorCard({
             total: item.account_count,
           })}
         </span>
-      </span>
-    </button>
+        {action !== null ? (
+          <Button
+            className="at-connectors-card-action"
+            data-testid={`connector-action-${item.connector_id}`}
+            icon={action === "configure" ? <Settings2 size={14} /> : undefined}
+            onClick={onAction}
+            size="small"
+            type="link"
+          >
+            {t(action === "configure" ? "connectorsConfigure" : "connectorsOpen")}
+          </Button>
+        ) : null}
+      </div>
+    </article>
   );
 }
 
 function ConnectorDetail({
   item,
   language,
+  onAction,
   onTest,
   t,
   testingConnectorId,
+  onW3Cancel,
+  onW3Save,
+  w3ConfigError,
+  w3ConfigLoading,
+  w3ConfigOpen,
+  w3ConfigSaving,
+  w3Status,
 }: {
   item: ConnectorItem | null;
   language: Language;
+  onAction: (item: ConnectorItem) => void;
   onTest: (connectorId: string) => void;
   t: ReturnType<typeof useTranslations>;
   testingConnectorId: string | null | undefined;
+  onW3Cancel: () => void;
+  onW3Save: (request: W3ConnectorSaveRequest) => void;
+  w3ConfigError: Error | null;
+  w3ConfigLoading: boolean;
+  w3ConfigOpen: boolean;
+  w3ConfigSaving: boolean;
+  w3Status: W3ConnectorStatus | undefined;
 }) {
   if (item === null) {
     return (
@@ -351,18 +448,31 @@ function ConnectorDetail({
             <Typography.Text type="secondary">{item.description}</Typography.Text>
           </div>
         </div>
-        <Tooltip title={t("connectorsTestTooltip")}>
-          <Button
-            aria-label={t("connectorsTestAria", {
-              connector: item.display_name,
-            })}
-            icon={<TestTube2 size={15} />}
-            loading={testing}
-            onClick={() => onTest(item.connector_id)}
-          >
-            {t("connectorsTest")}
-          </Button>
-        </Tooltip>
+        <div className="at-connectors-detail-actions">
+          {connectorSettingsAvailable(item) ? (
+            <Button
+              icon={<Settings2 size={15} />}
+              onClick={() => onAction(item)}
+              size="small"
+              type="default"
+            >
+              {item.provider === "w3" ? t("connectorsConfigure") : t("appSettings")}
+            </Button>
+          ) : null}
+          <Tooltip title={t("connectorsTestTooltip")}>
+            <Button
+              aria-label={t("connectorsTestAria", {
+                connector: item.display_name,
+              })}
+              icon={<TestTube2 size={15} />}
+              loading={testing}
+              onClick={() => onTest(item.connector_id)}
+              size="small"
+            >
+              {t("connectorsTest")}
+            </Button>
+          </Tooltip>
+        </div>
       </div>
 
       {item.last_error ? (
@@ -414,7 +524,92 @@ function ConnectorDetail({
           )}
         </div>
       </section>
+      {item.provider === "w3" && w3ConfigOpen ? (
+        <W3ConnectorEditor
+          error={w3ConfigError}
+          loading={w3ConfigLoading}
+          onCancel={onW3Cancel}
+          onSave={onW3Save}
+          saving={w3ConfigSaving}
+          status={w3Status}
+          t={t}
+        />
+      ) : null}
     </aside>
+  );
+}
+
+function W3ConnectorEditor({
+  error,
+  loading,
+  onCancel,
+  onSave,
+  saving,
+  status,
+  t,
+}: {
+  error: Error | null;
+  loading: boolean;
+  onCancel: () => void;
+  onSave: (request: W3ConnectorSaveRequest) => void;
+  saving: boolean;
+  status: W3ConnectorStatus | undefined;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+
+  useEffect(() => {
+    setUsername(status?.username ?? "");
+  }, [status?.username]);
+
+  return (
+    <section className="at-connectors-detail-section at-connectors-w3-editor">
+      <Typography.Text className="at-connectors-detail-section-title">
+        W3
+      </Typography.Text>
+      {error !== null ? <Alert message={error.message} showIcon type="error" /> : null}
+      <label>
+        {t("connectorsConfigureUsername")}
+        <Input
+          aria-label={t("connectorsConfigureUsername")}
+          disabled={loading || saving}
+          onChange={(event) => setUsername(event.target.value)}
+          value={username}
+        />
+      </label>
+      <label>
+        {t("connectorsConfigurePassword")}
+        <Input.Password
+          aria-label={t("connectorsConfigurePassword")}
+          disabled={loading || saving}
+          onChange={(event) => setPassword(event.target.value)}
+          placeholder={
+            status?.has_password ? t("connectorsConfigurePasswordSaved") : undefined
+          }
+          value={password}
+        />
+      </label>
+      <div className="at-connectors-detail-actions">
+        <Button onClick={onCancel} disabled={saving} size="small">
+          {t("connectorsConfigureCancel")}
+        </Button>
+        <Button
+          disabled={loading || !username.trim()}
+          loading={saving}
+          onClick={() =>
+            onSave({
+              password: password.trim() || null,
+              username: username.trim(),
+            })
+          }
+          size="small"
+          type="primary"
+        >
+          {t("connectorsConfigureSave")}
+        </Button>
+      </div>
+    </section>
   );
 }
 
@@ -425,6 +620,28 @@ function Fact({ label, value }: { label: string; value: string }) {
       <dd>{value}</dd>
     </div>
   );
+}
+
+type ConnectorAction = "configure" | "open";
+
+function connectorActionFor(item: ConnectorItem): ConnectorAction | null {
+  if (item.provider === "github" || item.provider === "w3") {
+    return "configure";
+  }
+  if (item.account_count > 0) {
+    return "open";
+  }
+  return connectorSettingsAvailable(item) ? "configure" : null;
+}
+
+function connectorSettingsAvailable(item: ConnectorItem): boolean {
+  return ["feishu", "github", "w3", "wechat"].includes(item.provider);
+}
+
+function connectorSettingsPage(
+  provider: ConnectorItem["provider"],
+): SystemSettingsPage {
+  return provider === "github" ? "github" : "triggers";
 }
 
 function filterConnectors(

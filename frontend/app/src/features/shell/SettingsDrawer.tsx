@@ -1,14 +1,20 @@
 import { Drawer } from "antd";
 
 import { SettingsCenter } from "../settings/SettingsCenter";
+import type { SystemSettingsPage } from "../settings/settingsNavigation";
 import { useTranslations } from "../../i18n";
 
 interface SettingsDrawerProps {
   open: boolean;
   onClose: () => void;
+  initialSystemPage?: SystemSettingsPage | null;
 }
 
-export function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
+export function SettingsDrawer({
+  initialSystemPage = null,
+  open,
+  onClose,
+}: SettingsDrawerProps) {
   const t = useTranslations();
 
   return (
@@ -22,7 +28,7 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
       title={t("settingsTitle")}
       width="min(960px, 96vw)"
     >
-      <SettingsCenter open={open} />
+      <SettingsCenter initialSystemPage={initialSystemPage} open={open} />
     </Drawer>
   );
 }

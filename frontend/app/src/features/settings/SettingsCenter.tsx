@@ -86,10 +86,14 @@ type GeneralRelatedSectionKey = Extract<
 >;
 
 interface SettingsCenterProps {
+  initialSystemPage?: SystemSettingsPage | null;
   open: boolean;
 }
 
-export function SettingsCenter({ open }: SettingsCenterProps) {
+export function SettingsCenter({
+  initialSystemPage = null,
+  open,
+}: SettingsCenterProps) {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const t = useTranslations();
@@ -134,6 +138,11 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
       form.setFieldsValue(generalQuery.data);
     }
   }, [generalQuery.data, form]);
+  useEffect(() => {
+    if (open && initialSystemPage !== null) {
+      setActiveSection("system");
+    }
+  }, [initialSystemPage, open]);
 
   const sections = useMemo(
     () => SETTINGS_SECTION_DEFINITIONS.map((section) => ({
@@ -215,13 +224,19 @@ export function SettingsCenter({ open }: SettingsCenterProps) {
         {activeSection === "proxy" ? <ProxySettingsSection /> : null}
         {activeSection === "workspace" ? <WorkspaceSettingsSection /> : null}
         {activeSection === "environment" ? <EnvironmentSettingsSection /> : null}
-        {activeSection === "system" ? <SettingsSystem /> : null}
+        {activeSection === "system" ? (
+          <SettingsSystem initialPage={initialSystemPage} />
+        ) : null}
       </section>
     </div>
   );
 }
 
-function SettingsSystem() {
+function SettingsSystem({
+  initialPage,
+}: {
+  initialPage: SystemSettingsPage | null;
+}) {
   const t = useTranslations();
   const [selectedPage, setSelectedPage] = useState<SystemSettingsPage | null>(null);
   const [desktopVersion, setDesktopVersion] = useState<string | null>(null);
@@ -230,6 +245,11 @@ function SettingsSystem() {
     queryFn: getConfigStatus,
     enabled: selectedPage === null,
   });
+  useEffect(() => {
+    if (initialPage !== null) {
+      setSelectedPage(initialPage);
+    }
+  }, [initialPage]);
   useEffect(() => {
     let cancelled = false;
     const desktopApi = window.agentTeamsDesktop;

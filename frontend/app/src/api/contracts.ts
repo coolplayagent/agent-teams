@@ -2777,6 +2777,33 @@ export interface ConnectorTestResult {
   status: ConnectorStatus;
 }
 
+export interface W3ConnectorStatus {
+  has_password: boolean;
+  last_error?: string | null;
+  last_login_failed_at?: string | null;
+  last_login_error_code?: string | null;
+  last_verified_at?: string | null;
+  last_sync?: JsonValue | null;
+  status: ConnectorStatus;
+  updated_at?: string | null;
+  username?: string | null;
+}
+
+export interface W3ConnectorSaveRequest {
+  password?: string | null;
+  username: string;
+}
+
+export interface W3ConnectorSaveResponse {
+  error_code?: string | null;
+  has_password: boolean;
+  message: string;
+  ok: boolean;
+  status: ConnectorStatus;
+  sync?: JsonValue | null;
+  username?: string | null;
+}
+
 export type BinaryToolId = "clawhub" | "gh" | "relay-knowledge" | "rg";
 
 export type BinaryToolSourceKind = "github_release" | "npm_global";

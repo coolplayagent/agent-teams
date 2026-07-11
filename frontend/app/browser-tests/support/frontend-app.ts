@@ -114,7 +114,9 @@ async function waitForStablePaint(page: Page): Promise<void> {
     () =>
       new Promise<void>((resolveFrame) => {
         window.requestAnimationFrame(() => {
-          window.requestAnimationFrame(() => resolveFrame());
+          window.requestAnimationFrame(() => {
+            window.setTimeout(resolveFrame, 360);
+          });
         });
       }),
   );

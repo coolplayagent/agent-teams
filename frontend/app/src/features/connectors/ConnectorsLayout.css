@@ -1,0 +1,152 @@
+.at-connectors-toolbar {
+  min-height: 46px;
+  padding: 8px 16px;
+}
+
+.at-connectors-content {
+  gap: 10px;
+  padding: 10px 14px 14px;
+}
+
+.at-connectors-section-tabs {
+  align-self: flex-start;
+}
+
+.at-connectors-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  overflow: visible;
+}
+
+.at-connectors-summary-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 3px 8px;
+  border: 1px solid var(--at-border);
+  border-radius: 999px;
+  background: var(--at-surface);
+}
+
+.at-connectors-summary-cell span,
+.at-connectors-summary-cell strong {
+  font-size: 11px;
+  line-height: 1;
+}
+
+.at-connectors-summary-cell strong {
+  font-family: var(--at-font-mono);
+}
+
+.at-connectors-controls {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) max-content;
+  align-items: center;
+  gap: 8px;
+}
+
+.at-connectors-workbench {
+  flex: 1 1 auto;
+  display: block;
+  min-height: 0;
+  overflow: auto;
+}
+
+.at-connectors-card-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  align-content: start;
+  gap: 10px;
+  max-height: none;
+  overflow: visible;
+  padding: 0;
+}
+
+.at-connectors-card {
+  min-height: 132px;
+}
+
+.at-connectors-card-footer {
+  flex-wrap: wrap;
+}
+
+.at-connectors-card-result {
+  padding: 7px 9px;
+  border-top: 1px solid var(--at-border);
+  color: var(--at-text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.at-connectors-card-result.is-success {
+  color: var(--at-success);
+}
+
+.at-connectors-card-result.is-warning,
+.at-connectors-card-result.is-error {
+  color: var(--at-danger);
+}
+
+.at-connectors-card-action {
+  margin-left: auto;
+}
+
+.at-connectors-modal {
+  max-width: calc(100vw - 32px);
+  padding-bottom: 0;
+}
+
+.at-connectors-modal .ant-modal-body {
+  max-height: min(720px, calc(100dvh - 160px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.at-connectors-modal .at-connectors-detail,
+.at-connectors-modal .at-gateway-connector-editor {
+  min-height: 0;
+  max-height: none;
+  overflow: visible;
+  padding: 0;
+  border: 0;
+}
+
+.at-runtime-tools {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+@media (max-width: 900px) {
+  .at-connectors-controls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .at-connectors-controls .ant-segmented {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .at-connectors-content {
+    padding: 8px;
+  }
+
+  .at-connectors-card-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .at-connectors-modal {
+    width: calc(100vw - 16px) !important;
+    max-width: calc(100vw - 16px);
+    margin: 8px auto;
+  }
+
+  .at-connectors-modal .ant-modal-body {
+    max-height: calc(100dvh - 128px);
+  }
+}

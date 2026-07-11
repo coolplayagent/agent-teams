@@ -215,13 +215,17 @@ afterEach(() => {
 });
 
 describe("ConnectorsView", () => {
-  it("renders connector summary with searchable cards and a detail panel", async () => {
+  it("renders compact connector cards and opens low-frequency detail in a modal", async () => {
     renderView();
 
     expect(await screen.findByTestId("connectors-view")).toBeVisible();
     expect(await screen.findByTestId("connector-card-github")).toBeVisible();
     expect(screen.getByTestId("connector-card-w3")).toBeVisible();
-    expect(screen.getByTestId("connector-detail-github")).toBeVisible();
+    expect(screen.queryByTestId("connector-detail-github")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Open GitHub details" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("connector-detail-github")).toBeVisible(),
+    );
     expect(screen.getAllByText("1/2").length).toBeGreaterThan(0);
     expect(screen.getByText("repositories")).toBeVisible();
     expect(screen.getByText("pull requests")).toBeVisible();
@@ -230,12 +234,14 @@ describe("ConnectorsView", () => {
       screen.getByRole("searchbox", { name: "Search connectors" }),
       { target: { value: "w3" } },
     );
-
     await waitFor(() =>
       expect(screen.queryByTestId("connector-card-github")).not.toBeInTheDocument(),
     );
     expect(screen.getByTestId("connector-card-w3")).toBeVisible();
-    expect(screen.getByTestId("connector-detail-w3")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Open W3 details" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("connector-detail-w3")).toBeVisible(),
+    );
     expect(screen.getAllByText("Missing credentials").length).toBeGreaterThan(0);
   });
 
@@ -275,6 +281,7 @@ describe("ConnectorsView", () => {
     expect(screen.queryByTestId("connector-card-relay-knowledge")).not.toBeInTheDocument();
     expect(screen.queryByTestId("connector-detail-relay-knowledge")).not.toBeInTheDocument();
     expect(screen.getAllByText("1/2").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByText("CLI tools"));
     expect(await screen.findByTestId("runtime-tool-card-relay-knowledge")).toBeVisible();
     expect(screen.getByText("Relay Knowledge CLI")).toBeVisible();
   });
@@ -291,9 +298,10 @@ describe("ConnectorsView", () => {
     );
 
     await waitFor(() => expect(testConnectorMock).toHaveBeenCalledWith("github"));
+    const githubCard = screen.getByTestId("connector-card-github");
     expect(
-      await screen.findByText("GitHub connection is healthy."),
-    ).toBeVisible();
+      await within(githubCard).findByRole("status"),
+    ).toHaveTextContent("GitHub connection is healthy.");
   }, 10_000);
 
   it("keeps V1 action routing real and saves W3 credentials through its API", async () => {
@@ -347,7 +355,7 @@ describe("ConnectorsView", () => {
     expect(screen.getByTestId("connector-action-discord")).toHaveTextContent("Configure");
 
     fireEvent.click(screen.getByTestId("connector-action-w3"));
-    expect(await screen.findByDisplayValue("w3-user")).toBeVisible();
+    await waitFor(() => expect(screen.getByDisplayValue("w3-user")).toBeVisible());
     fireEvent.change(screen.getByLabelText("Username"), {
       target: { value: "next-user" },
     });
@@ -384,7 +392,9 @@ describe("ConnectorsView", () => {
 
     renderView();
     fireEvent.click(await screen.findByTestId("connector-action-discord"));
-    expect(await screen.findByTestId("gateway-editor-discord")).toBeVisible();
+    await waitFor(() =>
+      expect(screen.getByTestId("gateway-editor-discord")).toBeVisible(),
+    );
     fireEvent.change(await screen.findByLabelText("Token"), {
       target: { value: "discord-token" },
     });
@@ -424,7 +434,9 @@ describe("ConnectorsView", () => {
 
     renderView();
     fireEvent.click(await screen.findByTestId("connector-action-xiaoluban"));
-    expect(await screen.findByTestId("gateway-editor-xiaoluban")).toBeVisible();
+    await waitFor(() =>
+      expect(screen.getByTestId("gateway-editor-xiaoluban")).toBeVisible(),
+    );
     fireEvent.change(await screen.findByLabelText("Token"), {
       target: { value: "xiaoluban-token" },
     });
@@ -465,7 +477,7 @@ describe("ConnectorsView", () => {
 
     renderView();
     fireEvent.click(await screen.findByTestId("connector-action-discord"));
-    expect(await screen.findByDisplayValue("Discord Main")).toBeVisible();
+    await waitFor(() => expect(screen.getByDisplayValue("Discord Main")).toBeVisible());
     fireEvent.change(screen.getByLabelText("Display name"), {
       target: { value: "Discord Primary" },
     });
@@ -483,8 +495,11 @@ describe("ConnectorsView", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-    const dialog = await screen.findByRole("dialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+    const dialog = (await screen.findAllByRole("dialog")).find((candidate) =>
+      candidate.classList.contains("ant-modal-confirm"),
+    );
+    expect(dialog).toBeDefined();
+    fireEvent.click(within(dialog as HTMLElement).getByRole("button", { name: "Delete" }));
     await waitFor(() =>
       expect(deleteDiscordGatewayAccountMock).toHaveBeenCalledWith("discord-main"),
     );
@@ -515,7 +530,9 @@ describe("ConnectorsView", () => {
 
     renderView();
     fireEvent.click(await screen.findByTestId("connector-action-xiaoluban"));
-    expect(await screen.findByDisplayValue("Xiaoluban Main")).toBeVisible();
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("Xiaoluban Main")).toBeVisible(),
+    );
     fireEvent.change(screen.getByLabelText("Display name"), {
       target: { value: "Xiaoluban Primary" },
     });
@@ -531,7 +548,13 @@ describe("ConnectorsView", () => {
       expect(disableXiaolubanGatewayAccountMock).toHaveBeenCalledWith("xiaoluban-main"),
     );
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Delete" }));
+    const confirmDialog = (await screen.findAllByRole("dialog")).find((candidate) =>
+      candidate.classList.contains("ant-modal-confirm"),
+    );
+    expect(confirmDialog).toBeDefined();
+    fireEvent.click(
+      within(confirmDialog as HTMLElement).getByRole("button", { name: "Delete" }),
+    );
     await waitFor(() =>
       expect(deleteXiaolubanGatewayAccountMock).toHaveBeenCalledWith("xiaoluban-main"),
     );
@@ -595,7 +618,7 @@ describe("ConnectorsView", () => {
       { target: { value: "w3" } },
     );
     fireEvent.click(await screen.findByTestId("connector-action-w3"));
-    expect(await screen.findByDisplayValue("w3-user")).toBeVisible();
+    await waitFor(() => expect(screen.getByDisplayValue("w3-user")).toBeVisible());
     fireEvent.click(await screen.findByRole("button", { name: "Save" }));
 
     expect(await screen.findByText("W3 credentials were rejected.")).toBeVisible();
@@ -629,6 +652,7 @@ describe("ConnectorsView", () => {
     });
 
     renderView();
+    fireEvent.click(await screen.findByText("CLI tools"));
 
     expect(await screen.findByTestId("runtime-tools-section")).toBeVisible();
     const ripgrepCard = screen.getByTestId("runtime-tool-card-rg");
@@ -680,6 +704,7 @@ describe("ConnectorsView", () => {
     );
 
     renderView();
+    fireEvent.click(await screen.findByText("CLI tools"));
 
     expect(await screen.findByTestId("runtime-tools-section")).toBeVisible();
     expect(screen.getByTestId("runtime-tool-card-rg")).toHaveTextContent("Loading");
@@ -703,6 +728,7 @@ describe("ConnectorsView", () => {
     listRuntimeToolsMock.mockRejectedValue(new Error("Runtime tools unavailable"));
 
     renderView();
+    fireEvent.click(await screen.findByText("CLI tools"));
 
     expect(await screen.findByText("Runtime tool status is unavailable.")).toBeVisible();
     expect(screen.getAllByText("Runtime tools unavailable").length).toBeGreaterThan(1);

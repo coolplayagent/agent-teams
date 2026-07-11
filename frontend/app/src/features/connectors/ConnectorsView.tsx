@@ -3,6 +3,7 @@ import {
   Button,
   Empty,
   Input,
+  Modal,
   Segmented,
   Skeleton,
   Tag,
@@ -37,8 +38,10 @@ import {
   type GatewayConnectorProvider,
 } from "./GatewayConnectorEditor";
 import type { SystemSettingsPage } from "../settings/settingsNavigation";
+import "./ConnectorsLayout.css";
 
 type ConnectorFilter = "all" | ConnectorStatus;
+type ConnectorSection = "connectors" | "tools";
 
 const defaultSummary: ConnectorSummary = {
   connected: 0,
@@ -59,6 +62,7 @@ export function ConnectorsView({ onOpenSettings }: ConnectorsViewProps) {
   const language = useUiStore((state) => state.language);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<ConnectorFilter>("all");
+  const [activeSection, setActiveSection] = useState<ConnectorSection>("connectors");
   const [selectedConnectorId, setSelectedConnectorId] = useState<string | null>(null);
   const [latestResult, setLatestResult] = useState<ConnectorTestResult | null>(
     null,
@@ -125,17 +129,11 @@ export function ConnectorsView({ onOpenSettings }: ConnectorsViewProps) {
     : null;
 
   useEffect(() => {
-    if (filteredItems.length === 0) {
-      if (selectedConnectorId !== null) {
-        setSelectedConnectorId(null);
-      }
-      return;
-    }
     if (
-      selectedConnectorId === null ||
-      filteredItems.every((item) => item.connector_id !== selectedConnectorId)
+      selectedConnectorId !== null
+      && filteredItems.every((item) => item.connector_id !== selectedConnectorId)
     ) {
-      setSelectedConnectorId(filteredItems[0].connector_id);
+      setSelectedConnectorId(null);
     }
   }, [filteredItems, selectedConnectorId]);
 
@@ -173,7 +171,18 @@ export function ConnectorsView({ onOpenSettings }: ConnectorsViewProps) {
       </div>
 
       <div className="at-connectors-content">
-        <div className="at-connectors-summary" aria-label={t("connectorsSummary")}>
+        <Segmented
+          className="at-connectors-section-tabs"
+          onChange={(value) => setActiveSection(value as ConnectorSection)}
+          options={[
+            { label: t("connectorsTitle"), value: "connectors" },
+            { label: t("connectorsRuntimeToolsTitle"), value: "tools" },
+          ]}
+          value={activeSection}
+        />
+        {activeSection === "connectors" ? (
+          <>
+        <div className="at-connectors-summary" aria-label={t("connectorsSummary")}> 
           <SummaryCell
             label={t("connectorsTotal")}
             tone="neutral"
@@ -224,26 +233,6 @@ export function ConnectorsView({ onOpenSettings }: ConnectorsViewProps) {
         {connectorsQuery.isError ? (
           <Alert message={t("connectorsLoadFailed")} showIcon type="error" />
         ) : null}
-        {testMutation.isError ? (
-          <Alert
-            message={t("connectorsTestFailed")}
-            showIcon
-            type="error"
-            description={testMutationError(testMutation.error, t("connectorsTestFailed"))}
-          />
-        ) : null}
-        {latestResult !== null ? (
-          <Alert
-            className="at-connectors-test-result"
-            message={t(latestResult.ok ? "connectorsTestOk" : "connectorsTestAttention", {
-              connector: latestResult.connector_id,
-            })}
-            showIcon
-            type={latestResult.ok ? "success" : "warning"}
-            description={latestResult.message}
-          />
-        ) : null}
-
         {connectorsQuery.isLoading ? (
           <Skeleton active paragraph={{ rows: 9 }} />
         ) : null}
@@ -268,7 +257,7 @@ export function ConnectorsView({ onOpenSettings }: ConnectorsViewProps) {
                   key={item.connector_id}
                   onAction={() => {
                     if (isGatewayConnectorProvider(item.provider)) {
-                      setSelectedConnectorId(item.connector_id);
+                      setSelectedConnectorId(null);
                       setGatewayConfigProvider(item.provider);
                       return;
                     }
@@ -288,22 +277,51 @@ export function ConnectorsView({ onOpenSettings }: ConnectorsViewProps) {
                     setW3ConfigOpen(false);
                     setSelectedConnectorId(item.connector_id);
                   }}
+                  onTest={() => testMutation.mutate(item.connector_id)}
                   selected={item.connector_id === selectedConnectorId}
+                  testError={
+                    testMutation.isError && testMutation.variables === item.connector_id
+                      ? testMutationError(
+                          testMutation.error,
+                          t("connectorsTestFailed"),
+                        )
+                      : null
+                  }
+                  testResult={
+                    latestResult?.connector_id === item.connector_id
+                      ? latestResult
+                      : null
+                  }
+                  testing={testingConnectorId === item.connector_id}
                   t={t}
                 />
               ))}
             </div>
-            {gatewayConfigProvider !== null ? (
-              <GatewayConnectorEditor
-                onClose={() => setGatewayConfigProvider(null)}
-                provider={gatewayConfigProvider}
-              />
-            ) : (
-              <ConnectorDetail
-                item={selectedConnector}
+          </div>
+        ) : null}
+        </>
+        ) : (
+          <RuntimeToolsSection />
+        )}
+        <Modal
+          centered
+          className="at-connectors-modal"
+          destroyOnHidden
+          footer={null}
+          onCancel={() => {
+            setSelectedConnectorId(null);
+            setW3ConfigOpen(false);
+          }}
+          open={selectedConnector !== null}
+          title={selectedConnector?.display_name}
+          width={760}
+        >
+          <ConnectorDetail
+            item={selectedConnector}
               language={language}
               onAction={(connector) => {
                 if (isGatewayConnectorProvider(connector.provider)) {
+                  setSelectedConnectorId(null);
                   setGatewayConfigProvider(connector.provider);
                   return;
                 }
@@ -323,11 +341,25 @@ export function ConnectorsView({ onOpenSettings }: ConnectorsViewProps) {
               w3Status={w3Query.data}
               onW3Cancel={() => setW3ConfigOpen(false)}
               onW3Save={(request) => w3SaveMutation.mutate(request)}
-              />
-            )}
-          </div>
-        ) : null}
-        {gatewayConfigProvider === null ? <RuntimeToolsSection /> : null}
+          />
+        </Modal>
+        <Modal
+          centered
+          className="at-connectors-modal at-gateway-connector-modal"
+          destroyOnHidden
+          footer={null}
+          onCancel={() => setGatewayConfigProvider(null)}
+          open={gatewayConfigProvider !== null}
+          title={t("connectorsConfigure")}
+          width={800}
+        >
+          {gatewayConfigProvider !== null ? (
+            <GatewayConnectorEditor
+              onClose={() => setGatewayConfigProvider(null)}
+              provider={gatewayConfigProvider}
+            />
+          ) : null}
+        </Modal>
       </div>
     </section>
   );
@@ -354,13 +386,21 @@ function ConnectorCard({
   item,
   onAction,
   onSelect,
+  onTest,
   selected,
+  testError,
+  testResult,
+  testing,
   t,
 }: {
   item: ConnectorItem;
   onAction: () => void;
   onSelect: () => void;
+  onTest: () => void;
   selected: boolean;
+  testError: string | null;
+  testResult: ConnectorTestResult | null;
+  testing: boolean;
   t: ReturnType<typeof useTranslations>;
 }) {
   const action = connectorActionFor(item);
@@ -408,7 +448,33 @@ function ConnectorCard({
             {t(action === "configure" ? "connectorsConfigure" : "connectorsOpen")}
           </Button>
         ) : null}
+        <Tooltip title={t("connectorsTestTooltip")}>
+          <Button
+            aria-label={t("connectorsTestAria", { connector: item.display_name })}
+            icon={<TestTube2 size={14} />}
+            loading={testing}
+            onClick={onTest}
+            size="small"
+            type="text"
+          />
+        </Tooltip>
       </div>
+      {testError !== null ? (
+        <div className="at-connectors-card-result is-error" role="alert">
+          {testError}
+        </div>
+      ) : testResult !== null ? (
+        <div
+          className={
+            testResult.ok
+              ? "at-connectors-card-result is-success"
+              : "at-connectors-card-result is-warning"
+          }
+          role="status"
+        >
+          {testResult.message}
+        </div>
+      ) : null}
     </article>
   );
 }

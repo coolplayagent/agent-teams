@@ -1901,6 +1901,7 @@ export interface AgUiActionResponse {
 
 export interface TimelineMessage {
   message_id?: string;
+  client_message_id?: string;
   role?: string;
   role_id?: string;
   instance_id?: string;
@@ -1911,11 +1912,18 @@ export interface TimelineMessage {
   };
   parts?: ContentPart[];
   created_at?: string;
+  occurred_at?: string;
+  queued_at?: string;
+  applied_at?: string;
   run_id?: string;
   trace_id?: string;
   entry_type?: string;
   injection_id?: string;
   injection_status?: string;
+  recipient_instance_id?: string;
+  superseded_client_message_ids?: string[];
+  superseded_injection_ids?: string[];
+  visibility?: "public" | "internal" | string;
   source?: string;
   status?: string;
 }
@@ -1960,12 +1968,17 @@ export interface SessionRoundMessageUsageDetails {
 }
 
 export interface SessionRoundMessage {
+  applied_at?: string;
+  client_message_id?: string;
   content?: string;
   content_parts?: ContentPart[];
   created_at?: string;
+  occurred_at?: string;
+  queued_at?: string;
   entry_type?: string;
   injection_id?: string;
   injection_status?: string;
+  recipient_instance_id?: string;
   instance_id?: string;
   label?: string;
   message?: SessionRoundMessageBody;
@@ -1974,6 +1987,9 @@ export interface SessionRoundMessage {
   role_id?: string;
   source?: string;
   status?: string;
+  superseded_client_message_ids?: string[];
+  superseded_injection_ids?: string[];
+  visibility?: "public" | "internal" | string;
 }
 
 export type SessionRoundTodoStatus = "completed" | "in_progress" | "pending" | string;

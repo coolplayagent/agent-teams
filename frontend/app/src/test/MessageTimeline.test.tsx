@@ -8970,7 +8970,7 @@ describe("MessageTimeline", () => {
     expect(rowTexts[2]).toContain("second cursorless chunk");
   });
 
-  it("keeps runtime injection events out of the chat transcript", async () => {
+  it("renders runtime injections in event order without exposing raw events", async () => {
     setRuntimeEntries([
       runtimeToolCallEntry({
         eventId: 1,
@@ -8999,17 +8999,359 @@ describe("MessageTimeline", () => {
     const { container } = renderTimeline();
 
     expect(await screen.findByText("Running: execute_command")).toBeVisible();
-    expect(screen.queryByText(/Injection applied:/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Injection applied: Use OpenAI instead/)).toBeVisible();
+    expect(screen.queryByText("injection applied")).not.toBeInTheDocument();
     expect(await screen.findByText("Switching the search target to OpenAI."))
       .toBeVisible();
     const rowTexts = Array.from(container.querySelectorAll("article.at-message"))
       .map((row) => row.textContent ?? "");
-    expect(rowTexts).toHaveLength(2);
+    expect(rowTexts).toHaveLength(3);
     expect(rowTexts[0]).toContain("Running: execute_command");
-    expect(rowTexts[1]).toContain("Switching the search target to OpenAI.");
+    expect(rowTexts[1]).toContain("Injection applied: Use OpenAI instead");
+    expect(rowTexts[2]).toContain("Switching the search target to OpenAI.");
   });
 
-  it("keeps replay-deduped injection events hidden between runtime text rows", async () => {
+  it("upgrades an enqueued injection in place before later tool and terminal events", async () => {
+    const textEntry = runtimeTextDeltaEntry({
+      eventId: 10,
+      id: "run-output:10:0",
+      text: "Draft before inserted guidance",
+    });
+    const enqueuedEntry = runtimeGenericEntry({
+      eventId: 11,
+      id: "run-output:11:1",
+      kind: "injection_enqueued",
+      payload: {
+        client_message_id: "client-insert-1",
+        content: "Use the verified source",
+        recipient_instance_id: "root-instance",
+        source: "user",
+        status: "queued",
+        visibility: "public",
+      },
+      text: "injection enqueued",
+    });
+    setRuntimeEntries([textEntry, enqueuedEntry], "open");
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText(/Injection queued: Use the verified source/))
+      .toBeVisible();
+    const pendingRow = container.querySelector<HTMLElement>(
+      '[data-client-message-id="client-insert-1"]',
+    );
+    expect(pendingRow).toHaveAttribute("data-injection-status", "queued");
+
+    act(() => {
+      setRuntimeEntries([
+        textEntry,
+        enqueuedEntry,
+        runtimeGenericEntry({
+          eventId: 12,
+          id: "run-output:12:2",
+          kind: "injection_applied",
+          payload: {
+            client_message_id: "client-insert-1",
+            content: "Use the verified source",
+            injection_id: "inj-sequence",
+            recipient_instance_id: "root-instance",
+            source: "user",
+            status: "applied",
+            visibility: "public",
+          },
+          text: "injection applied",
+        }),
+        runtimeToolCallEntry({
+          eventId: 13,
+          id: "run-output:13:3",
+        }),
+        runtimeGenericEntry({
+          eventId: 14,
+          id: "run-output:14:4",
+          kind: "run_completed",
+          payload: { status: "completed" },
+          text: "run completed",
+        }),
+      ], "closed");
+    });
+
+    expect(await screen.findByText(/Injection applied: Use the verified source/))
+      .toBeVisible();
+    const appliedRow = container.querySelector<HTMLElement>(
+      '[data-injection-id="inj-sequence"]',
+    );
+    expect(appliedRow).toBe(pendingRow);
+    expect(appliedRow).toHaveAttribute("data-injection-status", "applied");
+    expect(container.querySelectorAll('[data-injection-id="inj-sequence"]'))
+      .toHaveLength(1);
+    const rowTexts = Array.from(
+      container.querySelectorAll(".at-timeline-virtual > .at-timeline-row"),
+    )
+      .map((row) => row.textContent ?? "");
+    expect(rowTexts).toHaveLength(3);
+    expect(rowTexts[0]).toContain("Draft before inserted guidance");
+    expect(rowTexts[1]).toContain("Injection applied: Use the verified source");
+    expect(rowTexts[2]).toContain("Ran: execute_command");
+  });
+
+  it("hydrates and finally replays an injection by identity without moving or duplicating it", async () => {
+    const roundsDeferred = deferredSessionRounds();
+    listSessionRoundsMock.mockReturnValue(roundsDeferred.promise);
+    listSessionMessagesMock.mockResolvedValue([]);
+    setRuntimeEntries([
+      runtimeGenericEntry({
+        eventId: 11,
+        id: "run-output:11:0",
+        kind: "injection_enqueued",
+        payload: {
+          client_message_id: "client-hydrate",
+          content: "Hydrate this inserted message",
+          recipient_instance_id: "root-instance",
+          source: "user",
+          status: "queued",
+          visibility: "public",
+        },
+        text: "injection enqueued",
+      }),
+    ], "open");
+
+    const { container } = renderTimeline();
+
+    await screen.findByText(/Injection queued: Hydrate this inserted message/);
+    const optimisticRow = container.querySelector<HTMLElement>(
+      '[data-client-message-id="client-hydrate"]',
+    );
+    expect(optimisticRow).not.toBeNull();
+
+    await act(async () => {
+      roundsDeferred.resolve({
+        has_more: false,
+        items: [{
+          injection_messages: [{
+            client_message_id: "client-hydrate",
+            content: "Hydrate this inserted message",
+            entry_type: "injection",
+            injection_id: "inj-hydrate",
+            injection_status: "applied",
+            message_id: "persisted-inj-hydrate",
+            queued_at: "2026-06-23T00:00:11Z",
+            recipient_instance_id: "root-instance",
+            source: "user",
+            visibility: "public",
+          }],
+          run_id: "run-output",
+          run_status: "completed",
+        }],
+        next_cursor: null,
+      });
+      await roundsDeferred.promise;
+    });
+
+    expect(await screen.findByText(/Injection applied: Hydrate this inserted message/))
+      .toBeVisible();
+    const hydratedRow = container.querySelector<HTMLElement>(
+      '[data-injection-id="inj-hydrate"]',
+    );
+    expect(hydratedRow).toBe(optimisticRow);
+    expect(container.querySelectorAll('[data-injection-id="inj-hydrate"]'))
+      .toHaveLength(1);
+
+    act(() => {
+      useRuntimeStore.setState({ runtimeState: initialRuntimeState });
+    });
+
+    expect(await screen.findByText(/Injection applied: Hydrate this inserted message/))
+      .toBeVisible();
+    expect(container.querySelector('[data-injection-id="inj-hydrate"]'))
+      .toBe(hydratedRow);
+    expect(container.querySelectorAll('[data-injection-id="inj-hydrate"]'))
+      .toHaveLength(1);
+  });
+
+  it("isolates public injections by session and root or subagent timeline scope", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 11,
+        event_type: "injection_enqueued",
+        instance_id: "root-instance",
+        payload_json: JSON.stringify({
+          content: "Root inserted message",
+          injection_id: "inj-root",
+          recipient_instance_id: "root-instance",
+          source: "user",
+          visibility: "public",
+        }),
+        role_id: "MainAgent",
+        run_id: "root-run",
+        trace_id: "root-run",
+      }),
+      relayRunEvent({
+        event_id: 11,
+        event_type: "injection_enqueued",
+        instance_id: "subagent-instance",
+        payload_json: JSON.stringify({
+          content: "Subagent inserted message",
+          injection_id: "inj-subagent",
+          recipient_instance_id: "subagent-instance",
+          source: "user",
+          visibility: "public",
+        }),
+        role_id: "Explorer",
+        run_id: "subagent-run-1",
+        trace_id: "subagent-run-1",
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const rootTimeline = renderTimeline("session-1", { primaryRoleId: "MainAgent" });
+
+    expect(await screen.findByText(/Injection queued: Root inserted message/))
+      .toBeVisible();
+    expect(screen.queryByText(/Subagent inserted message/)).not.toBeInTheDocument();
+    expect(rootTimeline.container.querySelector('[data-injection-id="inj-root"]'))
+      .not.toBeNull();
+    cleanup();
+
+    const subagentTimeline = renderTimeline("session-1", {
+      runtimeRunId: "subagent-run-1",
+      variant: "subagent-panel",
+    });
+
+    expect(await screen.findByText(/Injection queued: Subagent inserted message/))
+      .toBeVisible();
+    expect(screen.queryByText(/Root inserted message/)).not.toBeInTheDocument();
+    expect(
+      subagentTimeline.container.querySelector('[data-injection-id="inj-subagent"]'),
+    ).not.toBeNull();
+    cleanup();
+
+    renderTimeline("session-2", { primaryRoleId: "MainAgent" });
+    expect(await screen.findByText("No messages yet")).toBeVisible();
+    expect(screen.queryByText(/inserted message/)).not.toBeInTheDocument();
+  });
+
+  it("hides internal injections and replaces superseded pending identities", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 11,
+        event_type: "injection_enqueued",
+        payload_json: JSON.stringify({
+          client_message_id: "client-old",
+          content: "Old pending insertion",
+          injection_id: "inj-old",
+          source: "user",
+          visibility: "public",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 12,
+        event_type: "injection_enqueued",
+        payload_json: JSON.stringify({
+          client_message_id: "client-new",
+          content: "Replacement insertion",
+          injection_id: "inj-new",
+          source: "user",
+          superseded_client_message_ids: ["client-old"],
+          superseded_injection_ids: ["inj-old"],
+          visibility: "public",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 13,
+        event_type: "injection_enqueued",
+        payload_json: JSON.stringify({
+          content: "Internal reminder",
+          injection_id: "inj-internal",
+          source: "system",
+          visibility: "internal",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 14,
+        event_type: "injection_enqueued",
+        payload_json: JSON.stringify({
+          content: "Failed insertion",
+          injection_id: "inj-failed",
+          source: "user",
+          status: "failed",
+          visibility: "public",
+        }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText(/Injection queued: Replacement insertion/))
+      .toBeVisible();
+    expect(screen.queryByText(/Old pending insertion/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Internal reminder/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Injection failed: Failed insertion/)).toBeVisible();
+    expect(container.querySelector('[data-injection-id="inj-old"]')).toBeNull();
+    expect(container.querySelectorAll('[data-injection-id="inj-new"]'))
+      .toHaveLength(1);
+  });
+
+  it("applies persisted supersession and visibility rules during final replay", async () => {
+    listSessionMessagesMock.mockResolvedValue([]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [{
+        injection_messages: [
+          {
+            client_message_id: "client-persisted-old",
+            content: "Persisted old pending insertion",
+            entry_type: "injection",
+            injection_id: "inj-persisted-old",
+            injection_status: "queued",
+            queued_at: "2026-06-23T00:00:11Z",
+            source: "user",
+            visibility: "public",
+          },
+          {
+            client_message_id: "client-persisted-new",
+            content: "Persisted replacement insertion",
+            entry_type: "injection",
+            injection_id: "inj-persisted-new",
+            injection_status: "applied",
+            queued_at: "2026-06-23T00:00:12Z",
+            source: "user",
+            superseded_client_message_ids: ["client-persisted-old"],
+            superseded_injection_ids: ["inj-persisted-old"],
+            visibility: "public",
+          },
+          {
+            content: "Persisted internal reminder",
+            entry_type: "injection",
+            injection_id: "inj-persisted-internal",
+            injection_status: "applied",
+            queued_at: "2026-06-23T00:00:13Z",
+            source: "system",
+            visibility: "internal",
+          },
+        ],
+        run_id: "run-output",
+        run_status: "completed",
+      }],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText(/Injection applied: Persisted replacement insertion/))
+      .toBeVisible();
+    expect(screen.queryByText(/Persisted old pending insertion/))
+      .not.toBeInTheDocument();
+    expect(screen.queryByText(/Persisted internal reminder/)).not.toBeInTheDocument();
+    expect(container.querySelector('[data-injection-id="inj-persisted-old"]'))
+      .toBeNull();
+    expect(
+      container.querySelectorAll('[data-injection-id="inj-persisted-new"]'),
+    ).toHaveLength(1);
+  });
+
+  it("keeps replay-deduped injection events visible once between runtime text rows", async () => {
     const injectionEvent = relayRunEvent({
       event_id: 2,
       event_type: "injection_applied",
@@ -9040,15 +9382,16 @@ describe("MessageTimeline", () => {
 
     expect(await screen.findByText("draft answer")).toBeVisible();
     expect(await screen.findByText("refined answer")).toBeVisible();
-    expect(screen.queryByText(/Injection applied:/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Injection applied: Refine the answer/)).toBeVisible();
     const rowTexts = Array.from(container.querySelectorAll("article.at-message"))
       .map((row) => row.textContent ?? "");
-    expect(rowTexts).toHaveLength(2);
+    expect(rowTexts).toHaveLength(3);
     expect(rowTexts[0]).toContain("draft answer");
-    expect(rowTexts[1]).toContain("refined answer");
+    expect(rowTexts[1]).toContain("Injection applied: Refine the answer");
+    expect(rowTexts[2]).toContain("refined answer");
   });
 
-  it("removes superseded pending runtime tool calls without rendering the injection event", async () => {
+  it("removes superseded pending runtime tool calls while keeping the injection visible", async () => {
     setRuntimeStateFromEvents([
       relayRunEvent({
         event_id: 1,
@@ -9094,7 +9437,7 @@ describe("MessageTimeline", () => {
     const { container } = renderTimeline();
 
     await screen.findByText("Ran: shell");
-    expect(screen.queryByText(/Injection applied:/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Injection applied: Use ls instead/)).toBeVisible();
     expect(screen.queryByText("Running: shell")).not.toBeInTheDocument();
     expect(screen.getByText("Ran: shell")).toBeVisible();
     const previews = toolPreviewTexts(container);
@@ -9106,9 +9449,61 @@ describe("MessageTimeline", () => {
     const rowTexts = Array.from(container.querySelectorAll("article.at-message"))
       .map((row) => row.textContent ?? "");
     const contentRowTexts = rowTexts.filter((text) => text.trim().length > 0);
-    expect(contentRowTexts).toHaveLength(1);
-    expect(contentRowTexts[0]).toContain("Ran: shell");
-    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
+    expect(contentRowTexts).toHaveLength(2);
+    expect(contentRowTexts[0]).toContain("Injection applied: Use ls instead");
+    expect(contentRowTexts[1]).toContain("Ran: shell");
+    expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
+  });
+
+  it("merges cursorless reconnect injection events by client and server identity", async () => {
+    const applied = relayRunEvent({
+      event_id: null,
+      event_type: "injection_applied",
+      occurred_at: undefined,
+      payload_json: JSON.stringify({
+        client_message_id: "client-cursorless",
+        content: "Cursorless inserted message",
+        injection_id: "inj-cursorless",
+        source: "user",
+        status: "applied",
+        visibility: "public",
+      }),
+    });
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: null,
+        event_type: "injection_enqueued",
+        occurred_at: undefined,
+        payload_json: JSON.stringify({
+          client_message_id: "client-cursorless",
+          content: "Cursorless inserted message",
+          source: "user",
+          status: "queued",
+          visibility: "public",
+        }),
+      }),
+      applied,
+      applied,
+      relayRunEvent({
+        event_id: null,
+        event_type: "text_delta",
+        occurred_at: undefined,
+        payload_json: JSON.stringify({ text: "Text after cursorless insertion" }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText(/Injection applied: Cursorless inserted message/))
+      .toBeVisible();
+    expect(screen.getByText("Text after cursorless insertion")).toBeVisible();
+    expect(container.querySelectorAll('[data-injection-id="inj-cursorless"]'))
+      .toHaveLength(1);
+    const rowTexts = Array.from(container.querySelectorAll("article.at-message"))
+      .map((row) => row.textContent ?? "");
+    expect(rowTexts[0]).toContain("Injection applied: Cursorless inserted message");
+    expect(rowTexts[1]).toContain("Text after cursorless insertion");
   });
 
   it("splits runtime text segments around approval and thinking events", async () => {
@@ -10504,6 +10899,7 @@ describe("MessageTimeline", () => {
           delivery_mode: "queued",
           recipient_instance_id: "worker-1",
           source: "user",
+          visibility: "internal",
         },
       }),
       runtimeGenericEntry({
@@ -10516,6 +10912,7 @@ describe("MessageTimeline", () => {
           internal_delivery_mode: "guidance",
           recipient_instance_id: "worker-1",
           source: "system",
+          visibility: "internal",
         },
       }),
       runtimeGenericEntry({

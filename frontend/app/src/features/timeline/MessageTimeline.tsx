@@ -391,8 +391,8 @@ export function MessageTimeline({
             dropDuplicateFinalPartsFromWorkRows(
               dropDuplicateWorkRowsAfterToolMerge(
                 mergeToolRowsByCallId(
-                  mergeRuntimeThinkingRowsIntoHydratedRows(
-                    displayPersistedRows,
+                mergeRuntimeRowsIntoHydratedRows(
+                  displayPersistedRows,
                     runtimeRows.filter(timelineRowHasRenderableContent),
                   ),
                   { dedupeNonToolRows: false },
@@ -713,12 +713,21 @@ interface TimelineRow {
   kind: RunEventType | "message" | "processed" | "round";
   parts: TimelineRenderPart[];
   historyDivider?: TimelineHistoryDivider;
+  injection?: TimelineInjectionRow;
   processedGroup?: TimelineProcessedGroup;
   roundMarker: TimelineRoundMarker | null;
   runId: string | null;
   runIdSource?: TimelineRunIdSource | null;
   source: "message" | "runtime";
   copyable: boolean;
+}
+
+interface TimelineInjectionRow {
+  clientMessageId: string;
+  injectionId: string;
+  occurredAt: string;
+  recipientInstanceId: string;
+  status: "applied" | "failed" | "queued";
 }
 
 type TimelineRunIdSource = "fallback" | "round" | "run_id" | "trace_id";
@@ -1088,6 +1097,9 @@ function timelineRowElement(
       ].filter(Boolean).join(" ")}
       data-index={index}
       data-instance-id={row.instanceId ?? undefined}
+      data-client-message-id={row.injection?.clientMessageId || undefined}
+      data-injection-id={row.injection?.injectionId || undefined}
+      data-injection-status={row.injection?.status}
       data-role-id={row.role}
       data-row-key={row.key}
       data-run-id={row.runId ?? undefined}
@@ -1276,15 +1288,21 @@ function messageToRow(
   fallbackRunId: string | null,
   workspaceId: string | null,
 ): TimelineRow {
-  const role = message.role_id ?? message.role ?? "agent";
+  const injection = timelineMessageInjectionRow(message);
+  const role = injection === undefined
+    ? message.role_id ?? message.role ?? "agent"
+    : "user";
   const parts = messageParts(message, workspaceId);
   const text = rowCopyText(parts);
   const runIdentity = messageRunIdentity(message, roundLookup, fallbackRunId);
   return {
-    key: `message:${message.message_id ?? index}`,
+    key: injection === undefined
+      ? `message:${message.message_id ?? index}`
+      : timelineInjectionRowKey(runIdentity.runId, injection, message.message_id ?? index),
     role,
     text,
     kind: "message",
+    injection,
     parts,
     roundMarker: null,
     runId: runIdentity.runId,
@@ -1292,6 +1310,52 @@ function messageToRow(
     source: "message",
     copyable: isAnswerRole(role) && text.trim().length > 0,
   };
+}
+
+function timelineMessageInjectionRow(
+  message: TimelineMessage,
+): TimelineInjectionRow | undefined {
+  if (
+    (message.entry_type ?? "").trim().toLowerCase() !== "injection" ||
+    (message.visibility ?? "public").trim().toLowerCase() === "internal"
+  ) {
+    return undefined;
+  }
+  return {
+    clientMessageId: message.client_message_id?.trim() ?? "",
+    injectionId: message.injection_id?.trim() ?? "",
+    occurredAt: timelineMessageOccurredAt(message),
+    recipientInstanceId: message.recipient_instance_id?.trim() ?? "",
+    status: normalizedInjectionStatus(
+      message.injection_status ?? message.status ?? "applied",
+    ),
+  };
+}
+
+function timelineInjectionRowKey(
+  runId: string | null,
+  injection: TimelineInjectionRow,
+  fallback: string | number,
+): string {
+  const identity = injection.clientMessageId.length > 0
+    ? `client:${injection.clientMessageId}`
+    : injection.injectionId.length > 0
+      ? `id:${injection.injectionId}`
+      : `fallback:${fallback}`;
+  return `injection:${runId ?? ""}:${identity}`;
+}
+
+function normalizedInjectionStatus(
+  status: string | null | undefined,
+): TimelineInjectionRow["status"] {
+  const normalized = (status ?? "").trim().toLowerCase();
+  if (normalized.includes("fail") || normalized.includes("error")) {
+    return "failed";
+  }
+  if (normalized.includes("appl") || normalized.includes("deliver")) {
+    return "applied";
+  }
+  return "queued";
 }
 
 function insertRoundMarkerRows(
@@ -1594,6 +1658,7 @@ function timelineRowHasInjectionNotice(row: TimelineRow): boolean {
   }
   return textParts.some((part) =>
     part.text.trim().startsWith("Injection applied:") ||
+    part.text.trim().startsWith("Injection failed:") ||
     part.text.trim().startsWith("Injection queued:")
   );
 }
@@ -1687,6 +1752,7 @@ function rowWithParts(
     instanceId: row.instanceId,
     text,
     kind: row.kind,
+    injection: row.injection,
     parts: stableParts,
     historyDivider: row.historyDivider,
     roundMarker: row.roundMarker,
@@ -1786,6 +1852,83 @@ function mergeRuntimeThinkingRowsIntoHydratedRows(
     !consumedRuntimeIndexes.has(index),
   );
   return [...nextHydratedRows, ...remainingRuntimeRows];
+}
+
+function mergeRuntimeRowsIntoHydratedRows(
+  hydratedRows: TimelineRow[],
+  runtimeRows: TimelineRow[],
+): TimelineRow[] {
+  const runtimeRowsByIdentity = new Map<string, TimelineRow>();
+  for (const row of runtimeRows) {
+    if (row.injection === undefined) {
+      continue;
+    }
+    for (const key of timelineInjectionIdentityKeys(row.runId, row.injection)) {
+      runtimeRowsByIdentity.set(key, row);
+    }
+  }
+  const remainingHydratedRows = hydratedRows.filter((hydratedRow) => {
+    if (hydratedRow.injection === undefined) {
+      return true;
+    }
+    const runtimeRow = timelineInjectionIdentityKeys(
+      hydratedRow.runId,
+      hydratedRow.injection,
+    )
+      .map((key) => runtimeRowsByIdentity.get(key))
+      .find((row): row is TimelineRow => row !== undefined);
+    if (
+      runtimeRow === undefined ||
+      !timelineInjectionRecipientsMatch(runtimeRow.injection, hydratedRow.injection)
+    ) {
+      return true;
+    }
+    mergeHydratedInjectionIntoRuntimeRow(runtimeRow, hydratedRow);
+    return false;
+  });
+  return mergeRuntimeThinkingRowsIntoHydratedRows(
+    remainingHydratedRows,
+    runtimeRows,
+  );
+}
+
+function timelineInjectionRecipientsMatch(
+  runtimeInjection: TimelineInjectionRow | undefined,
+  persistedInjection: TimelineInjectionRow,
+): boolean {
+  const runtimeRecipient = runtimeInjection?.recipientInstanceId ?? "";
+  const persistedRecipient = persistedInjection.recipientInstanceId;
+  return (
+    runtimeRecipient.length === 0 ||
+    persistedRecipient.length === 0 ||
+    runtimeRecipient === persistedRecipient
+  );
+}
+
+function mergeHydratedInjectionIntoRuntimeRow(
+  runtimeRow: TimelineRow,
+  hydratedRow: TimelineRow,
+): void {
+  const runtimeInjection = runtimeRow.injection;
+  const hydratedInjection = hydratedRow.injection;
+  if (runtimeInjection === undefined || hydratedInjection === undefined) {
+    return;
+  }
+  const priority: Record<TimelineInjectionRow["status"], number> = {
+    applied: 2,
+    failed: 3,
+    queued: 1,
+  };
+  const useHydratedState =
+    priority[hydratedInjection.status] >= priority[runtimeInjection.status];
+  runtimeRow.injection = {
+    ...mergedTimelineInjectionRow(runtimeInjection, hydratedInjection),
+    status: useHydratedState ? hydratedInjection.status : runtimeInjection.status,
+  };
+  if (useHydratedState) {
+    runtimeRow.parts = hydratedRow.parts;
+    runtimeRow.text = hydratedRow.text;
+  }
 }
 
 function mergeTerminalRuntimeTextRowsIntoPersistedAnswers(
@@ -3206,6 +3349,7 @@ function runtimeEntriesToRows(
   const rows: TimelineRow[] = [];
   const activeThinking = new Map<string, RuntimeThinkingAccumulator>();
   const activeText = new Map<string, RuntimeTextAccumulator>();
+  const injectionRowsByIdentity = new Map<string, TimelineRow>();
   const resolvedToolCallIds = new Set<string>();
   let textSegmentSequence = 0;
   const nextTextSegmentSequence = () => {
@@ -3272,8 +3416,13 @@ function runtimeEntriesToRows(
     if (mergeRuntimeCompletedOutputIntoPreviousTextRow(entry, rows)) {
       continue;
     }
-    if (runtimeInjectionSupersedesPendingToolCalls(entry)) {
-      removeSupersededPendingToolRows(rows, entry, resolvedToolCallIds);
+    if (runtimeEntryIsInjection(entry)) {
+      closeRuntimeTextSegment(entry, rows, activeText);
+      applyRuntimeInjectionEvent(entry, rows, injectionRowsByIdentity);
+      if (runtimeInjectionSupersedesPendingToolCalls(entry)) {
+        removeSupersededPendingToolRows(rows, entry, resolvedToolCallIds);
+      }
+      continue;
     }
     if (!runtimeEntryShouldRenderChatContent(entry)) {
       if (runtimeHiddenEntryClosesText(entry)) {
@@ -3493,6 +3642,181 @@ function runtimeInjectionSupersedesPendingToolCalls(entry: TimelineEntry): boole
   }
   const payload = jsonObject(entry.payload);
   return payload?.supersedes_pending_tool_calls === true;
+}
+
+function runtimeEntryIsInjection(entry: TimelineEntry): boolean {
+  return entry.kind === "injection_enqueued" || entry.kind === "injection_applied";
+}
+
+function applyRuntimeInjectionEvent(
+  entry: TimelineEntry,
+  rows: TimelineRow[],
+  rowsByIdentity: Map<string, TimelineRow>,
+): void {
+  const payload = jsonObject(entry.payload);
+  if (payload === null || payloadHasParseError(payload)) {
+    return;
+  }
+  removeSupersededRuntimeInjectionRows(rows, rowsByIdentity, entry, payload);
+  if (!runtimeInjectionEntryIsVisible(entry)) {
+    return;
+  }
+  const injection = runtimeInjectionRow(entry, payload);
+  const identityKeys = timelineInjectionIdentityKeys(entry.runId, injection);
+  const existing = identityKeys
+    .map((key) => rowsByIdentity.get(key))
+    .find((row): row is TimelineRow => row !== undefined);
+  const text = runtimeInjectionRowText(payload, injection.status);
+  if (text.length === 0) {
+    return;
+  }
+  if (existing !== undefined) {
+    const nextInjection = mergedTimelineInjectionRow(existing.injection, injection);
+    existing.injection = nextInjection;
+    existing.kind = entry.kind;
+    existing.parts = [timelineTextPart(runtimeInjectionRowText(payload, nextInjection.status))];
+    existing.text = rowCopyText(existing.parts);
+    registerRuntimeInjectionRow(rowsByIdentity, entry.runId, existing);
+    return;
+  }
+  const row = runtimeEntryToRowWithParts(
+    entry,
+    [timelineTextPart(text)],
+    timelineInjectionRowKey(entry.runId, injection, entry.id),
+  );
+  row.copyable = false;
+  row.injection = injection;
+  row.role = "user";
+  rows.push(row);
+  registerRuntimeInjectionRow(rowsByIdentity, entry.runId, row);
+}
+
+function runtimeInjectionEntryIsVisible(entry: TimelineEntry): boolean {
+  if (!runtimeEntryIsInjection(entry)) {
+    return false;
+  }
+  const payload = jsonObject(entry.payload);
+  if (payload === null || payloadHasParseError(payload)) {
+    return false;
+  }
+  return (
+    objectString(payload, "visibility").toLowerCase() !== "internal" &&
+    payload.content_redacted !== true
+  );
+}
+
+function runtimeInjectionRow(
+  entry: TimelineEntry,
+  payload: Record<string, JsonValue>,
+): TimelineInjectionRow {
+  const payloadStatus = objectString(payload, "status");
+  return {
+    clientMessageId: objectString(payload, "client_message_id"),
+    injectionId: objectString(payload, "injection_id"),
+    occurredAt: objectString(payload, "created_at") || entry.occurredAt,
+    recipientInstanceId:
+      objectString(payload, "recipient_instance_id") || entry.instanceId || "",
+    status: entry.kind === "injection_applied"
+      ? "applied"
+      : normalizedInjectionStatus(payloadStatus || "queued"),
+  };
+}
+
+function runtimeInjectionRowText(
+  payload: Record<string, JsonValue>,
+  status: TimelineInjectionRow["status"],
+): string {
+  const summary = runtimeInjectionSummary(payload);
+  return summary.length > 0 ? `${injectionStatusLabel(status)}: ${summary}` : "";
+}
+
+function mergedTimelineInjectionRow(
+  existing: TimelineInjectionRow | undefined,
+  next: TimelineInjectionRow,
+): TimelineInjectionRow {
+  if (existing === undefined) {
+    return next;
+  }
+  return {
+    clientMessageId: next.clientMessageId || existing.clientMessageId,
+    injectionId: next.injectionId || existing.injectionId,
+    occurredAt: existing.occurredAt || next.occurredAt,
+    recipientInstanceId: next.recipientInstanceId || existing.recipientInstanceId,
+    status: next.status,
+  };
+}
+
+function timelineInjectionIdentityKeys(
+  runId: string | null,
+  injection: TimelineInjectionRow,
+): string[] {
+  return [
+    injection.injectionId.length > 0
+      ? `${runId ?? ""}:id:${injection.injectionId}`
+      : "",
+    injection.clientMessageId.length > 0
+      ? `${runId ?? ""}:client:${injection.clientMessageId}`
+      : "",
+  ].filter(Boolean);
+}
+
+function registerRuntimeInjectionRow(
+  rowsByIdentity: Map<string, TimelineRow>,
+  runId: string,
+  row: TimelineRow,
+): void {
+  if (row.injection === undefined) {
+    return;
+  }
+  for (const key of timelineInjectionIdentityKeys(runId, row.injection)) {
+    rowsByIdentity.set(key, row);
+  }
+}
+
+function removeSupersededRuntimeInjectionRows(
+  rows: TimelineRow[],
+  rowsByIdentity: Map<string, TimelineRow>,
+  entry: TimelineEntry,
+  payload: Record<string, JsonValue>,
+): void {
+  const supersededKeys = new Set([
+    ...jsonStringValues(payload.superseded_injection_ids)
+      .map((id) => `${entry.runId}:id:${id}`),
+    ...jsonStringValues(payload.superseded_client_message_ids)
+      .map((id) => `${entry.runId}:client:${id}`),
+  ]);
+  if (supersededKeys.size === 0) {
+    return;
+  }
+  const supersededRows = new Set(
+    Array.from(supersededKeys).flatMap((key) => {
+      const row = rowsByIdentity.get(key);
+      return row === undefined || row.injection?.status !== "queued" ? [] : [row];
+    }),
+  );
+  if (supersededRows.size === 0) {
+    return;
+  }
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    const row = rows[index];
+    if (row !== undefined && supersededRows.has(row)) {
+      rows.splice(index, 1);
+    }
+  }
+  for (const [key, row] of rowsByIdentity) {
+    if (supersededRows.has(row)) {
+      rowsByIdentity.delete(key);
+    }
+  }
+}
+
+function jsonStringValues(value: JsonValue | undefined): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((item) =>
+    typeof item === "string" && item.trim().length > 0 ? [item.trim()] : []
+  );
 }
 
 function removeSupersededPendingToolRows(
@@ -5076,6 +5400,9 @@ function thinkingDeltaTextKey(payload: Record<string, JsonValue>): string {
 }
 
 function runtimeEntryShouldRenderChatContent(entry: TimelineEntry): boolean {
+  if (runtimeEntryIsInjection(entry)) {
+    return runtimeInjectionEntryIsVisible(entry);
+  }
   if (entry.kind === "run_completed" && runtimeEntryHasStructuredOutput(entry)) {
     return true;
   }
@@ -5526,10 +5853,14 @@ function mergeTimelineMessages(
       mergedByKey.set(key, item);
     }
   }
+  for (const message of messages) {
+    removeSupersededTimelineMessages(merged, mergedByKey, message);
+  }
   let nextIndex = messages.length;
   for (const round of rounds) {
     for (const roundMessage of roundMessages(round)) {
       const message = roundMessageToTimelineMessage(roundMessage, round.run_id);
+      removeSupersededTimelineMessages(merged, mergedByKey, message);
       const keys = timelineMessageDedupeKeys(message);
       const existingItem = keys
         .map((key) => mergedByKey.get(key))
@@ -5556,6 +5887,47 @@ function mergeTimelineMessages(
     .map((item) => item.message);
 }
 
+function removeSupersededTimelineMessages(
+  merged: Array<{ index: number; message: TimelineMessage }>,
+  mergedByKey: Map<string, { index: number; message: TimelineMessage }>,
+  message: TimelineMessage,
+): void {
+  const runId = (message.run_id ?? message.trace_id ?? "").trim();
+  const supersededKeys = [
+    ...(message.superseded_injection_ids ?? []).map(
+      (id) => `injection:${runId}:id:${id.trim()}`,
+    ),
+    ...(message.superseded_client_message_ids ?? []).map(
+      (id) => `injection:${runId}:client:${id.trim()}`,
+    ),
+  ].filter((key) => !key.endsWith(":"));
+  const rowsToRemove = new Set(
+    supersededKeys.flatMap((key) => {
+      const item = mergedByKey.get(key);
+      return item === undefined ||
+        normalizedInjectionStatus(
+          item.message.injection_status ?? item.message.status,
+        ) !== "queued"
+        ? []
+        : [item];
+    }),
+  );
+  if (rowsToRemove.size === 0) {
+    return;
+  }
+  for (let index = merged.length - 1; index >= 0; index -= 1) {
+    const item = merged[index];
+    if (item !== undefined && rowsToRemove.has(item)) {
+      merged.splice(index, 1);
+    }
+  }
+  for (const [key, item] of mergedByKey) {
+    if (rowsToRemove.has(item)) {
+      mergedByKey.delete(key);
+    }
+  }
+}
+
 function mergeTimelineMessageData(
   existing: TimelineMessage,
   next: TimelineMessage,
@@ -5567,11 +5939,17 @@ function mergeTimelineMessageData(
   mergeTimelineMessageStringField(merged, next, "role");
   mergeTimelineMessageStringField(merged, next, "instance_id");
   mergeTimelineMessageStringField(merged, next, "created_at");
+  mergeTimelineMessageStringField(merged, next, "client_message_id");
   mergeTimelineMessageStringField(merged, next, "entry_type");
   mergeTimelineMessageStringField(merged, next, "injection_id");
-  mergeTimelineMessageStringField(merged, next, "injection_status");
+  mergeTimelineMessageStringField(merged, next, "recipient_instance_id");
   mergeTimelineMessageStringField(merged, next, "source");
-  mergeTimelineMessageStringField(merged, next, "status");
+  mergeTimelineMessageStringField(merged, next, "visibility");
+  if (timelineMessageIsInjection(merged) || timelineMessageIsInjection(next)) {
+    mergeTimelineInjectionStatus(merged, next);
+  } else {
+    mergeTimelineMessageStringField(merged, next, "status");
+  }
   if ((merged.content?.trim() ?? "").length === 0 && (next.content?.trim() ?? "").length > 0) {
     merged.content = next.content;
   }
@@ -5591,17 +5969,44 @@ function mergeTimelineMessageData(
 }
 
 type TimelineMessageStringField =
+  | "client_message_id"
   | "created_at"
   | "entry_type"
   | "injection_id"
-  | "injection_status"
   | "instance_id"
   | "role"
   | "role_id"
+  | "recipient_instance_id"
   | "run_id"
   | "source"
   | "status"
-  | "trace_id";
+  | "trace_id"
+  | "visibility";
+
+function timelineMessageIsInjection(message: TimelineMessage): boolean {
+  return (message.entry_type ?? "").trim().toLowerCase() === "injection";
+}
+
+function mergeTimelineInjectionStatus(
+  target: TimelineMessage,
+  source: TimelineMessage,
+): void {
+  const current = normalizedInjectionStatus(
+    target.injection_status ?? target.status,
+  );
+  const nextStatus = normalizedInjectionStatus(
+    source.injection_status ?? source.status,
+  );
+  const priority: Record<TimelineInjectionRow["status"], number> = {
+    applied: 2,
+    failed: 3,
+    queued: 1,
+  };
+  if (priority[nextStatus] >= priority[current]) {
+    target.injection_status = nextStatus;
+    target.status = nextStatus;
+  }
+}
 
 function mergeTimelineMessageStringField(
   target: TimelineMessage,
@@ -5696,8 +6101,8 @@ function compareTimelineMessageItems(
   left: { index: number; message: TimelineMessage },
   right: { index: number; message: TimelineMessage },
 ): number {
-  const leftTimestamp = timestampMs(left.message.created_at);
-  const rightTimestamp = timestampMs(right.message.created_at);
+  const leftTimestamp = timestampMs(timelineMessageOccurredAt(left.message));
+  const rightTimestamp = timestampMs(timelineMessageOccurredAt(right.message));
   if (leftTimestamp !== null && rightTimestamp !== null) {
     const diff = leftTimestamp - rightTimestamp;
     return diff === 0 ? left.index - right.index : diff;
@@ -5713,11 +6118,13 @@ function roundMessageToTimelineMessage(
   const bodyParts = roundMessageParts(message.message?.parts ?? []);
   const bodyContent = jsonValueText(message.message?.content ?? null);
   return {
+    client_message_id: message.client_message_id,
     content: message.content,
-    created_at: message.created_at,
+    created_at: message.queued_at ?? message.created_at ?? message.occurred_at,
     entry_type: message.entry_type,
     injection_id: message.injection_id,
     injection_status: message.injection_status,
+    recipient_instance_id: message.recipient_instance_id,
     instance_id: message.instance_id,
     message: {
       ...(bodyContent.trim().length > 0 ? { content: bodyContent } : {}),
@@ -5730,6 +6137,9 @@ function roundMessageToTimelineMessage(
     run_id: runId,
     source: message.source,
     status: message.status,
+    superseded_client_message_ids: message.superseded_client_message_ids,
+    superseded_injection_ids: message.superseded_injection_ids,
+    visibility: message.visibility,
   };
 }
 
@@ -5801,10 +6211,24 @@ function roundMessagePartText(part: SessionRoundMessagePart): string {
 
 function timelineMessageDedupeKeys(message: TimelineMessage): string[] {
   return [
+    ...timelineMessageInjectionDedupeKeys(message),
     timelineMessageIdDedupeKey(message),
     timelineMessageFingerprintDedupeKey(message),
     timelineMessageContentDedupeKey(message),
   ].filter((key): key is string => key !== null);
+}
+
+function timelineMessageInjectionDedupeKeys(message: TimelineMessage): string[] {
+  if ((message.entry_type ?? "").trim().toLowerCase() !== "injection") {
+    return [];
+  }
+  const runId = (message.run_id ?? message.trace_id ?? "").trim();
+  const injectionId = message.injection_id?.trim() ?? "";
+  const clientMessageId = message.client_message_id?.trim() ?? "";
+  return [
+    injectionId.length > 0 ? `injection:${runId}:id:${injectionId}` : "",
+    clientMessageId.length > 0 ? `injection:${runId}:client:${clientMessageId}` : "",
+  ].filter(Boolean);
 }
 
 function timelineMessageIdDedupeKey(message: TimelineMessage): string | null {
@@ -5819,7 +6243,7 @@ function timelineMessageFingerprintDedupeKey(message: TimelineMessage): string {
   return [
     "fingerprint",
     message.run_id ?? message.trace_id ?? "",
-    message.created_at ?? "",
+    timelineMessageOccurredAt(message),
     message.entry_type ?? "",
     message.role_id ?? message.role ?? "",
     timelineMessagePrimaryText(message),
@@ -5876,7 +6300,7 @@ function messageRunIdentity(
       return { runId, source: "round" };
     }
   }
-  const createdAt = timestampMs(message.created_at);
+  const createdAt = timestampMs(timelineMessageOccurredAt(message));
   if (createdAt !== null) {
     const exactRunId = roundLookup.runIdByCreatedAt.get(createdAt);
     if (exactRunId !== undefined) {
@@ -5913,6 +6337,16 @@ function timestampMs(value: string | undefined): number | null {
   }
   const timestamp = new Date(value).getTime();
   return Number.isNaN(timestamp) ? null : timestamp;
+}
+
+function timelineMessageOccurredAt(message: TimelineMessage): string {
+  return (
+    message.queued_at ??
+    message.created_at ??
+    message.occurred_at ??
+    message.applied_at ??
+    ""
+  ).trim();
 }
 
 function applyRuntimeTextDeltaEvent(
@@ -7225,6 +7659,9 @@ function messageParts(
   if (injection !== null) {
     return [injection];
   }
+  if (timelineMessageIsInjection(message)) {
+    return [];
+  }
   if (typeof message.content === "string" && message.content.trim()) {
     return textRenderParts(timelineDisplayText(message.content), workspaceId);
   }
@@ -7241,7 +7678,10 @@ function messageParts(
 }
 
 function persistedInjectionPart(message: TimelineMessage): TimelineTextPart | null {
-  if ((message.entry_type ?? "").trim().toLowerCase() !== "injection") {
+  if (
+    (message.entry_type ?? "").trim().toLowerCase() !== "injection" ||
+    (message.visibility ?? "public").trim().toLowerCase() === "internal"
+  ) {
     return null;
   }
   const payload = persistedInjectionPayload(message);
@@ -7252,8 +7692,15 @@ function persistedInjectionPart(message: TimelineMessage): TimelineTextPart | nu
   const status = (message.injection_status ?? message.status ?? "applied")
     .trim()
     .toLowerCase();
-  const label = status.includes("queue") ? "Injection queued" : "Injection applied";
+  const label = injectionStatusLabel(normalizedInjectionStatus(status));
   return timelineTextPart(`${label}: ${summary}`);
+}
+
+function injectionStatusLabel(status: TimelineInjectionRow["status"]): string {
+  if (status === "failed") {
+    return "Injection failed";
+  }
+  return status === "applied" ? "Injection applied" : "Injection queued";
 }
 
 function persistedInjectionPayload(message: TimelineMessage): Record<string, JsonValue> {

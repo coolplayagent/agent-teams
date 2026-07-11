@@ -577,7 +577,7 @@ export function MessageTimeline({
       scrollSnapshotRef.current = null;
     }
     const container = parentRef.current;
-    if (container === null) {
+    if (container === null || timelineContainerIsHidden(container)) {
       return;
     }
     const snapshot = scrollSnapshotRef.current;
@@ -836,6 +836,10 @@ interface MessageRoundLookup {
 interface RoundBoundary {
   createdAtMs: number;
   runId: string;
+}
+
+function timelineContainerIsHidden(container: HTMLElement): boolean {
+  return container.closest("[hidden]") !== null;
 }
 
 function captureTimelineScrollSnapshot(

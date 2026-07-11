@@ -268,10 +268,8 @@ export function AppShell() {
     subagentOpenGenerationRef.current += 1;
     setActiveSubagent(null);
   }, []);
-  const refreshSubagentPanelLayoutMax = useCallback(() => {
-    setSubagentPanelLayoutMax(
-      subagentPanelMaxForContainerWidth(chatShellRef.current?.clientWidth ?? 0),
-    );
+  const updateSubagentPanelLayoutMax = useCallback((containerWidth: number) => {
+    setSubagentPanelLayoutMax(subagentPanelMaxForContainerWidth(containerWidth));
   }, []);
 
   const healthQuery = useQuery({
@@ -736,26 +734,39 @@ export function AppShell() {
     if (visibleActiveSubagent === null) {
       return undefined;
     }
-    refreshSubagentPanelLayoutMax();
     const shellElement = chatShellRef.current;
     if (shellElement === null) {
-      window.addEventListener("resize", refreshSubagentPanelLayoutMax);
-      return () =>
-        window.removeEventListener("resize", refreshSubagentPanelLayoutMax);
+      return undefined;
     }
     if (typeof ResizeObserver !== "undefined") {
-      const resizeObserver = new ResizeObserver(refreshSubagentPanelLayoutMax);
+      const resizeObserver = new ResizeObserver((entries) => {
+        const entry = entries[0];
+        if (entry !== undefined) {
+          updateSubagentPanelLayoutMax(entry.contentRect.width);
+        }
+      });
       resizeObserver.observe(shellElement);
-      window.addEventListener("resize", refreshSubagentPanelLayoutMax);
-      return () => {
-        resizeObserver.disconnect();
-        window.removeEventListener("resize", refreshSubagentPanelLayoutMax);
-      };
+      return () => resizeObserver.disconnect();
     }
-    window.addEventListener("resize", refreshSubagentPanelLayoutMax);
-    return () =>
-      window.removeEventListener("resize", refreshSubagentPanelLayoutMax);
-  }, [refreshSubagentPanelLayoutMax, visibleActiveSubagent]);
+    let frameId: number | null = null;
+    const refreshFromLayout = () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+      frameId = window.requestAnimationFrame(() => {
+        frameId = null;
+        updateSubagentPanelLayoutMax(shellElement.clientWidth);
+      });
+    };
+    refreshFromLayout();
+    window.addEventListener("resize", refreshFromLayout);
+    return () => {
+      if (frameId !== null) {
+        window.cancelAnimationFrame(frameId);
+      }
+      window.removeEventListener("resize", refreshFromLayout);
+    };
+  }, [updateSubagentPanelLayoutMax, visibleActiveSubagent]);
 
   useEffect(() => {
     if (visibleActiveSubagent === null) {

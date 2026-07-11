@@ -85,6 +85,7 @@ import {
   type SystemSettingsPage,
 } from "./settingsNavigation";
 import "./ModelProbeStatus.css";
+import "./SettingsModelEditor.css";
 
 type GeneralRelatedSectionKey = Extract<
   SettingsSectionKey,
@@ -1571,6 +1572,7 @@ function ModelProfileDetail({
         ) : null}
         <div className="at-settings-form-card at-model-profile-form-grid">
           <Form.Item
+            className="at-model-field-short"
             label={t("settingsModelProfileId")}
             name="profile_id"
             rules={[{ message: t("settingsModelProfileIdRequired"), required: true }]}
@@ -1578,6 +1580,7 @@ function ModelProfileDetail({
             <Input />
           </Form.Item>
           <Form.Item
+            className="at-model-field-short"
             label={t("settingsModelProvider")}
             name="provider"
             rules={[{ message: t("settingsModelProviderRequired"), required: true }]}
@@ -1585,6 +1588,7 @@ function ModelProfileDetail({
             <Input onChange={(event) => setProviderOverride(event.target.value)} />
           </Form.Item>
           <Form.Item
+            className="at-model-field-short"
             label={t("settingsModelName")}
             name="model"
             rules={[{ message: t("settingsModelNameRequired"), required: true }]}
@@ -1592,29 +1596,30 @@ function ModelProfileDetail({
             <Input />
           </Form.Item>
           <Form.Item
+            className="at-model-field-wide"
             label={t("settingsModelBaseUrl")}
             name="base_url"
             rules={[{ message: t("settingsModelBaseUrlRequired"), required: true }]}
           >
             <Input />
           </Form.Item>
-          <Form.Item label={t("settingsModelTemperature")} name="temperature">
+          <Form.Item className="at-model-field-short" label={t("settingsModelTemperature")} name="temperature">
             <Input inputMode="decimal" type="number" />
           </Form.Item>
-          <Form.Item label={t("settingsModelTopP")} name="top_p">
+          <Form.Item className="at-model-field-short" label={t("settingsModelTopP")} name="top_p">
             <Input inputMode="decimal" type="number" />
           </Form.Item>
-          <Form.Item label={t("settingsModelContextWindow")} name="context_window">
+          <Form.Item className="at-model-field-short" label={t("settingsModelContextWindow")} name="context_window">
             <Input inputMode="numeric" type="number" />
           </Form.Item>
-          <Form.Item label={t("settingsModelMaxTokens")} name="max_tokens">
+          <Form.Item className="at-model-field-short" label={t("settingsModelMaxTokens")} name="max_tokens">
             <Input inputMode="numeric" type="number" />
           </Form.Item>
-          <Form.Item label={t("settingsModelTimeoutSeconds")} name="connect_timeout_seconds">
+          <Form.Item className="at-model-field-short" label={t("settingsModelTimeoutSeconds")} name="connect_timeout_seconds">
             <Input inputMode="decimal" type="number" />
           </Form.Item>
           {showGenericApiKey ? (
-            <Form.Item label={t("settingsModelApiKey")} name="api_key">
+            <Form.Item className="at-model-field-wide" label={t("settingsModelApiKey")} name="api_key">
               <Input.Password
                 autoComplete="new-password"
                 placeholder={
@@ -1627,10 +1632,10 @@ function ModelProfileDetail({
           ) : null}
           {showMaasAuth ? (
             <>
-              <Form.Item label={t("settingsModelMaasUsername")} name="maas_username">
+              <Form.Item className="at-model-field-short" label={t("settingsModelMaasUsername")} name="maas_username">
                 <Input autoComplete="username" />
               </Form.Item>
-              <Form.Item label={t("settingsModelMaasPassword")} name="maas_password">
+              <Form.Item className="at-model-field-wide" label={t("settingsModelMaasPassword")} name="maas_password">
                 <Input.Password
                   autoComplete="new-password"
                   placeholder={
@@ -1682,7 +1687,7 @@ function ModelProfileDetail({
               </Form.Item>
             </>
           ) : null}
-          <Form.Item label={t("settingsModelImageCapability")} name="image_capability">
+          <Form.Item className="at-model-field-short" label={t("settingsModelImageCapability")} name="image_capability">
             <Select
               options={[
                 { label: t("settingsModelImageCapabilityFollow"), value: "follow" },
@@ -1697,13 +1702,13 @@ function ModelProfileDetail({
               ]}
             />
           </Form.Item>
-          <Form.Item label={t("settingsModelFallbackPolicy")} name="fallback_policy_id">
+          <Form.Item className="at-model-field-short" label={t("settingsModelFallbackPolicy")} name="fallback_policy_id">
             <Input />
           </Form.Item>
-          <Form.Item label={t("settingsModelFallbackPriority")} name="fallback_priority">
+          <Form.Item className="at-model-field-short" label={t("settingsModelFallbackPriority")} name="fallback_priority">
             <Input inputMode="numeric" type="number" />
           </Form.Item>
-          <Form.Item label={t("settingsModelSslVerify")} name="ssl_verify">
+          <Form.Item className="at-model-field-short" label={t("settingsModelSslVerify")} name="ssl_verify">
             <Select
               options={[
                 { label: t("settingsProxySslInherit"), value: "" },
@@ -1722,31 +1727,21 @@ function ModelProfileDetail({
           </Form.Item>
         </div>
       </Form>
-      <div className="at-settings-facts at-settings-workspace-facts">
-        <Fact
-          label={t("settingsModelProvider")}
-          value={effectiveProfile.provider ?? t("settingsProviderUnknown")}
-        />
-        <Fact label={t("settingsModelName")} value={effectiveProfile.model ?? "-"} />
-        <Fact
-          label={t("settingsModelDefault")}
-          value={
-            effectiveProfile.is_default === true ? t("settingsEnabled") : t("settingsDisabled")
-          }
-        />
-      </div>
-      <div className="at-settings-list at-model-profile-properties">
-        <PropertyRow label={t("settingsModelInput")} value={input || "-"} />
-        <PropertyRow label={t("settingsModelOutput")} value={output || "-"} />
-        <PropertyRow
-          label={t("settingsModelModalities")}
-          value={modalityList(effectiveProfile.input_modalities ?? []) || "-"}
-        />
-        <PropertyRow
-          label={t("settingsModelSpeechRealtime")}
-          value={effectiveProfile.speech_realtime?.model ?? "-"}
-        />
-      </div>
+      <details className="at-model-capability-disclosure">
+        <summary>{t("settingsModelCapabilities")}</summary>
+        <div className="at-model-capability-grid">
+          <Fact label={t("settingsModelInput")} value={input || "-"} />
+          <Fact label={t("settingsModelOutput")} value={output || "-"} />
+          <Fact
+            label={t("settingsModelModalities")}
+            value={modalityList(effectiveProfile.input_modalities ?? []) || "-"}
+          />
+          <Fact
+            label={t("settingsModelSpeechRealtime")}
+            value={effectiveProfile.speech_realtime?.model ?? "-"}
+          />
+        </div>
+      </details>
     </div>
   );
 }

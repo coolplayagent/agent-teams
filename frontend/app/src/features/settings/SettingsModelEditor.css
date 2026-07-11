@@ -1,0 +1,70 @@
+.at-model-profile-form {
+  max-width: 920px;
+}
+
+.at-model-profile-form-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: end;
+}
+
+.at-model-profile-form-grid .at-model-field-short {
+  grid-column: span 1;
+}
+
+.at-model-profile-form-grid .at-model-field-wide {
+  grid-column: span 2;
+}
+
+.at-model-profile-switch-field {
+  grid-column: span 1;
+}
+
+.at-model-capability-disclosure {
+  max-width: 920px;
+  border: 1px solid var(--at-border);
+  border-radius: 8px;
+  background: var(--at-surface);
+}
+
+.at-model-capability-disclosure > summary {
+  padding: 9px 12px;
+  color: var(--at-muted);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.at-model-capability-disclosure > summary:focus-visible {
+  outline: 2px solid var(--at-accent);
+  outline-offset: 2px;
+}
+
+.at-model-capability-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0 12px 12px;
+}
+
+@media (max-width: 900px) {
+  .at-model-profile-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .at-model-capability-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .at-model-profile-form-grid,
+  .at-model-capability-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .at-model-profile-form-grid .at-model-field-short,
+  .at-model-profile-form-grid .at-model-field-wide,
+  .at-model-profile-switch-field {
+    grid-column: auto;
+  }
+}

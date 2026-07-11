@@ -811,6 +811,46 @@ describe("RecoveryBar", () => {
     });
   });
 
+  it("clears question form state when the selected session changes", async () => {
+    getRecoverySnapshotMock.mockImplementation((sessionId) =>
+      Promise.resolve(recoverySnapshot({
+        pending_user_questions: [
+          {
+            question_id: "shared-question-id",
+            questions: [{
+              multiple: false,
+              options: [{ label: sessionId === "session-a" ? "Session A" : "Session B" }],
+              question: `Decision for ${sessionId}`,
+            }],
+            role_id: "Explorer",
+            run_id: `run-${sessionId}`,
+          },
+        ],
+      })),
+    );
+    const controller = runStreamController();
+    const view = render(
+      <TestProviders>
+        <RecoveryBar runStreamController={controller} sessionId="session-a" />
+      </TestProviders>,
+    );
+
+    const sessionAOption = await screen.findByLabelText("Session A");
+    fireEvent.click(sessionAOption);
+    expect(sessionAOption).toBeChecked();
+    expect(screen.getByRole("button", { name: "Answer" })).not.toBeDisabled();
+
+    view.rerender(
+      <TestProviders>
+        <RecoveryBar runStreamController={controller} sessionId="session-b" />
+      </TestProviders>,
+    );
+
+    const sessionBOption = await screen.findByLabelText("Session B");
+    await waitFor(() => expect(sessionBOption).not.toBeChecked());
+    expect(screen.getByRole("button", { name: "Answer" })).toBeDisabled();
+  });
+
   it("settles only a vanished foreground run while a background run remains active", async () => {
     const backgroundTask: RecoverySnapshot["background_tasks"][number] = {
       background_task_id: "background-task-1",

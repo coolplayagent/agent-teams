@@ -68,6 +68,8 @@ export function RecoveryBar({
   const pendingRunResumePromisesRef = useRef(
     new Map<string, ReturnType<typeof resumeRun>>(),
   );
+  const currentSessionIdRef = useRef(sessionId);
+  currentSessionIdRef.current = sessionId;
   const recoveryQuery = useQuery({
     queryKey: ["sessions", sessionId, "recovery"],
     queryFn: () => getRecoverySnapshot(sessionId ?? ""),
@@ -75,6 +77,13 @@ export function RecoveryBar({
     refetchOnWindowFocus: false,
     refetchInterval: 10000,
   });
+
+  useEffect(() => {
+    setQuestionSelections({});
+    setQuestionSupplements({});
+    setQuestionErrors({});
+    setBusyQuestionIds({});
+  }, [sessionId]);
 
   useEffect(() => {
     if (sessionId === null) {
@@ -362,6 +371,7 @@ export function RecoveryBar({
 
   const answerPendingQuestion = async (question: PendingUserQuestion) => {
     const questionId = question.question_id;
+    const answerSessionId = sessionId;
     setQuestionErrors((current) => removeRecordKey(current, questionId));
     setBusyQuestionIds((current) => ({ ...current, [questionId]: true }));
     try {
@@ -377,20 +387,26 @@ export function RecoveryBar({
         await resumeRecoverableRun(question.run_id);
       }
       await answerUserQuestion(question.run_id, questionId, answers);
-      setQuestionSelections((current) => removeQuestionInputKeys(current, questionId));
-      setQuestionSupplements((current) => removeQuestionInputKeys(current, questionId));
+      if (currentSessionIdRef.current === answerSessionId) {
+        setQuestionSelections((current) => removeQuestionInputKeys(current, questionId));
+        setQuestionSupplements((current) => removeQuestionInputKeys(current, questionId));
+      }
       void queryClient.invalidateQueries({ queryKey: ["sessions", sessionId, "recovery"] });
       void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
     } catch (error) {
       const messageText =
         error instanceof Error ? error.message : "Question answer failed.";
-      setQuestionErrors((current) => ({
-        ...current,
-        [questionId]: messageText,
-      }));
+      if (currentSessionIdRef.current === answerSessionId) {
+        setQuestionErrors((current) => ({
+          ...current,
+          [questionId]: messageText,
+        }));
+      }
       void message.error(messageText);
     } finally {
-      setBusyQuestionIds((current) => removeRecordKey(current, questionId));
+      if (currentSessionIdRef.current === answerSessionId) {
+        setBusyQuestionIds((current) => removeRecordKey(current, questionId));
+      }
     }
   };
 

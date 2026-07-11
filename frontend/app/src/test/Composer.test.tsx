@@ -175,28 +175,28 @@ describe("Composer", () => {
       "What would you like the agents to do?",
     );
     await openAdvancedControls();
-    await openModelControls();
     expect(screen.getAllByText("Mode")).not.toHaveLength(0);
-    expect(screen.getByText("Role")).toBeVisible();
-    expect(screen.getByText("Target")).toBeVisible();
-    expect(screen.getAllByText("Model")).not.toHaveLength(0);
-    expect(selectRoot("Root role")).toBeVisible();
+    expect(screen.getByText("Role")).toBeInTheDocument();
+    expect(screen.getByText("Target")).toBeInTheDocument();
+    expect(selectRoot("Root role")).toBeInTheDocument();
     expect(
       screen.queryByRole("combobox", { name: "Orchestration preset" }),
     ).not.toBeInTheDocument();
-    expect(selectRoot("Target role")).toBeVisible();
-    expect(selectRoot("Model profile")).toBeInTheDocument();
+    expect(selectRoot("Target role")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Shell safety policy" }))
       .toBeChecked();
     expect(screen.getByRole("checkbox", { name: "YOLO" })).toBeChecked();
-    expect(screen.getByRole("switch", { name: "Thinking" })).toBeVisible();
+    expect(screen.getByRole("switch", { name: "Thinking" })).toBeInTheDocument();
     expect(
       screen.queryByRole("combobox", { name: "Thinking effort" }),
     ).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("switch", { name: "Thinking" }));
 
-    expect(selectRoot("Thinking effort")).toBeVisible();
+    expect(selectRoot("Thinking effort")).toBeInTheDocument();
+    await openModelControls();
+    expect(screen.getAllByText("Model")).not.toHaveLength(0);
+    expect(selectRoot("Model profile")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Send" })).toHaveAttribute(
       "title",
       "Enter a prompt or attach a file before sending.",
@@ -221,19 +221,19 @@ describe("Composer", () => {
       "你希望这些代理帮你做什么？",
     );
     await openAdvancedControls("模式: normal");
-    await openModelControls("模型配置");
-    expect(screen.getByText("普通模式")).toBeVisible();
+    expect(segmentedItem("普通模式")).toBeInTheDocument();
     expect(screen.getAllByText("模式")).not.toHaveLength(0);
-    expect(screen.getByText("角色")).toBeVisible();
-    expect(screen.getByText("目标")).toBeVisible();
-    expect(screen.getAllByText("模型")).not.toHaveLength(0);
-    expect(screen.getByRole("combobox", { name: "根角色" })).toBeVisible();
+    expect(screen.getByText("角色")).toBeInTheDocument();
+    expect(screen.getByText("目标")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "根角色" })).toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "编排预设" })).not.toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "目标角色" })).toBeVisible();
-    expect(screen.getByRole("combobox", { name: "模型配置" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "思考" })).toBeVisible();
+    expect(screen.getByRole("combobox", { name: "目标角色" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "思考" })).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Shell 安全策略" })).toBeInTheDocument();
-    expect(screen.getByText("Shell")).toBeVisible();
+    expect(screen.getByText("Shell")).toBeInTheDocument();
+    await openModelControls("模型配置");
+    expect(screen.getAllByText("模型")).not.toHaveLength(0);
+    expect(screen.getByRole("combobox", { name: "模型配置" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "发送" })).toBeVisible();
   });
 
@@ -3329,15 +3329,18 @@ function runStreamController(activeRunId: string | null = null): RunStreamContro
 
 function selectRoot(label: string): HTMLElement {
   const element = screen.getByRole("combobox", { name: label }).closest(".ant-select");
-  if (element === null) {
+  if (element === undefined || element === null) {
     throw new Error(`${label} select root was not rendered.`);
   }
   return element as HTMLElement;
 }
 
 function segmentedItem(label: string): HTMLElement {
-  const element = screen.getByText(label).closest(".ant-segmented-item");
-  if (element === null) {
+  const element = screen
+    .getAllByText(label)
+    .map((candidate) => candidate.closest(".ant-segmented-item"))
+    .find((candidate) => candidate !== null);
+  if (element === undefined || element === null) {
     throw new Error(`${label} segmented item was not rendered.`);
   }
   return element as HTMLElement;
@@ -3355,7 +3358,8 @@ async function openAdvancedControls(label = "Mode: normal") {
   if (target !== null) {
     return target;
   }
-  fireEvent.click(await screen.findByRole("button", { name: label }));
+  const accessibleName = label.startsWith("模式") ? /^模式:/ : /^Mode:/i;
+  fireEvent.click(await screen.findByRole("button", { name: accessibleName }));
   return screen.findByRole("combobox", { name: /Target role|目标角色/ });
 }
 

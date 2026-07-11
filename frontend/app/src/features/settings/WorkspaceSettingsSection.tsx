@@ -500,8 +500,8 @@ function SshProfileEditorModal({
         layout="vertical"
         onFinish={onSubmit}
       >
-        <div className="at-settings-card-list">
-          <div className="at-settings-form-card">
+        <div className="at-settings-form-layout">
+          <div className="at-settings-form-card-layout">
             <Form.Item
               label={t("settingsWorkspaceProfileId")}
               name="ssh_profile_id"
@@ -538,7 +538,7 @@ function SshProfileEditorModal({
               </Form.Item>
             </div>
           </div>
-          <div className="at-settings-form-card">
+          <div className="at-settings-form-card-layout">
             <Form.Item label={t("settingsWorkspaceRemoteShell")} name="remote_shell">
               <Input placeholder="/bin/bash" />
             </Form.Item>

@@ -346,12 +346,12 @@ function EnvironmentVariableEditorModal({
       width={620}
     >
       <Form
-        className="at-settings-form at-settings-wide-form"
+        className="at-settings-form at-settings-wide-form at-settings-form-layout"
         form={form}
         layout="vertical"
         onFinish={onSubmit}
       >
-        <div className="at-settings-form-card">
+        <div className="at-settings-form-card-layout">
           <Form.Item
             label={t("settingsEnvironmentKey")}
             name="key"

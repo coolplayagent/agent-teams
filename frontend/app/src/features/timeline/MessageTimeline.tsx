@@ -52,6 +52,7 @@ import "./ToolCallDetails.css";
 const TIMELINE_BOTTOM_FOLLOW_THRESHOLD_PX = 96;
 const TIMELINE_SCROLL_SCOPE_CACHE_LIMIT = 100;
 const TIMELINE_DERIVED_ROWS_CACHE_LIMIT = 8;
+const TIMELINE_FALLBACK_RENDER_LIMIT = 24;
 const ROUND_RAIL_PAGE_LIMIT = 100;
 const ROUND_RAIL_MAX_PAGES = 10;
 const TOOL_RESULT_MAX_LINES = 200;
@@ -1358,8 +1359,12 @@ function scrollMetric(value: number): number {
 }
 
 function fallbackVirtualItems(rows: TimelineRow[]): FallbackVirtualItem[] {
-  let start = 0;
-  return rows.map((row, index) => {
+  const firstIndex = Math.max(0, rows.length - TIMELINE_FALLBACK_RENDER_LIMIT);
+  let start = rows
+    .slice(0, firstIndex)
+    .reduce((total, row) => total + estimateRowSize(row), 0);
+  return rows.slice(firstIndex).map((row, offset) => {
+    const index = firstIndex + offset;
     const item = { index, start };
     start += estimateRowSize(row);
     return item;

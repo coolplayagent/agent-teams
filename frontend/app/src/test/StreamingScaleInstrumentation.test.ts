@@ -37,4 +37,15 @@ describe("streaming scale instrumentation", () => {
       timelineSource.slice(timelineStart, timelineEnd),
     ).toContain("data-total-row-count={rows.length}");
   });
+
+  it("bounds the synchronous fallback while the virtualizer measures", () => {
+    expect(timelineSource).toContain(
+      "const TIMELINE_FALLBACK_RENDER_LIMIT = 24;",
+    );
+    expect(timelineSource).toContain(
+      "rows.length - TIMELINE_FALLBACK_RENDER_LIMIT",
+    );
+    expect(timelineSource).toContain("rows.slice(firstIndex).map");
+    expect(timelineSource).not.toContain("return rows.map((row, index)");
+  });
 });

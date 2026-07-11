@@ -30,6 +30,7 @@ import { RoundMarker } from "./RoundMarker";
 import { RoundRail } from "./RoundRail";
 import { TimelineDisclosure } from "./TimelineDisclosure";
 import { ToolCallDetails } from "./ToolCallDetails";
+import { toolActionFamily } from "./toolPresentation";
 import { roundPromptText, roundTitle } from "./roundMetadata";
 import { indexesWithLongerStrictPrefix } from "./timelinePerformance";
 import "./ToolCallDetails.css";
@@ -7117,6 +7118,7 @@ function MessageToolBlock({
             output={tool.outputBody ?? (tool.phase === "call" ? "" : tool.body)}
             raw={tool.body}
             t={t}
+            toolName={tool.toolName}
           />
           {tool.mediaParts.map((media, index) => (
             <MessageMediaPreview
@@ -8068,51 +8070,7 @@ function toolActionLabel(
 function toolActionCategory(
   toolName: string,
 ): "edit" | "generic" | "read" | "run" | "search" | "subagent" {
-  const normalized = toolName.trim().toLowerCase().replaceAll("-", "_");
-  if (
-    normalized.includes("subagent") ||
-    normalized === "orch_dispatch_task" ||
-    normalized === "activate_skill_roles"
-  ) {
-    return "subagent";
-  }
-  if (
-    normalized === "shell" ||
-    normalized === "command" ||
-    normalized === "terminal" ||
-    normalized.includes("exec") ||
-    normalized.includes("run_command")
-  ) {
-    return "run";
-  }
-  if (
-    normalized.includes("apply_patch") ||
-    normalized.includes("patch") ||
-    normalized.includes("edit") ||
-    normalized.includes("replace") ||
-    normalized.includes("update") ||
-    normalized.includes("write")
-  ) {
-    return "edit";
-  }
-  if (
-    normalized.includes("glob") ||
-    normalized.includes("grep") ||
-    normalized === "rg" ||
-    normalized.includes("search") ||
-    normalized.includes("find")
-  ) {
-    return "search";
-  }
-  if (
-    normalized.includes("read") ||
-    normalized.includes("fetch") ||
-    normalized.includes("list") ||
-    normalized.includes("open")
-  ) {
-    return "read";
-  }
-  return "generic";
+  return toolActionFamily(toolName);
 }
 
 function toolDisplayName(tool: TimelineToolPart): string | null {

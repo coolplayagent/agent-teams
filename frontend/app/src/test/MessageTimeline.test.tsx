@@ -5745,15 +5745,12 @@ describe("MessageTimeline", () => {
       "path is required",
       "**/*.ts",
     ]);
-    expect(screen.getAllByText(/"cmd": "npm test"/).every((element) =>
-      element.closest("details:not([open])") !== null
-    )).toBe(true);
+    expect(screen.getByText("cmd: npm test").closest("details:not([open])"))
+      .not.toBeNull();
 
     fireEvent.click(resultTitle);
 
-    expect(screen.getAllByText(/"cmd": "npm test"/).some((element) =>
-      element.closest("details:not([open])") === null
-    )).toBe(true);
+    expect(screen.getByText("cmd: npm test")).toBeVisible();
   });
 
   it("drops duplicate persisted thinking rows left after tool replay merge", async () => {
@@ -5887,20 +5884,14 @@ describe("MessageTimeline", () => {
     const details = toolPreElements(container).map(
       (element) => element.textContent ?? "",
     );
-    expect(details.some((detail) =>
-      detail.includes("\"query\": \"Anthropic safety policy\""),
-    )).toBe(true);
-    expect(details.some((detail) =>
-      detail.includes("\"query\": \"Anthropic funding 2026\""),
-    )).toBe(true);
+    expect(details).toContain("query: Anthropic safety policy");
+    expect(details).toContain("query: Anthropic funding 2026");
     expect(details.some((detail) =>
       detail.includes("\"__items\"") &&
         detail.includes("\"one\"") &&
         detail.includes("\"two\""),
     )).toBe(true);
-    expect(details.some((detail) =>
-      detail.includes("\"__raw\": \"not json\""),
-    )).toBe(true);
+    expect(details.some((detail) => detail.includes("not json"))).toBe(true);
   });
 
   it("summarizes effective tool inputs for command, file, search, and URL fields", async () => {

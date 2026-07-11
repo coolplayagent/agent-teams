@@ -3,6 +3,7 @@ import { Copy } from "lucide-react";
 import { useState } from "react";
 
 import type { Translate } from "../../i18n";
+import { humanReadableToolText } from "./toolPresentation";
 
 interface ToolCallDetailsProps {
   callId: string;
@@ -11,6 +12,7 @@ interface ToolCallDetailsProps {
   output: string;
   raw: string;
   t: Translate;
+  toolName: string;
 }
 
 export function ToolCallDetails({
@@ -20,6 +22,7 @@ export function ToolCallDetails({
   output,
   raw,
   t,
+  toolName,
 }: ToolCallDetailsProps) {
   return (
     <div className="at-tool-details">
@@ -31,7 +34,12 @@ export function ToolCallDetails({
         </div>
       ) : null}
       {input.trim() ? (
-        <ToolDetailSection label={t("timelineToolInput")} t={t} text={input} />
+        <ToolDetailSection
+          label={t("timelineToolInput")}
+          t={t}
+          text={input}
+          toolName={toolName}
+        />
       ) : null}
       {output.trim() ? (
         <ToolDetailSection
@@ -39,6 +47,7 @@ export function ToolCallDetails({
           label={error ? t("timelineToolError") : t("timelineToolOutput")}
           t={t}
           text={output}
+          toolName={toolName}
         />
       ) : null}
       {raw.trim() && raw.trim() !== input.trim() && raw.trim() !== output.trim() ? (
@@ -59,14 +68,16 @@ function ToolDetailSection({
   label,
   text,
   t,
+  toolName,
 }: {
   error?: boolean;
   label: string;
   text: string;
   t: Translate;
+  toolName: string;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const display = humanReadableToolText(text);
+  const display = humanReadableToolText(toolName, text);
   const long = display.length > 1_200 || display.split("\n").length > 20;
   return (
     <section className={["at-tool-detail-section", error ? "is-error" : ""]
@@ -93,34 +104,4 @@ function CopyButton({ label, text }: { label: string; text: string }) {
       type="text"
     />
   );
-}
-
-function humanReadableToolText(text: string): string {
-  const trimmed = text.trim();
-  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
-    return text;
-  }
-  try {
-    const parsed = JSON.parse(trimmed) as unknown;
-    const list = readableStringList(parsed);
-    return list === null ? JSON.stringify(parsed, null, 2) : list.map((item) => `- ${item}`).join("\n");
-  } catch {
-    return text;
-  }
-}
-
-function readableStringList(value: unknown): string[] | null {
-  if (Array.isArray(value) && value.every((item) => typeof item === "string")) {
-    return value;
-  }
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return null;
-  }
-  for (const key of ["entries", "files", "items", "paths"]) {
-    const candidate = (value as Record<string, unknown>)[key];
-    if (Array.isArray(candidate) && candidate.every((item) => typeof item === "string")) {
-      return candidate;
-    }
-  }
-  return null;
 }

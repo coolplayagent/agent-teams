@@ -39,6 +39,7 @@ function ToolDetailsHarness() {
       output={'{"entries":["MessageTimeline.tsx","ToolCallDetails.tsx"]}'}
       raw="raw tool payload"
       t={t}
+      toolName="list_directory"
     />
   );
 }

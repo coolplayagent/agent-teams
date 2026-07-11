@@ -140,8 +140,8 @@ export function SpeechSettingsSection() {
           layout="vertical"
           onFinish={submit}
         >
-          <div className="at-settings-card-list">
-            <div className="at-settings-form-card">
+            <div className="at-settings-form-layout">
+            <div className="at-settings-form-card-layout">
               <Form.Item label={t("settingsSpeechSttProfile")} name="stt_profile_name">
                 <Select
                   optionFilterProp="label"
@@ -161,7 +161,7 @@ export function SpeechSettingsSection() {
                 </Typography.Text>
               ) : null}
             </div>
-            <div className="at-settings-form-card">
+            <div className="at-settings-form-card-layout">
               <Form.Item label={t("settingsSpeechLanguage")} name="language">
                 <Select
                   optionFilterProp="label"
@@ -186,7 +186,7 @@ export function SpeechSettingsSection() {
               </Form.Item>
             </div>
             {unavailableProfileEntries.length > 0 ? (
-              <div className="at-settings-form-card at-speech-unavailable">
+              <div className="at-settings-form-card-layout at-speech-unavailable">
                 <Typography.Text strong>
                   {t("settingsSpeechUnavailableProfiles")}
                 </Typography.Text>

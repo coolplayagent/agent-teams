@@ -98,8 +98,8 @@ export function WebSettingsSection() {
           {saveError !== null ? (
             <Alert message={saveError} showIcon type="error" />
           ) : null}
-          <div className="at-settings-card-list">
-            <div className="at-settings-form-card">
+          <div className="at-settings-form-layout">
+            <div className="at-settings-form-card-layout">
               <Form.Item label={t("settingsWebProvider")}>
                 <Input readOnly value="Exa" />
               </Form.Item>
@@ -123,7 +123,7 @@ export function WebSettingsSection() {
                 <Button onClick={clearApiKey}>{t("settingsWebClearApiKey")}</Button>
               ) : null}
             </div>
-            <div className="at-settings-form-card">
+            <div className="at-settings-form-card-layout">
               <Form.Item label={t("settingsWebFallbackProvider")} name="fallback_provider">
                 <Select
                   options={[

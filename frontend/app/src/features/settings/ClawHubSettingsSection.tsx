@@ -120,8 +120,8 @@ export function ClawHubSettingsSection() {
             form={form}
             layout="vertical"
           >
-            <div className="at-settings-card-list">
-              <div className="at-settings-form-card">
+            <div className="at-settings-form-layout">
+            <div className="at-settings-form-card-layout">
                 <Typography.Text strong>{t("settingsClawHubCredential")}</Typography.Text>
                 <Form.Item label={t("settingsClawHubToken")} name="token">
                   <Input.Password

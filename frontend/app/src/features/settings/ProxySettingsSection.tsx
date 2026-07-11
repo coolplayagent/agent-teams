@@ -159,8 +159,8 @@ export function ProxySettingsSection() {
           layout="vertical"
           onFinish={submit}
         >
-          <div className="at-settings-card-list">
-            <div className="at-settings-form-card">
+            <div className="at-settings-form-layout">
+            <div className="at-settings-form-card-layout">
               <Typography.Text strong>{t("settingsProxySection")}</Typography.Text>
               <Form.Item label={t("settingsProxyHttp")} name="http_proxy">
                 <Input
@@ -187,7 +187,7 @@ export function ProxySettingsSection() {
                 />
               </Form.Item>
             </div>
-            <div className="at-settings-form-card">
+            <div className="at-settings-form-card-layout">
               <Typography.Text strong>{t("settingsProxyAuthSection")}</Typography.Text>
               <Form.Item label={t("settingsProxyUsername")} name="proxy_username">
                 <Input autoComplete="username" />
@@ -231,7 +231,7 @@ export function ProxySettingsSection() {
                 />
               </Form.Item>
             </div>
-            <div className="at-settings-form-card">
+            <div className="at-settings-form-card-layout">
               <Typography.Text strong>{t("settingsProxyConnectivity")}</Typography.Text>
               <div className="at-settings-proxy-test-row">
                 <Form.Item

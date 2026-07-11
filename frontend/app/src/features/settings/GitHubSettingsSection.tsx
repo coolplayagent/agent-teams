@@ -288,8 +288,8 @@ export function GitHubSettingsSection() {
             form={form}
             layout="vertical"
           >
-            <div className="at-settings-card-list">
-              <div className="at-settings-form-card">
+            <div className="at-settings-form-layout">
+            <div className="at-settings-form-card-layout">
                 <Typography.Text strong>{t("settingsGitHubCli")}</Typography.Text>
                 <Form.Item label={t("settingsGitHubToken")} name="token">
                   <Input.Password
@@ -361,7 +361,7 @@ export function GitHubSettingsSection() {
                   </Button>
                 </div>
               </div>
-              <div className="at-settings-form-card">
+            <div className="at-settings-form-card-layout">
                 <Typography.Text strong>{t("settingsGitHubWebhook")}</Typography.Text>
                 <Form.Item
                   label={t("settingsGitHubWebhookBaseUrl")}

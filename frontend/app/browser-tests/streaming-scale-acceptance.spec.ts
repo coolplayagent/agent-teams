@@ -244,6 +244,13 @@ test("keeps large multi-session and multi-subagent streaming interactive", async
     await childJump.click();
     await expect.poll(() => timelineDistanceFromBottom(childTimeline))
       .toBeLessThanOrEqual(2);
+    await page.screenshot({
+      animations: "disabled",
+      path: screenshotPath(
+        "v2-subagent-live-pressure.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
 
     await page.getByRole("button", { name: "Main session" }).click();
     await expect(page.getByRole("heading", { name: childTitle })).toHaveCount(0);

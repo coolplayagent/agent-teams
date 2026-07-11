@@ -2,7 +2,6 @@ import {
   Alert,
   App,
   Button,
-  Checkbox,
   Empty,
   Input,
   Modal,
@@ -32,6 +31,8 @@ import {
   Wrench,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+
+import { ChoiceControl } from "../../components/ChoiceControl";
 
 import {
   browseClawHubSkillMarket,
@@ -697,15 +698,12 @@ function SkillInstallModal({
             value={version}
           />
         </label>
-        <Checkbox
+        <ChoiceControl
           checked={force}
-          onChange={(event) => setForce(event.target.checked)}
-        >
-          {t("skillsInstallForce")}
-        </Checkbox>
-        <Typography.Text type="secondary">
-          {t("skillsInstallForceHelp")}
-        </Typography.Text>
+          description={t("skillsInstallForceHelp")}
+          label={t("skillsInstallForce")}
+          onChange={setForce}
+        />
         <div className="at-skills-form-actions">
           <Button onClick={onClose}>{t("skillsCancel")}</Button>
           <Button

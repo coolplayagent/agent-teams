@@ -288,7 +288,8 @@ describe("SkillsView", () => {
     fireEvent.change(screen.getByPlaceholderText("Latest"), {
       target: { value: "1.0.0" },
     });
-    fireEvent.click(screen.getByRole("checkbox", { name: "Force reinstall" }));
+    fireEvent.click(screen.getByText("Force reinstall"));
+    expect(screen.getByRole("checkbox", { name: "Force reinstall" })).toBeChecked();
     const installButtons = screen.getAllByRole("button", { name: "Install" });
     fireEvent.click(installButtons[installButtons.length - 1]);
 

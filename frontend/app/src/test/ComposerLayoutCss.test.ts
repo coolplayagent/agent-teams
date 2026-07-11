@@ -28,6 +28,9 @@ describe("composer control layout CSS", () => {
       /\.at-composer \.at-composer-field\s*{[\s\S]*?flex:\s*1 1 132px;[\s\S]*?min-width:\s*110px;[\s\S]*?max-width:\s*176px;/,
     );
     expect(composerCss).toMatch(
+      /\.at-composer \.at-composer-mode-field\s*{[\s\S]*?flex:\s*0 1 218px;[\s\S]*?min-width:\s*206px;[\s\S]*?max-width:\s*224px;/,
+    );
+    expect(composerCss).toMatch(
       /\.at-composer \.at-session-mode-control,[\s\S]*?\.at-composer \.at-model-profile-select\s*{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?min-width:\s*0;[\s\S]*?width:\s*100%;/,
     );
     expect(composerCss).not.toContain("width: 218px");

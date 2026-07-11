@@ -30,7 +30,11 @@ import { RoundMarker } from "./RoundMarker";
 import { RoundRail } from "./RoundRail";
 import { TimelineDisclosure } from "./TimelineDisclosure";
 import { ToolCallDetails } from "./ToolCallDetails";
-import { toolActionFamily } from "./toolPresentation";
+import {
+  formatToolDuration,
+  toolActionFamily,
+  toolDurationMs,
+} from "./toolPresentation";
 import { roundPromptText, roundTitle } from "./roundMetadata";
 import { indexesWithLongerStrictPrefix } from "./timelinePerformance";
 import "./ToolCallDetails.css";
@@ -762,6 +766,7 @@ interface TimelineToolPart {
   action: string;
   body: string;
   callId: string;
+  durationMs?: number;
   error: boolean;
   kind: "tool";
   inputBody?: string;
@@ -7131,6 +7136,11 @@ function MessageToolBlock({
         {preview ? (
           <span className="at-message-tool-preview" title={preview}>{preview}</span>
         ) : null}
+        {tool.durationMs !== undefined ? (
+          <span className="at-message-tool-duration">
+            {formatToolDuration(tool.durationMs)}
+          </span>
+        ) : null}
         {isRunning ? (
           <span className="at-message-tool-spinner" aria-label={t("timelineToolRunningStatus")} />
         ) : null}
@@ -7482,6 +7492,7 @@ function contentPartTool(part: ContentPart): TimelineToolPart | null {
       action: "",
       body: outputBody,
       callId: "tool_call_id" in part ? part.tool_call_id ?? "" : "",
+      durationMs: toolDurationMs(jsonValueText(content)) ?? undefined,
       error,
       kind: "tool",
       mediaParts: toolReturnMediaParts(content),
@@ -7739,6 +7750,7 @@ function runtimeToolPart(entry: TimelineEntry): TimelineToolPart | null {
     action: "",
     body: outputBody,
     callId,
+    durationMs: toolDurationMs(jsonValueText(result)) ?? undefined,
     error,
     kind: "tool",
     mediaParts: toolReturnMediaParts(result),

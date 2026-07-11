@@ -3,6 +3,14 @@
   gap: 8px;
 }
 
+.at-message-tool-duration {
+  flex: 0 0 auto;
+  color: var(--at-text-muted);
+  font-family: var(--at-font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 .at-tool-call-id {
   display: flex;
   align-items: center;

@@ -6151,6 +6151,38 @@ describe("MessageTimeline", () => {
     expect(container.querySelector('[data-role-id="Explorer"]')).toBeNull();
   });
 
+  it("shows tool duration and unwraps execution output envelopes", async () => {
+    setRuntimeEntries([
+      runtimeGenericEntry({
+        eventId: 1,
+        id: "run-duration:1:0",
+        kind: "tool_result",
+        payload: {
+          result: {
+            data: { exit_code: 0, stdout: "duration output" },
+            meta: { duration_ms: 1250, tool_result_event_published: true },
+            ok: true,
+          },
+          tool_call_id: "duration-call",
+          tool_name: "shell",
+        },
+        text: "shell",
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    await screen.findByText("Ran: shell");
+    openProcessedGroup(container);
+    const title = screen.getByText("Ran: shell");
+    expect(screen.getByText("1.3 s")).toBeVisible();
+    fireEvent.click(title);
+    expect(screen.getByText(/exit code: 0/)).toBeVisible();
+    expect(screen.getByText(/stdout: duration output/)).toBeVisible();
+    expect(screen.queryByText(/tool_result_event_published/)).not.toBeInTheDocument();
+  });
+
   it("restores round prompt disclosure state after switching sessions", async () => {
     const prompts: Record<string, string> = {
       "session-1": "Session one prompt is long enough to use the compact disclosure control.",

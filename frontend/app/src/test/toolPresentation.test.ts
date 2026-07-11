@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   humanReadableToolText,
+  formatToolDuration,
   toolActionFamily,
+  toolDurationMs,
   toolSemanticCategory,
 } from "../features/timeline/toolPresentation";
 
@@ -37,5 +39,23 @@ describe("toolPresentation", () => {
   it("keeps unknown nested payloads available as formatted JSON", () => {
     expect(humanReadableToolText("custom_server_tool", '{"result":{"ok":true}}'))
       .toContain('"result"');
+  });
+
+  it("unwraps standard execution envelopes without exposing internal metadata", () => {
+    const envelope = JSON.stringify({
+      data: { exit_code: 0, stdout: "tests passed" },
+      meta: { duration_ms: 1250, tool_result_event_published: true },
+      ok: true,
+    });
+
+    expect(humanReadableToolText("shell", envelope))
+      .toBe("exit code: 0\nstdout: tests passed");
+    expect(toolDurationMs(envelope)).toBe(1250);
+    expect(formatToolDuration(1250)).toBe("1.3 s");
+  });
+
+  it("formats short and long tool durations compactly", () => {
+    expect(formatToolDuration(42)).toBe("42 ms");
+    expect(formatToolDuration(65_000)).toBe("1m 5s");
   });
 });

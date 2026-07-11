@@ -119,7 +119,12 @@ export function humanReadableToolText(toolName: string, text: string): string {
   if (typeof parsed !== "object" || Array.isArray(parsed)) {
     return JSON.stringify(parsed, null, 2);
   }
-  const entries = Object.entries(parsed);
+  const parsedObject = recordValue(parsed);
+  if (parsedObject === null) {
+    return JSON.stringify(parsed, null, 2);
+  }
+  const displayObject = visibleToolEnvelope(parsedObject);
+  const entries = Object.entries(displayObject);
   if (entries.length === 0) {
     return "(empty)";
   }
@@ -128,6 +133,35 @@ export function humanReadableToolText(toolName: string, text: string): string {
     return entries.map(([key, value]) => readableObjectLine(key, value)).join("\n");
   }
   return JSON.stringify(parsed, null, 2);
+}
+
+export function toolDurationMs(text: string): number | null {
+  const parsed = parseStructuredText(text);
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return null;
+  }
+  const parsedObject = recordValue(parsed);
+  if (parsedObject === null) {
+    return null;
+  }
+  const direct = nonNegativeNumber(parsedObject.duration_ms);
+  if (direct !== null) {
+    return direct;
+  }
+  const meta = recordValue(parsedObject.meta);
+  return meta === null ? null : nonNegativeNumber(meta.duration_ms);
+}
+
+export function formatToolDuration(durationMs: number): string {
+  if (durationMs < 1_000) {
+    return `${Math.round(durationMs)} ms`;
+  }
+  if (durationMs < 60_000) {
+    return `${(durationMs / 1_000).toFixed(durationMs < 10_000 ? 1 : 0)} s`;
+  }
+  const minutes = Math.floor(durationMs / 60_000);
+  const seconds = Math.round((durationMs % 60_000) / 1_000);
+  return `${minutes}m ${seconds}s`;
 }
 
 function normalizedToolName(toolName: string): string {
@@ -184,6 +218,38 @@ function readableObjectLine(key: string, value: unknown): string {
     }
   }
   return `${label}:\n${indent(JSON.stringify(value, null, 2))}`;
+}
+
+function visibleToolEnvelope(value: Record<string, unknown>): Record<string, unknown> {
+  if (!("ok" in value) || !("data" in value || "error" in value)) {
+    return value;
+  }
+  const visible: Record<string, unknown> = {};
+  if (value.error !== undefined && value.error !== null && value.error !== "") {
+    visible.error = value.error;
+  }
+  const data = recordValue(value.data);
+  if (data !== null) {
+    Object.assign(visible, data);
+  } else if (value.data !== undefined && value.data !== null) {
+    visible.result = value.data;
+  }
+  if (Object.keys(visible).length === 0) {
+    visible.status = value.ok === true ? "completed" : "failed";
+  }
+  return visible;
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function nonNegativeNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : null;
 }
 
 function indent(value: string): string {

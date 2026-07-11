@@ -324,22 +324,8 @@ export function useRunStreamController(): RunStreamController {
       void queryClient.invalidateQueries({
         queryKey: ["sessions", sessionId, "rounds"],
       });
-      refreshSidebarSessions();
-      void queryClient.refetchQueries({
-        queryKey: ["sessions", "detail", sessionId],
-        type: "active",
-      });
-      void queryClient.refetchQueries({
-        queryKey: ["sessions", sessionId, "messages"],
-        type: "active",
-      });
-      void queryClient.refetchQueries({
-        queryKey: ["sessions", sessionId, "rounds"],
-        type: "active",
-      });
-      void queryClient.refetchQueries({
+      void queryClient.invalidateQueries({
         queryKey: ["sessions", "sidebar"],
-        type: "active",
       });
     };
     const refreshSidebarSessionsFromServer = async () => {
@@ -347,20 +333,36 @@ export function useRunStreamController(): RunStreamController {
       queryClient.setQueryData(["sessions", "sidebar"], sessions);
       return sessions;
     };
-    if (roundSettleTargets.length === 0) {
+    let roundHistoryReady = roundSettleTargets.length === 0;
+    let terminalSessionReady = true;
+    let hydrationRefreshed = false;
+    const refreshHydratedSessionWhenReady = () => {
+      if (hydrationRefreshed || !roundHistoryReady || !terminalSessionReady) {
+        return;
+      }
+      hydrationRefreshed = true;
       refreshHydratedSession();
-    } else {
+    };
+    if (roundSettleTargets.length > 0) {
       void settleTerminalRoundsFromHistory({
         currentStreamGeneration: () => streamGenerationRef.current,
-        onReady: refreshHydratedSession,
+        onReady: () => {
+          roundHistoryReady = true;
+          refreshHydratedSessionWhenReady();
+        },
         sessionId,
         streamGeneration,
         targets: roundSettleTargets,
       });
+    } else {
+      refreshHydratedSessionWhenReady();
     }
     void settleTerminalSessionFromSidebar({
       currentStreamGeneration: () => streamGenerationRef.current,
-      onReady: refreshHydratedSession,
+      onReady: () => {
+        terminalSessionReady = true;
+        refreshHydratedSessionWhenReady();
+      },
       refreshSidebarSessions: refreshSidebarSessionsFromServer,
       sessionId,
       streamGeneration,
@@ -971,6 +973,9 @@ async function settleTerminalSessionFromSidebar({
     if (attempt + 1 < TERMINAL_SESSION_SETTLE_MAX_ATTEMPTS) {
       await terminalSessionSettleDelay();
     }
+  }
+  if (isCurrentGeneration()) {
+    onReady();
   }
 }
 

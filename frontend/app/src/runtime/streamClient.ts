@@ -1,12 +1,18 @@
 import { apiUrl } from "../api/http";
 import {
-  reduceRunEvent,
+  reduceRunEvents,
   type RuntimeRunState,
   type RuntimeState,
 } from "./reducers";
-import { AG_UI_EVENT_NAMES, type RunEventEnvelope } from "./events";
+import {
+  AG_UI_EVENT_NAMES,
+  isTerminalRunEvent,
+  parseRunEvent,
+  type RunEventEnvelope,
+} from "./events";
 
-const STREAM_STATE_NOTIFICATION_INTERVAL_MS = 16;
+const STREAM_STATE_NOTIFICATION_INTERVAL_MS = 33;
+const STREAM_EVENT_BATCH_SIZE = 128;
 
 export interface RunStreamHandle {
   close: () => void;
@@ -119,6 +125,7 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
   let didNotifyClosed = false;
   let sourceClosed = false;
   let pendingStateNotification: ReturnType<typeof globalThis.setTimeout> | null = null;
+  let pendingEvents: RunEventEnvelope[] = [];
   let lastStateNotificationAt = Number.NEGATIVE_INFINITY;
   const preferManualReconnect = options.trackedRunIds.length > 1;
 
@@ -130,17 +137,52 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
     pendingStateNotification = null;
   };
 
+  const applyPendingEventBatch = (limit = STREAM_EVENT_BATCH_SIZE) => {
+    if (pendingEvents.length === 0) {
+      return false;
+    }
+    const events = pendingEvents.slice(0, limit);
+    pendingEvents = pendingEvents.slice(events.length);
+    const nextRuntimeState = reduceRunEvents(runtimeState, events);
+    if (nextRuntimeState === runtimeState) {
+      return false;
+    }
+    runtimeState = nextRuntimeState;
+    return true;
+  };
+
   const notifyStateNow = () => {
     cancelPendingStateNotification();
-    lastStateNotificationAt = Date.now();
-    options.onState(runtimeState);
+    const stateChanged = applyPendingEventBatch();
+    if (stateChanged) {
+      lastStateNotificationAt = Date.now();
+      options.onState(runtimeState);
+    }
+    if (pendingEvents.length > 0) {
+      pendingStateNotification = globalThis.setTimeout(
+        notifyStateNow,
+        STREAM_STATE_NOTIFICATION_INTERVAL_MS,
+      );
+    } else if (trackedRunsClosed(runtimeState, options.trackedRunIds)) {
+      notifyClosed();
+    }
   };
 
   const flushPendingStateNotification = () => {
-    if (pendingStateNotification === null) {
+    if (pendingStateNotification === null && pendingEvents.length === 0) {
       return;
     }
-    notifyStateNow();
+    cancelPendingStateNotification();
+    if (pendingEvents.length === 0) {
+      return;
+    }
+    const nextRuntimeState = reduceRunEvents(runtimeState, pendingEvents);
+    pendingEvents = [];
+    if (nextRuntimeState !== runtimeState) {
+      runtimeState = nextRuntimeState;
+      lastStateNotificationAt = Date.now();
+      options.onState(runtimeState);
+    }
   };
 
   const notifyStateOnStreamCadence = () => {
@@ -154,8 +196,7 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
     }
     pendingStateNotification = globalThis.setTimeout(() => {
       pendingStateNotification = null;
-      lastStateNotificationAt = Date.now();
-      options.onState(runtimeState);
+      notifyStateNow();
     }, STREAM_STATE_NOTIFICATION_INTERVAL_MS - elapsed);
   };
 
@@ -199,20 +240,18 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
       return;
     }
     options.onActivity?.();
-    const nextRuntimeState = reduceRunEvent(runtimeState, event);
-    if (nextRuntimeState === runtimeState) {
+    pendingEvents.push(event);
+    if (isTerminalRunEvent(parseRunEvent(event).event_type)) {
+      flushPendingStateNotification();
       if (trackedRunsClosed(runtimeState, options.trackedRunIds)) {
         notifyClosed();
       }
       return;
     }
-    runtimeState = nextRuntimeState;
-    if (trackedRunsClosed(runtimeState, options.trackedRunIds)) {
-      notifyStateNow();
-      notifyClosed();
-      return;
-    }
     notifyStateOnStreamCadence();
+    if (pendingEvents.length === 0 && trackedRunsClosed(runtimeState, options.trackedRunIds)) {
+      notifyClosed();
+    }
   };
 
   const handleMessage = (message: MessageEvent<string>) => {

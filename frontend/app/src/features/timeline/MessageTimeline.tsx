@@ -3,7 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Copy, Volume2, Wrench } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { MouseEvent, PointerEvent, ReactNode } from "react";
+import type { MouseEvent, PointerEvent, ReactNode, SyntheticEvent } from "react";
+import { useShallow } from "zustand/react/shallow";
 
 import {
   buildWorkspaceImagePreviewUrl,
@@ -27,7 +28,9 @@ import { useTranslations, type Translate } from "../../i18n";
 import { MarkdownMessage } from "./MarkdownMessage";
 import { RoundMarker } from "./RoundMarker";
 import { RoundRail } from "./RoundRail";
+import { TimelineDisclosure } from "./TimelineDisclosure";
 import { roundPromptText, roundTitle } from "./roundMetadata";
+import { indexesWithLongerStrictPrefix } from "./timelinePerformance";
 
 const TIMELINE_BOTTOM_FOLLOW_THRESHOLD_PX = 96;
 const ROUND_RAIL_PAGE_LIMIT = 100;
@@ -161,7 +164,20 @@ export function MessageTimeline({
   const [expandedHistorySegmentIds, setExpandedHistorySegmentIds] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
-  const runtimeState = useRuntimeStore((state) => state.runtimeState);
+  const [expandedDisclosureIds, setExpandedDisclosureIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const runtimeRunList = useRuntimeStore(useShallow((state) =>
+    Object.values(state.runtimeState.runs).filter((runState) =>
+      sessionId === null ||
+      runState.sessionId === undefined ||
+      runState.sessionId === sessionId
+    )
+  ));
+  const runtimeRuns = useMemo(
+    () => Object.fromEntries(runtimeRunList.map((runState) => [runState.runId, runState])),
+    [runtimeRunList],
+  );
   const messagesQuery = useQuery({
     queryKey: messageQueryKey ?? ["sessions", sessionId, "messages"],
     queryFn: () => loadMessages(sessionId ?? ""),
@@ -194,7 +210,7 @@ export function MessageTimeline({
         ? roundsWithSessionTerminalStatus(
             roundsWithRuntimeRunState(
               rounds,
-              runtimeState.runs,
+              runtimeRuns,
               sessionId,
               runtimeRunId,
               primaryRoleId,
@@ -212,7 +228,7 @@ export function MessageTimeline({
       roundChromeEnabled,
       rounds,
       runtimeRunId,
-      runtimeState.runs,
+      runtimeRuns,
       sessionId,
       subagentScopeRoleId,
       variant,
@@ -279,9 +295,9 @@ export function MessageTimeline({
     () =>
       persistedRowsWithRuntimeTextAnchors(
         roundStreamedPersistedRows,
-        runtimeState.runs,
+        runtimeRuns,
       ),
-    [roundStreamedPersistedRows, runtimeState.runs],
+    [roundStreamedPersistedRows, runtimeRuns],
   );
   const hydratedOutputTextByRunId = useMemo(
     () => timelineOutputTextByRunId(anchoredPersistedRows),
@@ -301,7 +317,7 @@ export function MessageTimeline({
   );
   const runtimeEntries = useMemo(
     () =>
-      Object.values(runtimeState.runs)
+      Object.values(runtimeRuns)
         .flatMap((runState) =>
           runtimeEntriesAfterHydration(
             runState,
@@ -323,7 +339,7 @@ export function MessageTimeline({
       hydratedToolStatesByRunId,
       primaryRoleId,
       runtimeRunId,
-      runtimeState.runs,
+      runtimeRuns,
       sessionId,
       subagentScopeRoleId,
       variant,
@@ -334,7 +350,7 @@ export function MessageTimeline({
       dropCoveredCursorOnlyRows(
         runtimeEntriesToRows(
           runtimeEntries,
-          runtimeState.runs,
+          runtimeRuns,
           variant,
           terminalRunIdOverrides,
           terminalScopeOverride,
@@ -342,7 +358,7 @@ export function MessageTimeline({
       ),
     [
       runtimeEntries,
-      runtimeState.runs,
+      runtimeRuns,
       terminalRunIdOverrides,
       terminalScopeOverride,
       variant,
@@ -353,9 +369,9 @@ export function MessageTimeline({
       dropPersistedRowsCoveredByTerminalRuntime(
         anchoredPersistedRows,
         runtimeRows,
-        runtimeState.runs,
+        runtimeRuns,
       ),
-    [anchoredPersistedRows, runtimeRows, runtimeState.runs],
+    [anchoredPersistedRows, runtimeRows, runtimeRuns],
   );
   const timelineRowsBeforeGrouping = useMemo(
     () =>
@@ -391,7 +407,7 @@ export function MessageTimeline({
               roundChromeEnabled,
             ),
             displayRounds,
-            runtimeState.runs,
+            runtimeRuns,
             terminalRunIdOverrides,
           ),
         ),
@@ -400,14 +416,14 @@ export function MessageTimeline({
       displayRounds,
       expandedHistorySegmentIds,
       roundChromeEnabled,
-      runtimeState.runs,
+      runtimeRuns,
       terminalRunIdOverrides,
       timelineRowsBeforeGrouping,
     ],
   );
   const streamOpenForSession = useMemo(
     () =>
-      Object.values(runtimeState.runs).some(
+      Object.values(runtimeRuns).some(
         (runState) => runState.status !== "closed" &&
           runtimeRunStateMatchesScope(runState, {
             primaryRoleId,
@@ -420,7 +436,7 @@ export function MessageTimeline({
     [
       primaryRoleId,
       runtimeRunId,
-      runtimeState.runs,
+      runtimeRuns,
       sessionId,
       subagentScopeRoleId,
       variant,
@@ -506,11 +522,36 @@ export function MessageTimeline({
       return next;
     });
   }, []);
+  const handleDisclosureChange = useCallback((disclosureId: string, expanded: boolean) => {
+    setExpandedDisclosureIds((current) => {
+      const alreadyExpanded = current.has(disclosureId);
+      if (alreadyExpanded === expanded) {
+        return current;
+      }
+      const next = new Set(current);
+      if (expanded) {
+        next.add(disclosureId);
+      } else {
+        next.delete(disclosureId);
+      }
+      return next;
+    });
+  }, []);
+  const handleDisclosureToggle = useCallback((event: SyntheticEvent<HTMLDetailsElement>) => {
+    const row = event.currentTarget.closest<HTMLElement>(
+      ".at-timeline-row[data-row-key]",
+    );
+    if (row === null) {
+      return;
+    }
+    window.requestAnimationFrame(() => virtualizer.measureElement(row));
+  }, [virtualizer]);
 
   useEffect(() => {
     pendingRoundRunIdRef.current = null;
     setActiveRunId(null);
     setExpandedHistorySegmentIds(new Set());
+    setExpandedDisclosureIds(new Set());
   }, [sessionId]);
 
   useLayoutEffect(() => {
@@ -604,6 +645,9 @@ export function MessageTimeline({
               handleCopyAnswer,
               handleReadAnswerAloud,
               handleToggleHistorySegment,
+              expandedDisclosureIds,
+              handleDisclosureChange,
+              handleDisclosureToggle,
               onSubagentOpen,
               sessionId,
               variant,
@@ -934,6 +978,9 @@ function timelineRowElement(
   onCopyAnswer: (row: TimelineRow | undefined) => void,
   onReadAnswerAloud: (row: TimelineRow | undefined) => void,
   onToggleHistorySegment: (segmentId: string) => void,
+  expandedDisclosureIds: ReadonlySet<string>,
+  onDisclosureChange: (disclosureId: string, expanded: boolean) => void,
+  onDisclosureToggle: (event: SyntheticEvent<HTMLDetailsElement>) => void,
   onSubagentOpen: ((subagent: TimelineSubagentReference) => void) | undefined,
   sessionId: string,
   variant: "session" | "subagent-panel",
@@ -943,10 +990,14 @@ function timelineRowElement(
     return (
       <ProcessedGroupRow
         group={row.processedGroup}
+        expanded={expandedDisclosureIds.has(`processed:${row.runId ?? row.key}`)}
+        expandedDisclosureIds={expandedDisclosureIds}
         index={index}
         key={row.key}
         measureElement={measureElement}
         onSubagentOpen={onSubagentOpen}
+        onDisclosureChange={onDisclosureChange}
+        onDisclosureToggle={onDisclosureToggle}
         rowKey={row.key}
         runId={row.runId}
         sessionId={sessionId}
@@ -1014,6 +1065,9 @@ function timelineRowElement(
         </Typography.Text>
       ) : null}
       <MessageRowContent
+        expandedDisclosureIds={expandedDisclosureIds}
+        onDisclosureChange={onDisclosureChange}
+        onDisclosureToggle={onDisclosureToggle}
         onSubagentOpen={onSubagentOpen}
         parts={row.parts}
         row={row}
@@ -1034,20 +1088,28 @@ function timelineRowElement(
 }
 
 function ProcessedGroupRow({
+  expanded,
+  expandedDisclosureIds,
   group,
   index,
   measureElement,
   onSubagentOpen,
+  onDisclosureChange,
+  onDisclosureToggle,
   rowKey,
   runId,
   sessionId,
   style,
   t,
 }: {
+  expanded: boolean;
+  expandedDisclosureIds: ReadonlySet<string>;
   group: TimelineProcessedGroup;
   index: number;
   measureElement: (element: Element | null) => void;
   onSubagentOpen?: (subagent: TimelineSubagentReference) => void;
+  onDisclosureChange: (disclosureId: string, expanded: boolean) => void;
+  onDisclosureToggle: (event: SyntheticEvent<HTMLDetailsElement>) => void;
   rowKey: string;
   runId: string | null;
   sessionId: string;
@@ -1075,7 +1137,16 @@ function ProcessedGroupRow({
       ref={setRowRef}
       style={style}
     >
-      <details className="at-processed-group" onToggle={handleToggle}>
+      <TimelineDisclosure
+        className="at-processed-group"
+        disclosureId={`processed:${runId ?? rowKey}`}
+        expanded={expanded}
+        onExpandedChange={onDisclosureChange}
+        onToggle={(event) => {
+          handleToggle();
+          onDisclosureToggle(event);
+        }}
+      >
         <summary className="at-processed-group-summary">
           <span className="at-processed-group-toggle" aria-hidden="true">{">"}</span>
           <span className="at-processed-group-label">{t("timelineProcessedGroup")}</span>
@@ -1094,6 +1165,9 @@ function ProcessedGroupRow({
               key={groupRow.key}
             >
               <MessageRowContent
+                expandedDisclosureIds={expandedDisclosureIds}
+                onDisclosureChange={onDisclosureChange}
+                onDisclosureToggle={onDisclosureToggle}
                 onSubagentOpen={onSubagentOpen}
                 parts={groupRow.parts}
                 row={groupRow}
@@ -1103,7 +1177,7 @@ function ProcessedGroupRow({
             </div>
           ))}
         </div>
-      </details>
+      </TimelineDisclosure>
     </section>
   );
 }
@@ -1726,7 +1800,9 @@ function dropStrictPrefixAnswerRows(rows: TimelineRow[]): TimelineRow[] {
   const answerRows = rows
     .flatMap((row) => row.processedGroup?.rows ?? [row])
     .filter(textOnlyAnswerRow)
-    .map((row) => ({
+    .map((row, index) => ({
+      groupKey: strictPrefixAnswerGroupKey(row),
+      index,
       row,
       text: normalizedTimelineText(rowCopyText(row.parts)),
     }))
@@ -1734,21 +1810,13 @@ function dropStrictPrefixAnswerRows(rows: TimelineRow[]): TimelineRow[] {
   if (answerRows.length < 2) {
     return rows;
   }
+  const rowsToDrop = indexesWithLongerStrictPrefix(answerRows);
+  const rowIndexes = new Map(
+    answerRows.map((candidate) => [candidate.row, candidate.index]),
+  );
   const rowShouldRemain = (row: TimelineRow): boolean => {
-    if (!textOnlyAnswerRow(row)) {
-      return true;
-    }
-    const text = normalizedTimelineText(rowCopyText(row.parts));
-    if (text.length === 0) {
-      return true;
-    }
-    return !answerRows.some(
-      (candidate) =>
-        candidate.row !== row &&
-        strictPrefixAnswerRowsShareStream(row, candidate.row) &&
-        candidate.text.length > text.length &&
-        candidate.text.startsWith(text),
-    );
+    const index = rowIndexes.get(row);
+    return index === undefined || !rowsToDrop.has(index);
   };
   return rows.flatMap((row) => {
     if (row.processedGroup === undefined) {
@@ -1768,43 +1836,32 @@ function dropStrictPrefixAnswerRows(rows: TimelineRow[]): TimelineRow[] {
   });
 }
 
-function strictPrefixAnswerRowsShareStream(
-  left: TimelineRow,
-  right: TimelineRow,
-): boolean {
-  const leftRunId = left.runId?.trim() ?? "";
-  const rightRunId = right.runId?.trim() ?? "";
-  if (leftRunId.length > 0 && rightRunId.length > 0) {
-    return leftRunId === rightRunId;
+function strictPrefixAnswerGroupKey(row: TimelineRow): string {
+  const runId = row.runId?.trim() ?? "";
+  if (runId.length > 0) {
+    return `run:${runId}`;
   }
-  return (
-    (left.source === "runtime" || right.source === "runtime") &&
-    stableTimelineRole(left.role) === stableTimelineRole(right.role)
-  );
+  return `role:${stableTimelineRole(row.role)}`;
 }
 
 function dedupeTimelineRowsByKey(rows: TimelineRow[]): TimelineRow[] {
   const candidates = rows.flatMap((row) => row.processedGroup?.rows ?? [row]);
-  const rowsToDrop = new Set<TimelineRow>();
-  for (const candidate of candidates) {
+  const prefixCandidates = candidates.flatMap((candidate, index) => {
     if (candidate.parts.some((part) => part.kind !== "text")) {
-      continue;
+      return [];
     }
     const text = normalizedTimelineText(rowCopyText(candidate.parts));
-    if (text.length === 0) {
-      continue;
-    }
-    const identity = timelineRowRenderIdentity(candidate);
-    if (candidates.some((other) =>
-      other !== candidate &&
-      timelineRowRenderIdentity(other) === identity &&
-      other.parts.every((part) => part.kind === "text") &&
-      normalizedTimelineText(rowCopyText(other.parts)).length > text.length &&
-      normalizedTimelineText(rowCopyText(other.parts)).startsWith(text)
-    )) {
-      rowsToDrop.add(candidate);
-    }
-  }
+    return text.length === 0
+      ? []
+      : [{ groupKey: timelineRowRenderIdentity(candidate), index, text }];
+  });
+  const indexesToDrop = indexesWithLongerStrictPrefix(prefixCandidates);
+  const rowsToDrop = new Set(
+    Array.from(indexesToDrop).flatMap((index) => {
+      const row = candidates[index];
+      return row === undefined ? [] : [row];
+    }),
+  );
 
   const emittedCounts = new Map<string, number>();
   const stabilizeRow = (row: TimelineRow): TimelineRow | null => {
@@ -6688,12 +6745,18 @@ function outputDeltaMediaPart(
 }
 
 function MessageRowContent({
+  expandedDisclosureIds,
+  onDisclosureChange,
+  onDisclosureToggle,
   onSubagentOpen,
   parts,
   row,
   sessionId,
   t,
 }: {
+  expandedDisclosureIds: ReadonlySet<string>;
+  onDisclosureChange: (disclosureId: string, expanded: boolean) => void;
+  onDisclosureToggle: (event: SyntheticEvent<HTMLDetailsElement>) => void;
   onSubagentOpen?: (subagent: TimelineSubagentReference) => void;
   parts: TimelineRenderPart[];
   row: TimelineRow;
@@ -6721,9 +6784,14 @@ function MessageRowContent({
         if (part.kind === "tool") {
           const partKey = `tool:${toolIndex}`;
           toolIndex += 1;
+          const disclosureId = toolDisclosureId(row, part, partKey);
           return (
             <MessageToolBlock
+              disclosureId={disclosureId}
+              expanded={expandedDisclosureIds.has(disclosureId)}
               key={partKey}
+              onDisclosureChange={onDisclosureChange}
+              onDisclosureToggle={onDisclosureToggle}
               onSubagentOpen={onSubagentOpen}
               sessionId={sessionId}
               tool={part}
@@ -6734,9 +6802,14 @@ function MessageRowContent({
         if (part.kind === "thinking") {
           const partKey = `thinking:${thinkingIndex}`;
           thinkingIndex += 1;
+          const disclosureId = thinkingDisclosureId(row, part, partKey);
           return (
             <MessageThinkingBlock
+              disclosureId={disclosureId}
+              expanded={expandedDisclosureIds.has(disclosureId)}
               key={partKey}
+              onDisclosureChange={onDisclosureChange}
+              onDisclosureToggle={onDisclosureToggle}
               thinking={part}
               t={t}
             />
@@ -6748,6 +6821,28 @@ function MessageRowContent({
       })}
     </div>
   );
+}
+
+function toolDisclosureId(
+  row: TimelineRow,
+  tool: TimelineToolPart,
+  partKey: string,
+): string {
+  const toolIdentity = tool.callId.trim() || tool.toolName.trim() || partKey;
+  return `tool:${row.runId ?? stableStreamRowKey(row)}:${toolIdentity}`;
+}
+
+function thinkingDisclosureId(
+  row: TimelineRow,
+  thinking: TimelineThinkingPart,
+  partKey: string,
+): string {
+  return [
+    "thinking",
+    row.runId ?? stableStreamRowKey(row),
+    row.instanceId?.trim() || stableTimelineRole(row.role),
+    thinking.partIndex || partKey,
+  ].join(":");
 }
 
 function streamIdentityForTextPart(row: TimelineRow, partKey: string): string {
@@ -6808,7 +6903,11 @@ function MessageText({
       ].filter(Boolean).join(" ")}
       data-streaming={visuallyStreaming ? "true" : undefined}
     >
-      <MarkdownMessage text={text} />
+      {visuallyStreaming ? (
+        <div className="at-message-markdown at-message-streaming-plain">{text}</div>
+      ) : (
+        <MarkdownMessage text={text} />
+      )}
       {cursorVisible ? <StreamingCursor /> : null}
     </div>
   );
@@ -6864,9 +6963,17 @@ function MessageRowActions({
 }
 
 function MessageThinkingBlock({
+  disclosureId,
+  expanded,
+  onDisclosureChange,
+  onDisclosureToggle,
   thinking,
   t,
 }: {
+  disclosureId: string;
+  expanded: boolean;
+  onDisclosureChange: (disclosureId: string, expanded: boolean) => void;
+  onDisclosureToggle: (event: SyntheticEvent<HTMLDetailsElement>) => void;
   thinking: TimelineThinkingPart;
   t: Translate;
 }) {
@@ -6875,11 +6982,15 @@ function MessageThinkingBlock({
     return null;
   }
   return (
-    <details
+    <TimelineDisclosure
       className="at-message-thinking"
       data-part-index={thinking.partIndex}
       data-streaming={thinking.streaming ? "true" : "false"}
-      open={thinking.streaming ? true : undefined}
+      disclosureId={disclosureId}
+      expanded={expanded}
+      forceOpen={thinking.streaming}
+      onExpandedChange={onDisclosureChange}
+      onToggle={onDisclosureToggle}
     >
       <summary className="at-message-thinking-summary">
         <span className="at-message-thinking-label">{t("timelineThinking")}</span>
@@ -6889,19 +7000,33 @@ function MessageThinkingBlock({
       </summary>
       {hasText ? (
         <div className="at-message-thinking-body">
-          <MarkdownMessage text={thinking.text} />
+          {thinking.streaming ? (
+            <div className="at-message-markdown at-message-streaming-plain">
+              {thinking.text}
+            </div>
+          ) : (
+            <MarkdownMessage text={thinking.text} />
+          )}
         </div>
       ) : null}
-    </details>
+    </TimelineDisclosure>
   );
 }
 
 function MessageToolBlock({
+  disclosureId,
+  expanded,
+  onDisclosureChange,
+  onDisclosureToggle,
   onSubagentOpen,
   sessionId,
   tool,
   t,
 }: {
+  disclosureId: string;
+  expanded: boolean;
+  onDisclosureChange: (disclosureId: string, expanded: boolean) => void;
+  onDisclosureToggle: (event: SyntheticEvent<HTMLDetailsElement>) => void;
   onSubagentOpen?: (subagent: TimelineSubagentReference) => void;
   sessionId: string;
   tool: TimelineToolPart;
@@ -6943,7 +7068,7 @@ function MessageToolBlock({
       }
     : undefined;
   return (
-    <details
+    <TimelineDisclosure
       className={[
         "at-message-tool",
         tool.error ? "is-error" : "",
@@ -6954,6 +7079,10 @@ function MessageToolBlock({
       data-subagent-run-id={openSubagentReference?.runId ?? undefined}
       data-tool-call-id={tool.callId || undefined}
       data-tool-name={tool.toolName}
+      disclosureId={disclosureId}
+      expanded={expanded}
+      onExpandedChange={onDisclosureChange}
+      onToggle={onDisclosureToggle}
     >
       <summary
         aria-label={canOpenSubagent ? t("timelineOpenSubagentPanel") : undefined}
@@ -6986,7 +7115,7 @@ function MessageToolBlock({
           {tool.body ? <pre>{tool.body}</pre> : null}
         </div>
       ) : null}
-    </details>
+    </TimelineDisclosure>
   );
 }
 

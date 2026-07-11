@@ -171,6 +171,17 @@ export function reduceRunEvent(
   };
 }
 
+export function reduceRunEvents(
+  state: RuntimeState,
+  rawEvents: readonly RunEventEnvelope[],
+): RuntimeState {
+  let nextState = state;
+  for (const rawEvent of rawEvents) {
+    nextState = reduceRunEvent(nextState, rawEvent);
+  }
+  return nextState;
+}
+
 function markReferencedSubagentRuns(
   runs: Record<string, RuntimeRunState>,
   payload: JsonValue,
@@ -468,6 +479,10 @@ function appendTimelineEntry(
     return entries;
   }
   const lastEntry = entries.at(-1);
+  const compactedEntry = compactAdjacentDeltaEntry(lastEntry, nextEntry);
+  if (compactedEntry !== null) {
+    return [...entries.slice(0, -1), compactedEntry];
+  }
   if (
     lastEntry === undefined ||
     compareTimelineEntries(lastEntry, nextEntry) <= 0
@@ -480,6 +495,74 @@ function appendTimelineEntry(
     nextEntry,
     ...entries.slice(insertionIndex),
   ];
+}
+
+function compactAdjacentDeltaEntry(
+  previous: TimelineEntry | undefined,
+  next: TimelineEntry,
+): TimelineEntry | null {
+  if (
+    previous === undefined ||
+    previous.kind !== next.kind ||
+    !isCompactableDeltaKind(next.kind) ||
+    previous.runId !== next.runId ||
+    previous.instanceId !== next.instanceId ||
+    previous.roleId !== next.roleId ||
+    previous.eventId <= 0 ||
+    next.eventId !== previous.eventId + 1
+  ) {
+    return null;
+  }
+  const previousPayload = jsonObject(previous.payload);
+  const nextPayload = jsonObject(next.payload);
+  if (
+    previousPayload === null ||
+    nextPayload === null ||
+    payloadPartIndex(previousPayload) !== payloadPartIndex(nextPayload)
+  ) {
+    return null;
+  }
+  const previousText = rawPayloadText(previousPayload);
+  const nextText = rawPayloadText(nextPayload);
+  if (previousText === null || nextText === null) {
+    return null;
+  }
+  return {
+    ...previous,
+    eventId: next.eventId,
+    payload: {
+      ...previousPayload,
+      [previousText.key]: previousText.value + nextText.value,
+    },
+    text: previousText.value + nextText.value,
+  };
+}
+
+function isCompactableDeltaKind(kind: RunEventType | "message"): boolean {
+  return kind === "text_delta" || kind === "output_delta" || kind === "thinking_delta";
+}
+
+function jsonObject(value: JsonValue): Record<string, JsonValue> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value
+    : null;
+}
+
+function payloadPartIndex(payload: Record<string, JsonValue>): string {
+  const value = payload.part_index;
+  return typeof value === "string" || typeof value === "number" ? String(value) : "";
+}
+
+function rawPayloadText(
+  payload: Record<string, JsonValue>,
+): { key: string; value: string } | null {
+  for (const key of RAW_TEXT_PAYLOAD_KEYS) {
+    const value = payload[key];
+    if (typeof value === "string") {
+      return { key, value };
+    }
+  }
+  return null;
 }
 
 function timelineEntryInsertionIndex(

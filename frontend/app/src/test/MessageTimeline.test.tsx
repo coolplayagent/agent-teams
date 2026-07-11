@@ -1016,7 +1016,7 @@ describe("MessageTimeline", () => {
     expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
   });
 
-  it("keeps the streaming markdown node mounted when a completed stream settles", async () => {
+  it("keeps the text row mounted and parses markdown only after streaming settles", async () => {
     const finalAnswer = [
       "LIVE_STREAM_ALPHA",
       "LIVE_STREAM_BETA",
@@ -1062,7 +1062,7 @@ describe("MessageTimeline", () => {
     expect(container.querySelector<HTMLElement>(".at-message-text"))
       .toBe(textNodeBefore);
     expect(container.querySelector<HTMLElement>(".at-message-markdown"))
-      .toBe(markdownBefore);
+      .not.toBe(markdownBefore);
     expect(textNodeBefore).not.toHaveClass("at-message-streaming-text");
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
     expect(screen.getByText(finalAnswer)).toBeVisible();
@@ -10776,8 +10776,16 @@ describe("MessageTimeline", () => {
         ".at-message-tool-summary",
       );
       expect(toolSummary).not.toBeNull();
+      const toolRow = toolSummary?.closest<HTMLElement>(
+        ".at-timeline-row[data-row-key]",
+      );
+      expect(toolRow).not.toBeNull();
+      const headerViewportOffsetBefore = translateY(toolRow ?? null) -
+        timeline.scrollTop;
       fireEvent.pointerDown(toolSummary as HTMLElement);
       fireEvent.click(toolSummary as HTMLElement);
+      const toolDetails = toolSummary?.closest("details.at-message-tool");
+      expect(toolDetails).toHaveAttribute("open");
 
       act(() => {
         setRuntimeEntries([
@@ -10792,10 +10800,14 @@ describe("MessageTimeline", () => {
 
       expect(await screen.findByText("Stream output while inspecting details"))
         .toBeVisible();
+      expect(toolDetails).toHaveAttribute("open");
       await waitFor(() =>
         expect(timelineMaxScrollTop(timeline)).toBeGreaterThan(previousScrollTop),
       );
       expect(timeline.scrollTop).toBe(previousScrollTop);
+      expect(
+        translateY(toolRow ?? null) - timeline.scrollTop,
+      ).toBe(headerViewportOffsetBefore);
     } finally {
       restoreMeasurements();
     }

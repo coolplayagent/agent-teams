@@ -4,6 +4,7 @@ import {
   initialRuntimeState,
   MAX_SEEN_EVENT_KEYS,
   reduceRunEvent,
+  reduceRunEvents,
 } from "../runtime/reducers";
 import {
   AG_UI_EVENT_NAMES,
@@ -159,7 +160,7 @@ describe("runtime reducers", () => {
     );
 
     expect(completed.activeRunIds).toEqual([]);
-    expect(completed.runs["run-1"].entries).toHaveLength(eventCount + 1);
+    expect(completed.runs["run-1"].entries).toHaveLength(2);
     expect(
       completed.runs["run-1"].entries
         .filter((entry) => entry.kind === "text_delta")
@@ -181,12 +182,44 @@ describe("runtime reducers", () => {
       }),
     );
     expect(replayedOldestEvent).toBe(completed);
-    expect(replayedOldestEvent.runs["run-1"].entries).toHaveLength(
-      eventCount + 1,
-    );
+    expect(replayedOldestEvent.runs["run-1"].entries).toHaveLength(2);
     expect(replayedOldestEvent.runs["run-1"].seenEventIdRanges).toEqual([
       [1, eventCount + 1],
     ]);
+  });
+
+  it("batch reduction preserves stream text, cursors, and terminal state", () => {
+    const events = [
+      runEvent({
+        event_id: 1,
+        event_type: "thinking_delta",
+        payload_json: JSON.stringify({ part_index: 0, text: "inspect " }),
+      }),
+      runEvent({
+        event_id: 2,
+        event_type: "thinking_delta",
+        payload_json: JSON.stringify({ part_index: 0, text: "workspace" }),
+      }),
+      runEvent({
+        event_id: 3,
+        event_type: "run_completed",
+        payload_json: JSON.stringify({ status: "completed" }),
+      }),
+    ];
+
+    const state = reduceRunEvents(initialRuntimeState, events);
+
+    expect(state.runs["run-1"]).toMatchObject({
+      lastEventId: 3,
+      seenEventIdRanges: [[1, 3]],
+      status: "closed",
+      terminalEventType: "run_completed",
+    });
+    expect(state.runs["run-1"].entries).toHaveLength(2);
+    expect(state.runs["run-1"].entries[0]).toMatchObject({
+      kind: "thinking_delta",
+      text: "inspect workspace",
+    });
   });
 
   it("keeps repeated cursorless stream deltas when no stable replay key exists", () => {

@@ -244,6 +244,7 @@ export function MessageTimeline({
   );
   const [newContentAvailable, setNewContentAvailable] = useState(false);
   const hydrationFrameRef = useRef<number | null>(null);
+  const liveRowMeasurementFrameRef = useRef<number | null>(null);
   const hydratedOverscanRowsRef = useRef({
     rowKeys: new Set<string>(),
     scopeKey: scrollScopeKey,
@@ -601,6 +602,17 @@ export function MessageTimeline({
   const timelineHeight = virtualItems.length > 0
     ? virtualizer.getTotalSize()
     : fallbackTotalSize(rows);
+  const resizeTimelineRow = virtualizer.resizeItem;
+  const liveRowMeasurementSignature = renderedVirtualItems
+    .map((virtualItem) => rows[virtualItem.index])
+    .filter((row): row is TimelineRow => row !== undefined)
+    .filter((row) => row.source === "runtime")
+    .map((row) => [
+      row.key,
+      timelineRowContentLength(row),
+      timelineRowHasStreamingContent(row) ? "streaming" : "settled",
+    ].join(":"))
+    .join("|");
   const immediateHydrationRowKeys = immediateTimelineHydrationRowKeys({
     alwaysHydrate: (row) => row.roundMarker !== null,
     anchorRowKey: scrollSnapshotRef.current?.anchor?.rowKey ?? null,
@@ -936,6 +948,37 @@ export function MessageTimeline({
     timelineHeight,
     visible,
   ]);
+
+  useEffect(() => {
+    if (liveRowMeasurementSignature.length === 0) {
+      return;
+    }
+    liveRowMeasurementFrameRef.current = window.requestAnimationFrame(() => {
+      liveRowMeasurementFrameRef.current = null;
+      const container = parentRef.current;
+      if (
+        !visible ||
+        container === null ||
+        timelineContainerIsHidden(container)
+      ) {
+        return;
+      }
+      for (const row of container.querySelectorAll<HTMLElement>(
+        '.at-timeline-row.is-runtime[data-index][data-row-key]',
+      )) {
+        const index = Number(row.dataset.index);
+        if (Number.isInteger(index) && index >= 0) {
+          resizeTimelineRow(index, row.offsetHeight);
+        }
+      }
+    });
+    return () => {
+      if (liveRowMeasurementFrameRef.current !== null) {
+        window.cancelAnimationFrame(liveRowMeasurementFrameRef.current);
+        liveRowMeasurementFrameRef.current = null;
+      }
+    };
+  }, [liveRowMeasurementSignature, resizeTimelineRow, scrollScopeKey, visible]);
 
   if (sessionId === null) {
     return (

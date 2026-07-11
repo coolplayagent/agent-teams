@@ -11449,6 +11449,79 @@ describe("MessageTimeline", () => {
     }
   });
 
+  it("keeps a running subagent timeline scrollable while one streamed row grows", async () => {
+    const restoreMeasurements = mockElementMeasurements({
+      clientHeight: 180,
+      rowHeight: (row) => {
+        const textLength = row.querySelector(".at-message-markdown")
+          ?.textContent?.length ?? 0;
+        return 48 + Math.ceil(textLength / 32) * 18;
+      },
+    });
+    const restoreRects = mockTimelineRects();
+    const streamingEntries = (count: number) =>
+      Array.from({ length: count }, (_, index) => runtimeTextDeltaEntry({
+        eventId: index + 1,
+        id: `run-output:${index + 1}:${index}`,
+        text: `Token ${index + 1} keeps streaming. `,
+      }));
+    try {
+      setRuntimeEntries(streamingEntries(24), "open", {
+        scope: "subagent",
+        sessionId: "session-1",
+      });
+      listSessionMessagesMock.mockResolvedValue([]);
+
+      const { container } = renderTimeline("session-1", {
+        runtimeRunId: "run-output",
+        variant: "subagent-panel",
+      });
+
+      const timeline = timelineElement(container);
+      await waitFor(() => {
+        expect(container.querySelector(".at-message-markdown")?.textContent)
+          .toContain("Token 24 keeps streaming.");
+        expect(timelineMaxScrollTop(timeline)).toBeGreaterThan(180);
+      });
+      const awayFromBottom = timelineMaxScrollTop(timeline) - 120;
+      timeline.scrollTop = awayFromBottom;
+      fireEvent.scroll(timeline);
+
+      act(() => {
+        setRuntimeEntries(streamingEntries(48), "open", {
+          scope: "subagent",
+          sessionId: "session-1",
+        });
+      });
+
+      await waitFor(() => {
+        expect(container.querySelector(".at-message-markdown")?.textContent)
+          .toContain("Token 48 keeps streaming.");
+        expect(timelineMaxScrollTop(timeline)).toBeGreaterThan(520);
+      });
+      expect(timeline.scrollTop).toBe(awayFromBottom);
+      expect(screen.getByRole("button", { name: "Jump to latest content" }))
+        .toBeVisible();
+
+      act(() => {
+        setRuntimeEntries(streamingEntries(96), "closed", {
+          scope: "subagent",
+          sessionId: "session-1",
+        });
+      });
+
+      await waitFor(() => {
+        expect(container.querySelector(".at-message-markdown")?.textContent)
+          .toContain("Token 96 keeps streaming.");
+        expect(timelineMaxScrollTop(timeline)).toBeGreaterThan(1_100);
+      });
+      expect(timeline.scrollTop).toBe(awayFromBottom);
+    } finally {
+      restoreRects();
+      restoreMeasurements();
+    }
+  });
+
   it("restores independent timeline anchors after switching sessions", async () => {
     const restoreMeasurements = mockElementMeasurements({
       clientHeight: 320,
@@ -12096,7 +12169,7 @@ function runtimeGenericEntry({
 
 interface MockElementMeasurementsOptions {
   clientHeight?: number;
-  rowHeight?: number;
+  rowHeight?: number | ((row: HTMLElement) => number);
 }
 
 function mockElementMeasurements(
@@ -12135,7 +12208,9 @@ function mockElementMeasurements(
       }
       if (this instanceof HTMLElement && this.classList.contains("at-message")) {
         if (options.rowHeight !== undefined) {
-          return options.rowHeight;
+          return typeof options.rowHeight === "function"
+            ? options.rowHeight(this)
+            : options.rowHeight;
         }
         return this.dataset.index === "0" ? 640 : 88;
       }

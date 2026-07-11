@@ -41,6 +41,8 @@ class AgUiEventType(str, Enum):
     STATE_DELTA = "state.delta"
     MODEL_STEP_STARTED = "model_step.started"
     MODEL_STEP_FINISHED = "model_step.finished"
+    MODEL_REQUEST_WAITING = "model_request.waiting"
+    MODEL_REQUEST_ACQUIRED = "model_request.acquired"
     TEXT_DELTA = "message.text.delta"
     OUTPUT_DELTA = "message.output.delta"
     GENERATION_PROGRESS = "generation.progress"

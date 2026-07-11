@@ -6,7 +6,7 @@ import logging
 import time
 from contextlib import asynccontextmanager
 from copy import deepcopy
-from collections.abc import AsyncIterable, AsyncIterator, Sequence
+from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Callable, Sequence
 from json import dumps, loads
 from typing import Protocol, TypeVar, cast
 
@@ -75,7 +75,11 @@ from relay_teams.sessions.runs.injection_classification import (
     public_injection_payload_json,
 )
 from relay_teams.sessions.runs.injection_queue import RunInjectionManager
-from relay_teams.sessions.runs.run_models import InjectionMessage, RunEvent
+from relay_teams.sessions.runs.run_models import (
+    InjectionMessage,
+    ModelRequestPhasePayload,
+    RunEvent,
+)
 from relay_teams.tools.registry import ToolRegistry, ToolResolutionContext
 from relay_teams.tools.runtime.context import ToolDeps
 from relay_teams.agents.execution.context_editing import (
@@ -123,6 +127,7 @@ _LLM_CLIENT_CLOSE_TASKS: set[asyncio.Task[None]] = set()
 _ABANDONED_LLM_STREAM_CONTEXT_CLEANUP_TASKS: set[asyncio.Task[None]] = set()
 _ABANDONED_LLM_STREAM_CONTEXT_CLEANUP_MIN_TIMEOUT_SECONDS = 1.0
 _ABANDONED_LLM_STREAM_CONTEXT_CLEANUP_MAX_TIMEOUT_SECONDS = 30.0
+_MODEL_SLOT_FEEDBACK_DELAY_SECONDS = 0.15
 StreamItemT = TypeVar("StreamItemT")
 
 
@@ -1251,9 +1256,34 @@ class SessionRuntimeMixin(AgentLlmSessionMixinBase):
                                     stream_context = streamable_node.stream(
                                         agent_run.ctx
                                     )
+
+                                    async def publish_model_request_phase(
+                                        phase: ModelRequestPhasePayload,
+                                    ) -> None:
+                                        await publish_run_event_async(
+                                            self._run_event_hub,
+                                            RunEvent(
+                                                session_id=request.session_id,
+                                                run_id=request.run_id,
+                                                trace_id=request.trace_id,
+                                                task_id=request.task_id,
+                                                instance_id=request.instance_id,
+                                                role_id=request.role_id,
+                                                event_type=(
+                                                    RunEventType.MODEL_REQUEST_WAITING
+                                                    if phase.phase == "waiting_for_slot"
+                                                    else RunEventType.MODEL_REQUEST_ACQUIRED
+                                                ),
+                                                payload_json=phase.model_dump_json(),
+                                            ),
+                                        )
+
                                     async with _llm_stream_context_with_timeout(
                                         stream_context,
                                         timeout_seconds=llm_event_timeout_seconds,
+                                        phase_callback=publish_model_request_phase,
+                                        role_id=request.role_id,
+                                        instance_id=request.instance_id,
                                     ) as stream:
                                         stream_iter = getattr(stream, "__aiter__", None)
                                         if callable(stream_iter):
@@ -1842,6 +1872,9 @@ async def _llm_stream_context_with_timeout(
     context: AgentNodeStreamContext,
     *,
     timeout_seconds: float,
+    phase_callback: Callable[[ModelRequestPhasePayload], Awaitable[None]] | None = None,
+    role_id: str = "agent",
+    instance_id: str = "agent",
 ) -> AsyncIterator[AgentNodeStream]:
     with observe_async_request_limit_phase() as request_limit_phase:
         enter_task = asyncio.create_task(context.__aenter__())
@@ -1850,6 +1883,9 @@ async def _llm_stream_context_with_timeout(
                 enter_task=enter_task,
                 request_limit_phase=request_limit_phase,
                 timeout_seconds=timeout_seconds,
+                phase_callback=phase_callback,
+                role_id=role_id,
+                instance_id=instance_id,
             )
         except asyncio.CancelledError:
             cleanup_timeout_seconds = (
@@ -1904,6 +1940,9 @@ async def _wait_for_llm_stream_context_open(
     enter_task: asyncio.Task[AgentNodeStream],
     request_limit_phase: AsyncRequestLimitPhase,
     timeout_seconds: float,
+    phase_callback: Callable[[ModelRequestPhasePayload], Awaitable[None]] | None,
+    role_id: str,
+    instance_id: str,
 ) -> bool:
     waiting_task = asyncio.create_task(request_limit_phase.waiting.wait())
     acquired_task = asyncio.create_task(request_limit_phase.acquired.wait())
@@ -1920,10 +1959,47 @@ async def _wait_for_llm_stream_context_open(
 
         queued_done, _pending = await asyncio.wait(
             {enter_task, acquired_task},
+            timeout=_MODEL_SLOT_FEEDBACK_DELAY_SECONDS,
             return_when=asyncio.FIRST_COMPLETED,
         )
         if enter_task in queued_done:
             return True
+        waiting_feedback_published = not queued_done and phase_callback is not None
+        if waiting_feedback_published and phase_callback is not None:
+            await phase_callback(
+                ModelRequestPhasePayload(
+                    phase="waiting_for_slot",
+                    role_id=role_id,
+                    instance_id=instance_id,
+                )
+            )
+        if acquired_task not in queued_done:
+            queued_done, _pending = await asyncio.wait(
+                {enter_task, acquired_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if enter_task in queued_done:
+                if (
+                    waiting_feedback_published
+                    and request_limit_phase.acquired.is_set()
+                    and phase_callback is not None
+                ):
+                    await phase_callback(
+                        ModelRequestPhasePayload(
+                            phase="opening_stream",
+                            role_id=role_id,
+                            instance_id=instance_id,
+                        )
+                    )
+                return True
+        if waiting_feedback_published and phase_callback is not None:
+            await phase_callback(
+                ModelRequestPhasePayload(
+                    phase="opening_stream",
+                    role_id=role_id,
+                    instance_id=instance_id,
+                )
+            )
 
         opened_done, _pending = await asyncio.wait(
             {enter_task},

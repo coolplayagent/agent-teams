@@ -40,6 +40,7 @@ import type { RuntimeRunState, TimelineEntry } from "../../runtime/reducers";
 import { useRuntimeStore } from "../../runtime/runtimeStore";
 import { useTranslations, type Translate } from "../../i18n";
 import { MarkdownMessage } from "./MarkdownMessage";
+import { ModelRequestStatus } from "./ModelRequestStatus";
 import { RoundMarker } from "./RoundMarker";
 import { RoundRail } from "./RoundRail";
 import { TimelineDisclosure } from "./TimelineDisclosure";
@@ -180,6 +181,18 @@ export interface TimelineSubagentReference {
   updatedAt?: string;
 }
 
+function latestModelRequestPhase(
+  runs: readonly RuntimeRunState[],
+): RuntimeRunState["modelRequestPhase"] {
+  for (let index = runs.length - 1; index >= 0; index -= 1) {
+    const runState = runs[index];
+    if (runState?.status !== "closed" && runState?.modelRequestPhase != null) {
+      return runState.modelRequestPhase;
+    }
+  }
+  return null;
+}
+
 export function MessageTimeline({
   emptyDescription,
   emptyFallback,
@@ -257,6 +270,7 @@ export function MessageTimeline({
     () => Object.fromEntries(runtimeRunList.map((runState) => [runState.runId, runState])),
     [runtimeRunList],
   );
+  const visibleModelRequestPhase = latestModelRequestPhase(runtimeRunList);
   const messagesQuery = useQuery({
     queryKey: messageQueryKey ?? ["sessions", sessionId, "messages"],
     queryFn: () => loadMessages(sessionId ?? ""),
@@ -1008,6 +1022,11 @@ export function MessageTimeline({
           })}
         </div>
       </div>
+      <ModelRequestStatus
+        openingLabel={t("timelineOpeningModelStream")}
+        phase={visibleModelRequestPhase}
+        waitingLabel={t("timelineWaitingForModelSlot")}
+      />
       {newContentAvailable ? (
         <Button
           aria-label={t("timelineJumpToLatest")}

@@ -2116,6 +2116,16 @@ Thinking events:
 - `thinking_delta`: payload includes `part_index`, `text`, `role_id`, `instance_id`.
 - `thinking_finished`: payload includes `part_index`, `role_id`, `instance_id`.
 
+Model concurrency events:
+- `model_request_waiting`: emitted only when a model request has remained blocked
+  waiting for the shared outbound-request concurrency limiter long enough to be
+  user-visible. Payload is the strict `ModelRequestPhasePayload` contract with
+  `phase="waiting_for_slot"`, `role_id`, and `instance_id`.
+- `model_request_acquired`: emitted after a previously reported wait obtains its
+  limiter slot and begins opening the provider stream. The same payload contract
+  uses `phase="opening_stream"`. Immediate acquisitions do not emit either event,
+  avoiding transient queue indicators when no meaningful wait occurred.
+
 Spec checkpoint events:
 - `spec_checkpoint_applied`: emitted at a safe model boundary when a non-coordinator task with a `TaskSpec` crosses its `lifecycle.spec_checkpoint` refresh threshold. The backend persists an internal system prompt containing the current task spec before rebuilding the next model request. Payload includes `task_id`, `role_id`, `instance_id`, `sequence`, `reason`, `tool_calls_since_last_checkpoint`, `messages_since_last_checkpoint`, and `history_tokens_since_last_checkpoint`.
 
@@ -2140,6 +2150,10 @@ Retry events:
   `monitor_created` and `monitor_stopped` payloads include `monitor_id`. `monitor_triggered` also includes `monitor_trigger_id`, `event_name`, `source_kind`, `source_key`, and `action_type`.
 
 Frontend behavior:
+- The web UI renders model concurrency events as a local, non-blocking status near
+  the affected session timeline. It replaces the waiting label when the slot is
+  acquired and removes it on the first streamed thinking/text/tool event or when
+  the model step/run terminates. Replayed events follow the same reducer path.
 - The web UI uses `llm_retry_scheduled` to render one active retry card in the round timeline and keep its countdown live while the retry backoff window is active.
 - Retry countdowns are computed from the SSE event `occurred_at` timestamp plus `retry_in_ms`, so delayed delivery or page refresh does not restart the timer.
 - Later retry events replace the same card instead of stacking multiple historical cards.

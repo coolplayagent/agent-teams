@@ -20,6 +20,8 @@ export type RunEventType =
   | "state_delta"
   | "model_step_started"
   | "model_step_finished"
+  | "model_request_waiting"
+  | "model_request_acquired"
   | "text_delta"
   | "output_delta"
   | "generation_progress"
@@ -108,6 +110,8 @@ export const AG_UI_EVENT_NAMES = [
   "state.delta",
   "model_step.started",
   "model_step.finished",
+  "model_request.waiting",
+  "model_request.acquired",
   "message.text.delta",
   "message.output.delta",
   "generation.progress",

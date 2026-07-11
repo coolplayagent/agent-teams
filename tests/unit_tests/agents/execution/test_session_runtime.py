@@ -541,6 +541,64 @@ async def test_llm_stream_open_timeout_excludes_request_limiter_queue() -> None:
 
 
 @pytest.mark.asyncio
+async def test_llm_stream_reports_only_user_visible_request_slot_wait(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        session_runtime_module,
+        "_MODEL_SLOT_FEEDBACK_DELAY_SECONDS",
+        0.001,
+    )
+    phases: list[str] = []
+
+    async def capture_phase(
+        payload: session_runtime_module.ModelRequestPhasePayload,
+    ) -> None:
+        phases.append(payload.phase)
+
+    context = _QueuedStreamContext(queue_seconds=0.01)
+    async with session_runtime_module._llm_stream_context_with_timeout(
+        cast(session_runtime_module.AgentNodeStreamContext, context),
+        timeout_seconds=0.1,
+        phase_callback=capture_phase,
+        role_id="Coordinator",
+        instance_id="instance-1",
+    ):
+        pass
+
+    assert phases == ["waiting_for_slot", "opening_stream"]
+
+
+@pytest.mark.asyncio
+async def test_llm_stream_does_not_flash_slot_wait_for_immediate_acquisition(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        session_runtime_module,
+        "_MODEL_SLOT_FEEDBACK_DELAY_SECONDS",
+        0.02,
+    )
+    phases: list[str] = []
+
+    async def capture_phase(
+        payload: session_runtime_module.ModelRequestPhasePayload,
+    ) -> None:
+        phases.append(payload.phase)
+
+    context = _QueuedStreamContext(queue_seconds=0.0)
+    async with session_runtime_module._llm_stream_context_with_timeout(
+        cast(session_runtime_module.AgentNodeStreamContext, context),
+        timeout_seconds=0.1,
+        phase_callback=capture_phase,
+        role_id="Coordinator",
+        instance_id="instance-1",
+    ):
+        pass
+
+    assert phases == []
+
+
+@pytest.mark.asyncio
 async def test_llm_stream_open_timeout_starts_after_request_slot_acquired() -> None:
     context = _QueuedStreamContext(queue_seconds=0.01, open_seconds=0.03)
 

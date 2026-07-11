@@ -35,6 +35,7 @@ export interface RuntimeRunState {
   seenEventIdRanges?: Array<[number, number]>;
   seenEventKeys: string[];
   terminalEventType: RunEventType | null;
+  modelRequestPhase?: "waiting_for_slot" | "opening_stream" | null;
   entries: TimelineEntry[];
 }
 
@@ -144,6 +145,7 @@ export function reduceRunEvent(
       ? rememberSeenEventId(existing.seenEventIdRanges ?? [], rawEventId)
       : existing.seenEventIdRanges,
     terminalEventType,
+    modelRequestPhase: nextModelRequestPhase(existing.modelRequestPhase, event.event_type),
     entries,
   };
 
@@ -587,7 +589,34 @@ function timelineEntryInsertionIndex(
 }
 
 function shouldRenderEntry(kind: RunEventType | "message"): boolean {
+  if (kind === "model_request_waiting" || kind === "model_request_acquired") {
+    return false;
+  }
   return kind.trim().length > 0;
+}
+
+function nextModelRequestPhase(
+  current: RuntimeRunState["modelRequestPhase"],
+  kind: RunEventType,
+): RuntimeRunState["modelRequestPhase"] {
+  if (kind === "model_request_waiting") {
+    return "waiting_for_slot";
+  }
+  if (kind === "model_request_acquired") {
+    return "opening_stream";
+  }
+  if (
+    kind === "text_delta" ||
+    kind === "output_delta" ||
+    kind === "thinking_started" ||
+    kind === "thinking_delta" ||
+    kind === "tool_call" ||
+    kind === "model_step_finished" ||
+    isTerminalRunEvent(kind)
+  ) {
+    return null;
+  }
+  return current;
 }
 
 function compareTimelineEntries(left: TimelineEntry, right: TimelineEntry): number {

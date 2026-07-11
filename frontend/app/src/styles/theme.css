@@ -1472,6 +1472,31 @@ body {
   color: var(--at-primary);
 }
 
+.at-model-request-status {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  bottom: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100% - 52px);
+  padding: 5px 10px;
+  border: 1px solid var(--at-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--at-surface-elevated) 94%, transparent);
+  box-shadow: 0 4px 14px var(--at-shadow-color);
+  color: var(--at-text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  transform: translateX(-50%);
+}
+
+.at-model-request-status-icon {
+  flex: 0 0 auto;
+  animation: at-spin 1s linear infinite;
+}
+
 .at-surface-view {
   flex: 1 1 auto;
   min-height: 0;

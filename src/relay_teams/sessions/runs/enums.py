@@ -39,6 +39,8 @@ class RunEventType(str, Enum):
     STATE_DELTA = "state_delta"
     MODEL_STEP_STARTED = "model_step_started"
     MODEL_STEP_FINISHED = "model_step_finished"
+    MODEL_REQUEST_WAITING = "model_request_waiting"
+    MODEL_REQUEST_ACQUIRED = "model_request_acquired"
     TEXT_DELTA = "text_delta"
     OUTPUT_DELTA = "output_delta"
     GENERATION_PROGRESS = "generation_progress"

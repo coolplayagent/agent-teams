@@ -182,3 +182,13 @@ class RunEvent(BaseModel):
     payload_json: str = Field(default="{}")
     occurred_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))
     event_id: int | None = None
+
+
+class ModelRequestPhasePayload(BaseModel):
+    """Public payload for model concurrency-slot lifecycle events."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    phase: Literal["waiting_for_slot", "opening_stream"]
+    role_id: RequiredIdentifierStr
+    instance_id: RequiredIdentifierStr

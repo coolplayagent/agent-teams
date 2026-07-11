@@ -29,6 +29,8 @@ describe("runtime reducers", () => {
         "thinking.finished",
         "model_step.started",
         "model_step.finished",
+        "model_request.waiting",
+        "model_request.acquired",
         "tool_call.started",
         "tool_call.validation_failed",
         "tool_result.completed",
@@ -65,6 +67,40 @@ describe("runtime reducers", () => {
 
     expect(twice.runs["run-1"].entries).toHaveLength(1);
     expect(twice.runs["run-1"].lastEventId).toBe(7);
+  });
+
+  it("replays model slot waiting as local run state without timeline noise", () => {
+    const waiting = reduceRunEvent(
+      initialRuntimeState,
+      runEvent({
+        event_id: 7,
+        event_type: "model_request_waiting",
+        payload_json: JSON.stringify({ phase: "waiting_for_slot" }),
+      }),
+    );
+    expect(waiting.runs["run-1"].modelRequestPhase).toBe("waiting_for_slot");
+    expect(waiting.runs["run-1"].entries).toHaveLength(0);
+
+    const acquired = reduceRunEvent(
+      waiting,
+      runEvent({
+        event_id: 8,
+        event_type: "model_request_acquired",
+        payload_json: JSON.stringify({ phase: "opening_stream" }),
+      }),
+    );
+    expect(acquired.runs["run-1"].modelRequestPhase).toBe("opening_stream");
+    expect(acquired.runs["run-1"].entries).toHaveLength(0);
+
+    const firstToken = reduceRunEvent(
+      acquired,
+      runEvent({
+        event_id: 9,
+        event_type: "text_delta",
+        payload_json: JSON.stringify({ text: "ready" }),
+      }),
+    );
+    expect(firstToken.runs["run-1"].modelRequestPhase).toBeNull();
   });
 
   it("ignores replayed event ids at or below the local stream cursor", () => {

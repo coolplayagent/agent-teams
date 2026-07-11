@@ -69,14 +69,27 @@ describe("SessionSearchView", () => {
 
   it("opens the active result with the keyboard", async () => {
     const selectSession = vi.fn();
-    renderSearch({ onSessionSelected: selectSession });
+    const closeSearch = vi.fn();
+    renderSearch({ onClose: closeSearch, onSessionSelected: selectSession });
 
     const searchbox = screen.getByRole("searchbox", { name: "Search sessions" });
+    const listbox = screen.getByRole("listbox");
     await waitFor(() => expect(searchbox).toHaveFocus());
+    expect(listbox).toHaveAttribute("aria-activedescendant", "session-search-option-0");
+    fireEvent.keyDown(searchbox, { key: "ArrowDown" });
+    expect(listbox).toHaveAttribute("aria-activedescendant", "session-search-option-1");
+    fireEvent.keyDown(searchbox, { key: "Home" });
+    expect(listbox).toHaveAttribute("aria-activedescendant", "session-search-option-0");
+    fireEvent.keyDown(searchbox, { key: "End" });
+    expect(listbox).toHaveAttribute("aria-activedescendant", "session-search-option-1");
     fireEvent.change(searchbox, { target: { value: "alpha" } });
+    expect(listbox).toHaveAttribute("aria-activedescendant", "session-search-option-0");
     fireEvent.keyDown(searchbox, { key: "Enter" });
 
     expect(selectSession).toHaveBeenCalledWith(sessions[0]);
+    fireEvent.keyDown(searchbox, { key: "Escape" });
+    expect(closeSearch).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("status")).toHaveTextContent("1 result");
   });
 
   it("shows an empty search state when nothing matches", () => {
@@ -99,16 +112,19 @@ describe("SessionSearchView", () => {
 function renderSearch({
   hasError = false,
   onSessionSelected = vi.fn(),
+  onClose,
   selectedSessionId = null,
 }: {
   hasError?: boolean;
   onSessionSelected?: (session: SessionSidebarRecord) => void;
+  onClose?: () => void;
   selectedSessionId?: string | null;
 } = {}) {
   render(
     <ConfigProvider button={{ autoInsertSpace: false }}>
       <SessionSearchView
         onSessionSelected={onSessionSelected}
+        onClose={onClose}
         hasError={hasError}
         selectedSessionId={selectedSessionId}
         sessions={sessions}

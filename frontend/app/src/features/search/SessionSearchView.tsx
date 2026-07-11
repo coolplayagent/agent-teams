@@ -14,6 +14,7 @@ const maxSearchResults = 20;
 interface SessionSearchViewProps {
   hasError?: boolean;
   loading?: boolean;
+  onClose?: () => void;
   onSessionSelected: (session: SessionSidebarRecord) => void;
   selectedSessionId: string | null;
   sessions: SessionSidebarRecord[];
@@ -32,6 +33,7 @@ interface SessionSearchRow {
 export function SessionSearchView({
   hasError = false,
   loading = false,
+  onClose,
   onSessionSelected,
   selectedSessionId,
   sessions,
@@ -42,6 +44,7 @@ export function SessionSearchView({
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<InputRef>(null);
+  const activeOptionRef = useRef<HTMLButtonElement | null>(null);
   const rows = useMemo(
     () =>
       buildSessionSearchRows(
@@ -70,6 +73,10 @@ export function SessionSearchView({
     });
   }, [rows.length]);
 
+  useEffect(() => {
+    activeOptionRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [activeIndex, rows]);
+
   return (
     <section
       aria-label={t("searchViewTitle")}
@@ -77,10 +84,6 @@ export function SessionSearchView({
       data-testid="session-search-view"
     >
       <div className="at-session-search-toolbar">
-        <div className="at-session-search-heading">
-          <h2>{t("searchViewTitle")}</h2>
-          <span>{statusLabel}</span>
-        </div>
         <Input
           allowClear
           aria-label={t("searchViewInputLabel")}
@@ -97,11 +100,19 @@ export function SessionSearchView({
           type="search"
           value={query}
         />
+        <span aria-live="polite" className="at-session-search-count" role="status">
+          {statusLabel}
+        </span>
       </div>
 
       <div
+        aria-activedescendant={
+          rows[activeIndex] === undefined
+            ? undefined
+            : `session-search-option-${activeIndex}`
+        }
         aria-label={hasQuery ? t("searchViewResults") : t("searchRecentSessions")}
-        className="at-session-search-results"
+        className="at-session-search-results at-scroll-region"
         role="listbox"
       >
         {loading && rows.length === 0 ? (
@@ -136,9 +147,11 @@ export function SessionSearchView({
                   ]
                     .filter(Boolean)
                     .join(" ")}
+                  id={`session-search-option-${index}`}
                   key={row.session.session_id}
                   onClick={() => onSessionSelected(row.session)}
                   onMouseEnter={() => setActiveIndex(index)}
+                  ref={active ? activeOptionRef : undefined}
                   role="option"
                   type="button"
                 >
@@ -188,6 +201,21 @@ export function SessionSearchView({
     if (event.key === "ArrowUp") {
       event.preventDefault();
       setActiveIndex((current) => Math.max(0, current - 1));
+      return;
+    }
+    if (event.key === "Home") {
+      event.preventDefault();
+      setActiveIndex(0);
+      return;
+    }
+    if (event.key === "End") {
+      event.preventDefault();
+      setActiveIndex(rows.length === 0 ? 0 : rows.length - 1);
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onClose?.();
       return;
     }
     if (event.key === "Enter" && rows[activeIndex] !== undefined) {

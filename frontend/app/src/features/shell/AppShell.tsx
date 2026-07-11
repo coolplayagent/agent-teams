@@ -973,12 +973,13 @@ export function AppShell() {
         footer={null}
         onCancel={() => setSessionSearchOpen(false)}
         open={sessionSearchOpen}
-        title={null}
+        title={t("searchViewTitle")}
         width={960}
       >
         <SessionSearchView
           hasError={sidebarSessionsQuery.isError || workspacesQuery.isError}
           loading={sidebarSessionsQuery.isLoading || workspacesQuery.isLoading}
+          onClose={() => setSessionSearchOpen(false)}
           onSessionSelected={handleSearchSessionSelected}
           selectedSessionId={selectedSessionId}
           sessions={sidebarSessionsQuery.data ?? []}

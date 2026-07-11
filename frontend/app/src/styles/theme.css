@@ -1288,10 +1288,22 @@ body {
   margin-bottom: 0;
 }
 
-.at-subagent-session-body .at-timeline {
-  flex: 1 1 auto;
+.at-subagent-session-body > .at-timeline-frame {
+  flex: 1 1 0;
+  height: 100%;
   min-height: 0;
+  overflow: hidden;
+}
+
+.at-subagent-session-body > .at-timeline-frame > .at-timeline {
+  height: 100%;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 14px 16px 24px;
+  scrollbar-gutter: stable;
+  touch-action: pan-y;
 }
 
 .at-subagent-session-pending {

@@ -4,6 +4,10 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const themeCss = readFileSync("src/styles/theme.css", "utf8");
+const messageTimelineSource = readFileSync(
+  "src/features/timeline/MessageTimeline.tsx",
+  "utf8",
+);
 
 function cssBlock(selector: string): string {
   const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -340,8 +344,13 @@ describe("shell layout CSS", () => {
       /\.at-subagent-session-body\s*{[\s\S]*?display:\s*flex;[\s\S]*?flex-direction:\s*column;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/,
     );
     expect(themeCss).toMatch(
-      /\.at-subagent-session-body \.at-timeline\s*{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?min-height:\s*0;[\s\S]*?padding:\s*14px 16px 24px;/,
+      /\.at-subagent-session-body > \.at-timeline-frame\s*{[\s\S]*?flex:\s*1 1 0;[\s\S]*?height:\s*100%;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/,
     );
+    expect(themeCss).toMatch(
+      /\.at-subagent-session-body > \.at-timeline-frame > \.at-timeline\s*{[\s\S]*?height:\s*100%;[\s\S]*?overflow-y:\s*auto;[\s\S]*?overscroll-behavior:\s*contain;[\s\S]*?scrollbar-gutter:\s*stable;[\s\S]*?touch-action:\s*pan-y;/,
+    );
+    expect(messageTimelineSource).toContain("data-scroll-owner={variant}");
+    expect(messageTimelineSource).toContain("tabIndex={0}");
   });
 
   it("keeps the desktop round rail overlaid without collapsing the chat column", () => {

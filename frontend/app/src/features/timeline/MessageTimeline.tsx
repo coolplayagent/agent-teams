@@ -641,9 +641,11 @@ export function MessageTimeline({
     >
       <div
         className="at-timeline"
+        data-scroll-owner={variant}
         onPointerDown={handleTimelinePointerDown}
         onScroll={handleTimelineScroll}
         ref={parentRef}
+        tabIndex={0}
       >
         <div
           className="at-timeline-virtual"

@@ -963,10 +963,14 @@ def _hook_subagent_worker_mode(messages: list[object]) -> bool:
 
 def _plan_hook_subagent_worker_response(messages: list[object]) -> dict[str, object]:
     user_text = _extract_last_user_text(messages)
-    tag_match = re.search(r"\[hook-subagent-worker[^\]]*\btag=([A-Za-z0-9_-]+)", user_text)
+    tag_match = re.search(
+        r"\[hook-subagent-worker[^\]]*\btag=([A-Za-z0-9_-]+)", user_text
+    )
     if tag_match is not None:
         tag = tag_match.group(1)
-        repeat_match = re.search(r"\[hook-subagent-worker[^\]]*\brepeat=(\d+)", user_text)
+        repeat_match = re.search(
+            r"\[hook-subagent-worker[^\]]*\brepeat=(\d+)", user_text
+        )
         delay_match = re.search(r"\[hook-subagent-worker[^\]]*\bdelay=(\d+)", user_text)
         chunk_match = re.search(r"\[hook-subagent-worker[^\]]*\bchunk=(\d+)", user_text)
         repeat = int(repeat_match.group(1)) if repeat_match is not None else 10

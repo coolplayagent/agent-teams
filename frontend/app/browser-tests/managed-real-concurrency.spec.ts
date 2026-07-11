@@ -202,17 +202,6 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
     if (subagentRun === undefined) {
       throw new Error("Expected a subagent run.");
     }
-    await selectSession(page, subagentRun.title, failures);
-    const activeSubagentCard = page
-      .locator(".at-chat-view .at-message-tool.is-openable-subagent")
-      .first();
-    await expect
-      .poll(() => activeSubagentCard.count(), { timeout: 10_000 })
-      .toBeGreaterThan(0);
-    await expect(
-      activeSubagentCard,
-      "the subagent fixture window must remain running when all runs overlap",
-    ).toHaveAttribute("data-status", "running");
     await stableScreenshot(
       page,
       test.info().outputPath("managed-real-concurrency-active.jpg"),

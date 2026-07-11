@@ -998,14 +998,8 @@ describe("AppShell", () => {
       "false",
     );
     const topbar = htmlElement(document.querySelector(".at-topbar"), "topbar");
-    await waitFor(() =>
-      expect(
-        within(topbar).getByRole("button", { name: "Backend connected" }),
-      ).toHaveTextContent("ok"),
-    );
-    expect(
-      within(topbar).getByRole("button", { name: "Backend connected" }),
-    ).toHaveAttribute("aria-busy", "false");
+    expect(within(topbar).queryByRole("button", { name: "Backend connected" }))
+      .not.toBeInTheDocument();
   });
 
   it("keeps the sidebar backend status busy only while health initializes", async () => {
@@ -1023,12 +1017,6 @@ describe("AppShell", () => {
     expect(status).toHaveTextContent("Checking backend");
     expect(status).toHaveAttribute("data-tone", "checking");
     expect(status).toHaveAttribute("aria-busy", "true");
-    const topbar = htmlElement(document.querySelector(".at-topbar"), "topbar");
-    const checkingHealth = within(topbar).getByRole("button", {
-      name: "Checking backend...",
-    });
-    expect(checkingHealth).toHaveTextContent("...");
-    expect(checkingHealth).toHaveAttribute("aria-busy", "true");
 
     resolveHealth({ status: "ok" });
     await waitFor(() =>
@@ -1044,14 +1032,6 @@ describe("AppShell", () => {
       "aria-busy",
       "false",
     );
-    await waitFor(() =>
-      expect(
-        within(topbar).getByRole("button", { name: "Backend connected" }),
-      ).toHaveTextContent("ok"),
-    );
-    expect(
-      within(topbar).getByRole("button", { name: "Backend connected" }),
-    ).toHaveAttribute("aria-busy", "false");
   });
 
   it("surfaces backend health failures without falling back to a fake busy state", async () => {
@@ -1075,18 +1055,12 @@ describe("AppShell", () => {
     );
 
     const topbar = htmlElement(document.querySelector(".at-topbar"), "topbar");
-    const healthButton = within(topbar).getByRole("button", {
-      name: "Backend offline",
-    });
-    expect(healthButton).toHaveTextContent("off");
-    expect(healthButton).toHaveClass("is-offline");
-    expect(healthButton).toHaveAttribute("aria-busy", "false");
+    expect(within(topbar).queryByRole("button", { name: "Backend offline" }))
+      .not.toBeInTheDocument();
   });
 
-  it("shows reachable non-ok backend statuses and refreshes back to connected", async () => {
-    getHealthMock
-      .mockResolvedValueOnce({ status: "starting" })
-      .mockResolvedValueOnce({ status: "ok" });
+  it("shows reachable non-ok backend statuses in the sidebar", async () => {
+    getHealthMock.mockResolvedValue({ status: "starting" });
 
     renderShell();
 
@@ -1100,23 +1074,8 @@ describe("AppShell", () => {
     );
 
     const topbar = htmlElement(document.querySelector(".at-topbar"), "topbar");
-    const startingHealth = within(topbar).getByRole("button", {
-      name: "starting",
-    });
-    expect(startingHealth).toHaveTextContent("starting");
-    expect(startingHealth).toHaveClass("is-online");
-
-    fireEvent.click(startingHealth);
-
-    await waitFor(() => expect(getHealthMock).toHaveBeenCalledTimes(2));
-    await waitFor(() =>
-      expect(within(sidebar).getByRole("status")).toHaveTextContent(
-        "Backend connected",
-      ),
-    );
-    expect(
-      within(topbar).getByRole("button", { name: "Backend connected" }),
-    ).toHaveTextContent("ok");
+    expect(within(topbar).queryByRole("button", { name: "starting" }))
+      .not.toBeInTheDocument();
   });
 
   it("keeps primary topbar actions visible in the narrow shell", async () => {
@@ -1131,11 +1090,8 @@ describe("AppShell", () => {
     expect(
       within(topbar).getByRole("button", { name: "Observability" }),
     ).toBeVisible();
-    await waitFor(() =>
-      expect(
-        within(topbar).getByRole("button", { name: "Backend connected" }),
-      ).toBeVisible(),
-    );
+    expect(within(topbar).queryByRole("button", { name: "Backend connected" }))
+      .not.toBeInTheDocument();
   });
 
   it("resizes the sidebar from the keyboard-accessible separator", async () => {

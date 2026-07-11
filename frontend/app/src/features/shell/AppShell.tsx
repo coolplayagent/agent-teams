@@ -14,7 +14,6 @@ import {
   MessageSquare,
   Moon,
   PlugZap,
-  RefreshCw,
   Settings,
   SquareKanban,
   Sun,
@@ -315,23 +314,6 @@ export function AppShell() {
     }),
     [healthLabel, healthQuery.isError, healthQuery.isLoading],
   );
-  const topbarBackendShortLabel = useMemo(() => {
-    if (healthQuery.isLoading) {
-      return "...";
-    }
-    if (healthQuery.isError) {
-      return "off";
-    }
-    const status = healthQuery.data?.status?.trim();
-    if (
-      status === undefined
-      || status.length === 0
-      || healthyBackendStatuses.has(status.toLowerCase())
-    ) {
-      return "ok";
-    }
-    return status;
-  }, [healthQuery.data?.status, healthQuery.isError, healthQuery.isLoading]);
   const selectedSession = useMemo(
     () =>
       sidebarSessionsQuery.data?.find(
@@ -809,21 +791,6 @@ export function AppShell() {
               }
               type="text"
             />
-          </Tooltip>
-          <Tooltip title={healthLabel}>
-            <Button
-              aria-busy={healthQuery.isFetching ? "true" : "false"}
-              aria-label={healthLabel}
-              className={`at-topbar-health is-${sidebarBackendStatus.tone}`}
-              icon={<RefreshCw size={14} />}
-              onClick={() => {
-                void healthQuery.refetch();
-              }}
-              size="small"
-              type="text"
-            >
-              <span>{topbarBackendShortLabel}</span>
-            </Button>
           </Tooltip>
         </Space>
       </Header>

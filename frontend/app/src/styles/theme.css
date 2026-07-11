@@ -1134,6 +1134,10 @@ body {
   background: var(--at-bg);
 }
 
+.at-subagent-side-panel[hidden] {
+  display: none !important;
+}
+
 @container at-workspace (max-width: 907px) {
   .at-workspace-chat-shell,
   .at-workspace-chat-shell.has-subagent-panel {

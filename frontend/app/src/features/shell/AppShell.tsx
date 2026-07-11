@@ -121,6 +121,8 @@ export function AppShell() {
   const [activeSubagent, setActiveSubagent] = useState<ActiveSubagentSession | null>(
     readActiveSubagentPanel,
   );
+  const [retainedSubagent, setRetainedSubagent] =
+    useState<ActiveSubagentSession | null>(activeSubagent);
   const [
     activeSubagentAutoRestoreBlocked,
     setActiveSubagentAutoRestoreBlocked,
@@ -334,6 +336,20 @@ export function AppShell() {
     activeSubagentAutoRestoreBlocked
       ? null
       : activeSubagentForSelectedSession;
+  const renderedSubagent = visibleActiveSubagent ?? retainedSubagent;
+
+  useEffect(() => {
+    if (
+      visibleActiveSubagent !== null &&
+      subagentIsTerminal(visibleActiveSubagent)
+    ) {
+      setRetainedSubagent(visibleActiveSubagent);
+      return;
+    }
+    if (visibleActiveSubagent !== null) {
+      setRetainedSubagent(null);
+    }
+  }, [visibleActiveSubagent]);
 
   useEffect(() => {
     const savedLanguage = uiLanguageQuery.data?.language;
@@ -869,31 +885,35 @@ export function AppShell() {
               }
             />
             {visibleActiveSubagent !== null ? (
-              <>
-                <div
-                  aria-label={t("appSubagentPanelResize")}
-                  aria-orientation="vertical"
-                  aria-valuemax={subagentPanelLayoutMax}
-                  aria-valuemin={subagentPanelWidthMin}
-                  aria-valuenow={subagentPanelWidth}
-                  className={
-                    subagentPanelResizing
-                      ? "at-subagent-panel-resizer is-resizing"
-                      : "at-subagent-panel-resizer"
-                  }
-                  onKeyDown={handleSubagentPanelResizeKeyDown}
-                  onPointerDown={handleSubagentPanelResizePointerDown}
-                  role="separator"
-                  tabIndex={0}
+              <div
+                aria-label={t("appSubagentPanelResize")}
+                aria-orientation="vertical"
+                aria-valuemax={subagentPanelLayoutMax}
+                aria-valuemin={subagentPanelWidthMin}
+                aria-valuenow={subagentPanelWidth}
+                className={
+                  subagentPanelResizing
+                    ? "at-subagent-panel-resizer is-resizing"
+                    : "at-subagent-panel-resizer"
+                }
+                onKeyDown={handleSubagentPanelResizeKeyDown}
+                onPointerDown={handleSubagentPanelResizePointerDown}
+                role="separator"
+                tabIndex={0}
+              />
+            ) : null}
+            {renderedSubagent !== null ? (
+              <aside
+                aria-hidden={visibleActiveSubagent === null ? "true" : undefined}
+                className="at-subagent-side-panel"
+                hidden={visibleActiveSubagent === null}
+              >
+                <SubagentSessionView
+                  onBack={() => setActiveSubagent(null)}
+                  runStreamController={runStreamController}
+                  subagent={renderedSubagent}
                 />
-                <aside className="at-subagent-side-panel">
-                  <SubagentSessionView
-                    onBack={() => setActiveSubagent(null)}
-                    runStreamController={runStreamController}
-                    subagent={visibleActiveSubagent}
-                  />
-                </aside>
-              </>
+              </aside>
             ) : null}
           </div>
           {activeView === "spec-lineage" ? (
@@ -1427,6 +1447,13 @@ function firstNonBlank(...values: Array<string | null | undefined>): string {
 function subagentIsRunning(subagent: ActiveSubagentSession): boolean {
   const status = `${subagent.runStatus} ${subagent.status}`.toLowerCase();
   return status.includes("running") || status.includes("starting");
+}
+
+function subagentIsTerminal(subagent: ActiveSubagentSession): boolean {
+  return (
+    isTerminalRunStatus(subagent.runStatus) ||
+    isTerminalRunStatus(subagent.status)
+  );
 }
 
 function terminalViewMarkKey(session: SessionSidebarRecord): string {

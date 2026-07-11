@@ -1636,6 +1636,45 @@ describe("AppShell", () => {
     );
   });
 
+  it("retains a completed subagent surface while hidden for fast reentry", async () => {
+    listSessionSubagentsMock.mockResolvedValue([
+      {
+        created_at: "2026-06-23T10:02:00Z",
+        instance_id: "subagent-instance-1",
+        last_event_id: 12,
+        role_id: "explorer",
+        run_id: "subagent-run-1",
+        run_status: "completed",
+        session_id: "session-1",
+        status: "completed",
+        subagent_instance_id: "subagent-instance-1",
+        subagent_kind: "normal",
+        subagent_role_id: "explorer",
+        subagent_run_id: "subagent-run-1",
+        title: "Subagent Explorer",
+        updated_at: "2026-06-23T10:03:00Z",
+      },
+    ]);
+    renderShell();
+
+    expect(await screen.findByTestId("timeline")).toBeVisible();
+    fireEvent.click(screen.getByTestId("open-subagent-from-timeline"));
+    const subagentSurface = await screen.findByTestId("subagent-session-view");
+    await waitFor(() =>
+      expect(subagentSurface).toHaveAttribute("data-run-status", "completed"),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to chat" }));
+    expect(subagentSurface).not.toBeVisible();
+    expect(subagentSurface.closest(".at-subagent-side-panel")).toHaveAttribute(
+      "hidden",
+    );
+
+    fireEvent.click(screen.getByTestId("open-subagent-from-timeline"));
+    expect(await screen.findByTestId("subagent-session-view")).toBe(subagentSurface);
+    expect(subagentSurface).toBeVisible();
+  });
+
   it("keeps the subagent surface active when pending main session detail resolves", async () => {
     let resolveSession: ((session: SessionRecord) => void) | undefined;
     getSessionMock.mockReturnValue(

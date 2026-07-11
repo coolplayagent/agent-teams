@@ -27,6 +27,9 @@ describe("shell layout CSS", () => {
     expect(themeCss).toMatch(
       /\.at-workspace-chat-shell\[hidden\]\s*{[\s\S]*?display:\s*grid;[\s\S]*?position:\s*absolute;[\s\S]*?inset:\s*0;[\s\S]*?visibility:\s*hidden;[\s\S]*?pointer-events:\s*none;/,
     );
+    expect(themeCss).toMatch(
+      /\.at-subagent-side-panel\[hidden\]\s*{[\s\S]*?display:\s*none !important;/,
+    );
   });
   it("keeps the chat shell locked to one page with independent scroll regions", () => {
     expect(themeCss).toMatch(

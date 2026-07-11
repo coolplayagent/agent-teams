@@ -163,6 +163,9 @@ export function MessageTimeline({
   const pendingRoundRunIdRef = useRef<string | null>(null);
   const scrollSessionIdRef = useRef<string | null>(sessionId);
   const scrollSnapshotRef = useRef<TimelineScrollSnapshot | null>(null);
+  const expandedDisclosureIdsBySessionRef = useRef(
+    new Map<string, ReadonlySet<string>>(),
+  );
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [expandedHistorySegmentIds, setExpandedHistorySegmentIds] = useState<ReadonlySet<string>>(
     () => new Set(),
@@ -496,7 +499,7 @@ export function MessageTimeline({
     }
     if (
       target.closest(
-        ".at-message-thinking-summary, .at-message-tool-summary, .at-processed-group-summary",
+        ".at-message-thinking-summary, .at-message-tool-summary, .at-processed-group-summary, .at-round-prompt-toggle",
       ) === null
     ) {
       return;
@@ -537,9 +540,12 @@ export function MessageTimeline({
       } else {
         next.delete(disclosureId);
       }
+      if (sessionId !== null) {
+        expandedDisclosureIdsBySessionRef.current.set(sessionId, next);
+      }
       return next;
     });
-  }, []);
+  }, [sessionId]);
   const handleDisclosureToggle = useCallback((event: SyntheticEvent<HTMLDetailsElement>) => {
     const row = event.currentTarget.closest<HTMLElement>(
       ".at-timeline-row[data-row-key]",
@@ -554,7 +560,11 @@ export function MessageTimeline({
     pendingRoundRunIdRef.current = null;
     setActiveRunId(null);
     setExpandedHistorySegmentIds(new Set());
-    setExpandedDisclosureIds(new Set());
+    setExpandedDisclosureIds(
+      sessionId === null
+        ? new Set()
+        : expandedDisclosureIdsBySessionRef.current.get(sessionId) ?? new Set(),
+    );
   }, [sessionId]);
 
   useLayoutEffect(() => {
@@ -1027,6 +1037,7 @@ function timelineRowElement(
     );
   }
   if (row.roundMarker !== null) {
+    const disclosureId = `round-prompt:${row.roundMarker.round.run_id}`;
     return (
       <section
         className="at-timeline-row at-round-marker"
@@ -1037,7 +1048,22 @@ function timelineRowElement(
         ref={measureElement}
         style={style}
       >
-        <RoundMarker index={row.roundMarker.index} round={row.roundMarker.round} t={t} />
+        <RoundMarker
+          index={row.roundMarker.index}
+          onPromptOpenChange={(expanded) =>
+            onDisclosureChange(disclosureId, expanded)}
+          onPromptToggle={(event) => {
+            const markerRow = event.currentTarget.closest<HTMLElement>(
+              ".at-timeline-row[data-row-key]",
+            );
+            if (markerRow !== null) {
+              window.requestAnimationFrame(() => measureElement(markerRow));
+            }
+          }}
+          promptOpen={expandedDisclosureIds.has(disclosureId)}
+          round={row.roundMarker.round}
+          t={t}
+        />
       </section>
     );
   }

@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { useState } from "react";
 import { describe, expect, it } from "vitest";
 
 import type { SessionRound } from "../api/contracts";
@@ -14,7 +15,7 @@ describe("RoundMarker", () => {
       "then inspect ten files before writing the summary.",
     ].join(" ");
 
-    render(<RoundMarker index={0} round={round(prompt)} t={t} />);
+    render(<ControlledRoundMarker prompt={prompt} />);
 
     expect(screen.getByText("Completed")).toBeVisible();
     expect(screen.queryByText("completed")).not.toBeInTheDocument();
@@ -28,8 +29,43 @@ describe("RoundMarker", () => {
       .toHaveTextContent(/^Collapse$/);
     expect(screen.getByRole("button", { name: "Collapse" }))
       .not.toHaveTextContent("Run a long streaming validation prompt");
+    expect(screen.getByRole("button", { name: "Collapse" }))
+      .toHaveAttribute("aria-expanded", "true");
+    expect(document.querySelector(".at-round-prompt-body"))
+      .toHaveClass("is-expanded");
+  });
+
+  it("uses one aligned disclosure control and keeps the body mounted", () => {
+    render(
+      <ControlledRoundMarker
+        prompt="A long prompt that remains mounted while collapsed for a stable virtual row."
+      />,
+    );
+
+    const button = screen.getByRole("button", { name: "Expand" });
+    expect(button).toHaveAttribute("aria-expanded", "false");
+    expect(document.querySelector(".at-round-prompt-body")).toHaveClass("is-collapsed");
+    expect(document.querySelector(".at-round-marker-intent-summary")).toBeNull();
+
+    fireEvent.click(button);
+
+    expect(screen.getByRole("button", { name: "Collapse" })).toBe(button);
+    expect(document.querySelector(".at-round-prompt-body")).toHaveClass("is-expanded");
   });
 });
+
+function ControlledRoundMarker({ prompt }: { prompt: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <RoundMarker
+      index={0}
+      onPromptOpenChange={setOpen}
+      promptOpen={open}
+      round={round(prompt)}
+      t={t}
+    />
+  );
+}
 
 function round(prompt: string): SessionRound {
   return {

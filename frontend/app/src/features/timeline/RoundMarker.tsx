@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
+import type { MouseEvent } from "react";
 
 import type { SessionRound } from "../../api/contracts";
 import type { Translate, TranslationKey } from "../../i18n";
@@ -9,15 +10,25 @@ import {
   roundStatusDisplayLabel,
   roundSummary,
 } from "./roundMetadata";
+import "./RoundMarker.css";
 
 interface RoundMarkerProps {
   index: number;
+  onPromptOpenChange?: (open: boolean) => void;
+  onPromptToggle?: (event: MouseEvent<HTMLButtonElement>) => void;
+  promptOpen?: boolean;
   round: SessionRound;
   t: Translate;
 }
 
-export function RoundMarker({ index, round, t }: RoundMarkerProps) {
-  const [promptOpen, setPromptOpen] = useState(false);
+export function RoundMarker({
+  index,
+  onPromptOpenChange,
+  onPromptToggle,
+  promptOpen = false,
+  round,
+  t,
+}: RoundMarkerProps) {
   const summary = roundSummary(round, index);
   const metaItems = [
     summary.timeLabel,
@@ -42,8 +53,9 @@ export function RoundMarker({ index, round, t }: RoundMarkerProps) {
     roundStatusDisplayLabel(summary.statusLabel, t),
     summary.durationLabel !== null ? `${summary.durationLabel}` : "",
   ].filter(Boolean);
-  const handlePromptSummaryClick = () => {
-    setPromptOpen((current) => !current);
+  const handlePromptSummaryClick = (event: MouseEvent<HTMLButtonElement>) => {
+    onPromptOpenChange?.(!promptOpen);
+    onPromptToggle?.(event);
   };
   const promptActionLabel = promptOpen
     ? t("timelineRoundCollapse")
@@ -61,22 +73,27 @@ export function RoundMarker({ index, round, t }: RoundMarkerProps) {
           className="at-round-marker-intent"
           data-open={promptOpen ? "true" : "false"}
         >
-          <button
-            type="button"
-            aria-expanded={promptOpen}
-            className="at-round-marker-intent-summary"
-            onClick={handlePromptSummaryClick}
+          <div
+            className={[
+              "at-round-prompt-body",
+              promptOpen ? "is-expanded" : "is-collapsed",
+            ].join(" ")}
           >
-            {promptOpen ? null : (
-              <span className="at-round-marker-title">{summary.title}</span>
+            {summary.promptText}
+          </div>
+          <button
+            aria-expanded={promptOpen}
+            className="at-round-prompt-toggle"
+            onClick={handlePromptSummaryClick}
+            type="button"
+          >
+            {promptOpen ? <ChevronUp aria-hidden="true" size={14} /> : (
+              <ChevronDown aria-hidden="true" size={14} />
             )}
             <span className="at-round-marker-intent-action">
               {promptActionLabel}
             </span>
           </button>
-          {promptOpen ? (
-            <div className="at-round-marker-intent-body">{summary.promptText}</div>
-          ) : null}
         </div>
       ) : (
         <div className="at-round-marker-title">{summary.title}</div>

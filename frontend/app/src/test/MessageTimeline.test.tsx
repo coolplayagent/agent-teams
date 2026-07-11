@@ -10,6 +10,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
 
 import { listSessionMessages, listSessionRounds } from "../api/client";
 import { MessageTimeline } from "../features/timeline/MessageTimeline";
@@ -3700,24 +3701,24 @@ describe("MessageTimeline", () => {
     const marker = container.querySelector(".at-round-marker-intent");
     expect(marker).not.toBeNull();
     expect(marker).toHaveAttribute("data-open", "false");
-    const summary = marker?.querySelector(".at-round-marker-intent-summary");
-    expect(summary).not.toBeNull();
-    expect(summary).toHaveTextContent(
+    const toggle = marker?.querySelector(".at-round-prompt-toggle");
+    expect(toggle).not.toBeNull();
+    expect(marker?.querySelector(".at-round-prompt-body")).toHaveTextContent(
       "Create a migration plan for the frontend rewrite. Keep the settings navigation aligned with V1.",
     );
     const action = marker?.querySelector(".at-round-marker-intent-action");
     expect(action?.textContent).toBe("Expand");
-    expect(marker?.querySelector(".at-round-marker-intent-body")).toBeNull();
+    expect(marker?.querySelector(".at-round-prompt-body")).toHaveClass("is-collapsed");
 
-    fireEvent.click(summary as Element);
+    fireEvent.click(toggle as Element);
 
     expect(marker).toHaveAttribute("data-open", "true");
     expect(marker?.querySelector(".at-round-marker-intent-action")?.textContent)
       .toBe("Collapse");
-    const body = marker?.querySelector(".at-round-marker-intent-body");
+    const body = marker?.querySelector(".at-round-prompt-body");
     expect(body).toHaveTextContent("Keep the settings navigation aligned with V1.");
     expect(body?.textContent).toContain("\nDo not flatten secondary screens");
-    expect(summary).not.toHaveTextContent(
+    expect(toggle).not.toHaveTextContent(
       "Create a migration plan for the frontend rewrite.",
     );
   });
@@ -3755,16 +3756,15 @@ describe("MessageTimeline", () => {
     expect(marker).toHaveAttribute("data-open", "false");
     expect(marker?.querySelector(".at-round-marker-intent-action"))
       .toHaveTextContent(/^Expand$/);
-    const summary = marker?.querySelector(".at-round-marker-intent-summary");
-    fireEvent.click(summary as Element);
+    const toggle = marker?.querySelector(".at-round-prompt-toggle");
+    fireEvent.click(toggle as Element);
     expect(marker).toHaveAttribute("data-open", "true");
     expect(marker?.querySelector(".at-round-marker-intent-action"))
       .toHaveTextContent(/^Collapse$/);
-    expect(summary).toHaveTextContent(/^Collapse$/);
-    expect(summary).not.toHaveTextContent(prompt);
-    expect(summary?.querySelector(".at-round-marker-title")).toBeNull();
-    expect(marker?.querySelector(".at-round-marker-intent-body")).toHaveTextContent(prompt);
-    expect(summary).not.toHaveTextContent("问题工具位置验证-1782803930917");
+    expect(toggle).toHaveTextContent(/^Collapse$/);
+    expect(toggle).not.toHaveTextContent(prompt);
+    expect(marker?.querySelector(".at-round-prompt-body")).toHaveTextContent(prompt);
+    expect(toggle).not.toHaveTextContent("问题工具位置验证-1782803930917");
     expect(
       textOccurrenceCount(container.querySelector(".at-round-marker")?.textContent ?? "", prompt),
     ).toBe(1);
@@ -6149,6 +6149,111 @@ describe("MessageTimeline", () => {
     ).not.toBeInTheDocument();
     expect(screen.queryByText("Reading: read")).not.toBeInTheDocument();
     expect(container.querySelector('[data-role-id="Explorer"]')).toBeNull();
+  });
+
+  it("restores round prompt disclosure state after switching sessions", async () => {
+    const prompts: Record<string, string> = {
+      "session-1": "Session one prompt is long enough to use the compact disclosure control.",
+      "session-2": "Session two prompt is also long enough to use its own disclosure state.",
+    };
+    listSessionMessagesMock.mockImplementation(async (sessionId) => [{
+      content: `Answer for ${sessionId}`,
+      message_id: `answer-${sessionId}`,
+      role_id: "MainAgent",
+      trace_id: `run-${sessionId}`,
+    }]);
+    listSessionRoundsMock.mockImplementation(async (sessionId) => ({
+      has_more: false,
+      items: [{
+        run_id: `run-${sessionId}`,
+        run_status: "completed",
+        run_user_message: prompts[sessionId] ?? "Fallback prompt",
+      }],
+      next_cursor: null,
+    }));
+
+    function SessionSwitchHarness() {
+      const [sessionId, setSessionId] = useState("session-1");
+      const [queryClient] = useState(() => new QueryClient({
+        defaultOptions: {
+          queries: { retry: false, staleTime: Number.POSITIVE_INFINITY },
+        },
+      }));
+      return (
+        <QueryClientProvider client={queryClient}>
+          <ConfigProvider>
+            <AntApp>
+              <button onClick={() => setSessionId("session-1")} type="button">Session 1</button>
+              <button onClick={() => setSessionId("session-2")} type="button">Session 2</button>
+              <MessageTimeline sessionId={sessionId} />
+            </AntApp>
+          </ConfigProvider>
+        </QueryClientProvider>
+      );
+    }
+
+    render(<SessionSwitchHarness />);
+    const expandSessionOne = await screen.findByRole("button", { name: "Expand" });
+    fireEvent.click(expandSessionOne);
+    expect(screen.getByRole("button", { name: "Collapse" })).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Session 2" }));
+    await screen.findByText("Answer for session-2");
+    expect(screen.getByRole("button", { name: "Expand" })).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Session 1" }));
+    await screen.findByText("Answer for session-1");
+    expect(screen.getByRole("button", { name: "Collapse" })).toBeVisible();
+  });
+
+  it("keeps the round prompt toggle anchored while remeasuring the virtual row", async () => {
+    const restoreMeasurements = mockElementMeasurements({
+      clientHeight: 220,
+      rowHeight: 120,
+    });
+    try {
+      listSessionMessagesMock.mockResolvedValue([
+        {
+          content: "Earlier answer",
+          message_id: "answer-old",
+          role_id: "MainAgent",
+          trace_id: "run-old",
+        },
+        {
+          content: "Prompt answer",
+          message_id: "answer-prompt",
+          role_id: "MainAgent",
+          trace_id: "run-prompt-anchor",
+        },
+      ]);
+      listSessionRoundsMock.mockResolvedValue({
+        has_more: false,
+        items: [{
+          run_id: "run-prompt-anchor",
+          run_status: "completed",
+          run_user_message: "A long prompt whose disclosure should not move its control in the viewport.",
+        }],
+        next_cursor: null,
+      });
+
+      const { container } = renderTimeline();
+      await screen.findByText("Prompt answer");
+      const timeline = timelineElement(container);
+      const toggle = await screen.findByRole("button", { name: "Expand" });
+      const markerRow = toggle.closest<HTMLElement>(".at-timeline-row[data-row-key]");
+      expect(markerRow).not.toBeNull();
+      timeline.scrollTop = 80;
+      fireEvent.scroll(timeline);
+      const offsetBefore = translateY(markerRow) - timeline.scrollTop;
+
+      fireEvent.pointerDown(toggle);
+      fireEvent.click(toggle);
+
+      await waitFor(() => expect(toggle).toHaveAttribute("aria-expanded", "true"));
+      expect(translateY(markerRow) - timeline.scrollTop).toBe(offsetBefore);
+    } finally {
+      restoreMeasurements();
+    }
   });
 
   it("keeps subagent-marked parent-run stream rows out while primary role metadata is loading", async () => {

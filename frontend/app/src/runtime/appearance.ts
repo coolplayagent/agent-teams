@@ -1,3 +1,5 @@
+import type { ResolvedThemeMode } from "./themeMode";
+
 export type AppearanceMotionMode = "system" | "reduce" | "full";
 export type AppearanceDiffMarkerMode = "color" | "sign";
 
@@ -88,11 +90,21 @@ export function resetAppearanceSettings(): void {
   window.dispatchEvent(new Event(appearanceChangedEvent));
 }
 
-export function applyAppearanceSettings(settings: AppearanceSettings): void {
+export interface ResolvedAppearanceColors {
+  background: string;
+  foreground: string;
+}
+
+export function applyAppearanceSettings(
+  settings: AppearanceSettings,
+  resolvedThemeMode: ResolvedThemeMode = documentThemeMode(),
+): void {
   const root = document.documentElement;
   const accent = settings.accent.trim();
-  const background = settings.background.trim();
-  const foreground = settings.foreground.trim();
+  const { background, foreground } = resolveAppearanceColors(
+    settings,
+    resolvedThemeMode,
+  );
   const uiFont = settings.uiFont.trim();
   const codeFont = settings.codeFont.trim();
 
@@ -137,6 +149,24 @@ export function applyAppearanceSettings(settings: AppearanceSettings): void {
   } else {
     delete root.dataset.diagnosticsVisible;
   }
+}
+
+export function resolveAppearanceColors(
+  settings: AppearanceSettings,
+  resolvedThemeMode: ResolvedThemeMode,
+): ResolvedAppearanceColors {
+  const background = normalizeHexColor(settings.background);
+  const foreground = normalizeHexColor(settings.foreground);
+  if (background === null || foreground === null) {
+    return { background: "", foreground: "" };
+  }
+  if (!backgroundMatchesTheme(background, resolvedThemeMode)) {
+    return { background: "", foreground: "" };
+  }
+  if (contrastRatio(background, foreground) < 4.5) {
+    return { background: "", foreground: "" };
+  }
+  return { background, foreground };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -208,6 +238,39 @@ function setDatasetFlag(root: HTMLElement, key: string, enabled: boolean): void 
     return;
   }
   delete root.dataset[key];
+}
+
+function documentThemeMode(): ResolvedThemeMode {
+  return document.documentElement.dataset.theme === "light" ? "light" : "dark";
+}
+
+function backgroundMatchesTheme(
+  background: string,
+  resolvedThemeMode: ResolvedThemeMode,
+): boolean {
+  const luminance = relativeLuminance(background);
+  return resolvedThemeMode === "dark" ? luminance < 0.5 : luminance >= 0.5;
+}
+
+function contrastRatio(first: string, second: string): number {
+  const firstLuminance = relativeLuminance(first);
+  const secondLuminance = relativeLuminance(second);
+  const lighter = Math.max(firstLuminance, secondLuminance);
+  const darker = Math.min(firstLuminance, secondLuminance);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function relativeLuminance(color: string): number {
+  const red = linearColorChannel(parseInt(color.slice(1, 3), 16) / 255);
+  const green = linearColorChannel(parseInt(color.slice(3, 5), 16) / 255);
+  const blue = linearColorChannel(parseInt(color.slice(5, 7), 16) / 255);
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+}
+
+function linearColorChannel(value: number): number {
+  return value <= 0.04045
+    ? value / 12.92
+    : ((value + 0.055) / 1.055) ** 2.4;
 }
 
 function lightenColor(color: string, amount: number): string {

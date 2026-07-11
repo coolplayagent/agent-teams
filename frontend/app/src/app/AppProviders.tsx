@@ -2,14 +2,19 @@ import { App as AntApp, ConfigProvider, theme } from "antd";
 import { XProvider } from "@ant-design/x";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 
 import {
   appearanceChangedEvent,
   applyAppearanceSettings,
   readAppearanceSettings,
 } from "../runtime/appearance";
-import { currentSystemThemeMode, resolveThemeMode } from "../runtime/themeMode";
+import {
+  applyDocumentThemeMode,
+  currentSystemThemeMode,
+  resolveThemeMode,
+} from "../runtime/themeMode";
+import { antSemanticTokens } from "../runtime/themeTokens";
 import { useUiStore } from "../runtime/uiStore";
 
 const queryClient = new QueryClient({
@@ -36,9 +41,10 @@ export function AppProviders({ children }: AppProvidersProps) {
   const resolvedThemeMode = themeMode === "system" ? systemThemeMode : resolveThemeMode(themeMode);
   const algorithm = resolvedThemeMode === "dark" ? theme.darkAlgorithm : theme.defaultAlgorithm;
 
-  useEffect(() => {
-    applyAppearanceSettings(appearanceSettings);
-  }, [appearanceSettings]);
+  useLayoutEffect(() => {
+    applyDocumentThemeMode(themeMode, resolvedThemeMode);
+    applyAppearanceSettings(appearanceSettings, resolvedThemeMode);
+  }, [appearanceSettings, resolvedThemeMode, themeMode]);
 
   useEffect(() => {
     const syncAppearance = () => setAppearanceSettings(readAppearanceSettings());
@@ -72,14 +78,14 @@ export function AppProviders({ children }: AppProvidersProps) {
 
   const tokens = useMemo(
     () => ({
+      ...antSemanticTokens(resolvedThemeMode, appearanceSettings),
       borderRadius: 8,
-      colorPrimary: appearanceSettings.accent.trim() || "#2f6f5e",
       fontFamily:
         appearanceSettings.uiFont.trim()
         || '"Aptos", "Helvetica Neue", ui-sans-serif, system-ui, -apple-system, sans-serif',
       motion: motionEnabled,
     }),
-    [appearanceSettings.accent, appearanceSettings.uiFont, motionEnabled],
+    [appearanceSettings, motionEnabled, resolvedThemeMode],
   );
 
   return (

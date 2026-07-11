@@ -83,6 +83,7 @@ export function ChoiceControl({
         name={name}
         onChange={(event) => onChange(event.target.checked, event)}
         ref={inputRef}
+        role={kind === "switch" ? "switch" : undefined}
         type="checkbox"
         value={value}
       />

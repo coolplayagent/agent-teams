@@ -37,7 +37,7 @@ describe("ChoiceControl", () => {
       />,
     );
 
-    const input = screen.getByRole("checkbox", { name: "Diagnostics" });
+    const input = screen.getByRole("switch", { name: "Diagnostics" });
     expect(input).toBeChecked();
     expect(input).toHaveAttribute("aria-invalid", "true");
     expect(input).toHaveAccessibleDescription("Applies immediately");

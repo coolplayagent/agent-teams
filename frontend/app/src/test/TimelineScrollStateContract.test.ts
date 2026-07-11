@@ -30,4 +30,34 @@ describe("timeline scroll state contract", () => {
     expect(timelineSource).toContain('t("timelineJumpToLatest")');
     expect(timelineSource).toContain('t("timelineNewContent")');
   });
+
+  it("scopes programmatic scroll events so they cannot pollute another timeline", () => {
+    expect(timelineSource).toContain(
+      "pendingProgrammaticScrollRef.current = {",
+    );
+    expect(timelineSource).toContain(
+      "consumePendingProgrammaticTimelineScroll(",
+    );
+    expect(timelineSource).toContain(
+      "timelineScopeKey: scopeKey",
+    );
+    expect(timelineSource).toContain(
+      "pendingScroll.scopeKey === scopeKey",
+    );
+  });
+
+  it("treats explicit scrolling away from the exact bottom as reading intent", () => {
+    expect(timelineSource).toContain(
+      "timelineUserScrollRequiresTransientAnchor(container)",
+    );
+    expect(timelineSource).toContain(
+      "timelineRowTop(row) + timelineRowHeight(row) > hostHeight + 1",
+    );
+    expect(timelineSource).toContain(
+      "snapshot?.shouldFollow === false",
+    );
+    expect(timelineSource).toContain(
+      "snapshot.preferAnchor || contentChanged",
+    );
+  });
 });

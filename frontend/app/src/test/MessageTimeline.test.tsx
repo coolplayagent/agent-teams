@@ -11377,19 +11377,21 @@ describe("MessageTimeline", () => {
       sessionTwoTimeline.scrollTop = 360;
       fireEvent.scroll(sessionTwoTimeline);
 
-      fireEvent.click(screen.getByRole("button", { name: "Scroll session 1" }));
-      expect(await screen.findByText("session-1 history 8")).toBeVisible();
-      await waitFor(() =>
-        expect(Math.abs(timelineElement(container).scrollTop - 120))
-          .toBeLessThanOrEqual(12),
-      );
+      for (let repetition = 0; repetition < 20; repetition += 1) {
+        fireEvent.click(screen.getByRole("button", { name: "Scroll session 1" }));
+        expect(await screen.findByText("session-1 history 8")).toBeVisible();
+        await waitFor(() =>
+          expect(Math.abs(timelineElement(container).scrollTop - 120))
+            .toBeLessThanOrEqual(12),
+        );
 
-      fireEvent.click(screen.getByRole("button", { name: "Scroll session 2" }));
-      expect(await screen.findByText("session-2 history 8")).toBeVisible();
-      await waitFor(() =>
-        expect(Math.abs(timelineElement(container).scrollTop - 360))
-          .toBeLessThanOrEqual(12),
-      );
+        fireEvent.click(screen.getByRole("button", { name: "Scroll session 2" }));
+        expect(await screen.findByText("session-2 history 8")).toBeVisible();
+        await waitFor(() =>
+          expect(Math.abs(timelineElement(container).scrollTop - 360))
+            .toBeLessThanOrEqual(12),
+        );
+      }
     } finally {
       restoreMeasurements();
     }

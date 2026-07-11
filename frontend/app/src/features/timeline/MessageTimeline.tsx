@@ -171,6 +171,9 @@ export function MessageTimeline({
   const { message } = App.useApp();
   const t = useTranslations();
   const parentRef = useRef<HTMLDivElement | null>(null);
+  const pendingProgrammaticScrollRef = useRef<PendingProgrammaticScroll | null>(
+    null,
+  );
   const pendingRoundRunIdRef = useRef<string | null>(null);
   const scrollScopeKey = timelineScrollScopeKey(sessionId, variant, runtimeRunId);
   const scrollScopeKeyRef = useRef(scrollScopeKey);
@@ -509,12 +512,24 @@ export function MessageTimeline({
     ? virtualizer.getTotalSize()
     : fallbackTotalSize(rows);
   const handleTimelineScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
+    const container = event.currentTarget;
     if (isProgrammaticTimelineScrollEvent(event.nativeEvent)) {
       return;
     }
-    const container = parentRef.current;
-    if (container !== null) {
-      const snapshot = captureTimelineScrollSnapshot(container);
+    if (
+      consumePendingProgrammaticTimelineScroll(
+        pendingProgrammaticScrollRef,
+        container,
+        scrollScopeKey,
+      )
+    ) {
+      return;
+    }
+    if (container === parentRef.current) {
+      const snapshot = captureTimelineScrollSnapshot(
+        container,
+        timelineUserScrollRequiresTransientAnchor(container),
+      );
       scrollSnapshotRef.current = snapshot;
       rememberTimelineScopeValue(
         scrollSnapshotsByScopeRef.current,
@@ -541,7 +556,11 @@ export function MessageTimeline({
     }
     const container = parentRef.current;
     if (container !== null) {
-      scrollSnapshotRef.current = captureTimelineScrollSnapshot(container, true);
+      scrollSnapshotRef.current = captureTimelineScrollSnapshot(
+        container,
+        true,
+        true,
+      );
     }
   }, []);
   const handleRoundSelect = useCallback((runId: string) => {
@@ -557,7 +576,14 @@ export function MessageTimeline({
     if (container === null) {
       return;
     }
-    syncTimelineScrollPosition(container, timelineMaxScrollTop(container));
+    pendingProgrammaticScrollRef.current = {
+      scopeKey: scrollScopeKey,
+      scrollTop: syncTimelineScrollPosition(
+        container,
+        timelineMaxScrollTop(container),
+        scrollScopeKey,
+      ),
+    };
     const snapshot = captureTimelineScrollSnapshot(container);
     scrollSnapshotRef.current = snapshot;
     rememberTimelineScopeValue(
@@ -620,6 +646,9 @@ export function MessageTimeline({
   useLayoutEffect(() => {
     if (scrollScopeKeyRef.current !== scrollScopeKey) {
       scrollScopeKeyRef.current = scrollScopeKey;
+      if (pendingProgrammaticScrollRef.current?.scopeKey !== scrollScopeKey) {
+        pendingProgrammaticScrollRef.current = null;
+      }
       scrollSnapshotRef.current =
         scrollSnapshotsByScopeRef.current.get(scrollScopeKey) ?? null;
       setNewContentAvailable(false);
@@ -632,6 +661,12 @@ export function MessageTimeline({
     const previousContentSignature =
       contentSignaturesByScrollScopeRef.current.get(scrollScopeKey);
     const nextContentSignature = timelineContentSignature(rows);
+    const contentChanged =
+      previousContentSignature !== undefined &&
+      !timelineContentSignaturesEqual(
+        previousContentSignature,
+        nextContentSignature,
+      );
     if (
       previousContentSignature !== undefined &&
       timelineContentWasAppended(previousContentSignature, nextContentSignature) &&
@@ -640,13 +675,26 @@ export function MessageTimeline({
     ) {
       setNewContentAvailable(true);
     }
-    syncTimelineScrollPosition(
+    pendingProgrammaticScrollRef.current = {
+      scopeKey: scrollScopeKey,
+      scrollTop: syncTimelineScrollPosition(
+        container,
+        snapshot === null
+          ? timelineMaxScrollTop(container)
+          : timelineScrollTopForSnapshot(
+              container,
+              snapshot,
+              rows,
+              snapshot.preferAnchor || contentChanged,
+            ),
+        scrollScopeKey,
+      ),
+    };
+    scrollSnapshotRef.current = captureTimelineScrollSnapshot(
       container,
-      snapshot === null
-        ? timelineMaxScrollTop(container)
-        : timelineScrollTopForSnapshot(container, snapshot, rows),
+      snapshot?.shouldFollow === false,
+      snapshot?.preferAnchor === true,
     );
-    scrollSnapshotRef.current = captureTimelineScrollSnapshot(container);
     rememberTimelineScopeValue(
       scrollSnapshotsByScopeRef.current,
       scrollScopeKey,
@@ -658,7 +706,11 @@ export function MessageTimeline({
       nextContentSignature,
     );
     syncActiveRunIdFromViewport(container, pendingRoundRunIdRef, setActiveRunId);
-  }, [rows, scrollScopeKey, timelineHeight]);
+  }, [
+    rows,
+    scrollScopeKey,
+    timelineHeight,
+  ]);
 
   if (sessionId === null) {
     return (
@@ -908,8 +960,14 @@ interface TimelineScrollAnchor {
 
 interface TimelineScrollSnapshot {
   anchor: TimelineScrollAnchor | null;
+  preferAnchor: boolean;
   scrollTop: number;
   shouldFollow: boolean;
+}
+
+interface PendingProgrammaticScroll {
+  scopeKey: string;
+  scrollTop: number;
 }
 
 interface TimelineContentSignature {
@@ -977,6 +1035,15 @@ function timelineContentWasAppended(
     next.lastRowContentLength > previous.lastRowContentLength;
 }
 
+function timelineContentSignaturesEqual(
+  previous: TimelineContentSignature,
+  next: TimelineContentSignature,
+): boolean {
+  return previous.rowCount === next.rowCount &&
+    previous.lastRowKey === next.lastRowKey &&
+    previous.lastRowContentLength === next.lastRowContentLength;
+}
+
 function rememberTimelineScopeValue<Value>(
   values: Map<string, Value>,
   key: string,
@@ -996,11 +1063,13 @@ function rememberTimelineScopeValue<Value>(
 function captureTimelineScrollSnapshot(
   container: HTMLElement,
   forceAnchor = false,
+  preferAnchor = false,
 ): TimelineScrollSnapshot {
   const scrollTop = scrollMetric(container.scrollTop);
   const shouldFollow = !forceAnchor && isTimelineNearBottom(container);
   return {
     anchor: shouldFollow ? null : captureTimelineScrollAnchor(container, scrollTop),
+    preferAnchor,
     scrollTop,
     shouldFollow,
   };
@@ -1010,9 +1079,13 @@ function timelineScrollTopForSnapshot(
   container: HTMLElement,
   snapshot: TimelineScrollSnapshot,
   rows: TimelineRow[],
+  useAnchor: boolean,
 ): number {
   if (snapshot.shouldFollow) {
     return timelineMaxScrollTop(container);
+  }
+  if (!useAnchor) {
+    return clampScrollTop(container, snapshot.scrollTop);
   }
   const anchoredScrollTop = timelineAnchorScrollTop(container, snapshot, rows);
   return clampScrollTop(container, anchoredScrollTop);
@@ -1084,27 +1157,65 @@ function findTimelineAnchorRow(
 function syncTimelineScrollPosition(
   container: HTMLElement,
   scrollTop: number,
-): void {
+  scopeKey: string,
+): number {
   const nextScrollTop = clampScrollTop(container, scrollTop);
   container.scrollTop = nextScrollTop;
   const ownerWindow = container.ownerDocument.defaultView;
   ownerWindow?.setTimeout(() => {
     container.dispatchEvent(new ownerWindow.CustomEvent("scroll", {
-      detail: { timelineProgrammatic: true },
+      detail: {
+        timelineProgrammatic: true,
+        timelineScopeKey: scopeKey,
+        timelineScrollTop: nextScrollTop,
+      },
     }));
   }, 0);
+  return nextScrollTop;
 }
 
 function isProgrammaticTimelineScrollEvent(event: Event): boolean {
-  return event instanceof CustomEvent &&
-    typeof event.detail === "object" &&
-    event.detail !== null &&
-    (event.detail as { timelineProgrammatic?: unknown }).timelineProgrammatic === true;
+  const detail = (event as CustomEvent<unknown>).detail;
+  return typeof detail === "object" &&
+    detail !== null &&
+    (detail as { timelineProgrammatic?: unknown }).timelineProgrammatic === true;
+}
+
+function consumePendingProgrammaticTimelineScroll(
+  pendingScrollRef: { current: PendingProgrammaticScroll | null },
+  container: HTMLElement,
+  scopeKey: string,
+): boolean {
+  const pendingScroll = pendingScrollRef.current;
+  if (pendingScroll === null) {
+    return false;
+  }
+  pendingScrollRef.current = null;
+  return pendingScroll.scopeKey === scopeKey &&
+    Math.abs(scrollMetric(container.scrollTop) - pendingScroll.scrollTop) <= 1;
 }
 
 function isTimelineNearBottom(container: HTMLElement): boolean {
   return timelineMaxScrollTop(container) - scrollMetric(container.scrollTop)
     <= TIMELINE_BOTTOM_FOLLOW_THRESHOLD_PX;
+}
+
+function timelineUserScrollRequiresTransientAnchor(
+  container: HTMLElement,
+): boolean {
+  if (timelineMaxScrollTop(container) - scrollMetric(container.scrollTop) <= 1) {
+    return false;
+  }
+  const virtualHost = container.querySelector<HTMLElement>(
+    ".at-timeline-virtual",
+  );
+  if (virtualHost === null) {
+    return false;
+  }
+  const hostHeight = scrollMetric(Number.parseFloat(virtualHost.style.height));
+  return Array.from(
+    container.querySelectorAll<HTMLElement>(".at-timeline-row[data-row-key]"),
+  ).some((row) => timelineRowTop(row) + timelineRowHeight(row) > hostHeight + 1);
 }
 
 function clampScrollTop(container: HTMLElement, scrollTop: number): number {

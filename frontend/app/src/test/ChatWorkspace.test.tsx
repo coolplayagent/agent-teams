@@ -70,15 +70,24 @@ vi.mock("../features/shell/SessionTokenUsage", () => ({
 
 vi.mock("../features/timeline/MessageTimeline", () => ({
   MessageTimeline: ({
+    primaryRoleId,
     sessionId,
     visible,
+    workspaceId,
   }: {
+    primaryRoleId?: string | null;
     sessionId: string | null;
     visible?: boolean;
+    workspaceId?: string | null;
   }) => {
     timelineRenderMock(sessionId);
     return (
-      <div data-testid="timeline" data-visible={visible === false ? "false" : "true"}>
+      <div
+        data-primary-role-id={primaryRoleId ?? ""}
+        data-testid="timeline"
+        data-visible={visible === false ? "false" : "true"}
+        data-workspace-id={workspaceId ?? ""}
+      >
         {sessionId}
       </div>
     );
@@ -216,18 +225,19 @@ describe("ChatWorkspace", () => {
       />,
     );
 
+    expect(renderedSessionIds()).toEqual({
+      composer: "session-2",
+      recovery: "session-2",
+      timeline: "session-1",
+      tokenUsage: "session-2",
+    });
     await waitFor(() =>
       expect(runStreamController.setForegroundSessionId).toHaveBeenLastCalledWith(
         "session-2",
       ),
     );
     expect(runStreamController.clearRunStream).not.toHaveBeenCalled();
-    expect(renderedSessionIds()).toEqual({
-      composer: "session-2",
-      recovery: "session-2",
-      timeline: "session-2",
-      tokenUsage: "session-2",
-    });
+    await waitFor(() => expect(textForTestId("timeline")).toBe("session-2"));
   });
 
   it("keeps a loading frame visible while a fast session switch settles", async () => {
@@ -267,9 +277,11 @@ describe("ChatWorkspace", () => {
       expect(renderedSessionIds()).toEqual({
         composer: "session-2",
         recovery: "session-2",
-        timeline: "session-2",
+        timeline: "session-1",
         tokenUsage: "session-2",
       });
+
+      await waitFor(() => expect(textForTestId("timeline")).toBe("session-2"));
 
       await act(async () => {
         animationFrame.flushNext();
@@ -344,6 +356,106 @@ describe("ChatWorkspace", () => {
     } finally {
       animationFrame.restore();
     }
+  });
+
+  it("commits only the latest timeline during a rapid A to B to C switch", async () => {
+    vi.useFakeTimers();
+    const runStreamController = createRunStreamController();
+    try {
+      const view = render(
+        <ChatWorkspace
+          primaryRoleId="MainAgent"
+          runStreamController={runStreamController}
+          sessionId="session-a"
+        />,
+      );
+
+      view.rerender(
+        <ChatWorkspace
+          primaryRoleId="MainAgent"
+          runStreamController={runStreamController}
+          sessionId="session-b"
+        />,
+      );
+      view.rerender(
+        <ChatWorkspace
+          primaryRoleId="MainAgent"
+          runStreamController={runStreamController}
+          sessionId="session-c"
+        />,
+      );
+
+      expect(textForTestId("timeline")).toBe("session-a");
+      expect(textForTestId("composer")).toBe("session-c");
+      expect(screen.getByRole("status")).toHaveTextContent("Loading session...");
+
+      await act(async () => {
+        vi.runOnlyPendingTimers();
+      });
+
+      expect(textForTestId("timeline")).toBe("session-c");
+      expect(timelineRenderMock).not.toHaveBeenCalledWith("session-b");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("cancels a pending timeline handoff on unmount", () => {
+    vi.useFakeTimers();
+    const runStreamController = createRunStreamController();
+    try {
+      const view = render(
+        <ChatWorkspace
+          primaryRoleId="MainAgent"
+          runStreamController={runStreamController}
+          sessionId="session-a"
+        />,
+      );
+      view.rerender(
+        <ChatWorkspace
+          primaryRoleId="MainAgent"
+          runStreamController={runStreamController}
+          sessionId="session-b"
+        />,
+      );
+
+      view.unmount();
+      act(() => vi.runOnlyPendingTimers());
+
+      expect(timelineRenderMock).not.toHaveBeenCalledWith("session-b");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("updates metadata synchronously when the session identity is unchanged", () => {
+    const runStreamController = createRunStreamController();
+    const view = render(
+      <ChatWorkspace
+        primaryRoleId="MainAgent"
+        runStreamController={runStreamController}
+        sessionId="session-a"
+        workspaceId="workspace-a"
+      />,
+    );
+
+    view.rerender(
+      <ChatWorkspace
+        primaryRoleId="Reviewer"
+        runStreamController={runStreamController}
+        sessionId="session-a"
+        workspaceId="workspace-b"
+      />,
+    );
+
+    expect(screen.getByTestId("timeline")).toHaveAttribute(
+      "data-primary-role-id",
+      "Reviewer",
+    );
+    expect(screen.getByTestId("timeline")).toHaveAttribute(
+      "data-workspace-id",
+      "workspace-b",
+    );
   });
 });
 

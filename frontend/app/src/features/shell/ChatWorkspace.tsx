@@ -1,4 +1,13 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  memo,
+  startTransition,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { Composer } from "../composer/Composer";
 import { RecoveryBar } from "../recovery/RecoveryBar";
@@ -25,6 +34,15 @@ interface ChatWorkspaceProps {
   workspaceId?: string | null;
 }
 
+interface TimelineContext {
+  fallbackRunId: string | null;
+  latestTerminalRunId: string | null;
+  latestTerminalRunStatus: string | null;
+  primaryRoleId: string | null;
+  sessionId: string | null;
+  workspaceId: string | null;
+}
+
 export const ChatWorkspace = memo(function ChatWorkspace({
   contentLoadingKey,
   latestTerminalRunId = null,
@@ -39,8 +57,38 @@ export const ChatWorkspace = memo(function ChatWorkspace({
   const t = useTranslations();
   const previousContentLoadingKeyRef = useRef<number | undefined>(undefined);
   const previousSessionIdRef = useRef(sessionId);
+  const requestedTimelineContextRef = useRef<TimelineContext | null>(null);
+  const timelineRequestGenerationRef = useRef(0);
   const switchFrameRef = useRef<SessionSwitchFrame | null>(null);
   const [switchingSessionId, setSwitchingSessionId] = useState<string | null>(null);
+  const requestedTimelineContext = useMemo<TimelineContext>(() => ({
+    fallbackRunId: runStreamController.activeRunId,
+    latestTerminalRunId,
+    latestTerminalRunStatus,
+    primaryRoleId,
+    sessionId,
+    workspaceId: workspaceId ?? null,
+  }), [
+    latestTerminalRunId,
+    latestTerminalRunStatus,
+    primaryRoleId,
+    runStreamController.activeRunId,
+    sessionId,
+    workspaceId,
+  ]);
+  if (
+    requestedTimelineContextRef.current === null ||
+    !timelineContextsEqual(
+      requestedTimelineContextRef.current,
+      requestedTimelineContext,
+    )
+  ) {
+    requestedTimelineContextRef.current = requestedTimelineContext;
+    timelineRequestGenerationRef.current += 1;
+  }
+  const requestedTimelineGeneration = timelineRequestGenerationRef.current;
+  const [displayedTimelineContext, setDisplayedTimelineContext] =
+    useState(requestedTimelineContext);
 
   const startSessionLoadingFrame = useCallback((nextSessionId: string) => {
     cancelSessionSwitchFrame(switchFrameRef.current);
@@ -56,9 +104,31 @@ export const ChatWorkspace = memo(function ChatWorkspace({
 
   useEffect(() => {
     return () => {
+      timelineRequestGenerationRef.current += 1;
       cancelSessionSwitchFrame(switchFrameRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (timelineContextsEqual(displayedTimelineContext, requestedTimelineContext)) {
+      return undefined;
+    }
+    const timerId = window.setTimeout(() => {
+      if (requestedTimelineGeneration !== timelineRequestGenerationRef.current) {
+        return;
+      }
+      startTransition(() => {
+        if (requestedTimelineGeneration === timelineRequestGenerationRef.current) {
+          setDisplayedTimelineContext(requestedTimelineContext);
+        }
+      });
+    }, 0);
+    return () => window.clearTimeout(timerId);
+  }, [
+    displayedTimelineContext,
+    requestedTimelineContext,
+    requestedTimelineGeneration,
+  ]);
 
   useLayoutEffect(() => {
     runStreamController.setForegroundSessionId(sessionId);
@@ -92,7 +162,12 @@ export const ChatWorkspace = memo(function ChatWorkspace({
     }
   }, [contentLoadingKey, sessionId, startSessionLoadingFrame]);
 
-  const switching = sessionId !== null && switchingSessionId === sessionId;
+  const timelineContext = displayedTimelineContext.sessionId === sessionId
+    ? requestedTimelineContext
+    : displayedTimelineContext;
+  const timelinePending = timelineContext.sessionId !== sessionId;
+  const switching = timelinePending ||
+    (sessionId !== null && switchingSessionId === sessionId);
 
   return (
     <div
@@ -100,14 +175,14 @@ export const ChatWorkspace = memo(function ChatWorkspace({
       className={switching ? "at-chat-view is-session-switching" : "at-chat-view"}
     >
       <MessageTimeline
-        fallbackRunId={runStreamController.activeRunId}
-        latestTerminalRunId={latestTerminalRunId}
-        latestTerminalRunStatus={latestTerminalRunStatus}
+        fallbackRunId={timelineContext.fallbackRunId}
+        latestTerminalRunId={timelineContext.latestTerminalRunId}
+        latestTerminalRunStatus={timelineContext.latestTerminalRunStatus}
         onSubagentOpen={onSubagentOpen}
-        primaryRoleId={primaryRoleId}
-        sessionId={sessionId}
+        primaryRoleId={timelineContext.primaryRoleId}
+        sessionId={timelineContext.sessionId}
         visible={visible && !switching}
-        workspaceId={workspaceId ?? null}
+        workspaceId={timelineContext.workspaceId}
       />
       {switching ? (
         <div className="at-session-switch-loading" role="status">
@@ -148,6 +223,18 @@ export const ChatWorkspace = memo(function ChatWorkspace({
     </div>
   );
 });
+
+function timelineContextsEqual(
+  left: TimelineContext,
+  right: TimelineContext,
+): boolean {
+  return left.fallbackRunId === right.fallbackRunId &&
+    left.latestTerminalRunId === right.latestTerminalRunId &&
+    left.latestTerminalRunStatus === right.latestTerminalRunStatus &&
+    left.primaryRoleId === right.primaryRoleId &&
+    left.sessionId === right.sessionId &&
+    left.workspaceId === right.workspaceId;
+}
 
 function pendingQuestionTimelineReference(
   sessionId: string,

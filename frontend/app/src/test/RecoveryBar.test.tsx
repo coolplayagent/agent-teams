@@ -465,6 +465,58 @@ describe("RecoveryBar", () => {
       .not.toBeInTheDocument();
   });
 
+  it("resumes a shared stopped run once for concurrent question answers", async () => {
+    const questions = ["First decision", "Second decision"].map((question, index) => ({
+      question_id: `question-${index + 1}`,
+      questions: [{
+        multiple: false,
+        options: [{ label: `Option ${index + 1}` }],
+        question,
+      }],
+      role_id: index === 0 ? "Explorer" : "Reviewer",
+      run_id: "run-shared",
+    }));
+    getRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({
+        active_run: {
+          last_event_id: 14,
+          phase: "stopped",
+          run_id: "run-shared",
+          session_id: "session-1",
+          should_show_recover: true,
+          status: "stopped",
+        },
+        pending_user_questions: questions,
+      }),
+    );
+    const resumed = deferredResponse<{ run_id: string; session_id: string }>();
+    resumeRunMock.mockReturnValue(resumed.promise);
+    answerUserQuestionMock.mockResolvedValue({ status: "ok" });
+
+    renderRecoveryBar();
+
+    fireEvent.click(await screen.findByLabelText("Option 1"));
+    fireEvent.click(screen.getByLabelText("Option 2"));
+    const answerButtons = screen.getAllByRole("button", { name: "Answer" });
+    fireEvent.click(answerButtons[0]);
+    fireEvent.click(answerButtons[1]);
+    await waitFor(() => expect(resumeRunMock).toHaveBeenCalledTimes(1));
+    expect(answerUserQuestionMock).not.toHaveBeenCalled();
+
+    resumed.resolve({ run_id: "run-shared", session_id: "session-1" });
+    await waitFor(() => expect(answerUserQuestionMock).toHaveBeenCalledTimes(2));
+    expect(answerUserQuestionMock).toHaveBeenCalledWith(
+      "run-shared",
+      "question-1",
+      { answers: [{ selections: [{ label: "Option 1" }] }] },
+    );
+    expect(answerUserQuestionMock).toHaveBeenCalledWith(
+      "run-shared",
+      "question-2",
+      { answers: [{ selections: [{ label: "Option 2" }] }] },
+    );
+  });
+
   it("hides the reserved question option label and submits supplements", async () => {
     getRecoverySnapshotMock.mockResolvedValue(
       recoverySnapshot({

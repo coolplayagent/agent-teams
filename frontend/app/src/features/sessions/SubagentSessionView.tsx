@@ -50,9 +50,7 @@ export function SubagentSessionView({
 }: SubagentSessionViewProps) {
   const queryClient = useQueryClient();
   const t = useTranslations();
-  const runtimeState = useRuntimeStore((state) => state.runtimeState);
   const setRuntimeState = useRuntimeStore((state) => state.setRuntimeState);
-  const runtimeStateRef = useRef(runtimeState);
   const latestStreamTargetRef = useRef<SubagentStreamTarget | null>(null);
   const subagentReconnectAttemptRef = useRef(0);
   const subagentReconnectTimerRef = useRef<number | null>(null);
@@ -128,10 +126,6 @@ export function SubagentSessionView({
   );
 
   useEffect(() => {
-    runtimeStateRef.current = runtimeState;
-  }, [runtimeState]);
-
-  useEffect(() => {
     latestStreamTargetRef.current = {
       instanceId,
       messageQueryKey,
@@ -196,14 +190,14 @@ export function SubagentSessionView({
     }
     subagentStreamRef.current?.close();
     streamedRunIdRef.current = runId;
+    const storeRuntimeState = useRuntimeStore.getState().runtimeState;
     const currentRuntimeState = runtimeStateWithScopedRun(
-      runtimeStateRef.current,
+      storeRuntimeState,
       runId,
       sessionId,
       "subagent",
     );
-    if (currentRuntimeState !== runtimeStateRef.current) {
-      runtimeStateRef.current = currentRuntimeState;
+    if (currentRuntimeState !== storeRuntimeState) {
       setRuntimeState(currentRuntimeState);
     }
     const streamHandle = openSessionSubagentRunStream({
@@ -212,13 +206,13 @@ export function SubagentSessionView({
       onActivity: resetSubagentReconnect,
       onClosed: (closedRuntimeState) => {
         resetSubagentReconnect();
+        const latestRuntimeState = useRuntimeStore.getState().runtimeState;
         const displayRuntimeState = subagentClosedRuntimeStateForDisplay({
           closedRuntimeState,
-          currentRuntimeState: runtimeStateRef.current,
+          currentRuntimeState: latestRuntimeState,
           runId,
           sessionId,
         });
-        runtimeStateRef.current = displayRuntimeState;
         setRuntimeState(displayRuntimeState);
         if (streamedRunIdRef.current === runId) {
           streamedRunIdRef.current = null;
@@ -252,8 +246,9 @@ export function SubagentSessionView({
       },
       onState: (nextRuntimeState) => {
         const nextSubagentRun = nextRuntimeState.runs[runId];
+        const latestRuntimeState = useRuntimeStore.getState().runtimeState;
         const scopedRuntimeState = mergeSubagentRunIntoRuntimeState(
-          runtimeStateRef.current,
+          latestRuntimeState,
           nextSubagentRun,
           runId,
           sessionId,
@@ -261,15 +256,13 @@ export function SubagentSessionView({
         if (scopedRuntimeState.runs[runId]?.status === "closed") {
           const displayRuntimeState = subagentClosedRuntimeStateForDisplay({
             closedRuntimeState: scopedRuntimeState,
-            currentRuntimeState: runtimeStateRef.current,
+            currentRuntimeState: latestRuntimeState,
             runId,
             sessionId,
           });
-          runtimeStateRef.current = displayRuntimeState;
           setRuntimeState(displayRuntimeState);
           return;
         }
-        runtimeStateRef.current = scopedRuntimeState;
         setRuntimeState(scopedRuntimeState);
       },
       runId,

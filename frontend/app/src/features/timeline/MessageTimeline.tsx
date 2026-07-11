@@ -179,9 +179,13 @@ export function MessageTimeline({
   );
   const runtimeRunList = useRuntimeStore(useShallow((state) =>
     Object.values(state.runtimeState.runs).filter((runState) =>
-      sessionId === null ||
-      runState.sessionId === undefined ||
-      runState.sessionId === sessionId
+      runtimeRunStateMatchesScope(runState, {
+        primaryRoleId,
+        runtimeRunId,
+        sessionId,
+        subagentRoleId: subagentScopeRoleId,
+        variant,
+      })
     )
   ));
   const runtimeRuns = useMemo(
@@ -641,6 +645,7 @@ export function MessageTimeline({
     >
       <div
         className="at-timeline"
+        data-runtime-run-count={runtimeRunList.length}
         data-scroll-owner={variant}
         onPointerDown={handleTimelinePointerDown}
         onScroll={handleTimelineScroll}

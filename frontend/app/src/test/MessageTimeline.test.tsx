@@ -11092,6 +11092,52 @@ describe("MessageTimeline", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("subscribes only the current main run or explicitly opened subagent at scale", async () => {
+    const runs: Record<string, RuntimeRunState> = {};
+    for (let sessionIndex = 0; sessionIndex < 30; sessionIndex += 1) {
+      const sessionId = `session-${sessionIndex + 1}`;
+      const runId = `main-run-${sessionIndex + 1}`;
+      runs[runId] = runtimeRunStateWithSingleText({
+        runId,
+        scope: "session",
+        sessionId,
+        text: `Main output ${sessionIndex + 1}`,
+      });
+    }
+    for (let subagentIndex = 0; subagentIndex < 30; subagentIndex += 1) {
+      const runId = `subagent-run-${subagentIndex + 1}`;
+      runs[runId] = runtimeRunStateWithSingleText({
+        runId,
+        scope: "subagent",
+        sessionId: "session-1",
+        text: `Subagent output ${subagentIndex + 1}`,
+      });
+    }
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: Object.keys(runs),
+        runs,
+      },
+    });
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const mainRender = renderTimeline("session-1");
+    expect(await screen.findByText("Main output 1")).toBeVisible();
+    expect(mainRender.container.querySelector(".at-timeline"))
+      .toHaveAttribute("data-runtime-run-count", "1");
+    expect(screen.queryByText("Subagent output 1")).not.toBeInTheDocument();
+
+    const subagentRender = renderTimeline("session-1", {
+      roundsEnabled: false,
+      runtimeRunId: "subagent-run-17",
+      variant: "subagent-panel",
+    });
+    expect(await screen.findByText("Subagent output 17")).toBeVisible();
+    expect(subagentRender.container.querySelector(".at-timeline"))
+      .toHaveAttribute("data-runtime-run-count", "1");
+    expect(screen.queryByText("Subagent output 18")).not.toBeInTheDocument();
+  });
+
   it("does not treat generic tool run identifiers as subagent previews", async () => {
     setRuntimeEntries([
       runtimeGenericEntry({
@@ -11539,6 +11585,39 @@ function setRuntimeEntries(
       },
     },
   });
+}
+
+function runtimeRunStateWithSingleText({
+  runId,
+  scope,
+  sessionId,
+  text,
+}: {
+  runId: string;
+  scope: NonNullable<RuntimeRunState["scope"]>;
+  sessionId: string;
+  text: string;
+}): RuntimeRunState {
+  return {
+    entries: [{
+      eventId: 1,
+      id: `${runId}:1:0`,
+      kind: "text_delta",
+      occurredAt: "2026-07-11T15:00:00Z",
+      payload: { text },
+      roleId: scope === "subagent" ? "Explorer" : "MainAgent",
+      runId,
+      sessionId,
+      text,
+    }],
+    lastEventId: 1,
+    runId,
+    scope,
+    seenEventKeys: [],
+    sessionId,
+    status: "open",
+    terminalEventType: null,
+  };
 }
 
 interface RuntimeRunStateOptions {

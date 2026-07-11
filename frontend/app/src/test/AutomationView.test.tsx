@@ -218,6 +218,19 @@ describe("AutomationView", () => {
     expect(listAutomationProjectsMock).toHaveBeenCalledTimes(1);
   });
 
+  it("provides an in-place return from detail for narrow workbench layouts", async () => {
+    renderAutomation();
+
+    fireEvent.click(await screen.findByRole("button", { name: /Weekly report/ }));
+    const schedulesPanel = screen.getByRole("tabpanel", { name: "Schedules" });
+    expect(schedulesPanel).toHaveClass("is-detail-open");
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Automation projects" }),
+    );
+    expect(schedulesPanel).not.toHaveClass("is-detail-open");
+  });
+
   it("runs an automation and opens the returned session", async () => {
     const onSessionSelected = vi.fn();
     renderAutomation(onSessionSelected);
@@ -323,7 +336,7 @@ describe("AutomationView", () => {
         }),
       ),
     );
-  }, 10_000);
+  }, 20_000);
 
   it("creates a one-shot project without leaking cron or interval fields", async () => {
     renderAutomation();

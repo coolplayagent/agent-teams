@@ -17,6 +17,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
 import {
+  ArrowLeft,
   PauseCircle,
   Pencil,
   Play,
@@ -98,6 +99,7 @@ export function AutomationView({
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"github" | "schedules">("schedules");
   const [githubVisited, setGitHubVisited] = useState(false);
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
 
   const selectTab = (tab: "github" | "schedules") => {
     setActiveTab(tab);
@@ -452,11 +454,13 @@ export function AutomationView({
       <div
         aria-busy={projectsQuery.isFetching}
         aria-labelledby="automation-schedules-tab"
-        className={
-          projectsQuery.isFetching
-            ? "at-automation-content is-refreshing"
-            : "at-automation-content"
-        }
+        className={[
+          "at-automation-content",
+          projectsQuery.isFetching ? "is-refreshing" : "",
+          mobileDetailOpen ? "is-detail-open" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
         hidden={activeTab !== "schedules"}
         id="automation-schedules-panel"
         role="tabpanel"
@@ -487,9 +491,10 @@ export function AutomationView({
                 {group.projects.map((project) => (
                   <AutomationProjectButton
                     key={project.automation_project_id}
-                    onSelect={() =>
-                      setSelectedProjectId(project.automation_project_id)
-                    }
+                    onSelect={() => {
+                      setSelectedProjectId(project.automation_project_id);
+                      setMobileDetailOpen(true);
+                    }}
                     project={project}
                     selected={project.automation_project_id === currentProjectId}
                     t={t}
@@ -549,6 +554,7 @@ export function AutomationView({
                 });
               }}
               onEdit={() => openEdit(selectedProject)}
+              onBack={() => setMobileDetailOpen(false)}
               onRetry={() => {
                 void projectQuery.refetch();
                 void sessionsQuery.refetch();
@@ -722,6 +728,7 @@ function AutomationProjectDetail({
   errorMessage,
   loading,
   onDelete,
+  onBack,
   onEdit,
   onRetry,
   onRun,
@@ -742,6 +749,7 @@ function AutomationProjectDetail({
   errorMessage: string | null;
   loading: boolean;
   onDelete: () => void;
+  onBack: () => void;
   onEdit: () => void;
   onRetry: () => void;
   onRun: () => void;
@@ -799,6 +807,14 @@ function AutomationProjectDetail({
       }
     >
       <section className="at-automation-document">
+        <Button
+          className="at-automation-back"
+          icon={<ArrowLeft size={15} />}
+          onClick={onBack}
+          type="text"
+        >
+          {t("automationProjects")}
+        </Button>
         <div className="at-automation-detail-head">
           <div>
             <h3>{automationTitle(project)}</h3>

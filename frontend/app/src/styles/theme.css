@@ -1398,6 +1398,7 @@ body {
 }
 
 .at-automation-view {
+  container: at-automation / inline-size;
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
@@ -1461,6 +1462,7 @@ body {
   grid-template-columns: minmax(248px, 0.34fr) minmax(0, 1fr);
   min-height: 0;
   overflow: hidden;
+  overflow-x: clip;
 }
 
 .at-automation-content.is-refreshing::before,
@@ -1629,6 +1631,7 @@ body {
   min-width: 0;
   min-height: 0;
   overflow: auto;
+  overflow-x: clip;
   padding: 14px 18px 18px;
 }
 
@@ -1680,6 +1683,12 @@ body {
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.at-automation-back {
+  display: none;
+  justify-self: start;
+  margin: -4px 0 0 -8px;
 }
 
 .at-automation-section {
@@ -9074,5 +9083,96 @@ body {
     justify-content: flex-end;
     min-width: 0;
     width: 100%;
+  }
+}
+
+@container at-automation (max-width: 1050px) {
+  .at-automation-detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .at-automation-properties {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .at-automation-properties h4 {
+    grid-column: 1 / -1;
+  }
+
+  .at-automation-properties h4:not(:first-child) {
+    margin-top: 0 !important;
+  }
+}
+
+@container at-automation (max-width: 760px) {
+  .at-automation-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+    padding: 12px 14px;
+  }
+
+  .at-automation-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) max-content max-content;
+    width: 100%;
+  }
+
+  .at-automation-search {
+    width: 100%;
+  }
+
+  .at-automation-content {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .at-automation-content:not(.is-detail-open) .at-automation-detail,
+  .at-automation-content.is-detail-open .at-automation-list {
+    display: none;
+  }
+
+  .at-automation-list {
+    border-right: 0;
+  }
+
+  .at-automation-detail {
+    padding: 12px 14px 18px;
+  }
+
+  .at-automation-back {
+    display: inline-flex;
+  }
+
+  .at-automation-properties {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .at-automation-detail-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .at-automation-detail-actions .ant-btn {
+    min-width: 0;
+  }
+
+  .at-automation-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .at-automation-github-panel {
+    padding: 12px 14px 18px;
+  }
+}
+
+@container at-automation (max-width: 480px) {
+  .at-automation-actions {
+    grid-template-columns: minmax(0, 1fr) max-content;
+  }
+
+  .at-automation-search {
+    grid-column: 1 / -1;
   }
 }

@@ -80,9 +80,8 @@ interface RunStreamCallbacks {
 export function useRunStreamController(): RunStreamController {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
-  const runtimeState = useRuntimeStore((state) => state.runtimeState);
   const setRuntimeState = useRuntimeStore((state) => state.setRuntimeState);
-  const runtimeStateRef = useRef(runtimeState);
+  const runtimeStateRef = useRef(useRuntimeStore.getState().runtimeState);
   const streamHandleRef = useRef<RunStreamHandle | null>(null);
   const continuityRefreshTimerRef = useRef<number | null>(null);
   const foregroundRunIdsRef = useRef<string[]>([]);
@@ -99,9 +98,12 @@ export function useRunStreamController(): RunStreamController {
   const [trackedSessionId, setTrackedSessionId] = useState<string | null>(null);
   const activeRunId = activeRunIds[0] ?? null;
 
-  useEffect(() => {
-    runtimeStateRef.current = runtimeState;
-  }, [runtimeState]);
+  useEffect(
+    () => useRuntimeStore.subscribe((state) => {
+      runtimeStateRef.current = state.runtimeState;
+    }),
+    [],
+  );
 
   useEffect(
     () => () => {

@@ -86,6 +86,34 @@ describe("useRunStreamController", () => {
     expect(controllers.at(-1)).toBe(initialController);
   });
 
+  it("tracks runtime snapshots without rerendering the shell controller", () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const controllers: ReturnType<typeof useRunStreamController>[] = [];
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamIdentityHarness
+              onRender={(controller) => controllers.push(controller)}
+              renderToken={0}
+            />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+    const renderCount = controllers.length;
+
+    act(() => {
+      useRuntimeStore.getState().setRuntimeState(runtimeStateWithRunStatuses([
+        { lastEventId: 4, runId: "background-run", status: "open" },
+      ]));
+    });
+
+    expect(controllers).toHaveLength(renderCount);
+  });
+
   it("refreshes recovery when a stream starts and while it stays active", () => {
     vi.useFakeTimers();
     const queryClient = new QueryClient({

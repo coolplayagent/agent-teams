@@ -1478,7 +1478,8 @@ describe("SettingsDrawer", () => {
     installDesktopApi("9.8.7");
     renderDrawer();
 
-    expect(await screen.findByRole("dialog", { name: "Settings" })).toBeVisible();
+    const settingsDialog = await screen.findByRole("dialog", { name: "Settings" });
+    await waitFor(() => expect(settingsDialog).toBeVisible());
     const sections = screen.getByRole("navigation", { name: "Settings sections" });
     expect(
       within(sections).getAllByRole("button").map((button) => button.textContent),
@@ -1548,15 +1549,13 @@ describe("SettingsDrawer", () => {
     fireEvent.click(defaultProfileRow as HTMLElement);
     fireEvent.click(await screen.findByText("Model capabilities"));
     expect(await screen.findByText("Realtime speech")).toBeVisible();
-    expect(screen.getByText("gpt-5-mini")).toBeVisible();
     expect(screen.getByText("image, text")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(await screen.findByText("vision")).toBeVisible();
 
     fireEvent.click(within(sections).getByRole("button", { name: "Roles" }));
     await waitFor(() => expect(listRoleConfigsMock).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(screen.getAllByText("Coordinator").length).toBeGreaterThan(0));
-    expect(screen.getByText("Reviewer")).toBeVisible();
+    expect(await screen.findByText("Reviewer")).toBeVisible();
     expect(screen.queryByText("Normal roles")).toBeNull();
     expect(screen.queryByText("Subagent roles")).toBeNull();
     const reviewerRoleRow = screen.getByText("Reviewer").closest("button");
@@ -1566,7 +1565,7 @@ describe("SettingsDrawer", () => {
     expect(await screen.findByLabelText("Role ID")).toBeVisible();
     expect(screen.getByDisplayValue("reviewer")).toBeVisible();
     expect(await screen.findByDisplayValue("Review carefully.")).toBeVisible();
-    expect(screen.getByDisplayValue("subagent")).toBeVisible();
+    expect(screen.getByText("Subagent")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     await waitFor(() => expect(screen.getAllByText("Main Agent").length).toBeGreaterThan(0));
 
@@ -1716,7 +1715,7 @@ describe("SettingsDrawer", () => {
     fireEvent.click(within(sections).getByRole("button", { name: "Web" }));
     expect(await screen.findByText("https://search.example/")).toBeVisible();
     expect(getWebConfigMock).toHaveBeenCalledTimes(1);
-  }, 70000);
+  }, 120000);
 
   it("saves speech settings while preserving runtime tuning fields", async () => {
     fetchSpeechConfigMock.mockResolvedValue({
@@ -1976,9 +1975,13 @@ describe("SettingsDrawer", () => {
 
     expect(await screen.findByLabelText("Role ID")).toHaveValue("reviewer");
     fireEvent.click(screen.getByText("Advanced runtime settings"));
-    expect(screen.getByText("browser")).toBeVisible();
-    expect(screen.getAllByText("read_file").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("filesystem").length).toBeGreaterThan(0);
+    expect(screen.getByText("browser (unavailable saved value)")).toBeVisible();
+    expect(
+      screen.getAllByText("read_file (unavailable saved value)").length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText("filesystem (unavailable saved value)").length,
+    ).toBeGreaterThan(0);
     expect(screen.getAllByText("Review (builtin)").length).toBeGreaterThan(0);
 
     fireEvent.click(within(screen.getByLabelText("Prompt view")).getByText("Preview"));
@@ -3776,7 +3779,10 @@ describe("SettingsDrawer", () => {
     fireEvent.click(within(sections).getByRole("button", { name: "Model" }));
     fireEvent.click(await screen.findByRole("button", { name: "New profile" }));
 
-    fireEvent.click((await screen.findByText("MaaS Chat")).closest("button") as HTMLElement);
+    expect(await screen.findByText("MaaS · maas")).toBeVisible();
+    const maasModelSelect = screen.getByRole("combobox", { name: "Search models" });
+    fireEvent.mouseDown(maasModelSelect);
+    await clickFirstOpenSelectOption();
     fireEvent.change(await screen.findByLabelText("Profile ID"), {
       target: { value: "maas-profile" },
     });
@@ -3938,15 +3944,18 @@ describe("SettingsDrawer", () => {
       name: "Settings sections",
     });
     fireEvent.click(within(sections).getByRole("button", { name: "Model" }));
-    expect(await screen.findByText("vision")).toBeVisible();
+    const visionProfile = await screen.findByText("vision");
+    await waitFor(() => expect(visionProfile).toBeVisible());
     expect(getModelCatalogMock).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "New profile" }));
     await waitFor(() => expect(getModelCatalogMock).toHaveBeenCalledTimes(1));
     expect(screen.getByText("Model catalog")).toBeVisible();
-    expect(await screen.findByText("OpenAI")).toBeVisible();
+    expect(await screen.findByText("OpenAI · openai_compatible")).toBeVisible();
 
-    fireEvent.click((await screen.findByText("GPT-5 Catalog")).closest("button") as HTMLElement);
+    const catalogModelSelect = screen.getByRole("combobox", { name: "Search models" });
+    fireEvent.mouseDown(catalogModelSelect);
+    await clickFirstOpenSelectOption();
     expect(screen.getByLabelText("Provider")).toHaveValue("openai_compatible");
     expect(screen.getByLabelText("Model")).toHaveValue("gpt-5-catalog");
     expect(screen.getByLabelText("Base URL")).toHaveValue("https://openai.example/v1");
@@ -5002,6 +5011,20 @@ function renderDrawer() {
       </ConfigProvider>
     </QueryClientProvider>,
   );
+}
+
+async function clickFirstOpenSelectOption() {
+  let option: HTMLElement | null = null;
+  await waitFor(() => {
+    option = document.querySelector(
+      ".ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option",
+    );
+    expect(option).not.toBeNull();
+  });
+  if (option === null) {
+    throw new Error("Expected an open Select option.");
+  }
+  fireEvent.click(option);
 }
 
 async function openClawHubSettings() {

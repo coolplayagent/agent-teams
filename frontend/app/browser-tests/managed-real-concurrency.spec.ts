@@ -11,6 +11,9 @@ const ENABLED = process.env.AGENT_TEAMS_MANAGED_REAL_CONCURRENCY === "1";
 const SESSION_COUNT = boundedSessionCount(
   process.env.AGENT_TEAMS_REAL_CONCURRENCY_SESSIONS,
 );
+const STREAM_HOLD_MS = boundedStreamHoldMs(
+  process.env.AGENT_TEAMS_REAL_CONCURRENCY_HOLD_MS,
+);
 const EDGE_EXECUTABLE = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?.trim() ?? "";
 
 interface SessionRecord {
@@ -108,7 +111,7 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
             "主代理完成后只输出 fake LLM 的最终完成句。",
           ].join("\n")
         : [
-            `${title}: [slow-stream tag=${tag} repeat=${repeat} delay=90 chunk=8]`,
+            `${title}: [slow-stream tag=${tag} repeat=${repeat} delay=90 chunk=8 hold=${STREAM_HOLD_MS}]`,
             "只输出 fake LLM 返回的确定性慢速文本。",
           ].join("\n");
       const runResponse = waitForRunCreateResponse(page);
@@ -245,6 +248,7 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
           : probe.finalHeapBytes - probe.initialHeapBytes,
       probe,
       sessionCount: SESSION_COUNT,
+      streamHoldMs: STREAM_HOLD_MS,
     };
     const evidencePath = test.info().outputPath("managed-real-concurrency-evidence.json");
     await writeFile(evidencePath, JSON.stringify(evidence, null, 2), "utf-8");
@@ -410,6 +414,13 @@ async function expectShellReady(page: Page): Promise<void> {
 
 async function selectSession(page: Page, title: string): Promise<void> {
   const item = page.locator(".at-session-item").filter({ hasText: title }).first();
+  for (let pageIndex = 0; pageIndex < 4 && await item.count() === 0; pageIndex += 1) {
+    const showMore = page.locator(".at-workspace-group-more").first();
+    if (await showMore.count() === 0) {
+      break;
+    }
+    await showMore.click();
+  }
   await expect(item).toBeVisible({ timeout: 30_000 });
   const startedAt = Date.now();
   await item.click();
@@ -562,6 +573,14 @@ function boundedSessionCount(rawValue: string | undefined): number {
     return 8;
   }
   return Math.min(12, Math.max(8, parsed));
+}
+
+function boundedStreamHoldMs(rawValue: string | undefined): number {
+  const parsed = Number(rawValue ?? "0");
+  if (!Number.isInteger(parsed)) {
+    return 0;
+  }
+  return Math.min(15_000, Math.max(0, parsed));
 }
 
 function apiBaseUrl(): string {

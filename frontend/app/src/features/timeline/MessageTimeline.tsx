@@ -521,14 +521,18 @@ export function MessageTimeline({
     if (isProgrammaticTimelineScrollEvent(event.nativeEvent)) {
       return;
     }
-    if (
-      consumePendingProgrammaticTimelineScroll(
-        pendingProgrammaticScrollRef,
-        container,
-        scrollScopeKey,
-      )
-    ) {
-      return;
+    if (event.nativeEvent.isTrusted) {
+      if (
+        consumePendingProgrammaticTimelineScroll(
+          pendingProgrammaticScrollRef,
+          container,
+          scrollScopeKey,
+        )
+      ) {
+        return;
+      }
+    } else {
+      pendingProgrammaticScrollRef.current = null;
     }
     if (container === parentRef.current) {
       const snapshot = captureTimelineScrollSnapshot(

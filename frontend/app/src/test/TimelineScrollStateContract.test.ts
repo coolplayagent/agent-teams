@@ -44,6 +44,7 @@ describe("timeline scroll state contract", () => {
     expect(timelineSource).toContain(
       "pendingScroll.scopeKey === scopeKey",
     );
+    expect(timelineSource).toContain("if (event.nativeEvent.isTrusted)");
   });
 
   it("treats explicit scrolling away from the exact bottom as reading intent", () => {

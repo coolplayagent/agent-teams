@@ -681,6 +681,63 @@ describe("Composer", () => {
     expect(createRunMock).not.toHaveBeenCalled();
   });
 
+  it("uses one contextual registry for plus, slash commands, and mentions", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [
+        {
+          role_id: "Writer",
+          name: "Writer",
+          description: "Draft product copy",
+        },
+      ],
+      skills: [
+        {
+          description: "Review the current changes",
+          name: "review-skill",
+          ref: "user:review-skill",
+          source: "user",
+        },
+      ],
+    });
+    getCommandCatalogMock.mockResolvedValue({
+      app_commands: [
+        {
+          aliases: [],
+          description: "Review changed files",
+          name: "review",
+          source: "app",
+        },
+      ],
+      workspaces: [],
+    });
+
+    renderComposer();
+
+    const prompt = await screen.findByLabelText("Prompt");
+    const quickActions = screen.getByRole("button", {
+      name: "Add context or command",
+    });
+    fireEvent.click(quickActions);
+
+    expect(await screen.findByText("Add image")).toBeVisible();
+    const reviewOption = await screen.findByRole("option", {
+      name: /\/review.*Review changed files/,
+    });
+    expect(
+      screen.getByRole("option", { name: /\/review-skill.*Skill/ }),
+    ).toBeVisible();
+    expect(screen.getByRole("option", { name: /@Writer.*Role/ })).toBeVisible();
+
+    fireEvent.mouseDown(reviewOption);
+    expect(prompt).toHaveValue("/review ");
+    expect(screen.queryByLabelText("Prompt suggestions")).not.toBeInTheDocument();
+
+    fireEvent.change(prompt, { target: { value: "@" } });
+    const writerOption = await screen.findByRole("option", { name: /@Writer.*Role/ });
+    fireEvent.mouseDown(writerOption);
+    await waitFor(() => expect(prompt).toHaveValue("@Writer "));
+  });
+
   it("shows same-named slash command and skill suggestions separately", async () => {
     getRoleConfigOptionsMock.mockResolvedValue({
       normal_mode_roles: [],

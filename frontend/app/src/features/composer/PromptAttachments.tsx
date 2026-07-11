@@ -89,6 +89,20 @@ export async function readPastedImageAttachments(
   return attachments.filter((attachment): attachment is PromptAttachment => attachment !== null);
 }
 
+export async function readImageAttachmentFiles(
+  files: Iterable<File>,
+): Promise<PromptAttachment[]> {
+  const imageFiles = Array.from(files).filter((file) =>
+    String(file.type || "").startsWith("image/"),
+  );
+  const attachments = await Promise.all(
+    imageFiles.map((file, index) => normalizeImageAttachment(file, index)),
+  );
+  return attachments.filter(
+    (attachment): attachment is PromptAttachment => attachment !== null,
+  );
+}
+
 export function buildPromptInputParts(
   text: string,
   attachments: PromptAttachment[],

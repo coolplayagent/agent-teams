@@ -14,6 +14,14 @@ import { useUiStore } from "../runtime/uiStore";
 
 const options: PromptMentionOption[] = [
   {
+    actionId: "attach-image",
+    aliases: ["image"],
+    description: "Attach an image.",
+    displayName: "Add image",
+    insertTerm: "",
+    kind: "action",
+  },
+  {
     aliases: ["review"],
     commandName: "review",
     description: "Review the current changes without expanding the full prompt.",
@@ -88,17 +96,18 @@ describe("PromptMentionMenu", () => {
       maxHeight: "320px",
       width: "640px",
     });
-    expect(screen.getByText("Command")).toBeVisible();
+    expect(screen.getAllByText("Command")).not.toHaveLength(0);
+    expect(screen.getAllByText("Actions")).not.toHaveLength(0);
     expect(screen.getByText("File")).toBeVisible();
-    expect(screen.getByText("Role")).toBeVisible();
+    expect(screen.getAllByText("Role")).not.toHaveLength(0);
 
     view.rerender(
-      <MenuHarness activeIndex={2} onSelect={onSelect} options={options} />,
+      <MenuHarness activeIndex={3} onSelect={onSelect} options={options} />,
     );
     await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" }));
 
     fireEvent.mouseDown(screen.getByRole("option", { name: /@Writer/ }));
-    expect(onSelect).toHaveBeenCalledWith(options[2]);
+    expect(onSelect).toHaveBeenCalledWith(options[3]);
   });
 
   it("announces loading and empty states without rendering an empty listbox", async () => {

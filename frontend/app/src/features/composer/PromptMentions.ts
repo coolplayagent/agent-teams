@@ -59,7 +59,17 @@ export interface PromptResourceMentionOption {
   resourceKind: "directory" | "file";
 }
 
+export interface PromptActionMentionOption {
+  actionId: "attach-image" | "toggle-thinking" | "use-normal-mode" | "use-orchestration-mode";
+  aliases: string[];
+  description: string;
+  displayName: string;
+  insertTerm: string;
+  kind: "action";
+}
+
 export type PromptMentionOption =
+  | PromptActionMentionOption
   | PromptCommandMentionOption
   | PromptResourceMentionOption
   | PromptRoleMentionOption

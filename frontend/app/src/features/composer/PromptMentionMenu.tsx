@@ -1,5 +1,14 @@
 import { createPortal } from "react-dom";
 import {
+  AtSign,
+  Brain,
+  FileText,
+  Paperclip,
+  Terminal,
+  Users,
+  Workflow,
+} from "lucide-react";
+import {
   useEffect,
   useId,
   useRef,
@@ -101,39 +110,52 @@ export function PromptMentionMenu({
         >
           {options.map((option, index) => {
             const isActive = index === activeIndex;
+            const showGroup =
+              index === 0 || promptMentionGroup(options[index - 1]) !== promptMentionGroup(option);
             return (
-              <button
-                aria-selected={isActive}
-                className={
-                  isActive
-                    ? "at-prompt-mention-item is-active"
-                    : "at-prompt-mention-item"
-                }
-                id={`${menuId}-${index}`}
-                key={promptMentionOptionKey(option)}
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  onSelect(option);
-                }}
-                ref={isActive ? activeOptionRef : undefined}
-                role="option"
-                type="button"
-              >
-                <span className="at-prompt-mention-name-row">
-                  <span className="at-prompt-mention-name">
-                    {promptMentionPrefix(option)}
-                    {option.displayName}
-                  </span>
-                  <span className="at-prompt-mention-kind">
-                    {promptMentionKindLabel(option, t)}
-                  </span>
-                </span>
-                {option.description ? (
-                  <span className="at-prompt-mention-description">
-                    {option.description}
-                  </span>
+              <div className="at-prompt-mention-option-group" key={promptMentionOptionKey(option)}>
+                {showGroup ? (
+                  <div className="at-prompt-mention-group-label">
+                    {promptMentionGroupLabel(option, t)}
+                  </div>
                 ) : null}
-              </button>
+                <button
+                  aria-selected={isActive}
+                  className={
+                    isActive
+                      ? "at-prompt-mention-item is-active"
+                      : "at-prompt-mention-item"
+                  }
+                  id={`${menuId}-${index}`}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    onSelect(option);
+                  }}
+                  ref={isActive ? activeOptionRef : undefined}
+                  role="option"
+                  type="button"
+                >
+                  <span aria-hidden className="at-prompt-mention-icon">
+                    {promptMentionIcon(option)}
+                  </span>
+                  <span className="at-prompt-mention-copy">
+                    <span className="at-prompt-mention-name-row">
+                      <span className="at-prompt-mention-name">
+                        {promptMentionPrefix(option)}
+                        {option.displayName}
+                      </span>
+                      <span className="at-prompt-mention-kind">
+                        {promptMentionKindLabel(option, t)}
+                      </span>
+                    </span>
+                    {option.description ? (
+                      <span className="at-prompt-mention-description">
+                        {option.description}
+                      </span>
+                    ) : null}
+                  </span>
+                </button>
+              </div>
             );
           })}
         </div>
@@ -178,6 +200,9 @@ function promptMentionMenuPosition(
 }
 
 function promptMentionOptionKey(option: PromptMentionOption): string {
+  if (option.kind === "action") {
+    return `action:${option.actionId}`;
+  }
   if (option.kind === "command") {
     return `command:${option.commandName}`;
   }
@@ -190,7 +215,10 @@ function promptMentionOptionKey(option: PromptMentionOption): string {
   return `role:${option.roleId}`;
 }
 
-function promptMentionPrefix(option: PromptMentionOption): "/" | "@" {
+function promptMentionPrefix(option: PromptMentionOption): "/" | "@" | "" {
+  if (option.kind === "action") {
+    return "";
+  }
   return option.kind === "command" || option.kind === "skill" ? "/" : "@";
 }
 
@@ -198,6 +226,9 @@ function promptMentionKindLabel(
   option: PromptMentionOption,
   t: Translate,
 ): string {
+  if (option.kind === "action") {
+    return t("connectorsColumnActions");
+  }
   if (option.kind === "command") {
     return t("composerMentionCommand");
   }
@@ -210,4 +241,51 @@ function promptMentionKindLabel(
       : t("settingsRoleFile");
   }
   return t("composerRole");
+}
+
+function promptMentionGroup(option: PromptMentionOption): string {
+  if (option.kind === "action") {
+    return "action";
+  }
+  if (option.kind === "command" || option.kind === "skill") {
+    return "command";
+  }
+  return "mention";
+}
+
+function promptMentionGroupLabel(option: PromptMentionOption, t: Translate): string {
+  const group = promptMentionGroup(option);
+  if (group === "action") {
+    return t("connectorsColumnActions");
+  }
+  if (group === "command") {
+    return t("composerMentionCommand");
+  }
+  return t("composerRole");
+}
+
+function promptMentionIcon(option: PromptMentionOption) {
+  if (option.kind === "action") {
+    if (option.actionId === "attach-image") {
+      return <Paperclip size={15} />;
+    }
+    if (option.actionId === "toggle-thinking") {
+      return <Brain size={15} />;
+    }
+    return option.actionId === "use-orchestration-mode" ? (
+      <Workflow size={15} />
+    ) : (
+      <Users size={15} />
+    );
+  }
+  if (option.kind === "command") {
+    return <Terminal size={15} />;
+  }
+  if (option.kind === "skill") {
+    return <Workflow size={15} />;
+  }
+  if (option.kind === "resource") {
+    return <FileText size={15} />;
+  }
+  return <AtSign size={15} />;
 }

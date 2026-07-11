@@ -17,6 +17,7 @@ import {
   ChevronDown,
   Mic,
   MicOff,
+  Plus,
   Play,
   Send,
   Settings2,
@@ -67,6 +68,7 @@ import { useTranslations, type Translate } from "../../i18n";
 import {
   buildPromptInputParts,
   PromptAttachments,
+  readImageAttachmentFiles,
   readPastedImageAttachments,
   summarizePromptAttachments,
   type PromptAttachment,
@@ -84,6 +86,7 @@ import {
   resolvePromptSkillInvocation,
   type LeadingRoleMention,
   type PromptMentionOption,
+  type PromptActionMentionOption,
   type PromptSkillMentionOption,
 } from "./PromptMentions";
 import { useVoiceInput } from "./useVoiceInput";
@@ -247,6 +250,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
   const queryClient = useQueryClient();
   const t = useTranslations();
   const inputRef = useRef<SenderRef | null>(null);
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const mentionAnchorRef = useRef<HTMLDivElement | null>(null);
   const sessionIdRef = useRef(sessionId);
   const [draft, setDraft] = useState("");
@@ -254,6 +258,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
   const [composerStatus, setComposerStatus] = useState("");
   const [activeMentionIndex, setActiveMentionIndex] = useState(0);
   const [dismissedMentionDraft, setDismissedMentionDraft] = useState("");
+  const [quickMenuOpen, setQuickMenuOpen] = useState(false);
   const [yolo, setYolo] = useState(true);
   const [shellSafetyPolicyEnabled, setShellSafetyPolicyEnabled] =
     useState(true);
@@ -325,7 +330,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
   const commandCatalogQuery = useQuery({
     queryKey: ["commands", "catalog", "composer"],
     queryFn: getCommandCatalog,
-    enabled: promptCommandContext !== null,
+    enabled: promptCommandContext !== null || quickMenuOpen,
     staleTime: 30000,
   });
   const resourceSearchQuery = useQuery({
@@ -448,23 +453,84 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       roleOptionsQuery.data,
     ],
   );
-  const promptMentionOptions =
-    promptCommandContext !== null
+  const quickActionOptions = useMemo<PromptActionMentionOption[]>(
+    () => [
+      {
+        actionId: "attach-image",
+        aliases: ["image", "attachment"],
+        description: t("composerAddImageHelp"),
+        displayName: t("composerAddImage"),
+        insertTerm: "",
+        kind: "action",
+      },
+      {
+        actionId: "toggle-thinking",
+        aliases: ["thinking"],
+        description: t("composerThinkingEffort"),
+        displayName: thinking.enabled
+          ? t("composerDisableThinking")
+          : t("composerEnableThinking"),
+        insertTerm: "",
+        kind: "action",
+      },
+      {
+        actionId: "use-normal-mode",
+        aliases: ["normal"],
+        description: t("composerRootRole"),
+        displayName: t("composerSwitchNormal"),
+        insertTerm: "",
+        kind: "action",
+      },
+      {
+        actionId: "use-orchestration-mode",
+        aliases: ["orchestration"],
+        description: t("composerOrchestrationPreset"),
+        displayName: t("composerSwitchOrchestration"),
+        insertTerm: "",
+        kind: "action",
+      },
+    ],
+    [t, thinking.enabled],
+  );
+  const quickCommandOptions = useMemo(
+    () =>
+      findPromptSlashMentionOptions({
+        catalog: commandCatalogQuery.data,
+        query: "",
+        roleOptions: roleOptionsQuery.data,
+        workspaceId: sessionWorkspaceId,
+      }),
+    [commandCatalogQuery.data, roleOptionsQuery.data, sessionWorkspaceId],
+  );
+  const quickMentionOptions = useMemo(
+    () =>
+      findPromptResourceMentionOptions({
+        query: "",
+        resourceResponse: undefined,
+        roleOptions: roleOptionsQuery.data,
+      }),
+    [roleOptionsQuery.data],
+  );
+  const promptMentionOptions = quickMenuOpen
+    ? [...quickActionOptions, ...quickCommandOptions, ...quickMentionOptions]
+    : promptCommandContext !== null
       ? commandMentionOptions
       : promptResourceContext !== null
         ? resourceMentionOptions
         : leadingMentionOptions;
   const mentionMenuOpen =
-    promptCommandContext !== null || promptResourceContext !== null;
-  const mentionMenuLoading =
-    promptCommandContext !== null
+    quickMenuOpen || promptCommandContext !== null || promptResourceContext !== null;
+  const mentionMenuLoading = quickMenuOpen
+    ? commandCatalogQuery.isLoading || roleOptionsQuery.isLoading
+    : promptCommandContext !== null
       ? commandCatalogQuery.isLoading || roleOptionsQuery.isLoading
       : promptResourceContext !== null
         ? roleOptionsQuery.isLoading ||
           (promptResourceContext.query.length > 0 && resourceSearchQuery.isLoading)
         : false;
-  const mentionMenuEmptyLabel =
-    promptCommandContext !== null
+  const mentionMenuEmptyLabel = quickMenuOpen
+    ? t("settingsCommandsNoMatches")
+    : promptCommandContext !== null
       ? t("settingsCommandsNoMatches")
       : promptResourceContext?.query
         ? t("workspaceNoFileMatches")
@@ -504,7 +570,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
 
   useEffect(() => {
     setActiveMentionIndex(0);
-  }, [promptMentionOptions.length]);
+  }, [promptMentionOptions.length, quickMenuOpen]);
 
   const createRunMutation = useMutation({
     mutationFn: async () => {
@@ -770,6 +836,19 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       }}
     >
       <div className="at-composer-inner">
+        <input
+          accept="image/*"
+          aria-hidden
+          className="at-composer-file-input"
+          multiple
+          onChange={(event) => {
+            void handleAttachmentFiles(event.currentTarget.files);
+            event.currentTarget.value = "";
+          }}
+          ref={attachmentInputRef}
+          tabIndex={-1}
+          type="file"
+        />
         <div className="at-composer-prompt-anchor" ref={mentionAnchorRef}>
           <Sender
             ref={inputRef}
@@ -782,6 +861,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
               if (voiceInput.isBusy) {
                 voiceInput.stop({ ignoreTextUpdates: true });
               }
+              setQuickMenuOpen(false);
               setDraft(value);
             }}
             onPaste={(event) => {
@@ -831,6 +911,22 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
         ) : null}
         <div className="at-composer-controls">
           <div className="at-composer-toolbar-start">
+            <Tooltip title={t("composerQuickActions")}>
+              <Button
+                aria-expanded={quickMenuOpen}
+                aria-label={t("composerQuickActions")}
+                className={quickMenuOpen ? "at-composer-plus-button is-active" : "at-composer-plus-button"}
+                icon={<Plus size={17} />}
+                onClick={() => {
+                  setDismissedMentionDraft("");
+                  setQuickMenuOpen((current) => !current);
+                  queueMicrotask(() => inputRef.current?.focus());
+                }}
+                shape="circle"
+                size="small"
+                type="text"
+              />
+            </Tooltip>
             <Popover
               arrow={false}
               content={(
@@ -1220,6 +1316,25 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     }
   }
 
+  async function handleAttachmentFiles(files: FileList | null) {
+    if (files === null) {
+      return;
+    }
+    try {
+      const attachments = await readImageAttachmentFiles(files);
+      if (attachments.length === 0) {
+        return;
+      }
+      setComposerStatus("");
+      setPromptAttachments((current) => [...current, ...attachments]);
+      inputRef.current?.focus();
+    } catch (error) {
+      setComposerStatus(
+        error instanceof Error ? error.message : "Failed to read image attachment.",
+      );
+    }
+  }
+
   function handlePromptKeyDown(event: KeyboardEvent<HTMLElement>) {
     if (promptMentionOptions.length === 0) {
       return;
@@ -1243,6 +1358,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     }
     if (event.key === "Escape") {
       event.preventDefault();
+      setQuickMenuOpen(false);
       setDismissedMentionDraft(draft);
     }
   }
@@ -1251,12 +1367,31 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     if (option === undefined) {
       return;
     }
+    if (option.kind === "action") {
+      if (option.actionId === "attach-image") {
+        attachmentInputRef.current?.click();
+      } else if (option.actionId === "toggle-thinking") {
+        updateThinking({ enabled: !thinking.enabled });
+      } else if (option.actionId === "use-normal-mode") {
+        if (selectedSessionMode !== "normal" && canChangeTopology) {
+          updateSessionTopologyMode("normal");
+        }
+      } else if (
+        selectedSessionMode !== "orchestration" &&
+        canChangeTopology
+      ) {
+        updateSessionTopologyMode("orchestration");
+      }
+      setQuickMenuOpen(false);
+      inputRef.current?.focus();
+      return;
+    }
     if (option.kind === "command" || option.kind === "skill") {
       setSelectedPromptSkill(option.kind === "skill" ? option : null);
       setDraft((currentDraft) => {
         const context = promptCommandContext ?? getPromptCommandContext(currentDraft);
         return context === null
-          ? currentDraft
+          ? `/${option.insertTerm} `
           : applyPromptCommandOption(currentDraft, context, option);
       });
     } else {
@@ -1270,6 +1405,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
           : applyPromptMentionOption(currentDraft, context, option);
       });
     }
+    setQuickMenuOpen(false);
     setDismissedMentionDraft("");
     inputRef.current?.focus();
   }

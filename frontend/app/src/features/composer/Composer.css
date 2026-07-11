@@ -53,8 +53,39 @@
 }
 
 .at-prompt-mention-menu .at-prompt-mention-item {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: start;
+  width: 100%;
   min-width: 0;
   padding: 9px 11px;
+  border-bottom: 0;
+}
+
+.at-prompt-mention-option-group + .at-prompt-mention-option-group .at-prompt-mention-item {
+  border-top: 1px solid color-mix(in srgb, var(--at-border) 65%, transparent);
+}
+
+.at-prompt-mention-group-label {
+  padding: 8px 11px 4px;
+  color: var(--at-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.at-prompt-mention-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  color: var(--at-text-muted);
+}
+
+.at-prompt-mention-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
 }
 
 .at-prompt-mention-menu .at-prompt-mention-name-row,
@@ -114,6 +145,31 @@
 .at-composer .at-composer-toolbar-start {
   flex: 1 1 auto;
   overflow: hidden;
+}
+
+.at-composer .at-composer-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.at-composer .at-composer-plus-button {
+  flex: 0 0 auto;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  padding: 0;
+  color: var(--at-text-muted);
+}
+
+.at-composer .at-composer-plus-button:hover,
+.at-composer .at-composer-plus-button.is-active {
+  color: var(--at-text);
+  background: var(--at-surface-elevated);
 }
 
 .at-composer .at-composer-actions {

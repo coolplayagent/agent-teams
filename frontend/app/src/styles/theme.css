@@ -696,8 +696,9 @@ body {
 
 .at-session-item {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) max-content;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
+  position: relative;
   gap: 2px;
   width: 100%;
   border: 1px solid transparent;
@@ -771,7 +772,13 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 1px;
+  position: absolute;
+  right: 5px;
+  z-index: 1;
+  padding-left: 4px;
+  background: var(--at-surface-muted);
   opacity: 0;
+  pointer-events: none;
   transition: opacity 0.12s ease;
 }
 
@@ -779,6 +786,7 @@ body {
 .at-session-item:focus-within .at-session-actions,
 .at-session-item.is-selected .at-session-actions {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .at-session-action-button.ant-btn {

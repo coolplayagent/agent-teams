@@ -710,8 +710,10 @@ export function MessageTimeline({
     >
       <div
         className="at-timeline"
+        data-rendered-row-count={renderedVirtualItems.length}
         data-runtime-run-count={runtimeRunList.length}
         data-scroll-owner={variant}
+        data-total-row-count={rows.length}
         onPointerDown={handleTimelinePointerDown}
         onScroll={handleTimelineScroll}
         ref={parentRef}

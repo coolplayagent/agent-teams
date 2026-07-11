@@ -1,0 +1,137 @@
+:root {
+  --at-scrollbar-thumb: color-mix(in srgb, var(--at-text-muted) 42%, transparent);
+  --at-scrollbar-thumb-active: color-mix(in srgb, var(--at-text) 58%, transparent);
+  --at-scrollbar-edge: color-mix(in srgb, var(--at-text) 18%, transparent);
+}
+
+:where(
+  .at-scroll-region,
+  .at-settings-nav,
+  .at-settings-section-body,
+  .at-skills-content,
+  .at-board-column-list,
+  .at-connectors-workbench,
+  .at-runtime-tools,
+  .at-session-search-results,
+  .at-new-session-view
+) {
+  scrollbar-color: var(--at-scrollbar-thumb) transparent;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+:where(
+  .at-scroll-region,
+  .at-settings-nav,
+  .at-settings-section-body,
+  .at-skills-content,
+  .at-board-column-list,
+  .at-connectors-workbench,
+  .at-runtime-tools,
+  .at-session-search-results,
+  .at-new-session-view
+)::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+:where(
+  .at-scroll-region,
+  .at-settings-nav,
+  .at-settings-section-body,
+  .at-skills-content,
+  .at-board-column-list,
+  .at-connectors-workbench,
+  .at-runtime-tools,
+  .at-session-search-results,
+  .at-new-session-view
+)::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+:where(
+  .at-scroll-region,
+  .at-settings-nav,
+  .at-settings-section-body,
+  .at-skills-content,
+  .at-board-column-list,
+  .at-connectors-workbench,
+  .at-runtime-tools,
+  .at-session-search-results,
+  .at-new-session-view
+)::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: var(--at-scrollbar-thumb);
+  background-clip: padding-box;
+  transition: background-color 120ms ease;
+}
+
+:where(
+  .at-scroll-region,
+  .at-settings-nav,
+  .at-settings-section-body,
+  .at-skills-content,
+  .at-board-column-list,
+  .at-connectors-workbench,
+  .at-runtime-tools,
+  .at-session-search-results,
+  .at-new-session-view
+):hover::-webkit-scrollbar-thumb,
+:where(
+  .at-scroll-region,
+  .at-settings-nav,
+  .at-settings-section-body,
+  .at-skills-content,
+  .at-board-column-list,
+  .at-connectors-workbench,
+  .at-runtime-tools,
+  .at-session-search-results,
+  .at-new-session-view
+):focus-within::-webkit-scrollbar-thumb {
+  background-color: var(--at-scrollbar-thumb-active);
+}
+
+.at-session-list {
+  scrollbar-color: var(--at-scrollbar-thumb) transparent;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.at-session-list::-webkit-scrollbar {
+  width: 7px;
+}
+
+.at-session-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.at-session-list::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--at-scrollbar-thumb);
+  background-clip: padding-box;
+}
+
+:where(.at-scroll-region.is-horizontal, .at-board-columns) {
+  overscroll-behavior-inline: contain;
+  box-shadow:
+    inset 10px 0 10px -12px var(--at-scrollbar-edge),
+    inset -10px 0 10px -12px var(--at-scrollbar-edge);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :where(
+    .at-scroll-region,
+    .at-settings-nav,
+    .at-settings-section-body,
+    .at-skills-content,
+    .at-board-column-list,
+    .at-connectors-workbench,
+    .at-runtime-tools,
+    .at-session-search-results,
+    .at-new-session-view
+  )::-webkit-scrollbar-thumb {
+    transition: none;
+  }
+}

@@ -6,6 +6,7 @@ import { AgentTeamsApp } from "./app/AgentTeamsApp";
 import { markBootstrapReady } from "./app/bootstrapState";
 import "./styles/feedback.css";
 import "./styles/theme.css";
+import "./styles/scrollbars.css";
 
 const root = document.getElementById("root");
 

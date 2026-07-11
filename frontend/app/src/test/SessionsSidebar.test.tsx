@@ -162,7 +162,8 @@ describe("SessionsSidebar", () => {
     fireEvent.click(workspaceViewButton);
 
     expect(openWorkspaceView).toHaveBeenCalledTimes(1);
-    expect(screen.getByText("C:/work/agent-teams")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Collapse Agent Teams" }))
+      .toHaveAttribute("aria-description", "C:/work/agent-teams");
 
     window.dispatchEvent(new Event("agent-teams-focus-session-search"));
 

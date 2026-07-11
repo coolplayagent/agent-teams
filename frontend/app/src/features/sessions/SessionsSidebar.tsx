@@ -117,6 +117,7 @@ interface SessionsSidebarProps {
   onOpenWorkspaceView?: () => void;
   onSessionSelected?: () => void;
   onSubagentSelected?: (subagent: ActiveSubagentSession) => void;
+  visuallySelectedSessionId?: string | null;
   workspaceViewActive?: boolean;
 }
 
@@ -181,6 +182,7 @@ export function SessionsSidebar({
   onOpenWorkspaceView,
   onSessionSelected,
   onSubagentSelected,
+  visuallySelectedSessionId,
   workspaceViewActive = false,
 }: SessionsSidebarProps) {
   const { message } = App.useApp();
@@ -188,6 +190,10 @@ export function SessionsSidebar({
   const t = useTranslations();
   const language = useUiStore((state) => state.language);
   const selectedSessionId = useUiStore((state) => state.selectedSessionId);
+  const effectiveVisuallySelectedSessionId =
+    visuallySelectedSessionId === undefined
+      ? selectedSessionId
+      : visuallySelectedSessionId;
   const selectedWorkspaceId = useUiStore((state) => state.selectedWorkspaceId);
   const setSelectedSessionId = useUiStore((state) => state.setSelectedSessionId);
   const setSelectedWorkspaceId = useUiStore((state) => state.setSelectedWorkspaceId);
@@ -506,7 +512,7 @@ export function SessionsSidebar({
   }, [selectedSessionId, totalAvailableSessions]);
 
   function renderSessionStack(session: SessionSidebarRecord) {
-    const selected = session.session_id === selectedSessionId;
+    const selected = session.session_id === effectiveVisuallySelectedSessionId;
     const rawIndicatorType = sessionRunIndicatorType(session);
     const indicatorType =
       selected && rawIndicatorType === "unread" ? null : rawIndicatorType;

@@ -11,7 +11,6 @@ import {
   CalendarClock,
   Database,
   Menu,
-  MessageSquare,
   Moon,
   PlugZap,
   Settings,
@@ -542,13 +541,6 @@ export function AppShell() {
   const sidebarNavigationItems = useMemo<SidebarNavigationItem[]>(
     () => [
       {
-        active: !settingsOpen && activeView === "chat",
-        icon: <MessageSquare size={15} />,
-        key: "chat",
-        label: t("appChat"),
-        onSelect: () => openPrimaryShellView("chat"),
-      },
-      {
         active: !settingsOpen && activeView === "automation",
         icon: <CalendarClock size={15} />,
         key: "automation",
@@ -826,6 +818,9 @@ export function AppShell() {
               onOpenSessionSearch={() => setSessionSearchOpen(true)}
               onOpenWorkspaceView={() => openPrimaryShellView("workspace")}
               onSessionSelected={() => openPrimaryShellView("chat", "replace")}
+              visuallySelectedSessionId={
+                activeView === "chat" ? selectedSessionId : null
+              }
               workspaceViewActive={activeView === "workspace"}
             />
             <div

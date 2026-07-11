@@ -290,6 +290,32 @@ describe("SessionsSidebar", () => {
       .toBe(metaSlot);
   });
 
+  it("retains selected session state without visually selecting it in a feature view", async () => {
+    useUiStore.setState({
+      selectedSessionId: "session-a",
+      selectedWorkspaceId: "workspace-1",
+    });
+    listWorkspacesMock.mockResolvedValue([{
+      workspace_id: "workspace-1",
+      root_path: "C:/work/agent-teams",
+      display_name: "Agent Teams",
+    }]);
+    listSidebarSessionsMock.mockResolvedValue([{
+      session_id: "session-a",
+      title: "Alpha",
+      updated_at: "2026-06-23T10:00:00Z",
+      workspace_id: "workspace-1",
+    }]);
+
+    renderSidebar({ visuallySelectedSessionId: null });
+
+    const sessionButton = await screen.findByRole("button", { name: "Alpha" });
+    const sessionRow = sessionButton.closest(".at-session-item");
+    expect(sessionRow).not.toHaveClass("is-selected");
+    expect(sessionButton).not.toHaveAttribute("aria-current");
+    expect(useUiStore.getState().selectedSessionId).toBe("session-a");
+  });
+
   it("scrolls the selected session into the visible sidebar list", async () => {
     const originalScrollIntoView = Element.prototype.scrollIntoView;
     const scrollIntoView = vi.fn(
@@ -1607,6 +1633,7 @@ function renderSidebar(props?: {
   onOpenWorkspaceView?: () => void;
   onSessionSelected?: () => void;
   onSubagentSelected?: (subagent: ActiveSubagentSession) => void;
+  visuallySelectedSessionId?: string | null;
   workspaceViewActive?: boolean;
 }) {
   const queryClient = new QueryClient({
@@ -1630,6 +1657,7 @@ function renderSidebar(props?: {
             onOpenWorkspaceView={props?.onOpenWorkspaceView}
             onSessionSelected={props?.onSessionSelected}
             onSubagentSelected={props?.onSubagentSelected}
+            visuallySelectedSessionId={props?.visuallySelectedSessionId}
             workspaceViewActive={props?.workspaceViewActive}
           />
         </AntApp>

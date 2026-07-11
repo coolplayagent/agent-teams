@@ -8,17 +8,13 @@ import { translate, type TranslationKey } from "../i18n";
 const appShellSource = readFileSync("src/features/shell/AppShell.tsx", "utf8");
 
 describe("shell navigation parity", () => {
-  it("keeps the V1 primary sidebar order and labels", () => {
+  it("keeps only feature destinations in primary sidebar order", () => {
     expect(shellSidebarItems()).toEqual([
-      { key: "chat", label: "Chat" },
       { key: "automation", label: "Automation" },
       { key: "skills", label: "Skills" },
       { key: "board", label: "Board" },
-      { key: "search", label: "Search", shortcut: "Ctrl+K" },
       { key: "connectors", label: "Connectors" },
       { key: "memory", label: "Memory" },
-      { key: "observability", label: "Observability" },
-      { key: "settings", label: "Settings" },
     ]);
   });
 
@@ -29,15 +25,14 @@ describe("shell navigation parity", () => {
     expect(sidebarBlock).not.toContain('t("exportMessages")');
   });
 
-  it("keeps observability, message export, settings, theme, and backend health as top bar controls", () => {
+  it("keeps observability, message export, settings, and theme as top bar controls", () => {
     const topbarBlock = topbarControlsBlock();
 
     expect(topbarBlock).toContain('aria-label={t("appObservability")}');
     expect(topbarBlock).toContain("<MessageExportMenu");
     expect(topbarBlock).toContain('aria-label={t("appSettings")}');
     expect(topbarBlock).toContain('aria-label={t("appToggleTheme")}');
-    expect(topbarBlock).toContain("at-topbar-health");
-    expect(topbarBlock).toContain("healthQuery.refetch()");
+    expect(topbarBlock).not.toContain("at-topbar-health");
   });
 });
 

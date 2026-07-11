@@ -46,15 +46,11 @@ test("keeps V1 primary sidebar entries and opens real module surfaces", async ({
     await expect
       .poll(() => page.locator(".at-sidebar-nav-label").allInnerTexts())
       .toEqual([
-        "Chat",
         "Automation",
         "Skills",
         "Board",
-        "Search",
         "Connectors",
         "Memory",
-        "Observability",
-        "Settings",
       ]);
 
     const primaryNav = page.getByRole("navigation", {
@@ -62,16 +58,12 @@ test("keeps V1 primary sidebar entries and opens real module surfaces", async ({
     });
     await expect(page.locator(".at-chat-view")).toBeVisible();
     await expect(page.locator(".at-composer")).toBeVisible();
-    await expect(primaryNav.getByRole("button", { name: "Chat" })).toBeVisible();
-    await expect(primaryNav.getByRole("button", { name: "Observability" }))
-      .toBeVisible();
-    await expect(primaryNav.getByRole("button", { name: "Settings" }))
-      .toBeVisible();
+    await expect(primaryNav.getByRole("button", { name: "Chat" })).toHaveCount(0);
 
-    await primaryNav.getByRole("button", { name: "Search" }).click();
+    await page.getByRole("button", { name: "Search sessions" }).click();
     await expect(page.getByTestId("session-search-view")).toBeVisible();
 
-    await primaryNav.getByRole("button", { name: "Chat" }).click();
+    await page.getByRole("option", { name: /TS shell parity/ }).click();
     await expect(page.locator(".at-chat-view")).toBeVisible();
     await expect(page.locator(".at-composer")).toBeVisible();
 

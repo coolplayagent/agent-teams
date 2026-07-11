@@ -6674,7 +6674,8 @@ body {
 .at-appearance-page {
   display: grid;
   gap: 14px;
-  width: min(100%, 690px);
+  width: 100%;
+  max-width: 920px;
 }
 
 .at-appearance-theme-grid {

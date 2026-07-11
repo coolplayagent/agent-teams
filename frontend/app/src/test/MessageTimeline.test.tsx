@@ -11140,63 +11140,6 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText("Subagent output 18")).not.toBeInTheDocument();
   });
 
-  it("does not subscribe a retained hidden timeline to runtime broadcasts", async () => {
-    setRuntimeEntries([
-      runtimeTextDeltaEntry({
-        id: "hidden-runtime:1:0",
-        text: "Hidden runtime output",
-        eventId: 1,
-      }),
-    ], "open");
-    listSessionMessagesMock.mockResolvedValue([]);
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
-    function RuntimeRetentionHarness() {
-      const [runtimeUpdatesEnabled, setRuntimeUpdatesEnabled] = useState(true);
-      return (
-        <QueryClientProvider client={queryClient}>
-          <ConfigProvider>
-            <AntApp>
-              <button
-                onClick={() => setRuntimeUpdatesEnabled((current) => !current)}
-                type="button"
-              >
-                Toggle runtime updates
-              </button>
-              <MessageTimeline
-                runtimeUpdatesEnabled={runtimeUpdatesEnabled}
-                sessionId="session-1"
-              />
-            </AntApp>
-          </ConfigProvider>
-        </QueryClientProvider>
-      );
-    }
-    const view = render(<RuntimeRetentionHarness />);
-    expect(await screen.findByText("Hidden runtime output")).toBeVisible();
-    const retainedRow = view.container.querySelector(".at-timeline-row");
-
-    fireEvent.click(screen.getByRole("button", { name: "Toggle runtime updates" }));
-
-    act(() => {
-      setRuntimeEntries([
-        runtimeTextDeltaEntry({
-          id: "hidden-runtime:2:0",
-          text: "Later hidden runtime output",
-          eventId: 2,
-        }),
-      ], "open");
-    });
-
-    expect(screen.getByText("Hidden runtime output")).toBeVisible();
-    expect(screen.queryByText("Later hidden runtime output")).not.toBeInTheDocument();
-    expect(view.container.querySelector(".at-timeline-row")).toBe(retainedRow);
-
-    fireEvent.click(screen.getByRole("button", { name: "Toggle runtime updates" }));
-    expect(await screen.findByText("Later hidden runtime output")).toBeVisible();
-  });
-
   it("does not treat generic tool run identifiers as subagent previews", async () => {
     setRuntimeEntries([
       runtimeGenericEntry({
@@ -11634,7 +11577,6 @@ interface RenderTimelineOptions {
   primaryRoleId?: string | null;
   roundsEnabled?: boolean;
   runtimeRunId?: string | null;
-  runtimeUpdatesEnabled?: boolean;
   variant?: Parameters<typeof MessageTimeline>[0]["variant"];
   workspaceId?: string | null;
 }
@@ -11664,7 +11606,6 @@ function renderTimeline(
             roundsEnabled={options.roundsEnabled ?? true}
             sessionId={sessionId}
             runtimeRunId={options.runtimeRunId ?? null}
-            runtimeUpdatesEnabled={options.runtimeUpdatesEnabled ?? true}
             variant={options.variant ?? "session"}
             workspaceId={options.workspaceId ?? null}
           />

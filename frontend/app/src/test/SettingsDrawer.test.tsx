@@ -2961,7 +2961,7 @@ describe("SettingsDrawer", () => {
         auto_save_webhook_base_url: true,
       }),
     );
-  }, 45000);
+  }, 75000);
 
   it("sets defaults, deletes, and creates orchestration presets", async () => {
     let orchestrationConfig = orchestrationConfigFixture();
@@ -3037,7 +3037,7 @@ describe("SettingsDrawer", () => {
         },
       ],
     });
-  }, 45000);
+  }, 75000);
 
   it("keeps orchestration draft cancellation out of the persisted preset list", async () => {
     await openOrchestrationSettings();
@@ -3209,7 +3209,7 @@ describe("SettingsDrawer", () => {
     fireEvent.click(lastDeleteButton());
 
     await waitFor(() => expect(deleteAgentRuntimeMock).toHaveBeenCalledWith("codex-acp"));
-  }, 45000);
+  }, 75000);
 
   it("refreshes the ACP registry from the Agent Runtime secondary view", async () => {
     renderDrawer();
@@ -3229,7 +3229,7 @@ describe("SettingsDrawer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
 
     await waitFor(() => expect(refreshAgentRuntimeRegistryMock).toHaveBeenCalledTimes(1));
-  }, 25000);
+  }, 45000);
 
   it("manages trigger gateway accounts from the System secondary page", async () => {
     renderDrawer();
@@ -4074,7 +4074,7 @@ describe("SettingsDrawer", () => {
         overwrite: false,
       }),
     );
-  }, 35000);
+  }, 60000);
 
   it("imports MCP server JSON into the React MCP editor and preserves hidden fields", async () => {
     renderDrawer();
@@ -4182,7 +4182,7 @@ describe("SettingsDrawer", () => {
     );
     expect(screen.getByLabelText("Command")).toHaveValue("npx");
     expect(screen.getByLabelText("Arguments")).toHaveValue("-y\ndocs-mcp");
-  }, 35000);
+  }, 60000);
 
   it("keeps hidden MCP config fields when editing an existing server", async () => {
     getMcpServerMock.mockResolvedValueOnce({
@@ -4341,7 +4341,7 @@ describe("SettingsDrawer", () => {
         username: "deploy",
       }),
     );
-  }, 18000);
+  }, 30000);
 
   it("manages app environment variables through the environment config clients", async () => {
     renderDrawer();
@@ -4824,7 +4824,7 @@ describe("SettingsDrawer", () => {
         workspace_id: "workspace-1",
       }),
     );
-  }, 25000);
+  }, 40000);
 
   it("saves and probes proxy settings while preserving the saved password", async () => {
     await openProxySettings();

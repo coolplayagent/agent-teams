@@ -990,7 +990,7 @@ function FeishuTriggerForm({
       layout="vertical"
       onFinish={onSubmit}
     >
-      <div className="at-settings-card-list">
+      <div className="at-settings-form-layout">
         <div className="at-settings-form-card-layout">
           <Typography.Text strong>{t("settingsTriggersAppConfig")}</Typography.Text>
           <Form.Item

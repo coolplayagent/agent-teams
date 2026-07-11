@@ -52,15 +52,38 @@ describe("messageExport", () => {
     ]);
 
     expect(html).toContain("session/&lt;one&gt;");
-    expect(html).toContain("Round 1 prompt");
+    expect(html).toContain("data-kind=\"user\"");
     expect(html).toContain("User prompt");
     expect(html).toContain("Writer");
     expect(html).toContain("First part");
-    expect(html).toContain("Tool call: execute_command");
+    expect(html).toContain("data-kind=\"tool\"");
+    expect(html).toContain("execute_command");
     expect(html).toContain("&quot;cmd&quot;: &quot;npm test&quot;");
     expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
-    expect(html).toContain("User injection");
+    expect(html).toContain("Inserted message");
     expect(html).toContain("Injected note");
+    expect(html).toContain("<!doctype html>");
+    expect(html).not.toContain("relay-teams.session-transcript");
+    expect(html).not.toContain("<script>alert(1)</script>");
+  });
+
+  it("renders readable Markdown and escaped code without executable markup", () => {
+    const html = buildMessagesHtml("session-1", [{
+      coordinator_messages: [{
+        message: { parts: [{
+          content: "**Result**\n\n- one\n- two\n\n```html\n<img src=x onerror=alert(1)>\n```",
+          part_kind: "text",
+        }] },
+        role: "assistant",
+      }],
+      run_id: "run-1",
+    }]);
+
+    const document = new DOMParser().parseFromString(html, "text/html");
+    expect(document.querySelector(".entry[data-kind='assistant'] strong")?.textContent).toBe("Result");
+    expect(document.querySelectorAll(".entry li")).toHaveLength(2);
+    expect(document.querySelector("pre code")?.textContent).toContain("<img src=x");
+    expect(document.querySelector("img")).toBeNull();
   });
 
   it("exports coordinator messages that store content on the nested message object", () => {
@@ -99,7 +122,7 @@ describe("messageExport", () => {
       },
     ]);
 
-    expect(html).toContain("Round 1 prompt");
+    expect(html).toContain("data-kind=\"user\"");
     expect(html).toContain("[image: screenshot.png]");
     expect(html).toContain("Type: image/png");
     expect(html).toContain("URL: https://example.test/assets/asset-1");
@@ -196,21 +219,19 @@ describe("messageExport", () => {
       },
     ]);
 
-    expect(html).toContain("Round 1 pending approvals");
-    expect(html).toContain("1 pending tool approval(s).");
-    expect(html).toContain("Round 1 pending user questions");
-    expect(html).toContain("2 pending user question(s).");
-    expect(html).toContain("Round 1 retry 1");
-    expect(html).toContain("Kind: retry");
-    expect(html).toContain("Phase: scheduled");
-    expect(html).toContain("Attempt: 3/5");
-    expect(html).toContain("Retry delay: 2500ms");
-    expect(html).toContain("Error code: rate_limit");
-    expect(html).toContain("Error: Try again later");
-    expect(html).toContain("Active: true");
-    expect(html).toContain("Round 1 retry 2");
-    expect(html).toContain("Kind: fallback");
-    expect(html).toContain("Target profile: secondary");
+    expect(html).toContain("Pending approvals: 1");
+    expect(html).toContain("Pending questions: 2");
+    expect(html).toContain("Retry 1");
+    expect(html).toContain("&quot;kind&quot;: &quot;retry&quot;");
+    expect(html).toContain("&quot;phase&quot;: &quot;scheduled&quot;");
+    expect(html).toContain("&quot;attempt_number&quot;: 3");
+    expect(html).toContain("&quot;retry_in_ms&quot;: 2500");
+    expect(html).toContain("&quot;error_code&quot;: &quot;rate_limit&quot;");
+    expect(html).toContain("&quot;error_message&quot;: &quot;Try again later&quot;");
+    expect(html).toContain("&quot;is_active&quot;: true");
+    expect(html).toContain("Retry 2");
+    expect(html).toContain("&quot;kind&quot;: &quot;fallback&quot;");
+    expect(html).toContain("&quot;to_profile_id&quot;: &quot;secondary&quot;");
   });
 
   it("downloads the HTML transcript", async () => {

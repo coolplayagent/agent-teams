@@ -11,6 +11,11 @@ import {
   type SessionRoundMessagePart,
   type UrlMediaPart,
 } from "../../api/contracts";
+import {
+  buildMessageTranscript,
+  type MessageTranscript,
+  type TranscriptEntry,
+} from "./messageTranscript";
 
 export type MessageExportFormat = "html" | "png";
 
@@ -71,7 +76,8 @@ export function buildMessagesHtml(
   sessionId: string,
   rounds: SessionRound[],
 ): string {
-  const rows = rounds.map(roundHtml).join("");
+  const transcript = buildMessageTranscript(sessionId, rounds);
+  const rows = transcript.rounds.map(transcriptRoundHtml).join("");
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -79,32 +85,104 @@ export function buildMessagesHtml(
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${escapeHtml(sessionId)} transcript</title>
   <style>
-    body { margin: 32px; font-family: sans-serif; color: #20231f; background: #f6f6f3; }
-    main { max-width: 960px; margin: 0 auto; }
-    h1 { margin: 0 0 8px; font-size: 22px; line-height: 1.3; }
-    .meta { margin: 0 0 24px; color: #62665f; font-size: 12px; }
-    .message-export-turn { padding: 18px 0 8px; border-top: 1px solid #d8d8d0; }
-    .message-export-turn-header { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
-    .message-export-turn-title { margin: 0; font-size: 15px; }
-    .message-export-turn-meta { color: #62665f; font-size: 12px; text-align: right; }
-    .message-export-user,
-    .message-export-agent,
-    .message-export-status { padding: 10px 0 10px 14px; border-left: 2px solid #d8d8d0; }
-    .message-export-user { border-left-color: #2f6f5e; }
-    .message-export-agent { border-left-color: #8a8d85; }
-    .message-export-status { border-left-color: #c2c2b8; }
-    .role { color: #62665f; font-size: 12px; margin-bottom: 6px; }
-    pre { margin: 0; white-space: pre-wrap; font: inherit; line-height: 1.5; }
+    :root { color-scheme: light dark; --bg: #f5f6f4; --panel: #fff; --text: #20231f; --muted: #6b7069; --line: #dfe1dc; --accent: #2563eb; --code: #f1f3ef; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #171917; --panel: #222522; --text: #eef0eb; --muted: #abb0a8; --line: #3a3e39; --accent: #7ca8ff; --code: #161816; } }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 15px/1.6 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--text); background: var(--bg); }
+    main { width: min(920px, calc(100% - 32px)); margin: 32px auto 64px; }
+    .transcript-header { margin-bottom: 24px; }
+    h1 { margin: 0 0 4px; overflow-wrap: anywhere; font-size: 24px; line-height: 1.3; }
+    .meta { margin: 0; color: var(--muted); font-size: 12px; }
+    .round { margin-top: 18px; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
+    .round-header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+    .round-title { margin: 0; font-size: 15px; }
+    .entry { margin-top: 12px; padding: 12px 14px; border-left: 3px solid var(--line); border-radius: 7px; background: color-mix(in srgb, var(--panel) 94%, var(--line)); }
+    .entry[data-kind="user"], .entry[data-kind="injection"] { border-left-color: var(--accent); }
+    .entry[data-kind="thinking"] { opacity: .82; }
+    .entry[data-kind="tool"], .entry[data-kind="question"] { background: var(--code); }
+    .entry-head { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 6px; color: var(--muted); font-size: 12px; }
+    .entry-label { color: var(--text); font-weight: 650; }
+    .content > :first-child { margin-top: 0; } .content > :last-child { margin-bottom: 0; }
+    .content p, .content ul, .content ol, .content pre { margin: 8px 0; }
+    pre, code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+    pre { overflow-x: auto; padding: 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--code); white-space: pre-wrap; overflow-wrap: anywhere; }
+    code { padding: 1px 4px; border-radius: 4px; background: var(--code); }
+    pre code { padding: 0; background: transparent; }
+    @media print { body { background: #fff; } main { width: 100%; margin: 0; } .round { break-inside: avoid; } }
   </style>
 </head>
 <body>
   <main>
-    <h1>${escapeHtml(sessionId)}</h1>
-    <p class="meta">Exported ${escapeHtml(new Date().toLocaleString())}</p>
+    <header class="transcript-header">
+      <h1>${escapeHtml(sessionId)}</h1>
+      <p class="meta">${transcript.entries.length} entries · Exported ${escapeHtml(formatExportTime(transcript.exportedAt))}</p>
+    </header>
     ${rows || '<p class="meta">No messages.</p>'}
   </main>
 </body>
 </html>`;
+}
+
+function transcriptRoundHtml(round: MessageTranscript["rounds"][number]): string {
+  const meta = [round.createdAt ? formatExportTime(round.createdAt) : "", round.status ?? ""]
+    .filter(Boolean)
+    .join(" · ");
+  return `<section class="round" data-run-id="${escapeHtml(round.runId)}">
+    <header class="round-header">
+      <h2 class="round-title">Round ${round.index + 1}</h2>
+      <span class="meta">${escapeHtml(meta)}</span>
+    </header>
+    ${round.entries.map(transcriptEntryHtml).join("")}
+  </section>`;
+}
+
+function transcriptEntryHtml(entry: TranscriptEntry): string {
+  const time = entry.createdAt ? formatExportTime(entry.createdAt) : "";
+  const content = entry.kind === "tool" || entry.kind === "question" || entry.kind === "status"
+    ? `<pre><code>${escapeHtml(entry.text)}</code></pre>`
+    : renderSafeMarkdown(entry.text);
+  return `<article class="entry" data-kind="${entry.kind}" data-sequence="${entry.sequence}">
+    <header class="entry-head">
+      <span class="entry-label">${escapeHtml(entry.label)}</span>
+      <time>${escapeHtml(time)}</time>
+    </header>
+    <div class="content">${content}</div>
+  </article>`;
+}
+
+function renderSafeMarkdown(markdown: string): string {
+  const codeBlocks: string[] = [];
+  const withoutCode = markdown.replace(/```([^\n]*)\n([\s\S]*?)```/g, (_match, language: string, code: string) => {
+    const token = `MESSAGE_EXPORT_CODE_BLOCK_${codeBlocks.length}`;
+    const languageClass = language.trim()
+      ? ` class="language-${escapeHtml(language.trim().replace(/[^a-zA-Z0-9_-]/g, ""))}"`
+      : "";
+    codeBlocks.push(`<pre><code${languageClass}>${escapeHtml(code.replace(/\n$/, ""))}</code></pre>`);
+    return `\n${token}\n`;
+  });
+  const escaped = escapeHtml(withoutCode)
+    .replace(/`([^`\n]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
+  return escaped
+    .split(/\n{2,}/)
+    .map((block) => {
+      const trimmed = block.trim();
+      const codeIndex = codeBlocks.findIndex((_value, index) => trimmed === `MESSAGE_EXPORT_CODE_BLOCK_${index}`);
+      if (codeIndex >= 0) {
+        return codeBlocks[codeIndex] ?? "";
+      }
+      const lines = trimmed.split("\n");
+      if (lines.every((line) => /^[-*] /.test(line))) {
+        return `<ul>${lines.map((line) => `<li>${line.slice(2)}</li>`).join("")}</ul>`;
+      }
+      return `<p>${lines.join("<br />")}</p>`;
+    })
+    .join("");
+}
+
+function formatExportTime(value: string): string {
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? new Date(timestamp).toLocaleString() : value;
 }
 
 export async function buildMessagesPngBlobs(

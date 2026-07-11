@@ -1,10 +1,15 @@
 import {
+  type BinaryMediaPart,
   contentPartText,
+  type ContentMediaRefPart,
   type ContentPart,
+  type InlineMediaPart,
   type JsonValue,
+  type LegacyContentMediaRefPart,
   type SessionRound,
   type SessionRoundMessage,
   type SessionRoundMessagePart,
+  type UrlMediaPart,
 } from "../../api/contracts";
 
 export const MESSAGE_TRANSCRIPT_SCHEMA = "relay-teams.session-transcript";
@@ -286,20 +291,31 @@ function projectRoundStatus(
       ? `Pending questions: ${round.pending_user_question_count}`
       : "",
   ].filter(Boolean);
-  if (details.length === 0) {
-    return [];
-  }
-  return [{
-    createdAt: round.run_updated_at ?? undefined,
-    id: `${round.run_id}:status`,
-    kind: "status",
-    label: "Run status",
-    metadata: { status: round.run_status ?? undefined },
-    roundIndex,
-    runId: round.run_id,
-    sequence: firstSequence,
-    text: details.join("\n"),
-  }];
+  const entries: TranscriptEntry[] = details.length === 0 ? [] : [{
+      createdAt: round.run_updated_at ?? undefined,
+      id: `${round.run_id}:status`,
+      kind: "status",
+      label: "Run status",
+      metadata: { status: round.run_status ?? undefined },
+      roundIndex,
+      runId: round.run_id,
+      sequence: firstSequence,
+      text: details.join("\n"),
+    }];
+  (round.retry_events ?? []).forEach((event, index) => {
+    entries.push({
+      createdAt: round.run_updated_at ?? undefined,
+      id: `${round.run_id}:retry:${index}`,
+      kind: "status",
+      label: `Retry ${index + 1}`,
+      metadata: { entryType: "retry" },
+      roundIndex,
+      runId: round.run_id,
+      sequence: firstSequence + entries.length,
+      text: jsonText(event),
+    });
+  });
+  return entries;
 }
 
 function messageKind(message: SessionRoundMessage): TranscriptEntryKind {
@@ -338,9 +354,82 @@ function messageText(message: SessionRoundMessage): string {
 
 function contentPartsText(parts: ContentPart[] | undefined): string {
   return (parts ?? [])
-    .map((part) => contentPartText(part))
+    .map(contentPartDescription)
     .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
     .join("\n\n");
+}
+
+function contentPartDescription(part: ContentPart): string | null {
+  const text = contentPartText(part);
+  if (typeof text === "string" && text.trim()) {
+    return text;
+  }
+  if (isContentMediaRefPart(part)) {
+    return mediaDescription(part.modality, part.name, part.mime_type, part.url, part.asset_id);
+  }
+  if (isLegacyContentMediaRefPart(part)) {
+    return mediaDescription(part.media_type, part.name, undefined, part.url);
+  }
+  if (isInlineMediaPart(part)) {
+    return mediaDescription(
+      part.modality,
+      part.name,
+      part.mime_type,
+      `data:${part.mime_type};base64,${part.base64_data}`,
+    );
+  }
+  if (isBinaryMediaPart(part)) {
+    return mediaDescription(
+      mediaModality(part.media_type),
+      part.name,
+      part.media_type,
+      `data:${part.media_type};base64,${part.data}`,
+    );
+  }
+  if (isUrlMediaPart(part)) {
+    return mediaDescription(part.kind.replace("-url", ""), part.name, part.media_type, part.url);
+  }
+  return null;
+}
+
+function mediaDescription(
+  modality: string | undefined,
+  name: string | undefined,
+  mimeType: string | undefined,
+  url: string | undefined,
+  assetId?: string,
+): string {
+  return [
+    `[${normalizedText(modality) || mediaModality(mimeType) || "media"}: ${normalizedText(name) || "attachment"}]`,
+    mimeType ? `Type: ${mimeType}` : "",
+    assetId ? `Asset: ${assetId}` : "",
+    url ? `URL: ${url}` : "",
+  ].filter(Boolean).join("\n");
+}
+
+function mediaModality(mimeType: string | undefined): string {
+  return normalizedText(mimeType).split("/", 1)[0] ?? "media";
+}
+
+function isContentMediaRefPart(part: ContentPart): part is ContentMediaRefPart {
+  return "kind" in part && part.kind === "media_ref";
+}
+
+function isLegacyContentMediaRefPart(part: ContentPart): part is LegacyContentMediaRefPart {
+  return "part_kind" in part && part.part_kind === "media_ref";
+}
+
+function isInlineMediaPart(part: ContentPart): part is InlineMediaPart {
+  return "kind" in part && part.kind === "inline_media";
+}
+
+function isBinaryMediaPart(part: ContentPart): part is BinaryMediaPart {
+  return "kind" in part && part.kind === "binary";
+}
+
+function isUrlMediaPart(part: ContentPart): part is UrlMediaPart {
+  return "kind" in part
+    && (part.kind === "image-url" || part.kind === "audio-url" || part.kind === "video-url");
 }
 
 function isQuestionTool(name: string): boolean {

@@ -22,6 +22,7 @@ export function SettingsDrawer({
     <Modal
       centered
       className="at-settings-modal"
+      classNames={{ body: "at-scroll-region" }}
       destroyOnHidden
       footer={null}
       maskClosable={false}

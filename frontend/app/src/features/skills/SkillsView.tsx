@@ -657,6 +657,7 @@ function SkillInstallModal({
     <Modal
       centered
       className="at-skills-modal"
+      classNames={{ body: "at-scroll-region" }}
       destroyOnHidden
       footer={null}
       onCancel={onClose}
@@ -808,6 +809,7 @@ function ClawHubSettingsModal({
     <Modal
       centered
       className="at-skills-modal"
+      classNames={{ body: "at-scroll-region" }}
       destroyOnHidden
       footer={null}
       onCancel={onClose}
@@ -916,6 +918,7 @@ function SkillDetailModal({
     <Modal
       centered
       className="at-skills-detail-modal"
+      classNames={{ body: "at-scroll-region" }}
       destroyOnHidden
       footer={null}
       onCancel={onClose}

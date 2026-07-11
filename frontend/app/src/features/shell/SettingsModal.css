@@ -27,7 +27,30 @@
 .at-settings-modal .ant-modal-body {
   flex: 1 1 auto;
   min-height: 0;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.at-settings-modal .at-settings-center {
+  height: auto;
+  min-height: 100%;
+  align-items: start;
+}
+
+.at-settings-modal .at-settings-nav {
+  position: sticky;
+  top: 0;
+  max-height: none;
+  overflow: visible;
+}
+
+.at-settings-modal .at-settings-content,
+.at-settings-modal .at-settings-section,
+.at-settings-modal .at-settings-section-body {
+  height: auto;
+  min-height: 0;
+  overflow: visible;
 }
 
 @media (max-width: 640px) {
@@ -41,5 +64,10 @@
   .at-settings-modal .ant-modal-content {
     height: calc(100dvh - 16px);
     max-height: calc(100dvh - 16px);
+  }
+
+  .at-settings-modal .at-settings-nav {
+    overflow-x: auto;
+    overflow-y: hidden;
   }
 }

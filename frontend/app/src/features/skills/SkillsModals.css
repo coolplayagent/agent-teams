@@ -11,6 +11,11 @@
   overscroll-behavior: contain;
 }
 
+.at-skills-detail-modal .at-skills-detail-markdown {
+  max-height: none;
+  overflow: visible;
+}
+
 @media (max-width: 640px) {
   .at-skills-modal,
   .at-skills-detail-modal {

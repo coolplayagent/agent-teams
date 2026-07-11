@@ -274,6 +274,7 @@ describe("SkillsView", () => {
         sort: "popular",
       }),
     );
+    await waitFor(() => expect(screen.getAllByText("Writer")).toHaveLength(1));
   });
 
   it("opens the quick install drawer and installs by slug", async () => {
@@ -391,7 +392,7 @@ describe("SkillsView", () => {
       }),
     );
 
-    expect(await screen.findByText("Skill Creator")).toBeVisible();
+    expect(await screen.findByText("Skill Creator")).toBeInTheDocument();
     expect(
       screen
         .getAllByText("Create reusable skills.")

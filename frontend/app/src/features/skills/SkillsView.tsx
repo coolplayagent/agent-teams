@@ -137,7 +137,10 @@ export function SkillsView() {
     () => filterRuntimeSkills(installedSkills, query),
     [installedSkills, query],
   );
-  const marketItems = marketQuery.data?.pages.flatMap((page) => page.items) ?? [];
+  const marketItems = useMemo(
+    () => uniqueMarketItems(marketQuery.data?.pages.flatMap((page) => page.items) ?? []),
+    [marketQuery.data],
+  );
 
   const installMutation = useMutation({
     mutationFn: (item: ClawHubSkillMarketSearchItem) =>
@@ -392,6 +395,16 @@ export function SkillsView() {
       />
     </section>
   );
+}
+
+function uniqueMarketItems(
+  items: ClawHubSkillMarketSearchItem[],
+): ClawHubSkillMarketSearchItem[] {
+  const itemsByVersion = new Map<string, ClawHubSkillMarketSearchItem>();
+  for (const item of items) {
+    itemsByVersion.set(`${item.slug}:${item.version ?? ""}`, item);
+  }
+  return [...itemsByVersion.values()];
 }
 
 function SkillsMarketPanel({

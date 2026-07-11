@@ -58,6 +58,7 @@ import { EnvironmentSettingsSection } from "./EnvironmentSettingsSection";
 import { GitHubSettingsSection } from "./GitHubSettingsSection";
 import { HooksSettingsSection } from "./HooksSettingsSection";
 import { McpSettingsSection } from "./McpSettingsSection";
+import { ModelCatalogPicker } from "./ModelCatalogPicker";
 import { NotificationSettingsSection } from "./NotificationSettingsSection";
 import { OrchestrationSettingsSection } from "./OrchestrationSettingsSection";
 import { ProxySettingsSection } from "./ProxySettingsSection";
@@ -1746,127 +1747,6 @@ function ModelProfileDetail({
   );
 }
 
-function ModelCatalogPicker({
-  catalog,
-  error,
-  loading,
-  onRefresh,
-  onSelect,
-  selectedModelId,
-  selectedProviderId,
-}: {
-  catalog: ModelCatalogResult | undefined;
-  error: Error | null;
-  loading: boolean;
-  onRefresh: () => void;
-  onSelect: (provider: ModelCatalogProvider, model: ModelCatalogModel) => void;
-  selectedModelId: string;
-  selectedProviderId: string;
-}) {
-  const t = useTranslations();
-  const [providerFilter, setProviderFilter] = useState("");
-  const [modelFilter, setModelFilter] = useState("");
-  const providers = catalog?.providers ?? [];
-  const filteredProviders = providers.filter((provider) =>
-    textIncludes(`${provider.name} ${provider.id}`, providerFilter),
-  );
-  const activeProvider =
-    providers.find((provider) => provider.id === selectedProviderId) ??
-    filteredProviders[0] ??
-    null;
-  const filteredModels = (activeProvider?.models ?? []).filter((model) =>
-    textIncludes(`${model.name} ${model.id} ${model.family ?? ""}`, modelFilter),
-  );
-  const catalogMessage = catalogStatusText(catalog, t);
-
-  return (
-    <div className="at-model-catalog-panel">
-      <div className="at-model-catalog-header">
-        <div>
-          <Typography.Text strong>{t("settingsModelCatalogTitle")}</Typography.Text>
-          <Typography.Text className="at-model-catalog-status">
-            {error !== null
-              ? t("settingsModelCatalogFailed")
-              : catalogMessage}
-          </Typography.Text>
-        </div>
-        <Button loading={loading} onClick={onRefresh} size="small">
-          {t("settingsRefresh")}
-        </Button>
-      </div>
-      <div className="at-model-catalog-grid">
-        <div className="at-model-catalog-column">
-          <Input
-            aria-label={t("settingsModelCatalogProviderSearch")}
-            onChange={(event) => setProviderFilter(event.target.value)}
-            placeholder={t("settingsModelCatalogProviderSearch")}
-            value={providerFilter}
-          />
-          <div className="at-model-catalog-list">
-            {filteredProviders.length > 0 ? (
-              filteredProviders.map((provider) => (
-                <button
-                  className={
-                    provider.id === activeProvider?.id
-                      ? "at-model-catalog-option is-active"
-                      : "at-model-catalog-option"
-                  }
-                  key={provider.id}
-                  onClick={() => {
-                    const firstModel = provider.models?.[0];
-                    if (firstModel !== undefined) {
-                      onSelect(provider, firstModel);
-                    }
-                  }}
-                  type="button"
-                >
-                  <span>{provider.name}</span>
-                  <Typography.Text>{provider.runtime_provider ?? "-"}</Typography.Text>
-                </button>
-              ))
-            ) : (
-              <div className="at-settings-empty">{t("settingsModelCatalogEmpty")}</div>
-            )}
-          </div>
-        </div>
-        <div className="at-model-catalog-column">
-          <Input
-            aria-label={t("settingsModelCatalogModelSearch")}
-            onChange={(event) => setModelFilter(event.target.value)}
-            placeholder={t("settingsModelCatalogModelSearch")}
-            value={modelFilter}
-          />
-          <div className="at-model-catalog-list">
-            {activeProvider === null ? (
-              <div className="at-settings-empty">
-                {t("settingsModelCatalogSelectProvider")}
-              </div>
-            ) : filteredModels.length > 0 ? (
-              filteredModels.map((model) => (
-                <button
-                  className={
-                    model.id === selectedModelId
-                      ? "at-model-catalog-option is-active"
-                      : "at-model-catalog-option"
-                  }
-                  key={model.id}
-                  onClick={() => onSelect(activeProvider, model)}
-                  type="button"
-                >
-                  <span>{model.name}</span>
-                  <Typography.Text>{modelCatalogModelMeta(model)}</Typography.Text>
-                </button>
-              ))
-            ) : (
-              <div className="at-settings-empty">{t("settingsModelCatalogNoModels")}</div>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function buildModelProfileSaveRequest(
   profile: ModelProfileRecord,
   options: {
@@ -2237,52 +2117,6 @@ function modelCatalogBaseUrl(provider: ModelCatalogProvider): string {
     return "https://codeagentcli.rnd.huawei.com/codeAgentPro";
   }
   return "";
-}
-
-function catalogStatusText(
-  catalog: ModelCatalogResult | undefined,
-  t: ReturnType<typeof useTranslations>,
-): string {
-  if (catalog === undefined) {
-    return t("settingsModelCatalogLoading");
-  }
-  if (!catalog.ok) {
-    return catalog.error_message ?? t("settingsModelCatalogFailed");
-  }
-  const providers = catalog.providers ?? [];
-  const modelCount = providers.reduce(
-    (total, provider) => total + (provider.models?.length ?? 0),
-    0,
-  );
-  return t("settingsModelCatalogLoaded", {
-    models: String(modelCount),
-    providers: String(providers.length),
-  });
-}
-
-function modelCatalogModelMeta(model: ModelCatalogModel): string {
-  const parts: string[] = [];
-  if (typeof model.context_window === "number") {
-    parts.push(`${model.context_window} ctx`);
-  }
-  if (typeof model.output_limit === "number") {
-    parts.push(`${model.output_limit} out`);
-  }
-  if (model.reasoning === true) {
-    parts.push("reasoning");
-  }
-  if (model.tool_call === true) {
-    parts.push("tools");
-  }
-  return parts.join(" / ") || model.id;
-}
-
-function textIncludes(value: string, query: string): boolean {
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-  if (!normalizedQuery) {
-    return true;
-  }
-  return value.toLocaleLowerCase().includes(normalizedQuery);
 }
 
 function formatModelProbeResult(

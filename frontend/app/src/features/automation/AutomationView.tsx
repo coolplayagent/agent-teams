@@ -53,8 +53,10 @@ import type {
   WorkspaceRecord,
 } from "../../api/contracts";
 import { useTranslations, type Translate } from "../../i18n";
+import { GitHubSettingsSection } from "../settings/GitHubSettingsSection";
 
 interface AutomationViewProps {
+  /** @deprecated GitHub configuration now renders inside the automation workspace. */
   onOpenGitHubSettings?: () => void;
   onSessionSelected?: (sessionId: string, workspaceId?: string | null) => void;
 }
@@ -84,7 +86,6 @@ interface AutomationEditorValues {
 }
 
 export function AutomationView({
-  onOpenGitHubSettings,
   onSessionSelected,
 }: AutomationViewProps) {
   const { message, modal } = App.useApp();
@@ -95,6 +96,15 @@ export function AutomationView({
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"github" | "schedules">("schedules");
+  const [githubVisited, setGitHubVisited] = useState(false);
+
+  const selectTab = (tab: "github" | "schedules") => {
+    setActiveTab(tab);
+    if (tab === "github") {
+      setGitHubVisited(true);
+    }
+  };
 
   const projectsQuery = useQuery({
     queryKey: ["automation", "projects"],
@@ -327,17 +337,27 @@ export function AutomationView({
     return (
       <div className="at-automation-view">
         <AutomationToolbar
+          activeTab={activeTab}
           filter={filter}
           onCreate={openCreate}
           onFilterChange={setFilter}
-          onOpenGitHubSettings={onOpenGitHubSettings}
+          onTabChange={selectTab}
           onRefresh={() => void refreshAutomation(queryClient)}
           refreshing={projectsQuery.isFetching}
           t={t}
         />
-        <div className="at-automation-loading">
+        <div
+          aria-labelledby="automation-schedules-tab"
+          className="at-automation-loading"
+          hidden={activeTab !== "schedules"}
+          id="automation-schedules-panel"
+          role="tabpanel"
+        >
           <Skeleton active paragraph={{ rows: 8 }} />
         </div>
+        {githubVisited ? (
+          <AutomationGitHubPanel active={activeTab === "github"} />
+        ) : null}
         <AutomationCreateModal
           form={createForm}
           loading={createMutation.isPending || updateMutation.isPending}
@@ -362,20 +382,30 @@ export function AutomationView({
     return (
       <div className="at-automation-view">
         <AutomationToolbar
+          activeTab={activeTab}
           filter={filter}
           onCreate={openCreate}
           onFilterChange={setFilter}
-          onOpenGitHubSettings={onOpenGitHubSettings}
+          onTabChange={selectTab}
           onRefresh={() => void refreshAutomation(queryClient)}
           refreshing={projectsQuery.isFetching}
           t={t}
         />
-        <div className="at-automation-state">
+        <div
+          aria-labelledby="automation-schedules-tab"
+          className="at-automation-state"
+          hidden={activeTab !== "schedules"}
+          id="automation-schedules-panel"
+          role="tabpanel"
+        >
           <Empty
             description={t("automationLoadError")}
             image={Empty.PRESENTED_IMAGE_SIMPLE}
           />
         </div>
+        {githubVisited ? (
+          <AutomationGitHubPanel active={activeTab === "github"} />
+        ) : null}
         <AutomationCreateModal
           form={createForm}
           loading={createMutation.isPending || updateMutation.isPending}
@@ -399,15 +429,22 @@ export function AutomationView({
   return (
     <div className="at-automation-view">
       <AutomationToolbar
+        activeTab={activeTab}
         filter={filter}
         onCreate={openCreate}
         onFilterChange={setFilter}
-        onOpenGitHubSettings={onOpenGitHubSettings}
+        onTabChange={selectTab}
         onRefresh={() => void refreshAutomation(queryClient)}
         refreshing={projectsQuery.isFetching}
         t={t}
       />
-      <div className="at-automation-content">
+      <div
+        aria-labelledby="automation-schedules-tab"
+        className="at-automation-content"
+        hidden={activeTab !== "schedules"}
+        id="automation-schedules-panel"
+        role="tabpanel"
+      >
         <aside className="at-automation-list" aria-label={t("automationProjects")}>
           {filteredProjects.length === 0 ? (
             <div className="at-automation-state">
@@ -503,6 +540,9 @@ export function AutomationView({
           )}
         </main>
       </div>
+      {githubVisited ? (
+        <AutomationGitHubPanel active={activeTab === "github"} />
+      ) : null}
       <AutomationCreateModal
         form={createForm}
         loading={createMutation.isPending || updateMutation.isPending}
@@ -524,18 +564,20 @@ export function AutomationView({
 }
 
 function AutomationToolbar({
+  activeTab,
   filter,
   onCreate,
   onFilterChange,
-  onOpenGitHubSettings,
+  onTabChange,
   onRefresh,
   refreshing,
   t,
 }: {
+  activeTab: "github" | "schedules";
   filter: string;
   onCreate: () => void;
   onFilterChange: (value: string) => void;
-  onOpenGitHubSettings?: () => void;
+  onTabChange: (tab: "github" | "schedules") => void;
   onRefresh: () => void;
   refreshing: boolean;
   t: Translate;
@@ -546,13 +588,22 @@ function AutomationToolbar({
         <h3>{t("automationTitle")}</h3>
         <Typography.Text type="secondary">{t("automationSubtitle")}</Typography.Text>
         <div className="at-automation-tabs" role="tablist">
-          <Button aria-selected="true" role="tab" size="small" type="text">
+          <Button
+            aria-controls="automation-schedules-panel"
+            aria-selected={activeTab === "schedules"}
+            id="automation-schedules-tab"
+            onClick={() => onTabChange("schedules")}
+            role="tab"
+            size="small"
+            type="text"
+          >
             {t("automationSchedules")}
           </Button>
           <Button
-            aria-selected="false"
-            disabled={onOpenGitHubSettings === undefined}
-            onClick={onOpenGitHubSettings}
+            aria-controls="automation-github-panel"
+            aria-selected={activeTab === "github"}
+            id="automation-github-tab"
+            onClick={() => onTabChange("github")}
             role="tab"
             size="small"
             type="text"
@@ -561,7 +612,7 @@ function AutomationToolbar({
           </Button>
         </div>
       </div>
-      <div className="at-automation-actions">
+      <div className="at-automation-actions" hidden={activeTab !== "schedules"}>
         <Input
           allowClear
           aria-label={t("automationSearchLabel")}
@@ -584,6 +635,20 @@ function AutomationToolbar({
         </Tooltip>
       </div>
     </div>
+  );
+}
+
+function AutomationGitHubPanel({ active }: { active: boolean }) {
+  return (
+    <section
+      aria-labelledby="automation-github-tab"
+      className="at-automation-github-panel"
+      hidden={!active}
+      id="automation-github-panel"
+      role="tabpanel"
+    >
+      <GitHubSettingsSection />
+    </section>
   );
 }
 

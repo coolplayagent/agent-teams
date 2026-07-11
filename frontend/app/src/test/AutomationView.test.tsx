@@ -44,6 +44,10 @@ vi.mock("../api/client", () => ({
   updateAutomationProject: vi.fn(),
 }));
 
+vi.mock("../features/settings/GitHubSettingsSection", () => ({
+  GitHubSettingsSection: () => <div>Inline GitHub configuration</div>,
+}));
+
 const createAutomationProjectMock = vi.mocked(createAutomationProject);
 const deleteAutomationProjectMock = vi.mocked(deleteAutomationProject);
 const disableAutomationProjectMock = vi.mocked(disableAutomationProject);
@@ -162,7 +166,7 @@ afterEach(() => {
 });
 
 describe("AutomationView", () => {
-  it("keeps Schedules primary and routes GitHub through its secondary entry", async () => {
+  it("keeps Schedules primary and renders GitHub inside the automation workspace", async () => {
     const onOpenGitHubSettings = vi.fn();
     renderAutomation(vi.fn(), onOpenGitHubSettings);
 
@@ -170,7 +174,16 @@ describe("AutomationView", () => {
       .toHaveAttribute("aria-selected", "true");
     fireEvent.click(screen.getByRole("tab", { name: "GitHub" }));
 
-    expect(onOpenGitHubSettings).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("tab", { name: "GitHub" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByText("Inline GitHub configuration")).toBeVisible();
+    expect(screen.getByRole("tabpanel", { name: "GitHub" })).toBeVisible();
+    expect(onOpenGitHubSettings).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Schedules" }));
+    expect(screen.getByRole("button", { name: /Daily triage/ })).toBeVisible();
   });
 
   it("renders real automation projects and selected project detail", async () => {

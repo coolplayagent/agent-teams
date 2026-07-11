@@ -1547,9 +1547,10 @@ describe("SettingsDrawer", () => {
       .closest("button");
     expect(defaultProfileRow).not.toBeNull();
     fireEvent.click(defaultProfileRow as HTMLElement);
-    fireEvent.click(await screen.findByText("Model capabilities"));
-    expect(await screen.findByText("Realtime speech")).toBeVisible();
-    expect(screen.getByText("image, text")).toBeVisible();
+    expect(await screen.findByLabelText("Image Input")).toBeInTheDocument();
+    expect(screen.getByText("Follow detection")).toBeVisible();
+    expect(screen.queryByText("Model capabilities")).toBeNull();
+    expect(screen.queryByText("Realtime speech")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(await screen.findByText("vision")).toBeVisible();
 

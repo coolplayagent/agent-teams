@@ -932,9 +932,19 @@ export function AppShell() {
             <NewSessionView
               initialWorkspaceId={selectedWorkspaceId}
               onCancel={() => openPrimaryShellView("chat", "replace")}
-              onCreated={(session) => {
+              onCreated={(session, run, promptText) => {
                 setSelectedWorkspaceId(session.workspace_id);
                 setSelectedSessionId(session.session_id);
+                if (run !== null) {
+                  runStreamController.startRunStream({
+                    ...(promptText ? { promptText } : {}),
+                    runId: run.run_id,
+                    sessionId: run.session_id,
+                    ...(run.target_role_id?.trim()
+                      ? { targetRoleId: run.target_role_id }
+                      : {}),
+                  });
+                }
                 openPrimaryShellView("chat", "replace");
               }}
               workspaces={workspacesQuery.data ?? []}

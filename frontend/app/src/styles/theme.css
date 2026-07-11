@@ -1078,6 +1078,10 @@ body {
   overflow: hidden;
 }
 
+.at-workspace-chat-shell[hidden] {
+  display: none;
+}
+
 .at-workspace-chat-shell.has-subagent-panel {
   grid-template-columns: minmax(480px, 1fr) 8px minmax(
       420px,
@@ -4485,32 +4489,37 @@ body {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  padding: 28px clamp(20px, 6vw, 80px);
+  padding: 20px clamp(16px, 4vw, 48px);
+}
+
+.at-new-session-form {
+  display: grid;
+  gap: 18px;
+  width: min(780px, 100%);
+  margin: 0 auto;
 }
 
 .at-new-session-header {
   display: grid;
   grid-template-columns: 32px minmax(0, 1fr);
   gap: 12px;
-  width: min(720px, 100%);
-  margin: 0 auto 20px;
+  align-items: start;
 }
 
 .at-new-session-header h2 {
   margin: 0 0 4px !important;
 }
 
-.at-new-session-card {
-  width: min(720px, 100%);
-  margin: 0 auto;
-}
-
-.at-new-session-card .ant-card-body {
+.at-new-session-grid,
+.at-new-session-advanced-grid {
   display: grid;
-  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px;
 }
 
-.at-new-session-card label {
+.at-new-session-grid label,
+.at-new-session-prompt,
+.at-new-session-advanced-grid label:not(.ant-checkbox-wrapper) {
   display: grid;
   gap: 6px;
   color: var(--at-text);
@@ -4518,19 +4527,70 @@ body {
   font-weight: 600;
 }
 
-.at-new-session-icon {
-  display: inline-flex;
+.at-new-session-grid-wide {
+  grid-column: 1 / -1;
+}
+
+.at-new-session-prompt textarea {
+  min-height: 148px;
+  resize: vertical;
+}
+
+.at-new-session-advanced {
+  border-top: 1px solid var(--at-border);
+  border-bottom: 1px solid var(--at-border);
+  padding: 10px 0;
+}
+
+.at-new-session-advanced summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--at-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.at-new-session-advanced-grid {
+  margin-top: 14px;
+}
+
+.at-new-session-toggle {
+  display: flex !important;
   align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
-  background: var(--at-surface-muted);
-  color: var(--at-primary);
+  justify-content: space-between;
 }
 
 .at-new-session-actions {
-  justify-self: end;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.at-new-session-error {
+  display: block;
+}
+
+@media (max-width: 640px) {
+  .at-new-session-view {
+    padding: 14px 12px;
+  }
+
+  .at-new-session-form {
+    gap: 14px;
+  }
+
+  .at-new-session-grid,
+  .at-new-session-advanced-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .at-new-session-grid-wide {
+    grid-column: auto;
+  }
+
+  .at-new-session-prompt textarea {
+    min-height: 120px;
+  }
 }
 
 .at-project-view {

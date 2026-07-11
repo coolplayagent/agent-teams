@@ -1,6 +1,7 @@
 import {
   Button,
   Layout,
+  Modal,
   Space,
   Tooltip,
   App,
@@ -14,7 +15,6 @@ import {
   Moon,
   PlugZap,
   RefreshCw,
-  Search,
   Settings,
   SquareKanban,
   Sun,
@@ -133,6 +133,7 @@ export function AppShell() {
   );
   const [subagentPanelResizing, setSubagentPanelResizing] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sessionSearchOpen, setSessionSearchOpen] = useState(false);
   const [settingsSystemPage, setSettingsSystemPage] =
     useState<SystemSettingsPage | null>(null);
   const terminalViewMarksRef = useRef(new Set<string>());
@@ -583,14 +584,6 @@ export function AppShell() {
         onSelect: () => openPrimaryShellView("board"),
       },
       {
-        active: !settingsOpen && activeView === "search",
-        icon: <Search size={15} />,
-        key: "search",
-        label: t("appSearch"),
-        onSelect: () => openPrimaryShellView("search"),
-        shortcut: "Ctrl+K",
-      },
-      {
         active: !settingsOpen && activeView === "connectors",
         icon: <PlugZap size={15} />,
         key: "connectors",
@@ -603,23 +596,6 @@ export function AppShell() {
         key: "memory",
         label: t("appMemory"),
         onSelect: () => openPrimaryShellView("memory"),
-      },
-      {
-        active: !settingsOpen && isObservabilityActive(activeView),
-        icon: <Activity size={15} />,
-        key: "observability",
-        label: t("appObservability"),
-        onSelect: () => openPrimaryShellView("observability"),
-      },
-      {
-        active: settingsOpen,
-        icon: <Settings size={15} />,
-        key: "settings",
-        label: t("appSettings"),
-        onSelect: () => {
-          setSettingsSystemPage(null);
-          setSettingsOpen(true);
-        },
       },
     ],
     [activeView, openPrimaryShellView, settingsOpen, t],
@@ -668,11 +644,11 @@ export function AppShell() {
         return;
       }
       event.preventDefault();
-      openPrimaryShellView("search");
+      setSessionSearchOpen(true);
     };
     window.addEventListener("keydown", handleSearchShortcut);
     return () => window.removeEventListener("keydown", handleSearchShortcut);
-  }, [openPrimaryShellView]);
+  }, []);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia(sidebarOverlayMediaQuery);
@@ -870,6 +846,7 @@ export function AppShell() {
             <SessionsSidebar
               backendStatus={sidebarBackendStatus}
               navigationItems={sidebarNavigationItems}
+              onOpenSessionSearch={() => setSessionSearchOpen(true)}
               onOpenWorkspaceView={() => openPrimaryShellView("workspace")}
               onSessionSelected={() => openPrimaryShellView("chat", "replace")}
               workspaceViewActive={activeView === "workspace"}
@@ -928,15 +905,6 @@ export function AppShell() {
             <WorkspaceProjectView
               onBack={() => openPrimaryShellView("chat", "replace")}
               selectedWorkspaceId={selectedWorkspaceId}
-            />
-          ) : activeView === "search" ? (
-            <SessionSearchView
-              hasError={sidebarSessionsQuery.isError || workspacesQuery.isError}
-              loading={sidebarSessionsQuery.isLoading || workspacesQuery.isLoading}
-              onSessionSelected={handleSearchSessionSelected}
-              selectedSessionId={selectedSessionId}
-              sessions={sidebarSessionsQuery.data ?? []}
-              workspaces={workspacesQuery.data ?? []}
             />
           ) : (
             <div
@@ -1005,6 +973,34 @@ export function AppShell() {
           setSettingsSystemPage(null);
         }}
       />
+      <Modal
+        afterOpenChange={(open) => {
+          if (open) {
+            document
+              .querySelector<HTMLInputElement>(
+                ".at-session-search-modal .at-session-search-input input",
+              )
+              ?.focus();
+          }
+        }}
+        centered
+        className="at-session-search-modal"
+        destroyOnHidden
+        footer={null}
+        onCancel={() => setSessionSearchOpen(false)}
+        open={sessionSearchOpen}
+        title={null}
+        width={960}
+      >
+        <SessionSearchView
+          hasError={sidebarSessionsQuery.isError || workspacesQuery.isError}
+          loading={sidebarSessionsQuery.isLoading || workspacesQuery.isLoading}
+          onSessionSelected={handleSearchSessionSelected}
+          selectedSessionId={selectedSessionId}
+          sessions={sidebarSessionsQuery.data ?? []}
+          workspaces={workspacesQuery.data ?? []}
+        />
+      </Modal>
     </Layout>
   );
 
@@ -1073,6 +1069,7 @@ export function AppShell() {
       setSelectedWorkspaceId(session.workspace_id);
     }
     setSelectedSessionId(session.session_id);
+    setSessionSearchOpen(false);
     openPrimaryShellView("chat", "replace");
   }
 

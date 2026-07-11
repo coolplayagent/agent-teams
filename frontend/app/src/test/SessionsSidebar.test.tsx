@@ -170,6 +170,21 @@ describe("SessionsSidebar", () => {
     await waitFor(() => expect(searchbox).toHaveFocus());
   });
 
+  it("places the dedicated session search action beside new session", async () => {
+    const openSessionSearch = vi.fn();
+
+    renderSidebar({ onOpenSessionSearch: openSessionSearch });
+
+    const newSession = await screen.findByRole("button", { name: "New session" });
+    const search = screen.getByRole("button", { name: "Search sessions" });
+    expect(newSession.parentElement).toHaveClass("at-sidebar-primary-actions");
+    expect(search.parentElement).toBe(newSession.parentElement);
+
+    fireEvent.click(search);
+
+    expect(openSessionSearch).toHaveBeenCalledTimes(1);
+  });
+
   it("recovers the complete workspace and session inventory after a load failure", async () => {
     listWorkspacesMock
       .mockRejectedValueOnce(new Error("workspace offline"))
@@ -1487,6 +1502,7 @@ function renderSidebar(props?: {
   activeSubagent?: ActiveSubagentSession | null;
   backendStatus?: SidebarBackendStatus;
   navigationItems?: SidebarNavigationItem[];
+  onOpenSessionSearch?: () => void;
   onOpenWorkspaceView?: () => void;
   onSessionSelected?: () => void;
   onSubagentSelected?: (subagent: ActiveSubagentSession) => void;
@@ -1508,6 +1524,7 @@ function renderSidebar(props?: {
             activeSubagent={props?.activeSubagent}
             backendStatus={props?.backendStatus}
             navigationItems={props?.navigationItems}
+            onOpenSessionSearch={props?.onOpenSessionSearch}
             onOpenWorkspaceView={props?.onOpenWorkspaceView}
             onSessionSelected={props?.onSessionSelected}
             onSubagentSelected={props?.onSubagentSelected}

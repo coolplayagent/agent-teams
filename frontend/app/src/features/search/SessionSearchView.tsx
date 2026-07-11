@@ -84,6 +84,7 @@ export function SessionSearchView({
         <Input
           allowClear
           aria-label={t("searchViewInputLabel")}
+          autoFocus
           className="at-session-search-input"
           onChange={(event) => {
             setQuery(event.target.value);

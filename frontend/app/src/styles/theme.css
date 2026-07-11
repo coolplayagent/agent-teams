@@ -345,6 +345,30 @@ body {
   height: 36px;
 }
 
+.at-sidebar-primary-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 36px;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.at-sidebar-open-search.ant-btn {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-color: var(--at-border);
+  background: var(--at-surface-muted);
+  box-shadow: none;
+  color: var(--at-text-muted);
+}
+
+.at-sidebar-open-search.ant-btn:hover,
+.at-sidebar-open-search.ant-btn:focus-visible {
+  border-color: var(--at-border-strong);
+  background: color-mix(in srgb, var(--at-surface-muted) 82%, var(--at-border));
+  color: var(--at-text);
+}
+
 .at-sidebar-new-session.ant-btn.ant-btn-primary {
   border-color: var(--at-border);
   background: var(--at-surface-muted);
@@ -4202,6 +4226,20 @@ body {
   overflow: hidden;
 }
 
+.at-session-search-modal .ant-modal-content {
+  height: min(680px, calc(100vh - 64px));
+  padding: 0;
+  overflow: hidden;
+}
+
+.at-session-search-modal .ant-modal-close {
+  z-index: 2;
+}
+
+.at-session-search-modal .ant-modal-body {
+  height: 100%;
+}
+
 .at-session-search-toolbar {
   flex: 0 0 auto;
   display: grid;
@@ -5384,6 +5422,10 @@ body {
   max-width: 100%;
   overflow-wrap: anywhere;
   line-height: var(--at-message-line-height);
+}
+
+.at-message-streaming-plain {
+  white-space: pre-wrap;
 }
 
 .at-message-markdown > :first-child {

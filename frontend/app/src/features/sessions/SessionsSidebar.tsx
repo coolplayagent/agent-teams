@@ -26,6 +26,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  Search,
   Trash2,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -110,6 +111,7 @@ interface SessionsSidebarProps {
   activeSubagent?: ActiveSubagentSession | null;
   backendStatus?: SidebarBackendStatus;
   navigationItems?: SidebarNavigationItem[];
+  onOpenSessionSearch?: () => void;
   onOpenWorkspaceView?: () => void;
   onSessionSelected?: () => void;
   onSubagentSelected?: (subagent: ActiveSubagentSession) => void;
@@ -166,6 +168,7 @@ export function SessionsSidebar({
   activeSubagent = null,
   backendStatus,
   navigationItems = [],
+  onOpenSessionSearch,
   onOpenWorkspaceView,
   onSessionSelected,
   onSubagentSelected,
@@ -529,17 +532,30 @@ export function SessionsSidebar({
 
   return (
     <div className="at-sidebar-inner">
-      <Button
-        block
-        className="at-sidebar-new-session"
-        disabled={workspaceOptions.length === 0 || !effectiveWorkspaceId.trim()}
-        icon={<Plus size={15} />}
-        loading={createSessionMutation.isPending}
-        onClick={() => createSessionMutation.mutate(effectiveWorkspaceId)}
-        type="primary"
-      >
-        {t("sidebarNewSession")}
-      </Button>
+      <div className="at-sidebar-primary-actions">
+        <Button
+          block
+          className="at-sidebar-new-session"
+          disabled={workspaceOptions.length === 0 || !effectiveWorkspaceId.trim()}
+          icon={<Plus size={15} />}
+          loading={createSessionMutation.isPending}
+          onClick={() => createSessionMutation.mutate(effectiveWorkspaceId)}
+          type="primary"
+        >
+          {t("sidebarNewSession")}
+        </Button>
+        {onOpenSessionSearch !== undefined ? (
+          <Tooltip title={`${t("sidebarSearchSessions")} (Ctrl+K)`}>
+            <Button
+              aria-label={t("sidebarSearchSessions")}
+              className="at-sidebar-open-search"
+              icon={<Search size={16} />}
+              onClick={onOpenSessionSearch}
+              type="default"
+            />
+          </Tooltip>
+        ) : null}
+      </div>
       {navigationItems.length > 0 ? (
         <nav aria-label={t("sidebarPrimaryNavigation")} className="at-sidebar-nav">
           {navigationItems.map((item) => (

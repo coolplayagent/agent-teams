@@ -19,3 +19,6 @@ The test is skipped unless `LIVE_BASE_URL` and `LIVE_SESSION_ID` are supplied. I
 does not mock API routes, refuses non-localhost URLs, scrolls both the prompt and
 transcript with wheel input, returns to the main session, reopens the subagent,
 checks for a page crash, and saves before/after/reopened screenshots.
+Each saved screenshot follows two animation frames, a short paint-settle delay, and
+a discarded warm-up capture so an Edge compositor transition frame is not treated
+as visual acceptance evidence.

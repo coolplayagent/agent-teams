@@ -52,10 +52,7 @@ test("scrolls and reopens a completed subagent from a live local deployment", as
   await expectScrollable(prompt, "live subagent prompt");
   await expectScrollable(timeline, "live subagent transcript");
 
-  await page.screenshot({
-    animations: "disabled",
-    path: screenshotPath("live-subagent-before-wheel.png", SCREENSHOT_FOLDER),
-  });
+  await captureStableScreenshot(page, "live-subagent-before-wheel.jpg");
 
   await wheelToBottom(page, prompt);
   const timelineBottomBefore = await bottomDistance(timeline);
@@ -69,10 +66,7 @@ test("scrolls and reopens a completed subagent from a live local deployment", as
     page,
     "live completed subagent scrolling must stay inside the side panel",
   );
-  await page.screenshot({
-    animations: "disabled",
-    path: screenshotPath("live-subagent-after-wheel.png", SCREENSHOT_FOLDER),
-  });
+  await captureStableScreenshot(page, "live-subagent-after-wheel.jpg");
 
   await panel.locator(".at-subagent-session-header button").click();
   await expect(panel).toHaveCount(0);
@@ -80,10 +74,7 @@ test("scrolls and reopens a completed subagent from a live local deployment", as
   await expect(panel).toBeVisible();
   await expect(panel.locator(".at-subagent-session-prompt")).toBeVisible();
   await expect(panel.locator(".at-timeline")).toBeVisible();
-  await page.screenshot({
-    animations: "disabled",
-    path: screenshotPath("live-subagent-reopened.png", SCREENSHOT_FOLDER),
-  });
+  await captureStableScreenshot(page, "live-subagent-reopened.jpg");
   expect(pageCrashed).toBe(false);
 });
 
@@ -162,4 +153,35 @@ async function bottomDistance(locator: Locator): Promise<number> {
   return locator.evaluate((element) =>
     element.scrollHeight - element.clientHeight - element.scrollTop
   );
+}
+
+async function captureStableScreenshot(
+  page: Page,
+  fileName: string,
+): Promise<void> {
+  const path = screenshotPath(fileName, SCREENSHOT_FOLDER);
+  await waitForStablePaint(page);
+  await page.screenshot({
+    animations: "disabled",
+    path,
+    quality: 92,
+    type: "jpeg",
+  });
+  await waitForStablePaint(page);
+  await page.screenshot({
+    animations: "disabled",
+    path,
+    quality: 92,
+    type: "jpeg",
+  });
+}
+
+async function waitForStablePaint(page: Page): Promise<void> {
+  await page.bringToFront();
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => resolve());
+    });
+  }));
+  await page.waitForTimeout(800);
 }

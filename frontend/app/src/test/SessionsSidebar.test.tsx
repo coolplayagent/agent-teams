@@ -710,6 +710,9 @@ describe("SessionsSidebar", () => {
 
     expect(deleteSessionMock).not.toHaveBeenCalled();
     expect(await screen.findByText(/Delete Alpha/)).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByText("Alpha").closest(".at-session-item"))
+      .toHaveClass("has-open-confirm");
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 
     await waitFor(() =>
@@ -762,6 +765,7 @@ describe("SessionsSidebar", () => {
 
     expect(deleteWorkspaceMock).not.toHaveBeenCalled();
     expect(await screen.findByText("Remove workspace")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(await screen.findByText(/Remove Extra Project/)).toBeInTheDocument();
     expect(await screen.findByLabelText("Also remove the workspace directory"))
       .not.toBeChecked();

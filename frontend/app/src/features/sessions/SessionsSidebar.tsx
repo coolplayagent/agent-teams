@@ -6,6 +6,7 @@ import {
   Empty,
   Input,
   Modal,
+  Popconfirm,
   Skeleton,
   Tooltip,
   Typography,
@@ -481,7 +482,11 @@ export function SessionsSidebar({
     return (
       <div className="at-session-stack" key={session.session_id}>
         <div
-          className={sessionItemClassName(selected, indicatorType)}
+          className={`${sessionItemClassName(selected, indicatorType)}${
+            deleteTarget?.session_id === session.session_id
+              ? " has-open-confirm"
+              : ""
+          }`}
           ref={selected ? selectedSessionItemRef : undefined}
         >
           <div className="at-session-copy">
@@ -515,17 +520,35 @@ export function SessionsSidebar({
                 type="text"
               />
             </Tooltip>
-            <Tooltip title={t("sidebarDeleteSession")}>
-              <Button
-                aria-label={t("sidebarDeleteSession")}
-                className="at-session-action-button"
-                danger
-                icon={<Trash2 size={13} />}
-                onClick={() => openDeleteSession(session)}
-                size="small"
-                type="text"
-              />
-            </Tooltip>
+            <Popconfirm
+              cancelText={t("sidebarDeleteCancel")}
+              description={t("sidebarDeleteMessage", {
+                label: sessionLabel(session) || session.session_id,
+              })}
+              okButtonProps={{ danger: true, loading: deleteSessionMutation.isPending }}
+              okText={t("sidebarDeleteConfirm")}
+              onConfirm={submitDeleteSession}
+              onOpenChange={(open) => {
+                if (open) {
+                  setDeleteTarget(session);
+                } else if (!deleteSessionMutation.isPending) {
+                  resetDeleteSession();
+                }
+              }}
+              open={deleteTarget?.session_id === session.session_id}
+              title={t("sidebarDeleteTitle")}
+            >
+              <Tooltip title={t("sidebarDeleteSession")}>
+                <Button
+                  aria-label={t("sidebarDeleteSession")}
+                  className="at-session-action-button"
+                  danger
+                  icon={<Trash2 size={13} />}
+                  size="small"
+                  type="text"
+                />
+              </Tooltip>
+            </Popconfirm>
           </div>
         </div>
       </div>
@@ -783,25 +806,53 @@ export function SessionsSidebar({
                     />
                   </Tooltip>
                   {workspaceRecord !== undefined ? (
-                    <Tooltip
-                      title={t("sidebarDeleteWorkspaceFor", { label: group.label })}
-                    >
-                      <Button
-                        aria-label={t("sidebarDeleteWorkspaceFor", {
-                          label: group.label,
-                        })}
-                        danger
-                        disabled={!group.id.trim()}
-                        icon={<Trash2 size={14} />}
-                        loading={
-                          deleteWorkspaceMutation.isPending &&
-                          deleteWorkspaceTarget?.workspace_id === group.id
+                    <Popconfirm
+                      cancelText={t("sidebarDeleteCancel")}
+                      description={(
+                        <div className="at-workspace-delete-confirm">
+                          <Typography.Paragraph>
+                            {t("sidebarDeleteWorkspaceMessage", { label: group.label })}
+                          </Typography.Paragraph>
+                          <Checkbox
+                            aria-label={t("sidebarDeleteWorkspaceRemoveDirectory")}
+                            checked={deleteWorkspaceRemoveDirectory}
+                            disabled={deleteWorkspaceMutation.isPending}
+                            onChange={(event) =>
+                              setDeleteWorkspaceRemoveDirectory(event.target.checked)
+                            }
+                          >
+                            {t("sidebarDeleteWorkspaceRemoveDirectory")}
+                          </Checkbox>
+                          <Typography.Paragraph>
+                            {t("sidebarDeleteWorkspaceRemoveDirectoryHelp")}
+                          </Typography.Paragraph>
+                        </div>
+                      )}
+                      okButtonProps={{ danger: true, loading: deleteWorkspaceMutation.isPending }}
+                      okText={t("sidebarDeleteConfirm")}
+                      onConfirm={submitDeleteWorkspace}
+                      onOpenChange={(open) => {
+                        if (open) {
+                          setDeleteWorkspaceTarget(workspaceRecord);
+                          setDeleteWorkspaceRemoveDirectory(false);
+                        } else if (!deleteWorkspaceMutation.isPending) {
+                          resetDeleteWorkspace();
                         }
-                        onClick={() => openDeleteWorkspace(workspaceRecord)}
-                        size="small"
-                        type="text"
-                      />
-                    </Tooltip>
+                      }}
+                      open={deleteWorkspaceTarget?.workspace_id === group.id}
+                      title={t("sidebarDeleteWorkspaceTitle")}
+                    >
+                      <Tooltip title={t("sidebarDeleteWorkspaceFor", { label: group.label })}>
+                        <Button
+                          aria-label={t("sidebarDeleteWorkspaceFor", { label: group.label })}
+                          danger
+                          disabled={!group.id.trim()}
+                          icon={<Trash2 size={14} />}
+                          size="small"
+                          type="text"
+                        />
+                      </Tooltip>
+                    </Popconfirm>
                   ) : null}
                 </div>
               </div>
@@ -872,63 +923,6 @@ export function SessionsSidebar({
           value={renameValue}
         />
       </Modal>
-      <Modal
-        cancelText={t("sidebarDeleteCancel")}
-        destroyOnHidden
-        okButtonProps={{
-          danger: true,
-          loading: deleteSessionMutation.isPending,
-        }}
-        okText={t("sidebarDeleteConfirm")}
-        onCancel={closeDeleteSession}
-        onOk={submitDeleteSession}
-        open={deleteTarget !== null}
-        title={t("sidebarDeleteTitle")}
-      >
-        <Typography.Paragraph className="at-session-modal-copy">
-          {t("sidebarDeleteMessage", {
-            label:
-              deleteTarget === null
-                ? ""
-                : sessionLabel(deleteTarget) || deleteTarget.session_id,
-          })}
-        </Typography.Paragraph>
-      </Modal>
-      <Modal
-        cancelText={t("sidebarDeleteCancel")}
-        destroyOnHidden
-        okButtonProps={{
-          danger: true,
-          loading: deleteWorkspaceMutation.isPending,
-        }}
-        okText={t("sidebarDeleteConfirm")}
-        onCancel={closeDeleteWorkspace}
-        onOk={submitDeleteWorkspace}
-        open={deleteWorkspaceTarget !== null}
-        title={t("sidebarDeleteWorkspaceTitle")}
-      >
-        <Typography.Paragraph className="at-session-modal-copy">
-          {t("sidebarDeleteWorkspaceMessage", {
-            label:
-              deleteWorkspaceTarget === null
-                ? ""
-                : workspaceLabel(deleteWorkspaceTarget),
-          })}
-        </Typography.Paragraph>
-        <Checkbox
-          aria-label={t("sidebarDeleteWorkspaceRemoveDirectory")}
-          checked={deleteWorkspaceRemoveDirectory}
-          disabled={deleteWorkspaceMutation.isPending}
-          onChange={(event) =>
-            setDeleteWorkspaceRemoveDirectory(event.target.checked)
-          }
-        >
-          {t("sidebarDeleteWorkspaceRemoveDirectory")}
-        </Checkbox>
-        <Typography.Paragraph className="at-session-modal-copy">
-          {t("sidebarDeleteWorkspaceRemoveDirectoryHelp")}
-        </Typography.Paragraph>
-      </Modal>
     </div>
   );
 
@@ -983,17 +977,6 @@ export function SessionsSidebar({
     });
   }
 
-  function openDeleteSession(session: SessionSidebarRecord) {
-    setDeleteTarget(session);
-  }
-
-  function closeDeleteSession() {
-    if (deleteSessionMutation.isPending) {
-      return;
-    }
-    resetDeleteSession();
-  }
-
   function resetDeleteSession() {
     setDeleteTarget(null);
   }
@@ -1003,18 +986,6 @@ export function SessionsSidebar({
       return;
     }
     deleteSessionMutation.mutate(deleteTarget.session_id);
-  }
-
-  function openDeleteWorkspace(workspace: WorkspaceRecord) {
-    setDeleteWorkspaceTarget(workspace);
-    setDeleteWorkspaceRemoveDirectory(false);
-  }
-
-  function closeDeleteWorkspace() {
-    if (deleteWorkspaceMutation.isPending) {
-      return;
-    }
-    resetDeleteWorkspace();
   }
 
   function resetDeleteWorkspace() {

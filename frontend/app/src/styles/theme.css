@@ -776,7 +776,8 @@ body {
 
 .at-session-item:hover .at-session-actions,
 .at-session-item:focus-within .at-session-actions,
-.at-session-item.is-selected .at-session-actions {
+.at-session-item.is-selected .at-session-actions,
+.at-session-item.has-open-confirm .at-session-actions {
   opacity: 1;
   pointer-events: auto;
 }

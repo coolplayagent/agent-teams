@@ -184,7 +184,7 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
     for (const [index, run] of startedRuns.entries()) {
       await selectSession(page, run.title, failures);
       await expect
-        .poll(() => mainTimelineText(page), { timeout: 10_000 })
+        .poll(() => persistedUserPromptText(page), { timeout: 10_000 })
         .toContain(run.title);
       const visibleText = await mainTimelineText(page);
       for (const other of startedRuns) {
@@ -806,6 +806,16 @@ function percentile95(values: number[]): number {
 async function mainTimelineText(page: Page): Promise<string> {
   return page
     .locator(".at-chat-view article.at-message")
+    .evaluateAll((nodes) =>
+      nodes.map((node) => node.textContent ?? "").join("\n"),
+    );
+}
+
+async function persistedUserPromptText(page: Page): Promise<string> {
+  return page
+    .locator(
+      '.at-chat-view .at-round-marker, .at-chat-view article.at-message[data-role-id="user"]',
+    )
     .evaluateAll((nodes) =>
       nodes.map((node) => node.textContent ?? "").join("\n"),
     );

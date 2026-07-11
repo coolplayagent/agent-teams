@@ -334,6 +334,22 @@ export function ConnectorsView({ onOpenSettings }: ConnectorsViewProps) {
               }}
               onTest={(connectorId) => testMutation.mutate(connectorId)}
               t={t}
+              testError={
+                selectedConnector !== null &&
+                testMutation.isError &&
+                testMutation.variables === selectedConnector.connector_id
+                  ? testMutationError(
+                      testMutation.error,
+                      t("connectorsTestFailed"),
+                    )
+                  : null
+              }
+              testResult={
+                selectedConnector !== null &&
+                latestResult?.connector_id === selectedConnector.connector_id
+                  ? latestResult
+                  : null
+              }
               testingConnectorId={testingConnectorId}
               w3ConfigError={w3Query.error ?? w3SaveMutation.error}
               w3ConfigLoading={w3Query.isLoading}
@@ -487,6 +503,8 @@ function ConnectorDetail({
   onAction,
   onTest,
   t,
+  testError,
+  testResult,
   testingConnectorId,
   onW3Cancel,
   onW3Save,
@@ -501,6 +519,8 @@ function ConnectorDetail({
   onAction: (item: ConnectorItem) => void;
   onTest: (connectorId: string) => void;
   t: ReturnType<typeof useTranslations>;
+  testError: string | null;
+  testResult: ConnectorTestResult | null;
   testingConnectorId: string | null | undefined;
   onW3Cancel: () => void;
   onW3Save: (request: W3ConnectorSaveRequest) => void;
@@ -572,6 +592,23 @@ function ConnectorDetail({
           showIcon
           type="warning"
         />
+      ) : null}
+
+      {testError !== null ? (
+        <div className="at-connectors-card-result is-error" role="alert">
+          {testError}
+        </div>
+      ) : testResult !== null ? (
+        <div
+          className={
+            testResult.ok
+              ? "at-connectors-card-result is-success"
+              : "at-connectors-card-result is-warning"
+          }
+          role="status"
+        >
+          {testResult.message}
+        </div>
       ) : null}
 
       <dl className="at-connectors-detail-facts">

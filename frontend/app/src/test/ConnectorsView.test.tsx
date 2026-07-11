@@ -304,6 +304,23 @@ describe("ConnectorsView", () => {
     ).toHaveTextContent("GitHub connection is healthy.");
   }, 10_000);
 
+  it("keeps connector probe feedback visible inside an open detail modal", async () => {
+    renderView();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Open GitHub details" }),
+    );
+    const detail = await screen.findByTestId("connector-detail-github");
+    fireEvent.click(
+      within(detail).getByRole("button", { name: "Test GitHub connection" }),
+    );
+
+    await waitFor(() => expect(testConnectorMock).toHaveBeenCalledWith("github"));
+    expect(await within(detail).findByRole("status")).toHaveTextContent(
+      "GitHub connection is healthy.",
+    );
+  });
+
   it("keeps V1 action routing real and saves W3 credentials through its API", async () => {
     listConnectorsMock.mockResolvedValue({
       summary: {

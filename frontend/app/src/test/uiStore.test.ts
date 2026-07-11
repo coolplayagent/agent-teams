@@ -2,10 +2,28 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 beforeEach(() => {
   window.localStorage.clear();
+  window.sessionStorage.clear();
   vi.resetModules();
 });
 
 describe("uiStore", () => {
+  it("restores the last selected session after a document reload", async () => {
+    window.localStorage.setItem("agentTeams.selectedSessionId", "session-1");
+
+    const initialStore = await import("../runtime/uiStore");
+
+    initialStore.useUiStore.getState().setSelectedSessionId("session-7");
+    expect(window.localStorage.getItem("agentTeams.selectedSessionId"))
+      .toBe("session-7");
+
+    vi.resetModules();
+
+    const reloadedStore = await import("../runtime/uiStore");
+
+    expect(reloadedStore.useUiStore.getState().selectedSessionId)
+      .toBe("session-7");
+  });
+
   it("uses the V1-sized desktop sidebar default", async () => {
     const { sidebarWidthDefault, useUiStore } = await import("../runtime/uiStore");
 

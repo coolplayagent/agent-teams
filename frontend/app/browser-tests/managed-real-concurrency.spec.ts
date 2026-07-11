@@ -19,6 +19,8 @@ const EDGE_EXECUTABLE =
 const PROVIDER_SLOT_COUNT = 4;
 const SLOW_PROVIDER_CALL_BUDGET_MS = 70_000;
 const SUBAGENT_PROVIDER_CALL_COUNT = 3;
+const SUBAGENT_CHUNK_SIZE = 8;
+const SUBAGENT_CHUNK_DELAY_MS = 80;
 const SUBAGENT_TOKEN_COUNT = 96;
 
 interface SessionRecord {
@@ -37,6 +39,7 @@ interface RunCreateResponse {
 interface StartedRun {
   expectedFinalToken: string;
   expectedPrefix: string;
+  isSubagent: boolean;
   runId: string;
   session: SessionRecord;
   tag: string;
@@ -131,11 +134,11 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
       const title = session.metadata?.title ?? "";
       await selectSession(page, title, failures);
       const tag = title.replace(/[^A-Za-z0-9_-]/g, "_").replace(/-/g, "_");
-      const isSubagentRun = index === sessions.length - 1;
+      const isSubagentRun = index === 0;
       const repeat = 72;
       const promptText = isSubagentRun
         ? [
-            `${title}: [hook-subagent-lifecycle tag=${tag} worker_repeat=${SUBAGENT_TOKEN_COUNT} worker_delay=80]`,
+            `${title}: [hook-subagent-lifecycle tag=${tag} worker_repeat=${SUBAGENT_TOKEN_COUNT} worker_delay=${SUBAGENT_CHUNK_DELAY_MS}]`,
             "通过 spawn_subagent 启动 Explorer，并让子代理流式输出确定性 token。",
             "主代理完成后只输出 fake LLM 的最终完成句。",
           ].join("\n")
@@ -158,6 +161,7 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
         expectedPrefix: isSubagentRun
           ? `SUBAGENT_STREAM_${tag}_`
           : `SLOW_STREAM_${tag}_`,
+        isSubagent: isSubagentRun,
         runId,
         session,
         tag,
@@ -196,8 +200,9 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
       const phase = visibleText.includes(run.expectedPrefix)
         ? "streaming"
         : "waiting";
-      const providerCallCount =
-        run === startedRuns.at(-1) ? SUBAGENT_PROVIDER_CALL_COUNT : 1;
+      const providerCallCount = run.isSubagent
+        ? SUBAGENT_PROVIDER_CALL_COUNT
+        : 1;
       queueStageObservations.push({
         expectedProviderStartUpperBoundMs: providerQueueUpperBoundMs(
           index,
@@ -216,8 +221,16 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
     expect(
       queueStageObservations.some(({ phase }) => phase === "waiting"),
     ).toBe(true);
+    expect(
+      queueStageObservations.some(
+        ({ expectedProviderStartUpperBoundMs, phase }) =>
+          phase === "waiting" &&
+          expectedProviderStartUpperBoundMs >= SLOW_PROVIDER_CALL_BUDGET_MS * 3,
+      ),
+      "the 12-run fixture must retain a third provider wave in waiting state",
+    ).toBe(true);
 
-    const reloadRun = startedRuns[0];
+    const reloadRun = startedRuns.find((run) => !run.isSubagent);
     if (reloadRun === undefined) {
       throw new Error("Expected a normal stream for reload recovery.");
     }
@@ -284,10 +297,14 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
       test.info().outputPath("managed-real-concurrency-post-reload.jpg"),
     );
 
-    const subagentRun = startedRuns.at(-1);
+    const subagentRun = startedRuns.find((run) => run.isSubagent);
     if (subagentRun === undefined) {
       throw new Error("Expected a subagent run.");
     }
+    expect(
+      estimatedSubagentStreamDurationMs(subagentRun),
+      "the deterministic subagent stream must cover running panel interactions",
+    ).toBeGreaterThan(30_000);
     await selectSession(page, subagentRun.title, failures);
     const subagentCard = page
       .locator(".at-chat-view .at-message-tool.is-openable-subagent")
@@ -344,6 +361,10 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
       beforeSubagentWheelIndex,
       "the subagent fixture must retain at least 24 tokens after overflow begins",
     ).toBeLessThanOrEqual(SUBAGENT_TOKEN_COUNT - 25);
+    expect(
+      estimatedRemainingSubagentStreamMs(subagentRun, beforeSubagentWheelIndex),
+      "the running subagent must retain enough fixture time for wheel and growth",
+    ).toBeGreaterThan(5_000);
     await subagentTimeline.hover();
     await recordInteraction(page, () => page.mouse.wheel(0, -700));
     const subagentAway = await timelineMetrics(subagentTimeline);
@@ -382,7 +403,7 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
       ),
     );
 
-    const anchor = startedRuns.at(-2);
+    const anchor = [...startedRuns].reverse().find((run) => !run.isSubagent);
     if (anchor === undefined) {
       throw new Error("Expected an anchor run.");
     }
@@ -501,6 +522,8 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
       probe,
       queueStageObservations,
       sessionCount: SESSION_COUNT,
+      subagentFixtureEstimatedDurationMs:
+        estimatedSubagentStreamDurationMs(subagentRun),
       streamHoldMs: STREAM_HOLD_MS,
     };
     const evidencePath = test
@@ -895,15 +918,38 @@ async function highestSubagentTokenIndex(
   const text = await latestSubagentPanelRuntimeText(panel);
   let highest = -1;
   for (let index = 0; index < SUBAGENT_TOKEN_COUNT; index += 1) {
-    if (
-      text.includes(
-        `SUBAGENT_STREAM_${run.tag}_${String(index).padStart(2, "0")}`,
-      )
-    ) {
+    if (text.includes(subagentStreamToken(run.tag, index))) {
       highest = index;
     }
   }
   return highest;
+}
+
+function estimatedSubagentStreamDurationMs(run: StartedRun): number {
+  const content = Array.from({ length: SUBAGENT_TOKEN_COUNT }, (_, index) =>
+    subagentStreamToken(run.tag, index),
+  ).join(" ");
+  return (
+    Math.ceil(content.length / SUBAGENT_CHUNK_SIZE) * SUBAGENT_CHUNK_DELAY_MS
+  );
+}
+
+function estimatedRemainingSubagentStreamMs(
+  run: StartedRun,
+  highestObservedIndex: number,
+): number {
+  const content = Array.from(
+    { length: SUBAGENT_TOKEN_COUNT - highestObservedIndex - 1 },
+    (_, offset) =>
+      subagentStreamToken(run.tag, highestObservedIndex + offset + 1),
+  ).join(" ");
+  return (
+    Math.ceil(content.length / SUBAGENT_CHUNK_SIZE) * SUBAGENT_CHUNK_DELAY_MS
+  );
+}
+
+function subagentStreamToken(tag: string, index: number): string {
+  return `SUBAGENT_STREAM_${tag}_${String(index).padStart(2, "0")}`;
 }
 
 function providerQueueUpperBoundMs(

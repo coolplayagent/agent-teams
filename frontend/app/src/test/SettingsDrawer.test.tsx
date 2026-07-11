@@ -1515,8 +1515,27 @@ describe("SettingsDrawer", () => {
     expect(fetchSpeechConfigMock).toHaveBeenCalledTimes(1);
 
     fireEvent.click(within(sections).getByRole("button", { name: "Notifications" }));
-    expect(await screen.findByText("Tool approval requested")).toBeVisible();
+    const approvalTitle = await screen.findByText("Tool approval requested");
+    expect(approvalTitle).toBeVisible();
+    const approvalRule = approvalTitle.closest("article");
+    expect(approvalRule).not.toBeNull();
+    expect(
+      within(approvalRule as HTMLElement).getByRole("switch", {
+        name: "Tool approval requested · Enabled",
+      }),
+    ).toBeChecked();
     expect(screen.getByText("Run completed")).toBeVisible();
+    const stoppedRule = screen.getByText("Run stopped").closest("article");
+    expect(stoppedRule).not.toBeNull();
+    expect(within(stoppedRule as HTMLElement).getByText("Disabled")).toBeVisible();
+    expect(
+      within(stoppedRule as HTMLElement).getByRole("checkbox", {
+        name: "Browser",
+      }),
+    ).toBeDisabled();
+    expect(
+      within(stoppedRule as HTMLElement).getByRole("checkbox", { name: "Toast" }),
+    ).toBeDisabled();
     expect(getNotificationConfigMock).toHaveBeenCalledTimes(1);
 
     fireEvent.click(within(sections).getByRole("button", { name: "Model" }));

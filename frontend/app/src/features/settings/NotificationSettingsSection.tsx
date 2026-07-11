@@ -12,6 +12,7 @@ import type {
 } from "../../api/contracts";
 import { useTranslations } from "../../i18n";
 import { SettingsQueryState, SettingsSection } from "./SettingsShared";
+import "./NotificationSettingsSection.css";
 
 type EditableNotificationTypeId = Exclude<NotificationTypeId, "monitor_triggered">;
 
@@ -93,7 +94,7 @@ export function NotificationSettingsSection() {
           <Typography.Text className="at-settings-help">
             {t("settingsNotificationsHelp")}
           </Typography.Text>
-          <div className="at-notification-list">
+          <div className="at-notification-rule-list">
             {EDITABLE_NOTIFICATION_TYPES.map((typeId) => (
               <NotificationRuleRow
                 form={form}
@@ -132,8 +133,8 @@ function NotificationRuleRow({
   );
 
   return (
-    <div className="at-notification-row">
-      <div className="at-notification-copy">
+    <article className="at-notification-rule">
+      <div className="at-notification-rule-copy">
         <Typography.Text strong>{notificationTitle(typeId, t)}</Typography.Text>
         <Typography.Text>{notificationDescription(typeId, t)}</Typography.Text>
         {hiddenChannels.length > 0 ? (
@@ -144,34 +145,52 @@ function NotificationRuleRow({
           </Typography.Text>
         ) : null}
       </div>
-      <div className="at-notification-controls">
-        <Form.Item
-          label={t("settingsEnabled")}
-          name={[typeId, "enabled"]}
-          valuePropName="checked"
-        >
-          <Switch />
-        </Form.Item>
-        <Form.Item noStyle shouldUpdate>
-          {() => {
-            const enabled = isNotificationEnabled(form, typeId);
-            return (
-              <div className="at-settings-inline-controls">
+      <Form.Item noStyle shouldUpdate>
+        {() => {
+          const enabled = isNotificationEnabled(form, typeId);
+          const title = notificationTitle(typeId, t);
+          return (
+            <div
+              className="at-notification-rule-controls"
+              data-enabled={enabled}
+            >
+              <div className="at-notification-rule-toggle">
+                <Typography.Text strong>
+                  {enabled ? t("settingsEnabled") : t("settingsDisabled")}
+                </Typography.Text>
+                <Form.Item
+                  name={[typeId, "enabled"]}
+                  noStyle
+                  valuePropName="checked"
+                >
+                  <Switch aria-label={`${title} · ${t("settingsEnabled")}`} />
+                </Form.Item>
+              </div>
+              <div
+                aria-label={`${title} · ${t("settingsNotifications")}`}
+                className="at-notification-rule-channels"
+                role="group"
+              >
                 <Form.Item
                   name={[typeId, "browser"]}
+                  noStyle
                   valuePropName="checked"
                 >
                   <Checkbox disabled={!enabled}>{t("settingsChannelBrowser")}</Checkbox>
                 </Form.Item>
-                <Form.Item name={[typeId, "toast"]} valuePropName="checked">
+                <Form.Item
+                  name={[typeId, "toast"]}
+                  noStyle
+                  valuePropName="checked"
+                >
                   <Checkbox disabled={!enabled}>{t("settingsChannelToast")}</Checkbox>
                 </Form.Item>
               </div>
-            );
-          }}
-        </Form.Item>
-      </div>
-    </div>
+            </div>
+          );
+        }}
+      </Form.Item>
+    </article>
   );
 }
 

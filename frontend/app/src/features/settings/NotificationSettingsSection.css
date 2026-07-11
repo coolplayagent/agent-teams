@@ -1,0 +1,96 @@
+.at-notification-rule-list {
+  display: grid;
+  gap: 10px;
+}
+
+.at-notification-rule {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
+  align-items: center;
+  gap: 20px;
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--at-border);
+  border-radius: 10px;
+  background: var(--at-surface);
+}
+
+.at-notification-rule-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.at-notification-rule-copy .ant-typography {
+  margin: 0;
+}
+
+.at-notification-rule-copy > .ant-typography:not(.at-settings-help) {
+  color: var(--at-text);
+  font-size: 13px;
+}
+
+.at-notification-rule-copy > .ant-typography + .ant-typography:not(.at-settings-help) {
+  color: var(--at-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.at-notification-rule-controls {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding-left: 16px;
+  border-left: 1px solid var(--at-border);
+}
+
+.at-notification-rule-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.at-notification-rule-toggle > .ant-typography {
+  color: var(--at-text);
+  font-size: 12px;
+}
+
+.at-notification-rule-controls[data-enabled="false"]
+  .at-notification-rule-toggle > .ant-typography {
+  color: var(--at-text-muted);
+}
+
+.at-notification-rule-channels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  min-height: 22px;
+}
+
+.at-notification-rule-channels .ant-checkbox-wrapper {
+  margin: 0;
+  color: var(--at-text);
+  font-size: 12px;
+}
+
+.at-notification-rule-channels .ant-checkbox-wrapper-disabled,
+.at-notification-rule-channels .ant-checkbox-wrapper-disabled > span:last-child {
+  color: var(--at-text-muted);
+}
+
+@media (max-width: 720px) {
+  .at-notification-rule {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+    gap: 12px;
+    padding: 13px 14px;
+  }
+
+  .at-notification-rule-controls {
+    padding-top: 10px;
+    padding-left: 0;
+    border-top: 1px solid var(--at-border);
+    border-left: 0;
+  }
+}

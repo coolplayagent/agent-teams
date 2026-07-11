@@ -79,6 +79,7 @@ import {
   type SettingsSectionKey,
   type SystemSettingsPage,
 } from "./settingsNavigation";
+import "./ModelProbeStatus.css";
 
 type GeneralRelatedSectionKey = Extract<
   SettingsSectionKey,
@@ -1123,15 +1124,19 @@ function SettingsModels({
     onSuccess: ({ profileId, result }) => {
       setProbeStates((current) => ({
         ...current,
-        [profileId]: { result },
+        [profileId]: { result, status: result.ok ? "success" : "error" },
       }));
     },
     onError: (mutationError, profileId) => {
       setProbeStates((current) => ({
         ...current,
         [profileId]: {
-          error:
-            mutationError instanceof Error ? mutationError.message : t("settingsModelTestFailed"),
+          error: safeModelProbeError(
+            mutationError instanceof Error
+              ? mutationError.message
+              : t("settingsModelTestFailed"),
+          ),
+          status: "error",
         },
       }));
     },
@@ -1157,7 +1162,7 @@ function SettingsModels({
   const requestProbe = (profileId: string) => {
     setProbeStates((current) => ({
       ...current,
-      [profileId]: { result: undefined },
+      [profileId]: { status: "testing" },
     }));
     probeMutation.mutate(profileId);
   };
@@ -1237,6 +1242,8 @@ function SettingsModels({
                 {entries.map(([profileId, profile]) => {
                   const detail = modelProfileDetail(profile);
                   const provider = profile.provider ?? t("settingsProviderUnknown");
+                  const probeState = probeStates[profileId];
+                  const probeMessage = modelProbeStateMessage(probeState, t);
                   return (
                     <div className="at-settings-list-row at-model-profile-row" key={profileId}>
                       <button
@@ -1285,6 +1292,15 @@ function SettingsModels({
                           </Button>
                         </Popconfirm>
                       </div>
+                      {probeMessage !== null ? (
+                        <div
+                          aria-live="polite"
+                          className={`at-model-profile-row-probe is-${probeState?.status ?? "testing"}`}
+                          role="status"
+                        >
+                          {probeMessage}
+                        </div>
+                      ) : null}
                     </div>
                   );
                 })}
@@ -1325,6 +1341,7 @@ type ImageCapabilityMode = "follow" | "supported" | "unsupported";
 interface ModelProbeState {
   result?: ModelConnectivityProbeResult;
   error?: string;
+  status: "error" | "success" | "testing";
 }
 
 function ModelProfileDetail({
@@ -1382,11 +1399,13 @@ function ModelProfileDetail({
   const output = capabilityModes(
     effectiveProfile.resolved_capabilities?.output ?? effectiveProfile.capabilities?.output,
   );
-  const probeMessage =
-    probeState?.error ??
-    (probeState?.result !== undefined ? formatModelProbeResult(probeState.result, t) : null);
+  const probeMessage = modelProbeStateMessage(probeState ?? undefined, t);
   const probeTone =
-    probeState?.error !== undefined || probeState?.result?.ok === false ? "is-error" : "is-ok";
+    probeState?.status === "error"
+      ? "is-error"
+      : probeState?.status === "success"
+        ? "is-ok"
+        : "";
   const normalizedProvider = normalizeModelProvider(
     providerOverride ?? effectiveProfile.provider,
   );
@@ -2230,8 +2249,35 @@ function formatModelProbeResult(
     return t("settingsModelTestPassed", { latency: String(result.latency_ms) });
   }
   return t("settingsModelTestFailedDetail", {
-    error: result.error_message ?? result.error_code ?? t("settingsUnknown"),
+    error: safeModelProbeError(
+      result.error_message ?? result.error_code ?? t("settingsUnknown"),
+    ),
   });
+}
+
+function modelProbeStateMessage(
+  state: ModelProbeState | undefined,
+  t: ReturnType<typeof useTranslations>,
+): string | null {
+  if (state === undefined) {
+    return null;
+  }
+  if (state.status === "testing") {
+    return t("settingsModelTestRunning");
+  }
+  if (state.error !== undefined) {
+    return state.error;
+  }
+  return state.result !== undefined ? formatModelProbeResult(state.result, t) : null;
+}
+
+function safeModelProbeError(message: string): string {
+  return message
+    .replace(/\b(Bearer)\s+\S+/gi, "$1 [redacted]")
+    .replace(
+      /\b(api[ _-]?key|token|secret|password)\b(\s*[:=]\s*)\S+/gi,
+      "$1$2[redacted]",
+    );
 }
 
 function finiteNumber(value: number | null | undefined, fallback: number): number {

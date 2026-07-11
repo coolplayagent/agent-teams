@@ -3462,6 +3462,102 @@ describe("SettingsDrawer", () => {
     await waitFor(() => expect(reloadModelConfigMock).toHaveBeenCalledTimes(2));
   }, 25000);
 
+  it("shows a successful model test result in its profile row", async () => {
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "Model" }));
+
+    const visionRow = (await screen.findByText("vision")).closest(
+      ".at-model-profile-row",
+    );
+    expect(visionRow).not.toBeNull();
+    fireEvent.click(
+      within(visionRow as HTMLElement).getByRole("button", { name: "Test" }),
+    );
+
+    expect(
+      await within(visionRow as HTMLElement).findByRole("status"),
+    ).toHaveTextContent("Connection ok in 42ms.");
+    expect(
+      within(visionRow as HTMLElement).getByRole("status"),
+    ).toHaveClass("is-success");
+  });
+
+  it("keeps testing and failure feedback isolated by model profile", async () => {
+    let resolveVisionProbe: (
+      result: Awaited<ReturnType<typeof probeModelConnection>>,
+    ) => void = () => undefined;
+    probeModelConnectionMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveVisionProbe = resolve;
+        }),
+    );
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "Model" }));
+    const visionRow = (await screen.findByText("vision")).closest(
+      ".at-model-profile-row",
+    );
+    const sttRow = screen.getByText("stt").closest(".at-model-profile-row");
+    expect(visionRow).not.toBeNull();
+    expect(sttRow).not.toBeNull();
+
+    fireEvent.click(
+      within(visionRow as HTMLElement).getByRole("button", { name: "Test" }),
+    );
+    expect(
+      await within(visionRow as HTMLElement).findByText("Testing connection…"),
+    ).toBeVisible();
+    expect(within(sttRow as HTMLElement).queryByRole("status")).toBeNull();
+
+    resolveVisionProbe({
+      checked_at: "2026-06-26T00:00:00Z",
+      diagnostics: {
+        auth_valid: true,
+        endpoint_reachable: true,
+        rate_limited: false,
+      },
+      latency_ms: 42,
+      model: "gpt-5-vision",
+      ok: true,
+      provider: "openai",
+    });
+    expect(
+      await within(visionRow as HTMLElement).findByText("Connection ok in 42ms."),
+    ).toBeVisible();
+
+    probeModelConnectionMock.mockResolvedValueOnce({
+      checked_at: "2026-06-26T00:00:01Z",
+      diagnostics: {
+        auth_valid: false,
+        endpoint_reachable: true,
+        rate_limited: false,
+      },
+      error_message: "token=do-not-render rejected",
+      latency_ms: 12,
+      model: "whisper-1",
+      ok: false,
+      provider: "openai",
+    });
+    fireEvent.click(
+      within(sttRow as HTMLElement).getByRole("button", { name: "Test" }),
+    );
+    const failureStatus = await within(sttRow as HTMLElement).findByRole("status");
+    expect(failureStatus).toHaveTextContent("Connection failed: token=[redacted] rejected");
+    expect(failureStatus).not.toHaveTextContent("do-not-render");
+    expect(failureStatus).toHaveClass("is-error");
+    expect(within(visionRow as HTMLElement).getByRole("status")).toHaveTextContent(
+      "Connection ok in 42ms.",
+    );
+  });
+
   it("edits and tests an existing model profile from the detail page", async () => {
     renderDrawer();
 

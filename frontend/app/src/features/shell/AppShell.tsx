@@ -755,8 +755,8 @@ export function AppShell() {
         </div>
         <Space size={8} className="at-topbar-right">
           <Button
+            className="at-topbar-action is-language"
             onClick={handleLanguageToggle}
-            size="small"
           >
             {language === "zh-CN"
               ? t("languageChinese")
@@ -764,32 +764,37 @@ export function AppShell() {
           </Button>
           <Tooltip title={t("appObservability")}>
             <Button
-            aria-label={t("appObservability")}
-            icon={<Activity size={17} />}
-            onClick={() => openPrimaryShellView("observability")}
-            type={isObservabilityActive(activeView) ? "default" : "text"}
-          />
+              aria-label={t("appObservability")}
+              aria-pressed={isObservabilityActive(activeView)}
+              className={
+                isObservabilityActive(activeView)
+                  ? "at-topbar-action is-active"
+                  : "at-topbar-action"
+              }
+              icon={<Activity size={17} />}
+              onClick={() => openPrimaryShellView("observability")}
+            />
           </Tooltip>
           <MessageExportMenu messenger={message} sessionId={selectedSessionId} />
           <Tooltip title={t("appSettings")}>
             <Button
               aria-label={t("appSettings")}
+              className="at-topbar-action"
               icon={<Settings size={17} />}
               onClick={() => {
                 setSettingsSystemPage(null);
                 setSettingsOpen(true);
               }}
-              type="text"
             />
           </Tooltip>
           <Tooltip title={t("appToggleTheme")}>
             <Button
               aria-label={t("appToggleTheme")}
+              className="at-topbar-action"
               icon={themeMode === "dark" ? <Sun size={17} /> : <Moon size={17} />}
               onClick={() =>
                 setThemeMode(themeMode === "dark" ? "light" : "dark")
               }
-              type="text"
             />
           </Tooltip>
         </Space>

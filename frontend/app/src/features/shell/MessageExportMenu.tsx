@@ -127,9 +127,9 @@ export function MessageExportMenu({
       <Tooltip open={menuOpen ? false : undefined} title={t("exportMessages")}>
         <Button
           aria-label={t("exportMessages")}
+          className="at-topbar-action"
           icon={<Download size={17} />}
           loading={exporter.exporting !== null}
-          type="text"
         />
       </Tooltip>
     </Dropdown>

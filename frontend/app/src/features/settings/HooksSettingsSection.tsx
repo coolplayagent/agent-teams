@@ -428,7 +428,7 @@ export function HooksSettingsSection() {
               {t("settingsHooksSave")}
             </Button>
           </div>
-          <div className="at-settings-card-list at-hooks-config-list">
+          <div className="at-settings-form-layout at-hooks-config-list">
             {groups.length === 0 ? (
               <div className="at-settings-empty">{t("settingsHooksConfiguredEmpty")}</div>
             ) : (
@@ -504,7 +504,7 @@ function HookGroupCard({
   const handlerTypeSummary = summarizeHandlerTypes(group.handlers, t);
   if (!isEditing) {
     return (
-      <div className="at-settings-form-card at-hooks-config-card">
+      <div className="at-settings-form-card-layout at-hooks-config-card">
         <div className="at-hooks-card-head">
           <div className="at-settings-list-main">
             <span>{group.name.trim() || hookNamePlaceholder(group.eventName)}</span>
@@ -543,7 +543,7 @@ function HookGroupCard({
   }
 
   return (
-    <div className="at-settings-form-card at-hooks-config-card at-hooks-config-card-editing">
+    <div className="at-settings-form-card-layout at-hooks-config-card at-hooks-config-card-editing">
       <div className="at-hooks-card-head">
         <div className="at-settings-list-main">
           <span>{group.name.trim() || hookNamePlaceholder(group.eventName)}</span>
@@ -560,7 +560,7 @@ function HookGroupCard({
           </Popconfirm>
         </div>
       </div>
-      <div className="at-settings-form-grid at-hooks-group-grid">
+      <div className="at-settings-form-grid-layout at-hooks-group-grid">
         <label className="at-settings-field">
           <span>{t("settingsHooksName")}</span>
           <Input
@@ -692,7 +692,7 @@ function HookHandlerEditor({
           {t("settingsHooksDeleteHandler")}
         </Button>
       </div>
-      <div className="at-settings-form-grid">
+      <div className="at-settings-form-grid-layout">
         <label className="at-settings-field">
           <span>{t("settingsHooksName")}</span>
           <Input

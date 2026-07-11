@@ -991,7 +991,7 @@ function FeishuTriggerForm({
       onFinish={onSubmit}
     >
       <div className="at-settings-card-list">
-        <div className="at-settings-form-card">
+        <div className="at-settings-form-card-layout">
           <Typography.Text strong>{t("settingsTriggersAppConfig")}</Typography.Text>
           <Form.Item
             label={t("settingsTriggersName")}
@@ -1018,7 +1018,7 @@ function FeishuTriggerForm({
             <Input autoComplete="off" />
           </Form.Item>
         </div>
-        <div className="at-settings-form-card">
+        <div className="at-settings-form-card-layout">
           <Typography.Text strong>{t("settingsTriggersCredentials")}</Typography.Text>
           <Form.Item
             extra={
@@ -1044,7 +1044,7 @@ function FeishuTriggerForm({
             <Input.Password autoComplete="off" />
           </Form.Item>
         </div>
-        <div className="at-settings-form-card">
+        <div className="at-settings-form-card-layout">
           <Typography.Text strong>{t("settingsTriggersSessionConfig")}</Typography.Text>
           <Form.Item
             label={t("settingsTriggersWorkspace")}
@@ -1160,8 +1160,8 @@ function WeChatGatewayForm({
       layout="vertical"
       onFinish={onSubmit}
     >
-      <div className="at-settings-card-list">
-        <div className="at-settings-form-card">
+      <div className="at-settings-form-layout">
+        <div className="at-settings-form-card-layout">
           <Typography.Text strong>{t("settingsTriggersAccount")}</Typography.Text>
           <Form.Item
             label={t("settingsTriggersDisplayName")}
@@ -1185,7 +1185,7 @@ function WeChatGatewayForm({
             <Input autoComplete="off" />
           </Form.Item>
         </div>
-        <div className="at-settings-form-card">
+        <div className="at-settings-form-card-layout">
           <Typography.Text strong>{t("settingsTriggersSessionConfig")}</Typography.Text>
           <Form.Item
             label={t("settingsTriggersWorkspace")}

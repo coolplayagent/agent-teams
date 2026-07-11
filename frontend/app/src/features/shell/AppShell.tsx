@@ -619,6 +619,22 @@ export function AppShell() {
     ],
     [activeView, openPrimaryShellView, settingsOpen, t],
   );
+  const openNewSessionFromSidebar = useCallback(
+    () => openPrimaryShellView("new-session"),
+    [openPrimaryShellView],
+  );
+  const openSessionSearchFromSidebar = useCallback(
+    () => setSessionSearchOpen(true),
+    [],
+  );
+  const openWorkspaceFromSidebar = useCallback(
+    () => openPrimaryShellView("workspace"),
+    [openPrimaryShellView],
+  );
+  const selectSessionFromSidebar = useCallback(
+    () => openPrimaryShellView("chat", "replace"),
+    [openPrimaryShellView],
+  );
 
   useEffect(() => {
     writeShellViewHistory(asRestorableShellView(activeView), "replace");
@@ -868,10 +884,10 @@ export function AppShell() {
             <SessionsSidebar
               backendStatus={sidebarBackendStatus}
               navigationItems={sidebarNavigationItems}
-              onOpenNewSession={() => openPrimaryShellView("new-session")}
-              onOpenSessionSearch={() => setSessionSearchOpen(true)}
-              onOpenWorkspaceView={() => openPrimaryShellView("workspace")}
-              onSessionSelected={() => openPrimaryShellView("chat", "replace")}
+              onOpenNewSession={openNewSessionFromSidebar}
+              onOpenSessionSearch={openSessionSearchFromSidebar}
+              onOpenWorkspaceView={openWorkspaceFromSidebar}
+              onSessionSelected={selectSessionFromSidebar}
               visuallySelectedSessionId={
                 activeView === "chat" ? selectedSessionId : null
               }

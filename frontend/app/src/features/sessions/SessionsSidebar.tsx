@@ -31,7 +31,7 @@ import {
   X,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   createSession,
@@ -173,7 +173,7 @@ function sessionCreateRequest(
   };
 }
 
-export function SessionsSidebar({
+function SessionsSidebarView({
   activeSubagent = null,
   backendStatus,
   navigationItems = [],
@@ -1143,6 +1143,9 @@ export function SessionsSidebar({
     }));
   }
 }
+
+export const SessionsSidebar = memo(SessionsSidebarView);
+SessionsSidebar.displayName = "SessionsSidebar";
 
 interface SessionSubagentListProps {
   activeSubagent: ActiveSubagentSession | null;

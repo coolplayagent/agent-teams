@@ -10,6 +10,7 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
 
 import {
   createSession,
@@ -61,6 +62,69 @@ afterEach(() => {
 });
 
 describe("SessionsSidebar", () => {
+  it("does not recompute session timestamps for an unrelated parent update", async () => {
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+    ]);
+    listSidebarSessionsMock.mockResolvedValue(
+      Array.from({ length: 10 }, (_, index) => ({
+        session_id: `session-${index}`,
+        title: `Session ${index}`,
+        updated_at: "2026-07-12T01:00:00Z",
+        workspace_id: "workspace-1",
+      })),
+    );
+    const nowSpy = vi
+      .spyOn(Date, "now")
+      .mockReturnValue(Date.parse("2026-07-12T02:00:00Z"));
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+          staleTime: Number.POSITIVE_INFINITY,
+        },
+      },
+    });
+
+    function ParentWithUnrelatedState() {
+      const [counter, setCounter] = useState(0);
+      return (
+        <>
+          <button onClick={() => setCounter((current) => current + 1)}>
+            Parent update {counter}
+          </button>
+          <SessionsSidebar />
+        </>
+      );
+    }
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <ParentWithUnrelatedState />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("Session 0")).toBeVisible();
+    await waitFor(() => expect(nowSpy.mock.calls.length).toBeGreaterThanOrEqual(10));
+    const timestampComputationsAfterLoad = nowSpy.mock.calls.length;
+
+    fireEvent.click(screen.getByRole("button", { name: "Parent update 0" }));
+
+    expect(screen.getByRole("button", { name: "Parent update 1" })).toBeVisible();
+    // jsdom may sample Date.now once while dispatching the click itself. Rendering
+    // the ten session rows would add at least ten further timestamp computations.
+    expect(nowSpy.mock.calls.length - timestampComputationsAfterLoad).toBeLessThanOrEqual(1);
+    nowSpy.mockRestore();
+  });
+
   it("keeps V1 frame details without adding primary navigation entries", async () => {
     listWorkspacesMock.mockResolvedValue([
       {

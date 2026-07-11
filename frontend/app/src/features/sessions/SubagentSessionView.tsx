@@ -22,7 +22,6 @@ import {
   openSessionSubagentRunStream,
   type RunStreamHandle,
 } from "../../runtime/streamClient";
-import type { RunStreamController } from "../../runtime/useRunStreamController";
 import { useTranslations, type Translate } from "../../i18n";
 import { MarkdownMessage } from "../timeline/MarkdownMessage";
 import { MessageTimeline } from "../timeline/MessageTimeline";
@@ -40,12 +39,10 @@ const SUBAGENT_STREAM_RECONNECT_MAX_ATTEMPTS = 3;
 interface SubagentSessionViewProps {
   subagent: ActiveSubagentSession;
   onBack: () => void;
-  runStreamController: RunStreamController;
 }
 
 export const SubagentSessionView = memo(function SubagentSessionView({
   onBack,
-  runStreamController,
   subagent,
 }: SubagentSessionViewProps) {
   const queryClient = useQueryClient();

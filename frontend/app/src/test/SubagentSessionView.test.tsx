@@ -1091,7 +1091,6 @@ describe("SubagentSessionView", () => {
 });
 
 function renderSubagentSessionView({
-  controller = createRunStreamController(),
   subagent = createSubagent(),
 }: {
   controller?: RunStreamController;
@@ -1105,26 +1104,22 @@ function renderSubagentSessionView({
       },
     },
   });
-  const view = (runStreamController: RunStreamController) => (
+  const view = () => (
     <QueryClientProvider client={queryClient}>
       <ConfigProvider>
         <AntApp>
           <SubagentSessionView
             onBack={vi.fn()}
-            runStreamController={runStreamController}
             subagent={subagent}
           />
         </AntApp>
       </ConfigProvider>
     </QueryClientProvider>
   );
-  const result = render(view(controller));
+  const result = render(view());
   return {
     ...result,
     queryClient,
-    rerenderWithController: (nextController: RunStreamController) => {
-      result.rerender(view(nextController));
-    },
   };
 }
 

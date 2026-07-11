@@ -935,9 +935,8 @@ export function AppShell() {
                 className="at-subagent-side-panel"
                 hidden={visibleActiveSubagent === null}
                 >
-                  <SubagentSessionView
-                    onBack={closeActiveSubagent}
-                  runStreamController={runStreamController}
+                <SubagentSessionView
+                  onBack={closeActiveSubagent}
                   subagent={renderedSubagent}
                 />
               </aside>

@@ -4,6 +4,10 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const themeCss = readFileSync("src/styles/theme.css", "utf8");
+const modelCatalogPickerSource = readFileSync(
+  "src/features/settings/ModelCatalogPicker.tsx",
+  "utf8",
+);
 
 const settingsSources = {
   commands: readFileSync(
@@ -195,9 +199,8 @@ describe("visual style regressions", () => {
     expect(settingsList).toContain("overflow: hidden;");
     expect(settingsList).not.toContain("overflow: auto;");
 
-    const catalogList = cssBlock(".at-model-catalog-list");
-    expect(catalogList).toContain("max-height: 240px;");
-    expect(catalogList).toContain("overflow: auto;");
+    expect(modelCatalogPickerSource).toContain("listHeight={320}");
+    expect(modelCatalogPickerSource).toContain("virtual");
 
     const nativeSelect = cssBlock(".at-settings-native-select");
     expect(nativeSelect).toContain("width: 100%;");

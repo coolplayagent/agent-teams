@@ -689,11 +689,13 @@ body {
   position: relative;
   gap: 2px;
   width: 100%;
+  height: 32px;
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
   color: var(--at-text);
   padding: 1px 2px !important;
+  overflow: hidden;
 }
 
 .at-session-stack {
@@ -780,16 +782,26 @@ body {
 
 .at-session-item:hover .at-session-actions,
 .at-session-item:focus-within .at-session-actions,
-.at-session-item.has-open-confirm .at-session-actions {
+.at-session-item.is-editing .at-session-actions,
+.at-session-item.is-confirming .at-session-actions {
   opacity: 1;
   pointer-events: auto;
 }
 
 .at-session-item:hover .at-session-meta-slot > .at-session-meta,
 .at-session-item:focus-within .at-session-meta-slot > .at-session-meta,
-.at-session-item.has-open-confirm .at-session-meta-slot > .at-session-meta {
+.at-session-item.is-editing .at-session-meta-slot > .at-session-meta,
+.at-session-item.is-confirming .at-session-meta-slot > .at-session-meta {
   opacity: 0;
   visibility: hidden;
+}
+
+.at-session-inline-rename.ant-input {
+  height: 22px;
+  min-width: 0;
+  padding: 0 5px;
+  font-size: 12px;
+  line-height: 20px;
 }
 
 .at-session-action-button.ant-btn {

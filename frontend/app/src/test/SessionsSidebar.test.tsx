@@ -672,12 +672,33 @@ describe("SessionsSidebar", () => {
     expect(await screen.findByText("Old readable name")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Rename session" }));
 
-    const nameInput = await screen.findByRole("textbox", {
+    let nameInput = await screen.findByRole("textbox", {
       name: "Session name",
     });
+    let editedRow = nameInput.closest(".at-session-item");
+    expect(editedRow).toHaveClass("is-editing");
+    expect(within(editedRow as HTMLElement).getByRole("button", { name: "Cancel" }))
+      .toBeVisible();
+    expect(within(editedRow as HTMLElement).getByRole("button", { name: "Save" }))
+      .toBeVisible();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(nameInput).toHaveValue("Old readable name");
+
+    fireEvent.keyDown(nameInput, { key: "Escape" });
+    await waitFor(() =>
+      expect(screen.queryByRole("textbox", { name: "Session name" }))
+        .not.toBeInTheDocument(),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Rename session" }))
+        .toHaveFocus(),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Rename session" }));
+    nameInput = await screen.findByRole("textbox", { name: "Session name" });
+    editedRow = nameInput.closest(".at-session-item");
     fireEvent.change(nameInput, { target: { value: "Next readable name" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(within(editedRow as HTMLElement).getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
       expect(updateSessionMock).toHaveBeenCalledWith("session-a", {
@@ -705,21 +726,59 @@ describe("SessionsSidebar", () => {
         updated_at: "2026-06-23T10:00:00Z",
         workspace_id: "workspace-1",
       },
+      {
+        session_id: "session-b",
+        title: "Beta",
+        updated_at: "2026-06-23T09:00:00Z",
+        workspace_id: "workspace-1",
+      },
     ]);
-    deleteSessionMock.mockResolvedValue({ status: "ok" });
+    let resolveDelete: ((value: { status: string }) => void) | undefined;
+    deleteSessionMock.mockReturnValue(new Promise((resolve) => {
+      resolveDelete = resolve;
+    }));
 
     const queryClient = renderSidebar();
     const invalidateQueriesSpy = vi.spyOn(queryClient, "invalidateQueries");
 
     expect(await screen.findByText("Alpha")).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Delete session" }));
+    let alphaRow = screen.getByText("Alpha").closest(".at-session-item");
+    fireEvent.click(within(alphaRow as HTMLElement)
+      .getByRole("button", { name: "Delete session" }));
 
     expect(deleteSessionMock).not.toHaveBeenCalled();
-    expect(await screen.findByText(/Delete Alpha/)).toBeInTheDocument();
+    let deletingRow = screen.getByText("Alpha").closest(".at-session-item");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(screen.getByText("Alpha").closest(".at-session-item"))
-      .toHaveClass("has-open-confirm");
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(deletingRow).toHaveClass("is-confirming");
+    expect(within(deletingRow as HTMLElement).getByRole("button", { name: "Cancel" }))
+      .toBeVisible();
+    fireEvent.click(within(deletingRow as HTMLElement)
+      .getByRole("button", { name: "Cancel" }));
+    await waitFor(() =>
+      expect(within(screen.getByText("Alpha").closest(".at-session-item") as HTMLElement)
+        .getByRole("button", { name: "Delete session" }))
+        .toHaveFocus(),
+    );
+    expect(deleteSessionMock).not.toHaveBeenCalled();
+
+    alphaRow = screen.getByText("Alpha").closest(".at-session-item");
+    fireEvent.click(within(alphaRow as HTMLElement)
+      .getByRole("button", { name: "Delete session" }));
+    deletingRow = screen.getByText("Alpha").closest(".at-session-item");
+    fireEvent.click(within(deletingRow as HTMLElement).getByRole("button", { name: "Delete" }));
+
+    await waitFor(() =>
+      expect(within(deletingRow as HTMLElement)
+        .getByRole("button", { name: "Delete" })).toBeDisabled(),
+    );
+    const otherRow = screen.getByText("Beta").closest(".at-session-item");
+    expect(within(otherRow as HTMLElement)
+      .getByRole("button", { name: "Rename session" })).toBeEnabled();
+
+    if (resolveDelete === undefined) {
+      throw new Error("Delete mutation did not start.");
+    }
+    await act(async () => resolveDelete?.({ status: "ok" }));
 
     await waitFor(() =>
       expect(deleteSessionMock).toHaveBeenCalledWith("session-a", {
@@ -770,12 +829,16 @@ describe("SessionsSidebar", () => {
     );
 
     expect(deleteWorkspaceMock).not.toHaveBeenCalled();
-    expect(await screen.findByText("Remove workspace")).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(await screen.findByText(/Remove Extra Project/)).toBeInTheDocument();
-    expect(await screen.findByLabelText("Also remove the workspace directory"))
+    const workspaceHeader = screen.getByText("Extra Project")
+      .closest(".at-workspace-group-header");
+    expect(within(workspaceHeader as HTMLElement)
+      .getByLabelText("Also remove the workspace directory"))
       .not.toBeChecked();
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(within(workspaceHeader as HTMLElement)
+      .getByRole("button", { name: "Cancel" })).toBeVisible();
+    fireEvent.click(within(workspaceHeader as HTMLElement)
+      .getByRole("button", { name: "Delete" }));
 
     await waitFor(() =>
       expect(deleteWorkspaceMock).toHaveBeenCalledWith("workspace-2", {

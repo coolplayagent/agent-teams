@@ -5,8 +5,6 @@ import {
   Dropdown,
   Empty,
   Input,
-  Modal,
-  Popconfirm,
   Skeleton,
   Tooltip,
   Typography,
@@ -20,6 +18,7 @@ import {
 } from "@tanstack/react-query";
 import {
   ArrowDownUp,
+  Check,
   ChevronDown,
   ChevronRight,
   FolderClosed,
@@ -29,6 +28,7 @@ import {
   RefreshCw,
   Search,
   Trash2,
+  X,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -130,6 +130,12 @@ interface DeleteWorkspacePayload {
   workspaceId: string;
 }
 
+interface InlineActionFocusTarget {
+  ariaLabel: string;
+  ownerId: string;
+  ownerKind: "session" | "workspace";
+}
+
 function sessionDetailQueryKey(sessionId: string) {
   return ["sessions", "detail", sessionId] as const;
 }
@@ -205,6 +211,11 @@ export function SessionsSidebar({
     useState<WorkspaceRecord | null>(null);
   const [deleteWorkspaceRemoveDirectory, setDeleteWorkspaceRemoveDirectory] =
     useState(false);
+  const [inlineActionFocusTarget, setInlineActionFocusTarget] =
+    useState<InlineActionFocusTarget | null>(null);
+  const renameFocusSessionIdRef = useRef<string | null>(null);
+  const deleteFocusSessionIdRef = useRef<string | null>(null);
+  const deleteFocusWorkspaceIdRef = useRef<string | null>(null);
   const searchInputRef = useRef<InputRef>(null);
   const focusSearchOnExpandRef = useRef(false);
   const selectedSessionItemRef = useRef<HTMLDivElement | null>(null);
@@ -277,6 +288,26 @@ export function SessionsSidebar({
       window.removeEventListener("agent-teams-focus-session-search", focusSearch);
     };
   }, [searchExpanded]);
+  useEffect(() => {
+    if (inlineActionFocusTarget === null) {
+      return;
+    }
+    const owners = document.querySelectorAll<HTMLElement>(
+      ".at-session-item, .at-workspace-group-header",
+    );
+    const restoredOwner = Array.from(owners).find((candidate) =>
+      inlineActionFocusTarget.ownerKind === "session"
+        ? candidate.dataset.sessionId === inlineActionFocusTarget.ownerId
+        : candidate.dataset.workspaceId === inlineActionFocusTarget.ownerId,
+    );
+    const button = Array.from(
+      restoredOwner?.querySelectorAll<HTMLButtonElement>("button") ?? [],
+    ).find((candidate) =>
+      candidate.getAttribute("aria-label") === inlineActionFocusTarget.ariaLabel,
+    );
+    button?.focus();
+    setInlineActionFocusTarget(null);
+  }, [inlineActionFocusTarget]);
   useEffect(() => {
     if (!searchExpanded || !focusSearchOnExpandRef.current) {
       return;
@@ -479,74 +510,127 @@ export function SessionsSidebar({
     const rawIndicatorType = sessionRunIndicatorType(session);
     const indicatorType =
       selected && rawIndicatorType === "unread" ? null : rawIndicatorType;
+    const editing = renameTarget?.session_id === session.session_id;
+    const confirmingDelete = deleteTarget?.session_id === session.session_id;
     return (
       <div className="at-session-stack" key={session.session_id}>
         <div
-          className={`${sessionItemClassName(selected, indicatorType)}${
-            deleteTarget?.session_id === session.session_id
-              ? " has-open-confirm"
-              : ""
-          }`}
+          className={[
+            sessionItemClassName(selected, indicatorType),
+            editing ? "is-editing" : "",
+            confirmingDelete ? "is-confirming" : "",
+          ].filter(Boolean).join(" ")}
+          data-session-id={session.session_id}
           ref={selected ? selectedSessionItemRef : undefined}
         >
           <div className="at-session-copy">
-            <button
-              aria-current={selected ? "page" : undefined}
-              className="at-session-select"
-              onClick={() => selectSession(session)}
-              title={sessionLabel(session)}
-              type="button"
-            >
-              <Typography.Text
-                className="at-session-label"
-                ellipsis
+            {editing ? (
+              <Input
+                aria-label={t("sidebarRenameInput")}
+                autoFocus
+                className="at-session-inline-rename"
+                disabled={renameSessionMutation.isPending}
+                onChange={(event) => setRenameValue(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    closeRenameSession();
+                  }
+                }}
+                onPressEnter={submitRenameSession}
+                size="small"
+                value={renameValue}
+              />
+            ) : (
+              <button
+                aria-current={selected ? "page" : undefined}
+                className="at-session-select"
+                onClick={() => selectSession(session)}
                 title={sessionLabel(session)}
+                type="button"
               >
-                {sessionLabel(session)}
-              </Typography.Text>
-            </button>
+                <Typography.Text
+                  className="at-session-label"
+                  ellipsis
+                  title={sessionLabel(session)}
+                >
+                  {sessionLabel(session)}
+                </Typography.Text>
+              </button>
+            )}
             <div className="at-session-meta-slot">
               {sessionMeta(session, t, language, indicatorType)}
               <div className="at-session-actions">
-                <Tooltip title={t("sidebarRenameSession")}>
-                  <Button
-                    aria-label={t("sidebarRenameSession")}
-                    className="at-session-action-button"
-                    icon={<Pencil size={13} />}
-                    onClick={() => openRenameSession(session)}
-                    size="small"
-                    type="text"
-                  />
-                </Tooltip>
-                <Popconfirm
-                  cancelText={t("sidebarDeleteCancel")}
-                  description={t("sidebarDeleteMessage", {
-                    label: sessionLabel(session) || session.session_id,
-                  })}
-                  okButtonProps={{ danger: true, loading: deleteSessionMutation.isPending }}
-                  okText={t("sidebarDeleteConfirm")}
-                  onConfirm={submitDeleteSession}
-                  onOpenChange={(open) => {
-                    if (open) {
-                      setDeleteTarget(session);
-                    } else if (!deleteSessionMutation.isPending) {
-                      resetDeleteSession();
-                    }
-                  }}
-                  open={deleteTarget?.session_id === session.session_id}
-                  title={t("sidebarDeleteTitle")}
-                >
-                  <Tooltip title={t("sidebarDeleteSession")}>
+                {editing ? (
+                  <>
                     <Button
-                      aria-label={t("sidebarDeleteSession")}
+                      aria-label={t("sidebarRenameCancel")}
                       className="at-session-action-button"
-                      danger
-                      icon={<Trash2 size={13} />}
+                      disabled={renameSessionMutation.isPending}
+                      icon={<X size={13} />}
+                      onClick={closeRenameSession}
                       size="small"
                       type="text"
                     />
-                  </Tooltip>
-                </Popconfirm>
+                    <Button
+                      aria-label={t("sidebarRenameSave")}
+                      className="at-session-action-button"
+                      disabled={!renameValue.trim() || renameSessionMutation.isPending}
+                      icon={<Check size={13} />}
+                      loading={renameSessionMutation.isPending}
+                      onClick={submitRenameSession}
+                      size="small"
+                      type="text"
+                    />
+                  </>
+                ) : confirmingDelete ? (
+                  <>
+                    <Button
+                      aria-label={t("sidebarDeleteCancel")}
+                      className="at-session-action-button"
+                      disabled={deleteSessionMutation.isPending}
+                      icon={<X size={13} />}
+                      onClick={resetDeleteSession}
+                      size="small"
+                      type="text"
+                    />
+                    <Button
+                      aria-label={t("sidebarDeleteConfirm")}
+                      className="at-session-action-button"
+                      danger
+                      disabled={deleteSessionMutation.isPending}
+                      icon={<Trash2 size={13} />}
+                      loading={deleteSessionMutation.isPending}
+                      onClick={submitDeleteSession}
+                      size="small"
+                      type="text"
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Tooltip title={t("sidebarRenameSession")}>
+                      <Button
+                        aria-label={t("sidebarRenameSession")}
+                        className="at-session-action-button"
+                        icon={<Pencil size={13} />}
+                        onClick={(event) => openRenameSession(session, event.currentTarget)}
+                        size="small"
+                        type="text"
+                      />
+                    </Tooltip>
+                    <Tooltip title={t("sidebarDeleteSession")}>
+                      <Button
+                        aria-label={t("sidebarDeleteSession")}
+                        className="at-session-action-button"
+                        danger
+                        icon={<Trash2 size={13} />}
+                        onClick={(event) => openDeleteSession(session, event.currentTarget)}
+                        size="small"
+                        type="text"
+                      />
+                    </Tooltip>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -744,6 +828,7 @@ export function SessionsSidebar({
                   { label: group.label },
                 )}
                 className="at-workspace-group-header"
+                data-workspace-id={group.id}
                 onClick={(event) => {
                   if ((event.target as HTMLElement).closest(".at-workspace-group-actions")) {
                     return;
@@ -775,95 +860,84 @@ export function SessionsSidebar({
                   <span className="at-workspace-group-title">{group.label}</span>
                 </Tooltip>
                 <div className="at-workspace-group-actions">
-                  {onOpenWorkspaceView !== undefined ? (
-                    <Tooltip
-                      title={t("sidebarOpenWorkspaceViewFor", { label: group.label })}
-                    >
+                  {deleteWorkspaceTarget?.workspace_id === group.id ? (
+                    <>
+                      <Tooltip title={t("sidebarDeleteWorkspaceRemoveDirectoryHelp")}>
+                        <Checkbox
+                          aria-label={t("sidebarDeleteWorkspaceRemoveDirectory")}
+                          checked={deleteWorkspaceRemoveDirectory}
+                          disabled={deleteWorkspaceMutation.isPending}
+                          onChange={(event) =>
+                            setDeleteWorkspaceRemoveDirectory(event.target.checked)
+                          }
+                        />
+                      </Tooltip>
                       <Button
-                        aria-label={t("sidebarOpenWorkspaceViewFor", {
-                          label: group.label,
-                        })}
-                        aria-pressed={workspaceViewActive && group.id === selectedWorkspaceId}
-                        className={
-                          workspaceViewActive && group.id === selectedWorkspaceId
-                            ? "is-active"
-                            : undefined
-                        }
-                        disabled={workspaceOptions.length === 0}
-                        icon={<FolderSearch size={14} />}
-                        onClick={() => {
-                          setSelectedWorkspaceId(group.id);
-                          onOpenWorkspaceView();
-                        }}
+                        aria-label={t("sidebarDeleteCancel")}
+                        disabled={deleteWorkspaceMutation.isPending}
+                        icon={<X size={14} />}
+                        onClick={resetDeleteWorkspace}
                         size="small"
                         type="text"
                       />
-                    </Tooltip>
-                  ) : null}
-                  <Tooltip
-                    title={t("sidebarNewSessionInWorkspace", { label: group.label })}
-                  >
-                    <Button
-                      aria-label={t("sidebarNewSessionInWorkspace", {
-                        label: group.label,
-                      })}
-                      disabled={!group.id.trim()}
-                      icon={<Plus size={14} />}
-                      loading={createSessionMutation.isPending}
-                      onClick={() => createSessionMutation.mutate(group.id)}
-                      size="small"
-                      type="text"
-                    />
-                  </Tooltip>
-                  {workspaceRecord !== undefined ? (
-                    <Popconfirm
-                      cancelText={t("sidebarDeleteCancel")}
-                      description={(
-                        <div className="at-workspace-delete-confirm">
-                          <Typography.Paragraph>
-                            {t("sidebarDeleteWorkspaceMessage", { label: group.label })}
-                          </Typography.Paragraph>
-                          <Checkbox
-                            aria-label={t("sidebarDeleteWorkspaceRemoveDirectory")}
-                            checked={deleteWorkspaceRemoveDirectory}
-                            disabled={deleteWorkspaceMutation.isPending}
-                            onChange={(event) =>
-                              setDeleteWorkspaceRemoveDirectory(event.target.checked)
-                            }
-                          >
-                            {t("sidebarDeleteWorkspaceRemoveDirectory")}
-                          </Checkbox>
-                          <Typography.Paragraph>
-                            {t("sidebarDeleteWorkspaceRemoveDirectoryHelp")}
-                          </Typography.Paragraph>
-                        </div>
-                      )}
-                      okButtonProps={{ danger: true, loading: deleteWorkspaceMutation.isPending }}
-                      okText={t("sidebarDeleteConfirm")}
-                      onConfirm={submitDeleteWorkspace}
-                      onOpenChange={(open) => {
-                        if (open) {
-                          setDeleteWorkspaceTarget(workspaceRecord);
-                          setDeleteWorkspaceRemoveDirectory(false);
-                        } else if (!deleteWorkspaceMutation.isPending) {
-                          resetDeleteWorkspace();
-                        }
-                      }}
-                      open={deleteWorkspaceTarget?.workspace_id === group.id}
-                      title={t("sidebarDeleteWorkspaceTitle")}
-                    >
+                      <Button
+                        aria-label={t("sidebarDeleteConfirm")}
+                        danger
+                        disabled={deleteWorkspaceMutation.isPending}
+                        icon={<Trash2 size={14} />}
+                        loading={deleteWorkspaceMutation.isPending}
+                        onClick={submitDeleteWorkspace}
+                        size="small"
+                        type="text"
+                      />
+                    </>
+                  ) : (
+                    <>
+                      {onOpenWorkspaceView !== undefined ? (
+                        <Tooltip title={t("sidebarOpenWorkspaceViewFor", { label: group.label })}>
+                          <Button
+                            aria-label={t("sidebarOpenWorkspaceViewFor", { label: group.label })}
+                            aria-pressed={workspaceViewActive && group.id === selectedWorkspaceId}
+                            className={workspaceViewActive && group.id === selectedWorkspaceId ? "is-active" : undefined}
+                            disabled={workspaceOptions.length === 0}
+                            icon={<FolderSearch size={14} />}
+                            onClick={() => {
+                              setSelectedWorkspaceId(group.id);
+                              onOpenWorkspaceView();
+                            }}
+                            size="small"
+                            type="text"
+                          />
+                        </Tooltip>
+                      ) : null}
+                      <Tooltip title={t("sidebarNewSessionInWorkspace", { label: group.label })}>
+                        <Button
+                          aria-label={t("sidebarNewSessionInWorkspace", { label: group.label })}
+                          disabled={!group.id.trim()}
+                          icon={<Plus size={14} />}
+                          loading={createSessionMutation.isPending}
+                          onClick={() => createSessionMutation.mutate(group.id)}
+                          size="small"
+                          type="text"
+                        />
+                      </Tooltip>
+                      {workspaceRecord !== undefined ? (
                       <Tooltip title={t("sidebarDeleteWorkspaceFor", { label: group.label })}>
                         <Button
                           aria-label={t("sidebarDeleteWorkspaceFor", { label: group.label })}
                           danger
                           disabled={!group.id.trim()}
                           icon={<Trash2 size={14} />}
+                          onClick={(event) =>
+                            openDeleteWorkspace(workspaceRecord, event.currentTarget)
+                          }
                           size="small"
                           type="text"
                         />
                       </Tooltip>
-                    </Popconfirm>
-                  ) : null}
+                      ) : null}
+                    </>
+                  )}
                 </div>
               </div>
               {groupExpanded && group.sessions.length === 0 ? (
@@ -909,30 +983,6 @@ export function SessionsSidebar({
           </div>
         </div>
       ) : null}
-      <Modal
-        cancelText={t("sidebarRenameCancel")}
-        destroyOnHidden
-        okButtonProps={{
-          disabled: renameValue.trim().length === 0,
-          loading: renameSessionMutation.isPending,
-        }}
-        okText={t("sidebarRenameSave")}
-        onCancel={closeRenameSession}
-        onOk={submitRenameSession}
-        open={renameTarget !== null}
-        title={t("sidebarRenameTitle")}
-      >
-        <Typography.Paragraph className="at-session-modal-copy">
-          {t("sidebarRenameMessage")}
-        </Typography.Paragraph>
-        <Input
-          aria-label={t("sidebarRenameInput")}
-          autoFocus
-          onChange={(event) => setRenameValue(event.target.value)}
-          onPressEnter={submitRenameSession}
-          value={renameValue}
-        />
-      </Modal>
     </div>
   );
 
@@ -955,7 +1005,11 @@ export function SessionsSidebar({
     onSubagentSelected?.(subagent);
   }
 
-  function openRenameSession(session: SessionSidebarRecord) {
+  function openRenameSession(
+    session: SessionSidebarRecord,
+    _trigger: HTMLElement,
+  ) {
+    renameFocusSessionIdRef.current = session.session_id;
     setRenameTarget(session);
     setRenameValue(sessionLabel(session));
   }
@@ -968,8 +1022,10 @@ export function SessionsSidebar({
   }
 
   function resetRenameSession() {
+    const sessionId = renameFocusSessionIdRef.current;
     setRenameTarget(null);
     setRenameValue("");
+    restoreInlineActionFocus("session", sessionId, t("sidebarRenameSession"));
   }
 
   function submitRenameSession() {
@@ -988,7 +1044,26 @@ export function SessionsSidebar({
   }
 
   function resetDeleteSession() {
+    const sessionId = deleteFocusSessionIdRef.current;
     setDeleteTarget(null);
+    restoreInlineActionFocus("session", sessionId, t("sidebarDeleteSession"));
+  }
+
+  function openDeleteSession(
+    session: SessionSidebarRecord,
+    _trigger: HTMLElement,
+  ) {
+    deleteFocusSessionIdRef.current = session.session_id;
+    setDeleteTarget(session);
+  }
+
+  function openDeleteWorkspace(
+    workspace: WorkspaceRecord,
+    _trigger: HTMLElement,
+  ) {
+    deleteFocusWorkspaceIdRef.current = workspace.workspace_id;
+    setDeleteWorkspaceTarget(workspace);
+    setDeleteWorkspaceRemoveDirectory(false);
   }
 
   function submitDeleteSession() {
@@ -999,8 +1074,26 @@ export function SessionsSidebar({
   }
 
   function resetDeleteWorkspace() {
+    const workspaceId = deleteFocusWorkspaceIdRef.current;
+    const label = deleteWorkspaceTarget === null
+      ? t("sidebarDeleteWorkspaceTitle")
+      : t("sidebarDeleteWorkspaceFor", {
+        label: workspaceLabel(deleteWorkspaceTarget),
+      });
     setDeleteWorkspaceTarget(null);
     setDeleteWorkspaceRemoveDirectory(false);
+    restoreInlineActionFocus("workspace", workspaceId, label);
+  }
+
+  function restoreInlineActionFocus(
+    ownerKind: "session" | "workspace",
+    ownerId: string | null,
+    ariaLabel: string,
+  ) {
+    if (ownerId === null) {
+      return;
+    }
+    setInlineActionFocusTarget({ ariaLabel, ownerId, ownerKind });
   }
 
   function submitDeleteWorkspace() {

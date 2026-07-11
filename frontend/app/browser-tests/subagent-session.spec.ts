@@ -1375,12 +1375,15 @@ test("keeps send, session switch, and subagent view responsive under sidebar loa
     );
 
     await page
-      .getByLabel("New session", { exact: true })
+      .getByRole("complementary")
       .getByRole("button", { exact: true, name: "New session" })
       .click();
     await expect(page.getByRole("textbox", { name: "Initial task (optional)" }))
       .toBeVisible();
-    await page.getByRole("button", { exact: true, name: "New session" }).click();
+    await page
+      .getByLabel("New session", { exact: true })
+      .getByRole("button", { exact: true, name: "New session" })
+      .click();
     await expect(page.getByRole("button", { name: "New pressure session" }))
       .toBeVisible();
     await expect(page.getByText("No messages yet")).toBeVisible();

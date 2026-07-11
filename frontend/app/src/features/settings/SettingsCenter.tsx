@@ -66,7 +66,13 @@ import {
   PluginsSettingsSection,
 } from "./RuntimeSettingsSections";
 import { SettingsAppearanceSection } from "./SettingsAppearanceSection";
-import { SettingsQueryState, SettingsSection } from "./SettingsShared";
+import {
+  SettingsFormCard,
+  SettingsFormGrid,
+  SettingsFormLayout,
+  SettingsQueryState,
+  SettingsSection,
+} from "./SettingsShared";
 import { SpeechSettingsSection } from "./SpeechSettingsSection";
 import { TriggerSettingsSection } from "./TriggerSettingsSection";
 import { WebSettingsSection } from "./WebSettingsSection";
@@ -195,6 +201,8 @@ export function SettingsCenter({
           <SettingsRoles
             error={rolesQuery.error}
             loading={rolesQuery.isLoading}
+            modelProfiles={modelsQuery.data}
+            modelProfilesLoading={modelsQuery.isLoading}
             onRetry={() => void rolesQuery.refetch()}
             roles={rolesQuery.data}
           />
@@ -480,11 +488,15 @@ function SettingsGeneral({
 function SettingsRoles({
   error,
   loading,
+  modelProfiles,
+  modelProfilesLoading,
   onRetry,
   roles,
 }: {
   error: Error | null;
   loading: boolean;
+  modelProfiles: Record<string, ModelProfileRecord> | undefined;
+  modelProfilesLoading: boolean;
   onRetry: () => void;
   roles: Awaited<ReturnType<typeof getRoleConfigOptions>> | undefined;
 }) {
@@ -612,6 +624,8 @@ function SettingsRoles({
           agentRuntimes={agentRuntimesQuery.data ?? []}
           agentRuntimesLoading={agentRuntimesQuery.isLoading}
           roleOptions={roles}
+          modelProfiles={modelProfiles}
+          modelProfilesLoading={modelProfilesLoading}
           roleId="new-role"
           saving={saveMutation.isPending}
           summary={undefined}
@@ -631,6 +645,8 @@ function SettingsRoles({
           agentRuntimes={agentRuntimesQuery.data ?? []}
           agentRuntimesLoading={agentRuntimesQuery.isLoading}
           roleOptions={roles}
+          modelProfiles={modelProfiles}
+          modelProfilesLoading={modelProfilesLoading}
           roleId={selectedRoleId}
           saving={saveMutation.isPending}
           summary={selectedRoleSummary}
@@ -668,6 +684,8 @@ function RoleConfigDetail({
   agentRuntimes,
   agentRuntimesLoading,
   roleOptions,
+  modelProfiles,
+  modelProfilesLoading,
   roleId,
   saving,
   summary,
@@ -686,6 +704,8 @@ function RoleConfigDetail({
   agentRuntimes: AgentRuntimeSummary[];
   agentRuntimesLoading: boolean;
   roleOptions: Awaited<ReturnType<typeof getRoleConfigOptions>> | undefined;
+  modelProfiles: Record<string, ModelProfileRecord> | undefined;
+  modelProfilesLoading: boolean;
   roleId: string;
   saving: boolean;
   summary: RoleConfigSummary | undefined;
@@ -702,8 +722,16 @@ function RoleConfigDetail({
     [agentRuntimes, document?.bound_agent_id],
   );
   const skillOptions = useMemo(
-    () => roleSkillSelectOptions(roleOptions?.skills ?? [], document?.skills ?? []),
-    [document?.skills, roleOptions?.skills],
+    () => roleSkillSelectOptions(roleOptions?.skills ?? [], document?.skills ?? [], t),
+    [document?.skills, roleOptions?.skills, t],
+  );
+  const modelProfileOptions = useMemo(
+    () => roleModelProfileOptions(modelProfiles, document?.model_profile, t),
+    [document?.model_profile, modelProfiles, t],
+  );
+  const modeOptions = useMemo(
+    () => roleModeOptions(document?.mode, t),
+    [document?.mode, t],
   );
 
   useEffect(() => {
@@ -784,6 +812,9 @@ function RoleConfigDetail({
               }
             }}
           >
+            <SettingsFormLayout>
+              <SettingsFormCard>
+                <SettingsFormGrid>
             <Form.Item
               label={t("settingsRoleId")}
               name="role_id"
@@ -817,7 +848,12 @@ function RoleConfigDetail({
               name="model_profile"
               rules={[{ message: t("settingsRoleModelProfileRequired"), required: true }]}
             >
-              <Input autoComplete="off" />
+              <Select
+                loading={modelProfilesLoading}
+                optionFilterProp="label"
+                options={modelProfileOptions}
+                showSearch
+              />
             </Form.Item>
             <Form.Item
               label={t("settingsRoleExecutionSurface")}
@@ -847,7 +883,7 @@ function RoleConfigDetail({
               name="mode"
               rules={[{ message: t("settingsRoleModeRequired"), required: true }]}
             >
-              <Input autoComplete="off" />
+              <Select options={modeOptions} />
             </Form.Item>
             <Form.Item label={t("settingsMcpToolCount")} name="tools">
               <Select
@@ -865,14 +901,17 @@ function RoleConfigDetail({
             </Form.Item>
             <Form.Item label={t("settingsSkills")} name="skills">
               <Select
-                mode="tags"
+                mode="multiple"
                 optionLabelProp="label"
                 optionFilterProp="label"
                 options={skillOptions}
                 tokenSeparators={[",", "\n"]}
               />
             </Form.Item>
-            <Form.Item label={t("settingsRoleSystemPrompt")}>
+            <Form.Item
+              className="at-settings-form-grid-span"
+              label={t("settingsRoleSystemPrompt")}
+            >
               <div className="at-role-prompt-editor">
                 <Segmented
                   aria-label={t("settingsRolePromptView")}
@@ -920,6 +959,9 @@ function RoleConfigDetail({
                 ) : null}
               </div>
             </Form.Item>
+                </SettingsFormGrid>
+              </SettingsFormCard>
+            </SettingsFormLayout>
           </Form>
           <div className="at-settings-list at-role-config-properties">
             <PropertyRow
@@ -2629,6 +2671,7 @@ function stringSelectOptions(values: string[]): Array<{ label: string; value: st
 function roleSkillSelectOptions(
   skills: RoleSkillOption[],
   selectedSkills: string[],
+  t: ReturnType<typeof useTranslations>,
 ): Array<{ label: string; value: string }> {
   const options = skills
     .filter((skill) => skill.ref.trim())
@@ -2639,8 +2682,49 @@ function roleSkillSelectOptions(
   const optionRefs = new Set(options.map((option) => option.value));
   for (const selectedSkill of normalizeStringList(selectedSkills)) {
     if (!optionRefs.has(selectedSkill)) {
-      options.push({ label: selectedSkill, value: selectedSkill });
+      options.push({
+        label: t("settingsRolePersistedUnknownOption", { value: selectedSkill }),
+        value: selectedSkill,
+      });
     }
+  }
+  return options;
+}
+
+function roleModelProfileOptions(
+  profiles: Record<string, ModelProfileRecord> | undefined,
+  currentProfile: string | null | undefined,
+  t: ReturnType<typeof useTranslations>,
+): Array<{ label: string; value: string }> {
+  const options = Object.keys(profiles ?? {})
+    .filter((profileId) => profileId.trim())
+    .sort((left, right) => left.localeCompare(right))
+    .map((profileId) => ({ label: profileId, value: profileId }));
+  const current = currentProfile?.trim() ?? "";
+  if (current && options.every((option) => option.value !== current)) {
+    options.push({
+      label: t("settingsRolePersistedUnknownOption", { value: current }),
+      value: current,
+    });
+  }
+  return options;
+}
+
+function roleModeOptions(
+  currentMode: string | null | undefined,
+  t: ReturnType<typeof useTranslations>,
+): Array<{ label: string; value: string }> {
+  const options = [
+    { label: t("settingsRoleModePrimary"), value: "primary" },
+    { label: t("settingsRoleModeSubagent"), value: "subagent" },
+    { label: t("settingsRoleModeAll"), value: "all" },
+  ];
+  const current = currentMode?.trim() ?? "";
+  if (current && options.every((option) => option.value !== current)) {
+    options.push({
+      label: t("settingsRolePersistedUnknownOption", { value: current }),
+      value: current,
+    });
   }
   return options;
 }

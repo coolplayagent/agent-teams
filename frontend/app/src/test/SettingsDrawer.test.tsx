@@ -2010,6 +2010,44 @@ describe("SettingsDrawer", () => {
     });
   });
 
+  it("uses registry selects while keeping unavailable saved role values visible", async () => {
+    getRoleConfigMock.mockResolvedValueOnce({
+      bound_agent_id: null,
+      description: "Legacy role",
+      execution_surface: "api",
+      mode: "legacy-mode",
+      model_profile: "missing-profile",
+      name: "Reviewer",
+      role_id: "reviewer",
+      skills: ["missing-skill"],
+      system_prompt: "Review legacy work.",
+      version: "1.0.0",
+    });
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "Roles" }));
+    const reviewerRoleRow = (await screen.findByText("Reviewer")).closest("button");
+    expect(reviewerRoleRow).not.toBeNull();
+    fireEvent.click(reviewerRoleRow as HTMLElement);
+
+    expect(
+      await screen.findByText("missing-profile (unavailable saved value)"),
+    ).toBeVisible();
+    expect(screen.getByText("legacy-mode (unavailable saved value)")).toBeVisible();
+    expect(screen.getByText("missing-skill (unavailable saved value)")).toBeVisible();
+
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "Model profile" }));
+    expect(await screen.findByRole("option", { name: "default" })).toBeVisible();
+    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "Mode" }));
+    expect(await screen.findByRole("option", { name: "Primary" })).toBeVisible();
+    expect(screen.getByRole("option", { name: "Subagent" })).toBeVisible();
+    expect(screen.getByRole("option", { name: "Primary and subagent" })).toBeVisible();
+  });
+
   it("manages plugins from the System secondary page", async () => {
     renderDrawer();
 

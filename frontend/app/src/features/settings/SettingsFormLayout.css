@@ -31,6 +31,10 @@
   margin-bottom: 0;
 }
 
+.at-settings-form-grid-span {
+  grid-column: 1 / -1;
+}
+
 .at-settings-form-grid-layout .ant-form-item-label,
 .at-settings-form-card-layout .ant-form-item-label {
   padding-bottom: 4px;

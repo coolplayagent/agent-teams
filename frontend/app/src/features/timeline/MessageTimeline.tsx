@@ -43,6 +43,7 @@ import {
 } from "./toolPresentation";
 import { roundPromptText, roundTitle } from "./roundMetadata";
 import {
+  boundedStringCacheValue,
   indexesWithLongerStrictPrefix,
   timelineDerivedValue,
   timelineFallbackVirtualItems,
@@ -54,6 +55,7 @@ const TIMELINE_BOTTOM_FOLLOW_THRESHOLD_PX = 96;
 const TIMELINE_SCROLL_SCOPE_CACHE_LIMIT = 100;
 const TIMELINE_DERIVED_ROWS_CACHE_LIMIT = 8;
 const TIMELINE_FALLBACK_RENDER_LIMIT = 8;
+const TOOL_PREVIEW_CACHE_LIMIT = 256;
 const ROUND_RAIL_PAGE_LIMIT = 100;
 const ROUND_RAIL_MAX_PAGES = 10;
 const TOOL_RESULT_MAX_LINES = 200;
@@ -111,6 +113,9 @@ const runtimeRunStateDetachedRoleCache = new WeakMap<
   ReadonlySet<string>
 >();
 const runtimeRunStateMainRoleCache = new WeakMap<RuntimeRunState, boolean>();
+const firstNonEmptyLineCache = new Map<string, string>();
+const parsedJsonObjectCache = new Map<string, Record<string, JsonValue> | null>();
+const toolCallPreviewCache = new Map<string, string>();
 const IMAGE_CODE_SPAN_PATTERN = /`([^`\n]+)`/g;
 const IMAGE_BARE_PATH_PATTERN =
   /((?:\/|\.{1,2}\/|[A-Za-z]:[\\/])[^"'`\s<>]+?\.(?:avif|bmp|gif|jpe?g|png|webp))/gi;
@@ -9502,34 +9507,41 @@ function firstNonEmptyString(values: Array<string | undefined>): string {
 }
 
 function toolCallPreview(body: string): string {
-  const parsed = parseJsonObjectText(body);
-  if (parsed !== null) {
-    const raw = objectRawString(parsed, "__raw");
-    if (raw.length > 0) {
-      return raw;
-    }
-    const items = jsonStringArrayInlineText(parsed.__items);
-    if (items.length > 0) {
-      return items;
-    }
-    return (
-      objectRawString(parsed, "command") ||
-      objectRawString(parsed, "cmd") ||
-      objectRawString(parsed, "description") ||
-      objectRawString(parsed, "path") ||
-      objectRawString(parsed, "file_path") ||
-      objectRawString(parsed, "filepath") ||
-      objectRawString(parsed, "target_path") ||
-      objectRawString(parsed, "query") ||
-      objectRawString(parsed, "q") ||
-      objectRawString(parsed, "search_query") ||
-      objectRawString(parsed, "pattern") ||
-      objectRawString(parsed, "url") ||
-      objectRawString(parsed, "uri") ||
-      firstNonEmptyLine(jsonValueText(parsed))
-    );
-  }
-  return firstNonEmptyLine(body);
+  return boundedStringCacheValue({
+    cache: toolCallPreviewCache,
+    create: () => {
+      const parsed = parseJsonObjectText(body);
+      if (parsed !== null) {
+        const raw = objectRawString(parsed, "__raw");
+        if (raw.length > 0) {
+          return raw;
+        }
+        const items = jsonStringArrayInlineText(parsed.__items);
+        if (items.length > 0) {
+          return items;
+        }
+        return (
+          objectRawString(parsed, "command") ||
+          objectRawString(parsed, "cmd") ||
+          objectRawString(parsed, "description") ||
+          objectRawString(parsed, "path") ||
+          objectRawString(parsed, "file_path") ||
+          objectRawString(parsed, "filepath") ||
+          objectRawString(parsed, "target_path") ||
+          objectRawString(parsed, "query") ||
+          objectRawString(parsed, "q") ||
+          objectRawString(parsed, "search_query") ||
+          objectRawString(parsed, "pattern") ||
+          objectRawString(parsed, "url") ||
+          objectRawString(parsed, "uri") ||
+          firstNonEmptyLine(jsonValueText(parsed))
+        );
+      }
+      return firstNonEmptyLine(body);
+    },
+    key: body,
+    limit: TOOL_PREVIEW_CACHE_LIMIT,
+  });
 }
 
 function toolArgsBody(value: unknown): string {
@@ -9572,18 +9584,30 @@ function jsonCompatibleValue(value: unknown): JsonValue {
 }
 
 function parseJsonObjectText(value: string): Record<string, JsonValue> | null {
-  try {
-    return unknownJsonObject(JSON.parse(value) as unknown);
-  } catch {
-    return null;
-  }
+  return boundedStringCacheValue({
+    cache: parsedJsonObjectCache,
+    create: () => {
+      try {
+        return unknownJsonObject(JSON.parse(value) as unknown);
+      } catch {
+        return null;
+      }
+    },
+    key: value,
+    limit: TOOL_PREVIEW_CACHE_LIMIT,
+  });
 }
 
 function firstNonEmptyLine(value: string): string {
-  return value
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .find((line) => line.length > 0) ?? "";
+  return boundedStringCacheValue({
+    cache: firstNonEmptyLineCache,
+    create: () => value
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line.length > 0) ?? "",
+    key: value,
+    limit: TOOL_PREVIEW_CACHE_LIMIT,
+  });
 }
 
 function truncatePreview(value: string): string {

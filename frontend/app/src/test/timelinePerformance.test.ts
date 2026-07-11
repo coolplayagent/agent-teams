@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { terminalRuntimeDerivationSignature } from "../features/timeline/MessageTimeline";
 import {
+  boundedStringCacheValue,
   indexesWithLongerStrictPrefix,
   timelineDerivedValue,
   timelineFallbackVirtualItems,
@@ -115,6 +116,40 @@ describe("timeline fallback virtual window", () => {
     });
     expect(lastItem?.index).toBe(19);
     expect((lastItem?.start ?? 0) + (sizes[19] ?? 0)).toBe(totalSize);
+  });
+});
+
+describe("bounded string derivation cache", () => {
+  it("reuses null and large-text derivations", () => {
+    const cache = new Map<string, string | null>();
+    const createNull = vi.fn(() => null);
+    const largeText = "x".repeat(12_000);
+    const createLarge = vi.fn(() => largeText.slice(0, 96));
+
+    for (let index = 0; index < 2; index += 1) {
+      boundedStringCacheValue({ cache, create: createNull, key: "invalid", limit: 3 });
+      boundedStringCacheValue({ cache, create: createLarge, key: largeText, limit: 3 });
+    }
+
+    expect(createNull).toHaveBeenCalledTimes(1);
+    expect(createLarge).toHaveBeenCalledTimes(1);
+  });
+
+  it("evicts the least recently used string at the configured boundary", () => {
+    const cache = new Map<string, string>();
+    const read = (key: string) => boundedStringCacheValue({
+      cache,
+      create: () => key.toUpperCase(),
+      key,
+      limit: 2,
+    });
+
+    read("a");
+    read("b");
+    read("a");
+    read("c");
+
+    expect([...cache.keys()]).toEqual(["a", "c"]);
   });
 });
 

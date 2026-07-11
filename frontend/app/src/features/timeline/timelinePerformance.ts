@@ -24,6 +24,29 @@ interface TimelineDerivationOptions<Value> {
   signature: string | null;
 }
 
+interface BoundedStringCacheOptions<Value> {
+  cache: Map<string, Value>;
+  create: () => Value;
+  key: string;
+  limit: number;
+}
+
+export function boundedStringCacheValue<Value>({
+  cache,
+  create,
+  key,
+  limit,
+}: BoundedStringCacheOptions<Value>): Value {
+  if (cache.has(key)) {
+    const value = cache.get(key) as Value;
+    rememberBoundedValue(cache, key, value, limit);
+    return value;
+  }
+  const value = create();
+  rememberBoundedValue(cache, key, value, limit);
+  return value;
+}
+
 export function timelineDerivedValue<Value>({
   cache,
   derive,

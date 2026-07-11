@@ -336,7 +336,13 @@ export function AppShell() {
     activeSubagentAutoRestoreBlocked
       ? null
       : activeSubagentForSelectedSession;
-  const renderedSubagent = visibleActiveSubagent ?? retainedSubagent;
+  const canReuseRetainedSubagent =
+    visibleActiveSubagent !== null &&
+    retainedSubagent !== null &&
+    subagentPanelIdentityMatches(visibleActiveSubagent, retainedSubagent);
+  const renderedSubagent = canReuseRetainedSubagent
+    ? retainedSubagent
+    : visibleActiveSubagent ?? retainedSubagent;
 
   useEffect(() => {
     if (
@@ -347,7 +353,12 @@ export function AppShell() {
       return;
     }
     if (visibleActiveSubagent !== null) {
-      setRetainedSubagent(null);
+      setRetainedSubagent((current) =>
+        current !== null &&
+        subagentPanelIdentityMatches(current, visibleActiveSubagent)
+          ? current
+          : null
+      );
     }
   }, [visibleActiveSubagent]);
 
@@ -1453,6 +1464,35 @@ function subagentIsTerminal(subagent: ActiveSubagentSession): boolean {
   return (
     isTerminalRunStatus(subagent.runStatus) ||
     isTerminalRunStatus(subagent.status)
+  );
+}
+
+function subagentPanelIdentityMatches(
+  left: ActiveSubagentSession,
+  right: ActiveSubagentSession,
+): boolean {
+  if (left.sessionId !== right.sessionId) {
+    return false;
+  }
+  if (left.runId.length > 0 && right.runId.length > 0) {
+    return left.runId === right.runId;
+  }
+  if (left.instanceId.length > 0 && right.instanceId.length > 0) {
+    return left.instanceId === right.instanceId;
+  }
+  if (
+    left.sourceToolCallId !== undefined &&
+    right.sourceToolCallId !== undefined &&
+    left.sourceToolCallId.length > 0 &&
+    right.sourceToolCallId.length > 0
+  ) {
+    return left.sourceToolCallId === right.sourceToolCallId;
+  }
+  return (
+    normalizedSubagentMatchText(left.title) ===
+      normalizedSubagentMatchText(right.title) &&
+    normalizedSubagentMatchText(left.roleId) ===
+      normalizedSubagentMatchText(right.roleId)
   );
 }
 

@@ -21,7 +21,7 @@ describe("settings editor width contract", () => {
 
   it("lets the model catalog use the available settings width", () => {
     expect(catalogCss).toMatch(
-      /\.at-model-catalog-panel\s*{[\s\S]*?width:\s*100%;[\s\S]*?max-width:\s*none;/,
+      /\.at-model-profile-detail \.at-model-catalog-panel\s*{[\s\S]*?width:\s*100%;[\s\S]*?max-width:\s*none;/,
     );
   });
 });

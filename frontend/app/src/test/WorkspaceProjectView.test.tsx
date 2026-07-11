@@ -1,6 +1,6 @@
 import { App as AntApp, ConfigProvider } from "antd";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -194,6 +194,95 @@ describe("WorkspaceProjectView", () => {
     await waitFor(() =>
       expect(openWorkspaceRootMock).toHaveBeenCalledWith("workspace-1", "default"),
     );
+  });
+
+  it("announces directory loading and keeps disclosure state accessible", async () => {
+    type WorkspaceTreeResult = Awaited<ReturnType<typeof getWorkspaceTree>>;
+    let resolveDirectory: (value: WorkspaceTreeResult) => void = () => undefined;
+    const directoryPromise = new Promise<WorkspaceTreeResult>((resolve) => {
+      resolveDirectory = resolve;
+    });
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
+    ]);
+    getWorkspaceSnapshotMock.mockResolvedValue({
+      workspace_id: "workspace-1",
+      default_mount_name: "default",
+      default_mount_root: "C:/work/agent-teams",
+      tree: {
+        name: ".",
+        path: ".",
+        kind: "directory",
+        children: [],
+      },
+    });
+    getWorkspaceTreeMock.mockImplementation((_workspaceId, path = ".") => {
+      if (path === "src") {
+        return directoryPromise;
+      }
+      return Promise.resolve({
+        workspace_id: "workspace-1",
+        mount_name: "default",
+        directory_path: ".",
+        children: [
+          {
+            name: "src",
+            path: "src",
+            kind: "directory",
+            has_children: true,
+          },
+        ],
+      });
+    });
+    getWorkspaceDiffsMock.mockResolvedValue({
+      workspace_id: "workspace-1",
+      mount_name: "default",
+      root_path: "C:/work/agent-teams",
+      is_git_repository: true,
+      diff_files: [],
+    });
+
+    renderProjectView();
+
+    const directoryButton = await screen.findByRole("button", {
+      name: "Toggle directory src",
+    });
+    expect(directoryButton).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(directoryButton);
+
+    expect(directoryButton).toHaveAttribute("aria-expanded", "true");
+    expect(directoryButton).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("status")).toHaveTextContent("Loading directory...");
+    expect(directoryButton.nextElementSibling).toHaveAttribute("aria-hidden", "false");
+    expect(directoryButton.nextElementSibling).toHaveClass("is-expanded");
+
+    await act(async () => {
+      resolveDirectory({
+        workspace_id: "workspace-1",
+        mount_name: "default",
+        directory_path: "src",
+        children: [
+          {
+            name: "index.ts",
+            path: "src/index.ts",
+            kind: "file",
+            has_children: false,
+          },
+        ],
+      });
+    });
+
+    expect(await screen.findByText("index.ts")).toBeVisible();
+    expect(directoryButton).toHaveAttribute("aria-busy", "false");
+
+    fireEvent.click(directoryButton);
+    expect(directoryButton).toHaveAttribute("aria-expanded", "false");
+    expect(directoryButton.nextElementSibling).toHaveAttribute("aria-hidden", "true");
+    expect(directoryButton.nextElementSibling).not.toHaveClass("is-expanded");
   });
 
   it("loads the selected changed file diff", async () => {

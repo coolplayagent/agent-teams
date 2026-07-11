@@ -423,6 +423,7 @@ export function WorkspaceProjectView({
         {activeMode === "files" ? (
           <div className="at-workspace-workbench-content is-files">
             <section
+              aria-busy={fileContentQuery.isFetching}
               aria-label={t("workspaceFilePreview")}
               className="at-workspace-file-preview"
             >
@@ -458,6 +459,7 @@ export function WorkspaceProjectView({
         ) : (
           <div className="at-workspace-workbench-content is-changes">
             <section
+              aria-busy={diffsQuery.isFetching}
               aria-label={t("workspaceChangesListLabel")}
               className="at-workspace-diff-list"
             >
@@ -482,6 +484,7 @@ export function WorkspaceProjectView({
               ))}
             </section>
             <section
+              aria-busy={diffFileQuery.isFetching}
               aria-label={t("workspaceDiffPreview")}
               className="at-workspace-diff-preview"
             >
@@ -942,7 +945,11 @@ function WorkspaceFileExplorer({
 }) {
   const normalizedFilter = filter.trim();
   return (
-    <section aria-label={t("workspaceFileTree")} className="at-workspace-file-pane">
+    <section
+      aria-busy={loading}
+      aria-label={t("workspaceFileTree")}
+      className="at-workspace-file-pane"
+    >
       <div className="at-workspace-file-pane-filter">
         <Input
           allowClear
@@ -955,7 +962,18 @@ function WorkspaceFileExplorer({
           value={filter}
         />
       </div>
-      {loading && entries.length === 0 ? <Skeleton active paragraph={{ rows: 10 }} /> : null}
+      {loading && entries.length === 0 ? (
+        <div aria-live="polite" className="at-workspace-tree-loading" role="status">
+          <span className="at-sr-only">{t("workspaceLoadingDirectory")}</span>
+          <Skeleton active paragraph={{ rows: 10 }} />
+        </div>
+      ) : null}
+      {loading && entries.length > 0 ? (
+        <div aria-live="polite" className="at-workspace-inline-loading" role="status">
+          <span aria-hidden="true" className="at-workspace-loading-dot" />
+          <span>{t("workspaceLoadingDirectory")}</span>
+        </div>
+      ) : null}
       {error !== null ? (
         <div className="at-project-state is-error">
           {errorMessage(
@@ -1067,8 +1085,9 @@ function WorkspaceDirectoryNode({
     : [];
   const children = childrenQuery.data?.children ?? inlineChildren;
   return (
-    <div className="at-workspace-tree-node">
+    <div aria-busy={childrenQuery.isFetching} className="at-workspace-tree-node">
       <button
+        aria-busy={childrenQuery.isFetching}
         aria-expanded={expanded}
         aria-label={t("workspaceToggleDirectory", { path: entry.path })}
         className="at-workspace-tree-row is-action"
@@ -1084,10 +1103,24 @@ function WorkspaceDirectoryNode({
         <FolderClosed aria-hidden="true" size={15} />
         <span className="at-workspace-file-pane-name">{entry.name}</span>
       </button>
-      {expanded ? (
+      <div
+        aria-hidden={!expanded}
+        className={
+          expanded
+            ? "at-workspace-tree-disclosure is-expanded"
+            : "at-workspace-tree-disclosure"
+        }
+      >
         <div className="at-workspace-tree-children">
           {childrenQuery.isLoading ? (
-            <div className="at-project-state">{t("workspaceLoadingDirectory")}</div>
+            <div
+              aria-live="polite"
+              className="at-workspace-inline-loading"
+              role="status"
+            >
+              <span aria-hidden="true" className="at-workspace-loading-dot" />
+              <span>{t("workspaceLoadingDirectory")}</span>
+            </div>
           ) : null}
           {childrenQuery.isError ? (
             <div className="at-project-state is-error">
@@ -1106,7 +1139,7 @@ function WorkspaceDirectoryNode({
             />
           ))}
         </div>
-      ) : null}
+      </div>
     </div>
   );
 }

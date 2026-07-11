@@ -23,4 +23,16 @@ describe("workspace project view CSS", () => {
       /@media \(max-width: 640px\)[\s\S]*?\.at-workspace-workbench-content\.is-changes\s*{[\s\S]*?grid-template-rows:\s*minmax\(140px, 0\.3fr\) minmax\(220px, 0\.7fr\);/,
     );
   });
+
+  it("animates directory disclosure once and respects reduced motion", () => {
+    expect(css).toMatch(
+      /\.at-workspace-tree-disclosure\s*{[\s\S]*?grid-template-rows:\s*0fr;[\s\S]*?opacity:\s*0;[\s\S]*?grid-template-rows 180ms ease,[\s\S]*?opacity 180ms ease,/,
+    );
+    expect(css).toMatch(
+      /\.at-workspace-tree-disclosure\.is-expanded\s*{[\s\S]*?grid-template-rows:\s*1fr;[\s\S]*?opacity:\s*1;/,
+    );
+    expect(css).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.at-workspace-tree-disclosure,[\s\S]*?transition:\s*none;[\s\S]*?\.at-workspace-loading-dot\s*{[\s\S]*?animation:\s*none;/,
+    );
+  });
 });

@@ -16,6 +16,9 @@ const STREAM_HOLD_MS = boundedStreamHoldMs(
 );
 const EDGE_EXECUTABLE =
   process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?.trim() ?? "";
+const PROVIDER_SLOT_COUNT = 4;
+const SLOW_PROVIDER_CALL_BUDGET_MS = 70_000;
+const SUBAGENT_PROVIDER_CALL_COUNT = 3;
 
 interface SessionRecord {
   active_run_id?: string | null;
@@ -46,6 +49,17 @@ interface BrowserProbeSnapshot {
   interactionDurations: number[];
   longTasks: number[];
   peakEventSources: number;
+}
+
+interface QueueStageObservation {
+  expectedProviderStartUpperBoundMs: number;
+  firstIncrementObservedAtMs: number | null;
+  phase: "streaming" | "waiting";
+  providerCallCount: number;
+  runId: string;
+  sessionId: string;
+  title: string;
+  userPromptVisibleAtMs: number;
 }
 
 interface FailureCollection {
@@ -93,6 +107,7 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
     ),
   );
   const startedRuns: StartedRun[] = [];
+  const queueStageObservations: QueueStageObservation[] = [];
 
   try {
     await installBrowserProbe(page, sessions[0]);
@@ -166,14 +181,60 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
       test.info().outputPath("managed-real-concurrency-active.jpg"),
     );
 
-    const reloadRun = startedRuns.at(-2);
+    for (const [index, run] of startedRuns.entries()) {
+      await selectSession(page, run.title, failures);
+      await expect
+        .poll(() => mainTimelineText(page), { timeout: 10_000 })
+        .toContain(run.title);
+      const visibleText = await mainTimelineText(page);
+      for (const other of startedRuns) {
+        if (other.runId !== run.runId) {
+          expect(visibleText).not.toContain(other.expectedPrefix);
+        }
+      }
+      const phase = visibleText.includes(run.expectedPrefix)
+        ? "streaming"
+        : "waiting";
+      const providerCallCount =
+        run === startedRuns.at(-1) ? SUBAGENT_PROVIDER_CALL_COUNT : 1;
+      queueStageObservations.push({
+        expectedProviderStartUpperBoundMs: providerQueueUpperBoundMs(
+          index,
+          providerCallCount,
+        ),
+        firstIncrementObservedAtMs:
+          phase === "streaming" ? Date.now() - gateStartedAt : null,
+        phase,
+        providerCallCount,
+        runId: run.runId,
+        sessionId: run.session.session_id,
+        title: run.title,
+        userPromptVisibleAtMs: Date.now() - gateStartedAt,
+      });
+    }
+    expect(
+      queueStageObservations.some(({ phase }) => phase === "waiting"),
+    ).toBe(true);
+
+    const reloadRun = startedRuns[0];
     if (reloadRun === undefined) {
       throw new Error("Expected a normal stream for reload recovery.");
     }
     await selectSession(page, reloadRun.title, failures);
     await expect
-      .poll(() => mainTimelineText(page), { timeout: 45_000 })
+      .poll(() => mainTimelineText(page), {
+        timeout: remainingProviderQueueBudgetMs(
+          gateStartedAt,
+          startedRuns.indexOf(reloadRun),
+          1,
+        ),
+      })
       .toContain(reloadRun.expectedPrefix);
+    markFirstIncrementObserved(
+      queueStageObservations,
+      reloadRun.runId,
+      gateStartedAt,
+    );
     const beforeReloadIndex = await highestSlowStreamTokenIndex(
       page,
       reloadRun,
@@ -230,7 +291,13 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
     const subagentCard = page
       .locator(".at-chat-view .at-message-tool.is-openable-subagent")
       .first();
-    await expect(subagentCard).toBeVisible({ timeout: 90_000 });
+    await expect(subagentCard).toBeVisible({
+      timeout: remainingProviderQueueBudgetMs(
+        gateStartedAt,
+        startedRuns.indexOf(subagentRun),
+        1,
+      ),
+    });
     await recordInteraction(page, () => subagentCard.click());
     const subagentPanel = page.locator(".at-subagent-session-view");
     await expect(subagentPanel).toBeVisible({ timeout: 20_000 });
@@ -242,9 +309,18 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
     );
     await expect
       .poll(() => latestSubagentPanelRuntimeText(subagentPanel), {
-        timeout: 45_000,
+        timeout: remainingProviderQueueBudgetMs(
+          gateStartedAt,
+          startedRuns.indexOf(subagentRun),
+          SUBAGENT_PROVIDER_CALL_COUNT,
+        ),
       })
       .toContain(subagentRun.expectedPrefix);
+    markFirstIncrementObserved(
+      queueStageObservations,
+      subagentRun.runId,
+      gateStartedAt,
+    );
     await expect
       .poll(
         () =>
@@ -296,7 +372,7 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
       ),
     );
 
-    const anchor = startedRuns[0];
+    const anchor = startedRuns.at(-2);
     if (anchor === undefined) {
       throw new Error("Expected an anchor run.");
     }
@@ -339,8 +415,19 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
           .toBeGreaterThan(0);
       } else {
         await expect
-          .poll(() => mainTimelineText(page), { timeout: 45_000 })
+          .poll(() => mainTimelineText(page), {
+            timeout: remainingProviderQueueBudgetMs(
+              gateStartedAt,
+              startedRuns.indexOf(run),
+              1,
+            ),
+          })
           .toContain(run.expectedPrefix);
+        markFirstIncrementObserved(
+          queueStageObservations,
+          run.runId,
+          gateStartedAt,
+        );
       }
       const visibleText = await mainTimelineText(page);
       for (const other of startedRuns) {
@@ -402,6 +489,7 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
           ? null
           : probe.finalHeapBytes - probe.initialHeapBytes,
       probe,
+      queueStageObservations,
       sessionCount: SESSION_COUNT,
       streamHoldMs: STREAM_HOLD_MS,
     };
@@ -773,6 +861,44 @@ async function highestSubagentTokenIndex(
     }
   }
   return highest;
+}
+
+function providerQueueUpperBoundMs(
+  runIndex: number,
+  providerCallCount: number,
+): number {
+  const lastProviderCallIndex = runIndex + providerCallCount - 1;
+  const providerWaveCount =
+    Math.floor(lastProviderCallIndex / PROVIDER_SLOT_COUNT) + 1;
+  return providerWaveCount * SLOW_PROVIDER_CALL_BUDGET_MS;
+}
+
+function remainingProviderQueueBudgetMs(
+  gateStartedAt: number,
+  runIndex: number,
+  providerCallCount: number,
+): number {
+  const elapsedMs = Date.now() - gateStartedAt;
+  return Math.max(
+    45_000,
+    providerQueueUpperBoundMs(runIndex, providerCallCount) - elapsedMs + 15_000,
+  );
+}
+
+function markFirstIncrementObserved(
+  observations: QueueStageObservation[],
+  runId: string,
+  gateStartedAt: number,
+): void {
+  const observation = observations.find(
+    (candidate) => candidate.runId === runId,
+  );
+  if (
+    observation !== undefined &&
+    observation.firstIncrementObservedAtMs === null
+  ) {
+    observation.firstIncrementObservedAtMs = Date.now() - gateStartedAt;
+  }
 }
 
 function waitForRunCreateResponse(page: Page): Promise<RunCreateResponse> {

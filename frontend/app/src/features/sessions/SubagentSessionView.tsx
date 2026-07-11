@@ -1,7 +1,7 @@
 import { Button, Typography } from "antd";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { listAgentMessages, listSessionSubagents } from "../../api/client";
 import {
@@ -43,7 +43,7 @@ interface SubagentSessionViewProps {
   runStreamController: RunStreamController;
 }
 
-export function SubagentSessionView({
+export const SubagentSessionView = memo(function SubagentSessionView({
   onBack,
   runStreamController,
   subagent,
@@ -365,7 +365,7 @@ export function SubagentSessionView({
       </div>
     </div>
   );
-}
+});
 
 function SubagentPendingState({ label }: { label: string }) {
   return (

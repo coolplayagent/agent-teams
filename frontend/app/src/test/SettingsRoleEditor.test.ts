@@ -26,5 +26,8 @@ describe("role settings editor", () => {
     expect(source).toContain("at-role-config-metadata");
     expect(source).not.toMatch(/at-role-config-metadata[\s\S]{0,300}?settingsRoleModelProfile/);
     expect(css).toMatch(/\.at-role-config-detail \.at-role-config-form[\s\S]*?max-width:\s*none;/);
+    expect(css).toMatch(
+      /\.at-settings-detail-page\.at-role-config-detail[\s\S]*?width:\s*100%;[\s\S]*?max-width:\s*none;/,
+    );
   });
 });

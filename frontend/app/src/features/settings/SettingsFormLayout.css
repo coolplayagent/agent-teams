@@ -56,7 +56,7 @@
   padding-top: 2px;
 }
 
-.at-orchestration-preset-detail,
+.at-settings-detail-page.at-orchestration-preset-detail,
 .at-orchestration-preset-detail .at-orchestration-preset-form {
   width: 100%;
   max-width: none;

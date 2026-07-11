@@ -22,5 +22,8 @@ describe("model profile editor layout", () => {
     expect(css).toMatch(/grid-template-columns:\s*repeat\(2,/);
     expect(css).toMatch(/\.at-model-field-wide\s*{[\s\S]*?grid-column:\s*span 2;/);
     expect(css).toMatch(/\.at-model-profile-detail \.at-model-profile-form\s*{[\s\S]*?max-width:\s*none;/);
+    expect(css).toMatch(
+      /\.at-settings-detail-page\.at-model-profile-detail\s*{[\s\S]*?width:\s*100%;[\s\S]*?max-width:\s*none;/,
+    );
   });
 });

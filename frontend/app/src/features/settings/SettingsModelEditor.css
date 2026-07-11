@@ -20,7 +20,7 @@
   grid-column: span 1;
 }
 
-.at-model-profile-detail {
+.at-settings-detail-page.at-model-profile-detail {
   width: 100%;
   max-width: none;
 }

@@ -1,6 +1,6 @@
 import { App } from "antd";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { listSessionRounds, listSidebarSessions } from "../api/client";
 import type { JsonValue, SessionRound, SessionSidebarRecord } from "../api/contracts";
@@ -92,6 +92,7 @@ export function useRunStreamController(): RunStreamController {
   const streamGenerationRef = useRef(0);
   const subagentDiscoveryEventKeysRef = useRef(new Set<string>());
   const recoveryInteractionEventKeysRef = useRef(new Set<string>());
+  const controllerOperationsRef = useRef<RunStreamControllerOperations | null>(null);
   const [activeRunIds, setActiveRunIds] = useState<string[]>([]);
   const [suppressedRunIds, setSuppressedRunIds] = useState<string[]>([]);
   const [trackedRunIds, setTrackedRunIds] = useState<string[]>([]);
@@ -566,19 +567,65 @@ export function useRunStreamController(): RunStreamController {
     );
   };
 
-  return {
-    activeRunId,
-    activeRunIds,
+  controllerOperationsRef.current = {
     clearRunStream,
     setForegroundSessionId,
     settleTerminalRunStream,
     startRunStream,
     startRunStreams,
+  };
+  const stableClearRunStream = useCallback((options?: ClearRunStreamOptions) => {
+    controllerOperationsRef.current?.clearRunStream(options);
+  }, []);
+  const stableSetForegroundSessionId = useCallback((sessionId: string | null) => {
+    controllerOperationsRef.current?.setForegroundSessionId(sessionId);
+  }, []);
+  const stableSettleTerminalRunStream = useCallback(
+    (options: SettleTerminalRunStreamOptions) => {
+      controllerOperationsRef.current?.settleTerminalRunStream(options);
+    },
+    [],
+  );
+  const stableStartRunStream = useCallback((options: StartRunStreamOptions) => {
+    controllerOperationsRef.current?.startRunStream(options);
+  }, []);
+  const stableStartRunStreams = useCallback((options: StartRunStreamsOptions) => {
+    controllerOperationsRef.current?.startRunStreams(options);
+  }, []);
+
+  return useMemo(() => ({
+    activeRunId,
+    activeRunIds,
+    clearRunStream: stableClearRunStream,
+    setForegroundSessionId: stableSetForegroundSessionId,
+    settleTerminalRunStream: stableSettleTerminalRunStream,
+    startRunStream: stableStartRunStream,
+    startRunStreams: stableStartRunStreams,
     suppressedRunIds,
     trackedRunIds,
     trackedSessionId,
-  };
+  }), [
+    activeRunId,
+    activeRunIds,
+    stableClearRunStream,
+    stableSetForegroundSessionId,
+    stableSettleTerminalRunStream,
+    stableStartRunStream,
+    stableStartRunStreams,
+    suppressedRunIds,
+    trackedRunIds,
+    trackedSessionId,
+  ]);
 }
+
+type RunStreamControllerOperations = Pick<
+  RunStreamController,
+  | "clearRunStream"
+  | "setForegroundSessionId"
+  | "settleTerminalRunStream"
+  | "startRunStream"
+  | "startRunStreams"
+>;
 
 function normalizeRunTargets(runs: StartRunStreamTarget[]): StartRunStreamTarget[] {
   const normalizedRuns = runs.map(normalizeRunTarget);

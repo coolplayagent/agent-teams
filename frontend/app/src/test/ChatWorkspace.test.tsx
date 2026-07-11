@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatWorkspace } from "../features/shell/ChatWorkspace";
 import type { RunStreamController } from "../runtime/useRunStreamController";
 
+const timelineRenderMock = vi.hoisted(() => vi.fn());
+
 vi.mock("../features/composer/Composer", () => ({
   Composer: ({ sessionId }: { sessionId: string | null }) => (
     <div data-testid="composer">{sessionId}</div>
@@ -67,9 +69,10 @@ vi.mock("../features/shell/SessionTokenUsage", () => ({
 }));
 
 vi.mock("../features/timeline/MessageTimeline", () => ({
-  MessageTimeline: ({ sessionId }: { sessionId: string | null }) => (
-    <div data-testid="timeline">{sessionId}</div>
-  ),
+  MessageTimeline: ({ sessionId }: { sessionId: string | null }) => {
+    timelineRenderMock(sessionId);
+    return <div data-testid="timeline">{sessionId}</div>;
+  },
 }));
 
 afterEach(() => {
@@ -78,6 +81,21 @@ afterEach(() => {
 });
 
 describe("ChatWorkspace", () => {
+  it("does not rebuild the main timeline for an unrelated parent render", () => {
+    const controller = createRunStreamController();
+    const props = {
+      primaryRoleId: "MainAgent",
+      runStreamController: controller,
+      sessionId: "session-1",
+    };
+    const view = render(<ChatWorkspace {...props} />);
+    const initialTimelineRenders = timelineRenderMock.mock.calls.length;
+
+    view.rerender(<ChatWorkspace {...props} />);
+
+    expect(timelineRenderMock).toHaveBeenCalledTimes(initialTimelineRenders);
+  });
+
   it("routes a paused recovery subagent through the shared panel reference", () => {
     const onSubagentOpen = vi.fn();
     render(

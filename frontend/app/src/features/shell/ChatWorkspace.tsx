@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { Composer } from "../composer/Composer";
 import { RecoveryBar } from "../recovery/RecoveryBar";
@@ -25,7 +25,7 @@ interface ChatWorkspaceProps {
   workspaceId?: string | null;
 }
 
-export function ChatWorkspace({
+export const ChatWorkspace = memo(function ChatWorkspace({
   contentLoadingKey,
   latestTerminalRunId = null,
   latestTerminalRunStatus = null,
@@ -147,7 +147,7 @@ export function ChatWorkspace({
       />
     </div>
   );
-}
+});
 
 function pendingQuestionTimelineReference(
   sessionId: string,

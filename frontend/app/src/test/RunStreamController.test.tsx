@@ -61,6 +61,31 @@ afterEach(() => {
 });
 
 describe("useRunStreamController", () => {
+  it("preserves controller identity across unrelated parent renders", () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const controllers: ReturnType<typeof useRunStreamController>[] = [];
+    const renderHarness = (renderToken: number) => (
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamIdentityHarness
+              onRender={(controller) => controllers.push(controller)}
+              renderToken={renderToken}
+            />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>
+    );
+    const view = render(renderHarness(0));
+    const initialController = controllers.at(-1);
+
+    view.rerender(renderHarness(1));
+
+    expect(controllers.at(-1)).toBe(initialController);
+  });
+
   it("refreshes recovery when a stream starts and while it stays active", () => {
     vi.useFakeTimers();
     const queryClient = new QueryClient({
@@ -2094,6 +2119,18 @@ function RunStreamHarness({ afterEventId }: { afterEventId?: number }) {
       <span data-testid="tracked-run-ids">{controller.trackedRunIds.join(",")}</span>
     </>
   );
+}
+
+function RunStreamIdentityHarness({
+  onRender,
+  renderToken,
+}: {
+  onRender: (controller: ReturnType<typeof useRunStreamController>) => void;
+  renderToken: number;
+}) {
+  const controller = useRunStreamController();
+  onRender(controller);
+  return <span>{renderToken}</span>;
 }
 
 function recoveryRefreshCallCount(

@@ -292,13 +292,18 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
     const subagentCard = page
       .locator(".at-chat-view .at-message-tool.is-openable-subagent")
       .first();
-    await expect(subagentCard).toBeVisible({
-      timeout: remainingProviderQueueBudgetMs(
-        gateStartedAt,
-        startedRuns.indexOf(subagentRun),
-        1,
-      ),
-    });
+    await expect
+      .poll(() => subagentCard.count(), {
+        timeout: remainingProviderQueueBudgetMs(
+          gateStartedAt,
+          startedRuns.indexOf(subagentRun),
+          1,
+        ),
+      })
+      .toBeGreaterThan(0);
+    await expandProcessedGroupsUntilCardIsVisible(page, subagentCard);
+    await expect(subagentCard).toBeVisible({ timeout: 10_000 });
+    await expect(subagentCard).toHaveAttribute("data-status", "running");
     await recordInteraction(page, () => subagentCard.click());
     const subagentPanel = page.locator(".at-subagent-session-view");
     await expect(subagentPanel).toBeVisible({ timeout: 20_000 });
@@ -723,6 +728,29 @@ async function selectSession(
       );
     }),
   );
+}
+
+async function expandProcessedGroupsUntilCardIsVisible(
+  page: Page,
+  card: Locator,
+): Promise<void> {
+  const closedGroups = page.locator(
+    "details.at-processed-group:not([open]) > .at-processed-group-summary",
+  );
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    if (await card.isVisible()) {
+      return;
+    }
+    const groupCount = await closedGroups.count();
+    for (let index = 0; index < groupCount; index += 1) {
+      const summary = closedGroups.nth(index);
+      if (await summary.isVisible()) {
+        await recordInteraction(page, () => summary.click());
+        break;
+      }
+    }
+    await page.waitForTimeout(100);
+  }
 }
 
 async function withExpectedEventAbortWindow<T>(

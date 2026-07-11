@@ -72,5 +72,8 @@ describe("timeline scroll state contract", () => {
     expect(timelineSource).toMatch(
       /timelineHeight,\s+visible,\s+\]\);/,
     );
+    expect(timelineSource).toMatch(
+      /handleTimelineScroll[\s\S]*?if \(!visible \|\| timelineContainerIsHidden\(container\)\) \{\s+return;/,
+    );
   });
 });

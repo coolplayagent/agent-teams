@@ -515,6 +515,9 @@ export function MessageTimeline({
     : fallbackTotalSize(rows);
   const handleTimelineScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
     const container = event.currentTarget;
+    if (!visible || timelineContainerIsHidden(container)) {
+      return;
+    }
     if (isProgrammaticTimelineScrollEvent(event.nativeEvent)) {
       return;
     }
@@ -543,7 +546,7 @@ export function MessageTimeline({
       }
       syncActiveRunIdFromViewport(container, pendingRoundRunIdRef, setActiveRunId);
     }
-  }, [scrollScopeKey]);
+  }, [scrollScopeKey, visible]);
   const handleTimelinePointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
     const target = event.target;
     if (!(target instanceof Element)) {

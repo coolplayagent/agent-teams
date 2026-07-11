@@ -972,6 +972,7 @@ function BoardSourceSettingsModal({
     <Modal
       centered
       className="at-board-modal at-board-sources-modal"
+      classNames={{ body: "at-scroll-region" }}
       destroyOnHidden
       footer={null}
       onCancel={onClose}
@@ -1222,6 +1223,7 @@ function BoardHandoffModal({
     <Modal
       centered
       className="at-board-modal"
+      classNames={{ body: "at-scroll-region" }}
       destroyOnHidden
       footer={null}
       onCancel={onClose}
@@ -1364,6 +1366,7 @@ function BoardRequestChangesModal({
     <Modal
       centered
       className="at-board-modal"
+      classNames={{ body: "at-scroll-region" }}
       destroyOnHidden
       footer={null}
       onCancel={onClose}

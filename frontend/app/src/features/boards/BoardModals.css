@@ -9,6 +9,13 @@
   overscroll-behavior: contain;
 }
 
+.at-board-modal .at-board-sources,
+.at-board-modal .at-board-handoff,
+.at-board-modal .at-board-request {
+  max-height: none;
+  overflow: visible;
+}
+
 @media (max-width: 640px) {
   .at-board-modal {
     width: calc(100vw - 16px) !important;

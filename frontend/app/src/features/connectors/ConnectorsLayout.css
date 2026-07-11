@@ -114,6 +114,14 @@
   border: 0;
 }
 
+.at-connectors-modal .at-gateway-connector-body,
+.at-connectors-modal .at-gateway-account-list,
+.at-connectors-modal .at-gateway-account-form,
+.at-connectors-modal .at-connectors-detail-section {
+  max-height: none;
+  overflow: visible;
+}
+
 .at-runtime-tools {
   flex: 1 1 auto;
   min-height: 0;

@@ -306,6 +306,7 @@ export function ConnectorsView({ onOpenSettings }: ConnectorsViewProps) {
         <Modal
           centered
           className="at-connectors-modal"
+          classNames={{ body: "at-scroll-region" }}
           destroyOnHidden
           footer={null}
           onCancel={() => {
@@ -346,6 +347,7 @@ export function ConnectorsView({ onOpenSettings }: ConnectorsViewProps) {
         <Modal
           centered
           className="at-connectors-modal at-gateway-connector-modal"
+          classNames={{ body: "at-scroll-region" }}
           destroyOnHidden
           footer={null}
           onCancel={() => setGatewayConfigProvider(null)}

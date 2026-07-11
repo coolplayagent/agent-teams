@@ -847,9 +847,6 @@ export function AppShell() {
               <span>{topbarBackendShortLabel}</span>
             </Button>
           </Tooltip>
-          <Button href="/" size="small">
-            V1
-          </Button>
         </Space>
       </Header>
       <Layout className="at-body">

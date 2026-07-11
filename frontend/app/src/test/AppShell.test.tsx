@@ -1106,7 +1106,7 @@ describe("AppShell", () => {
     ).toHaveTextContent("ok");
   });
 
-  it("keeps V1 topbar actions visible in the narrow shell", async () => {
+  it("keeps primary topbar actions visible in the narrow shell", async () => {
     mockViewportMatch(true);
     renderShell();
 
@@ -1114,7 +1114,7 @@ describe("AppShell", () => {
     const topbar = htmlElement(document.querySelector(".at-topbar"), "topbar");
     expect(within(topbar).getByRole("button", { name: "Settings" })).toBeVisible();
     expect(within(topbar).queryByRole("button", { name: "More actions" })).toBeNull();
-    expect(within(topbar).getByRole("link", { name: "V1" })).toBeVisible();
+    expect(within(topbar).queryByRole("link")).toBeNull();
     expect(
       within(topbar).getByRole("button", { name: "Observability" }),
     ).toBeVisible();

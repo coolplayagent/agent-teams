@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { appendFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { app, BrowserWindow, clipboard, ipcMain, shell } from "electron";
@@ -11,6 +11,8 @@ import {
   type DesktopBackendStatus,
 } from "./backendPlan.js";
 import { normalizeExternalHttpUrl } from "./externalLinks.js";
+import { selectAvailableDesktopPort } from "./ports.js";
+import { bundledBackendExecutable } from "./releasePaths.js";
 import { buildDesktopWindowOptions } from "./windowOptions.js";
 
 let mainWindow: BrowserWindow | null = null;
@@ -55,7 +57,7 @@ async function startDesktopApp(): Promise<void> {
 }
 
 async function loadDesktopApp(window: BrowserWindow): Promise<void> {
-  const plan = buildDesktopBackendPlan({ env: process.env });
+  const plan = await buildRuntimeBackendPlan();
   setBackendStatus({
     baseUrl: plan.baseUrl,
     message: "Starting backend.",
@@ -82,6 +84,26 @@ async function loadDesktopApp(window: BrowserWindow): Promise<void> {
     });
     await window.loadURL(failureDocumentUrl(plan, message));
   }
+}
+
+async function buildRuntimeBackendPlan(): Promise<DesktopBackendPlan> {
+  const hasExplicitEndpoint = Boolean(
+    process.env.AGENT_TEAMS_BACKEND_URL?.trim()
+    || process.env.AGENT_TEAMS_BACKEND_PORT?.trim(),
+  );
+  const defaultPort = hasExplicitEndpoint
+    ? undefined
+    : await selectAvailableDesktopPort("127.0.0.1");
+  const managedCommand = bundledBackendExecutable({
+    isPackaged: app.isPackaged,
+    platform: process.platform,
+    resourcesPath: process.resourcesPath,
+  }) ?? undefined;
+  return buildDesktopBackendPlan({
+    defaultPort,
+    env: process.env,
+    managedCommand,
+  });
 }
 
 function createMainWindow(): BrowserWindow {
@@ -138,6 +160,7 @@ function startManagedBackend(plan: DesktopBackendPlan): void {
     return;
   }
   backendProcess = spawn(plan.command, plan.args, {
+    cwd: isAbsolute(plan.command) ? dirname(plan.command) : undefined,
     env: process.env,
     stdio: "ignore",
     windowsHide: true,

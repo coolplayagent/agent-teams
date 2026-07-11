@@ -65,7 +65,6 @@ describe("workspace prompt shell parity", () => {
       'aria-label={t("appSettings")}',
       'aria-label={t("appToggleTheme")}',
       "at-topbar-health",
-      'href="/"',
     ]);
 
     expect(composerSource).toContain('aria-label={t("composerPrompt")}');

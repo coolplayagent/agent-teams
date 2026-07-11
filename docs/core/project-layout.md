@@ -44,7 +44,10 @@
 
 ## Frontend
 
-- Frontend assets: `frontend/dist/`
+- Frontend source: `frontend/app/` (React, TypeScript, Vite, Playwright, Electron)
+- Generated web assets: `frontend/dist/` (served at `/`; do not hand-edit)
+- Electron source: `frontend/app/src/desktop/`
+- Browser and desktop flows: `frontend/app/browser-tests/`
 
 ## Tests
 

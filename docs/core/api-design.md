@@ -1,5 +1,12 @@
 ﻿# Agent Teams API Design
 
+## Frontend Hosting
+
+The production React application is served from `frontend/dist/` at the root
+route. Browser and Electron clients share the same `/api/*` HTTP and SSE
+contracts. There is no separate migration frontend mount or user-facing
+interface switch.
+
 ## Overview
 
 - Base path: `/api`

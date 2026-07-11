@@ -1,212 +1,27 @@
-# API 与事件设计
+# Frontend API And Events
 
-## API Facade
+## HTTP Boundary
 
-当前 React 前端的所有后端调用应通过 `frontend/app/src/api/client.ts`
-和 `frontend/app/src/api/contracts.ts` 暴露的 typed client 与契约模型。
-旧 `frontend/dist/js/core/api/*` 只作为 V1 历史上下文保留，不应作为 V2
-新增 UI 的证明路径或新代码入口。
+All product data crosses the public `/api/*` boundary through the typed client in `frontend/app/src/api/`. Requests use explicit contracts, abort signals, and React Query invalidation; feature components do not read backend persistence directly.
 
-V2 typed client 按后端领域聚合具体 API：
+Important domains include workspaces, sessions, messages, rounds, runs, recovery, roles, settings, skills, automation, connectors, memory, observability, and project files.
 
-- sessions：session、history、round、tasks、agents、subagents、recovery、topology。
-- runs：创建 run、stop/resume、gate、tool approval、user question、background task、message injection。
-- roles/settings：role config、options、validate。
-- system/settings：配置状态、模型、MCP、commands、hooks、agents、notifications、web、proxy、GitHub、ClawHub、SSH、environment、health。
-- workspaces：workspace 列表、snapshot、tree、diff、open、fork、search。
-- triggers/gateway：Feishu/GitHub trigger、Discord、WeChat、Xiaoluban gateway。
-- automation：automation project、delivery binding、sessions、run now。
-- observability：overview 和 breakdowns。
-- token usage：run/session token usage。
-- speech config 和 STT WebSocket URL 由 system/speech facade 暴露，供 Speech settings 与语音输入组件复用。
+## AG-UI Stream Boundary
 
-组件不应直接绕过 typed client 在局部重新实现请求封装。新增 API 时应先放入 `frontend/app/src/api/client.ts` 的对应领域函数，并补充 `contracts.ts` 类型和 `apiClient.test.ts` 覆盖。
+The runtime client consumes ordered SSE events and normalizes them into typed AG-UI-facing events. Required families include:
 
-前端运行时日志由 `frontend/app/src/runtime/frontendLogger.ts` 负责。它批量上报
-`/api/logs/frontend`，保留 nullable 的 run/session 上下文，并在页面卸载时使用
-`navigator.sendBeacon` 做 keepalive 投递；对应 V2 证明路径是
-`frontend/app/src/test/frontendLogger.test.ts`。
+- run start, pause, resume, complete, stop, and failure;
+- text and output deltas;
+- thinking and model-step lifecycle;
+- tool call, validation, result, approval, and resolution;
+- user-question request and answer;
+- injection, state snapshot/delta, todo, and token usage;
+- background task, subagent, and notification events.
 
-## 请求策略
+Every event is keyed by run identity and event identity. Reducers deduplicate replay/live overlap, preserve unknown future events, and keep a bounded cursor history.
 
-共享请求 helper 位于 `frontend/app/src/api/http.ts`。
+## Recovery
 
-### requestJson
+Streams resume with the latest durable event cursor. Browser refresh and session switching reconcile the backend snapshot before following live events. Terminal events close the active stream projection; a later resume establishes a new continuation without rebuilding already rendered text.
 
-`requestJson(path, options)` 是基础 JSON helper：
-
-- GET 和 HEAD 默认使用 `cache: 'no-store'`。
-- 默认补充 `Accept: application/json`，有 body 时补充 `Content-Type: application/json`。
-- 成功后解析 JSON，空响应体返回 `null`。
-- HTTP 非 2xx 时尝试解析后端 error payload，并构造带 `status` 和 `payload` 的 `ApiError`。
-- HTTP 非 2xx 或网络异常时记录 frontend log，并派发后端 offline hint。
-- AbortError 原样抛出，不当作普通错误记录。
-
-### 请求缓存
-
-V2 不再恢复 V1 的 `requestJsonManaged()` 手写 GET 缓存、队列和 lane 机制。
-架构目标要求 server snapshot state 通过 TanStack Query 缓存，当前页面和 feature
-组件使用 `useQuery`、`useMutation`、query key、invalidate/reset 语义管理请求合并、
-重试、过期和刷新。
-
-### 后端状态 Hint
-
-请求成功会 emit `agent-teams-backend-status-hint` online，HTTP 非 2xx 或网络异常会 emit
-offline。hint 有 30 秒重复抑制，避免频繁刷新 UI。V2 shell 同时通过
-`AppShell.tsx` 的主动 health 查询更新后端状态。
-
-## 主要 API 依赖地图
-
-会话聊天：
-
-- `fetchSessions`
-- `fetchSessionHistory`
-- `fetchSessionRounds`
-- `fetchSessionRound`
-- `fetchSessionRecovery`
-- `sendUserPrompt`
-- `stopRun`
-- `resumeRun`
-
-prompt composer：
-
-- `fetchRoleConfigOptions`
-- `fetchOrchestrationConfig`
-- `fetchCommands`
-- `resolveCommandPrompt`
-- `searchWorkspacePaths`
-- `updateSessionTopology`
-- `fetchSpeechConfig`
-- `createSpeechSttWebSocketUrl`
-
-plugin marketplace:
-
-- `fetchPluginMarketplace`
-- `searchPluginMarketplace`
-- `inspectPluginMarketplace`
-- `installPlugin`
-
-workspace/project：
-
-- `fetchWorkspaces`
-- `fetchWorkspaceSnapshot`
-- `fetchWorkspaceTree`
-- `fetchWorkspaceDiffs`
-- `fetchWorkspaceDiffFile`
-- `openWorkspaceRoot`
-- `updateWorkspace`
-
-settings：
-
-- model、MCP、commands、hooks、roles、orchestration、notifications、web、proxy、workspace、environment 等均通过 `system.js` 和 `roles.js` 暴露。
-- speech 设置通过 speech config API 读取/保存 STT profile、语言、提示词和高级实时转写参数。
-
-project features：
-
-- Skills 主要使用 system/ClawHub/skills 配置接口。
-- Automation 使用 `automation.js`。
-- Gateway 使用 `gateway.js` 和 `triggers.js`。
-
-## 浏览器事件约定
-
-前端用 DOM `CustomEvent` 做少量跨组件通知。事件名以 `agent-teams-*` 为主。
-
-### session 相关
-
-- `agent-teams-select-session`
-  - 触发方：sidebar、搜索或其他组件。
-  - detail：`{ sessionId }`
-  - 处理方：`app/bootstrap.js` 监听后调用 `selectSession(sessionId)`。
-- `agent-teams-session-activated`
-  - 触发方：`app/session.js`，在设置 `state.currentSessionId` 后立即派发。
-  - detail：`{ sessionId }`
-  - 用途：通知依赖当前 session 的 UI 尽快同步。
-- `agent-teams-session-selected`
-  - 触发方：`app/session.js`，session history 和 view hydration 完成后派发。
-  - detail：`{ sessionId }`
-  - 用途：通知依赖完整 session 内容的 UI 刷新。
-- `agent-teams-session-selection-cancelled`
-  - 处理方：`app/session.js`。
-  - 用途：取消当前 session selection 和 loading 状态。
-
-### subagent 相关
-
-- `agent-teams-select-subagent-session`
-  - detail：`{ sessionId, subagent }`
-  - 处理方：`app/bootstrap.js` 调用 `selectSubagentSession()`。
-- `agent-teams-subagent-session-selected`
-  - detail：`{ sessionId, instanceId }`
-  - 触发方：`app/session.js`，subagent session 打开后派发。
-
-### run/recovery 相关
-
-- `run-approval-resolved`
-  - detail：`{ runId }`
-  - 处理方：`app/bootstrap.js`，调用 `resumeRecoverableRun()`。
-- recovery 内部还会通过 round overlay 和 component render 函数同步 UI，不要求所有状态都走全局事件。
-
-### 状态和偏好
-
-- `agent-teams-backend-status-hint`
-  - detail：`{ status }`
-  - 触发方：`requestJson()`。
-  - 处理方：backend status monitor。
-- layout、theme、language 等偏好主要由对应组件和 localStorage/API 维护。
-
-## SSE Event Router
-
-SSE 事件统一进入 `core/eventRouter/index.js` 的 `routeEvent(evType, payload, eventMeta)`。
-
-核心职责：
-
-- 用 run id 和 event id 去重。
-- 判断是否 subagent run。
-- 更新 task instance map、task status map。
-- 对 token usage、todo、background task 做专项处理。
-- 将事件分发到 run/tool/human/notification handler。
-- terminal event 后清理该 run 的 seen event ids。
-
-### runEvents
-
-`runEvents.js` 处理模型和 run 生命周期：
-
-- run started/resumed/completed/failed/stopped。
-- model step started/finished。
-- LLM retry/fallback 事件。
-- text/output delta。
-- thinking started/delta/finished。
-- generation progress。
-- subagent terminal。
-
-它主要更新 message renderer、round 状态、agent/subagent 状态和 recovery。
-
-### toolEvents
-
-`toolEvents.js` 处理工具调用：
-
-- tool call。
-- tool input validation failed。
-- tool result。
-- tool approval requested/resolved。
-
-它主要更新 tool block、approval controls 和 recovery。
-
-### humanEvents
-
-`humanEvents.js` 处理人工 gate 和 subagent 控制：
-
-- subagent gate。
-- subagent stopped/resumed。
-- gate resolved。
-
-### notificationEvents
-
-`notificationEvents.js` 处理 `notification_requested`，把后端通知请求映射到前端通知服务。
-
-### background task
-
-background task event 在 router 中先判断 payload 是否 displayable。可展示事件会：
-
-- 调用 `rememberNormalModeSubagentFromBackgroundTask()`。
-- 调用 `applyBackgroundTaskEvent()`。
-- 延迟刷新 recovery continuity。
+Approval, question, background-task, and paused-subagent actions are derived from the recovery snapshot and rendered above the composer.

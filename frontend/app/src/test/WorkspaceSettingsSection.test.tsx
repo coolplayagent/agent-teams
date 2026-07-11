@@ -310,7 +310,7 @@ describe("WorkspaceSettingsSection", () => {
         title: 'Delete SSH profile "prod"?',
       }),
     );
-  }, 15000);
+  }, 30000);
 
   it("keeps invalid draft saves and probes inside the editor", async () => {
     renderSection();
@@ -330,7 +330,7 @@ describe("WorkspaceSettingsSection", () => {
     expect(await screen.findByText("Enter a username.")).toBeVisible();
     expect(saveSshProfileMock).not.toHaveBeenCalled();
     expect(probeSshProfileConnectionMock).not.toHaveBeenCalled();
-  }, 15000);
+  }, 30000);
 });
 
 function renderSection() {

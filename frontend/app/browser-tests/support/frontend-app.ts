@@ -11,7 +11,6 @@ export const WORKSPACE_ID = "workspace-react-shell";
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const repoRoot = resolve(packageRoot, "../..");
 const distRoot = resolve(packageRoot, "../dist");
-const appRoot = join(distRoot, "app");
 const chromiumUnsafePorts = new Set([
   1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77,
   79, 87, 95, 101, 102, 103, 104, 109, 110, 111, 113, 115, 117, 119, 123,
@@ -571,20 +570,8 @@ export async function mockShellApi(
   });
 }
 
-export async function waitForV1Shell(page: Page): Promise<void> {
-  await expect(page.locator(".app-shell")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Open new interface" })).toBeVisible();
-  await expectBootstrapReady(page);
-  await expect(page.locator(".initial-runtime-loader")).toBeHidden();
-  await expect(page.locator("#backend-status")).toHaveAttribute("data-status", "online");
-  await expect(page.locator("#runtime-loading-banner")).toHaveAttribute("aria-hidden", "true");
-  await expect(page.locator("#runtime-loading-banner")).not.toHaveClass(/is-visible/);
-  await expect(page.locator("text=Unhandled TS browser API route")).toHaveCount(0);
-}
-
-export async function waitForV2Shell(page: Page): Promise<void> {
+export async function waitForAppShell(page: Page): Promise<void> {
   await expect(page.locator(".at-shell")).toBeVisible();
-  await expect(page.getByRole("link", { name: "V1" })).toBeVisible();
   await expectBootstrapReady(page);
   await expect(page.locator(".initial-app-loader")).toBeHidden();
 }
@@ -769,12 +756,6 @@ function resolveFrontendFile(requestPath: string): string | null {
 function frontendFilePath(requestPath: string): string {
   if (requestPath === "/" || requestPath === "") {
     return join(distRoot, "index.html");
-  }
-  if (requestPath === "/app" || requestPath === "/app/") {
-    return join(appRoot, "index.html");
-  }
-  if (requestPath.startsWith("/app/")) {
-    return join(appRoot, requestPath.slice("/app/".length));
   }
   const candidate = join(distRoot, requestPath.slice(1));
   if (existsSync(candidate)) {

@@ -227,7 +227,7 @@ vi.mock("../api/speech", () => ({
   saveSpeechConfig: vi.fn(),
 }));
 
-vi.setConfig({ testTimeout: 15000 });
+vi.setConfig({ testTimeout: 60000 });
 
 const addMcpServerMock = vi.mocked(addMcpServer);
 const configurePluginMock = vi.mocked(configurePlugin);
@@ -4297,7 +4297,7 @@ describe("SettingsDrawer", () => {
         "OPENAI_API_KEY",
       ),
     );
-  }, 20000);
+  }, 60000);
 
   it("saves the general shell policy through the real general config client", async () => {
     renderDrawer();

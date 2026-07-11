@@ -4,7 +4,7 @@ import { translate } from "../i18n";
 import {
   SETTINGS_SECTION_DEFINITIONS,
   SYSTEM_SETTINGS_PAGE_DEFINITIONS,
-  V1_LEGACY_SETTINGS_TAB_DEFINITIONS,
+  LEGACY_SETTINGS_TAB_DEFINITIONS,
 } from "../features/settings/settingsNavigation";
 
 describe("settings navigation parity", () => {
@@ -62,8 +62,8 @@ describe("settings navigation parity", () => {
     ]);
   });
 
-  it("maps every live V1 settings tab to one V2 page without inventing entries", () => {
-    expect(V1_LEGACY_SETTINGS_TAB_DEFINITIONS.map((tab) => tab.label)).toEqual([
+  it("maps every legacy settings tab to one current page without inventing entries", () => {
+    expect(LEGACY_SETTINGS_TAB_DEFINITIONS.map((tab) => tab.label)).toEqual([
       "Appearance",
       "General",
       "Model",
@@ -81,13 +81,13 @@ describe("settings navigation parity", () => {
     ]);
 
     const mappedPrimarySections = new Set(
-      V1_LEGACY_SETTINGS_TAB_DEFINITIONS.flatMap((tab) =>
-        "v2Section" in tab ? [tab.v2Section] : [],
+      LEGACY_SETTINGS_TAB_DEFINITIONS.flatMap((tab) =>
+        "section" in tab ? [tab.section] : [],
       ),
     );
     const mappedSystemPages = new Set(
-      V1_LEGACY_SETTINGS_TAB_DEFINITIONS.flatMap((tab) =>
-        "v2SystemPage" in tab ? [tab.v2SystemPage] : [],
+      LEGACY_SETTINGS_TAB_DEFINITIONS.flatMap((tab) =>
+        "systemPage" in tab ? [tab.systemPage] : [],
       ),
     );
     expect([...mappedPrimarySections]).toEqual([

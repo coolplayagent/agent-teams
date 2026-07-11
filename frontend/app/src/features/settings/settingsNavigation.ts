@@ -67,32 +67,32 @@ export const SYSTEM_SETTINGS_PAGE_DEFINITIONS = [
 export type SystemSettingsPage =
   (typeof SYSTEM_SETTINGS_PAGE_DEFINITIONS)[number]["key"];
 
-export const V1_LEGACY_SETTINGS_TAB_DEFINITIONS = [
-  { key: "appearance", label: "Appearance", v2Section: "appearance" },
-  { key: "general", label: "General", v2Section: "general" },
-  { key: "model", label: "Model", v2Section: "models" },
-  { key: "mcp", label: "MCP", v2SystemPage: "mcp" },
-  { key: "plugins", label: "Plugins", v2SystemPage: "plugins" },
-  { key: "commands", label: "Commands", v2SystemPage: "commands" },
-  { key: "hooks", label: "Hooks", v2SystemPage: "hooks" },
-  { key: "agents", label: "Agent Runtime", v2SystemPage: "agent-runtime" },
-  { key: "roles", label: "Roles", v2Section: "roles" },
+export const LEGACY_SETTINGS_TAB_DEFINITIONS = [
+  { key: "appearance", label: "Appearance", section: "appearance" },
+  { key: "general", label: "General", section: "general" },
+  { key: "model", label: "Model", section: "models" },
+  { key: "mcp", label: "MCP", systemPage: "mcp" },
+  { key: "plugins", label: "Plugins", systemPage: "plugins" },
+  { key: "commands", label: "Commands", systemPage: "commands" },
+  { key: "hooks", label: "Hooks", systemPage: "hooks" },
+  { key: "agents", label: "Agent Runtime", systemPage: "agent-runtime" },
+  { key: "roles", label: "Roles", section: "roles" },
   {
     key: "orchestration",
     label: "Orchestration",
-    v2Section: "orchestration",
+    section: "orchestration",
   },
-  { key: "web", label: "Web", v2Section: "web" },
-  { key: "proxy", label: "Proxy", v2Section: "proxy" },
+  { key: "web", label: "Web", section: "web" },
+  { key: "proxy", label: "Proxy", section: "proxy" },
   {
     key: "workspace",
     label: "Remote Workspace",
-    v2Section: "workspace",
+    section: "workspace",
   },
   {
     key: "environment",
     label: "Environment",
-    v2Section: "environment",
+    section: "environment",
   },
 ] as const;
 

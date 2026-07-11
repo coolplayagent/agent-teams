@@ -19,7 +19,7 @@ afterEach(() => {
 describe("frontendLogger", () => {
   it("batches structured frontend log events through the backend endpoint", async () => {
     const fetchMock = mockFetch();
-    window.history.replaceState(null, "", "/app/");
+    window.history.replaceState(null, "", "/");
 
     logError("frontend.test.failure", "frontend failed", {
       component: "composer",
@@ -35,7 +35,7 @@ describe("frontendLogger", () => {
       message: "frontend failed",
       page: "agent-teams",
       payload: { component: "composer" },
-      route: "/app/",
+      route: "/",
     });
   });
 

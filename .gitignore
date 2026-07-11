@@ -19,6 +19,8 @@ pytest-cache-files-*/
 frontend/node_modules/
 frontend/.vite/
 frontend/app/dist-desktop/
+frontend/app/dist-backend/
+frontend/app/test-results/
 node_modules
 package-lock.json
 package.json

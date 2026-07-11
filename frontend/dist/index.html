@@ -1,10 +1,9 @@
-﻿<!doctype html>
-<html lang="zh-CN">
+<!doctype html>
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Relay Teams</title>
-    <link rel="icon" href="data:," />
+    <title>Agent Teams</title>
     <style>
       :root {
         color-scheme: light dark;
@@ -14,18 +13,14 @@
         margin: 0;
         min-height: 100vh;
         background: #f7f7f5;
-        color: #1f2328;
-        font-family:
-          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-          "Segoe UI", sans-serif;
       }
 
-      .initial-runtime-loader {
+      .initial-app-shell {
         position: fixed;
         inset: 0;
-        z-index: 2147483000;
+        z-index: 2147482998;
         display: grid;
-        place-items: center;
+        grid-template-rows: 52px minmax(0, 1fr);
         background: #f7f7f5;
         pointer-events: none;
         transition:
@@ -33,956 +28,170 @@
           visibility 160ms ease;
       }
 
-      .initial-runtime-loader-inner {
-        display: grid;
-        justify-items: center;
-        gap: 14px;
-        color: #4b5563;
-        font-size: 13px;
-        line-height: 1.4;
+      .initial-app-topbar {
+        border-bottom: 1px solid rgba(31, 35, 40, 0.08);
+        background: #ffffff;
       }
 
-      .initial-runtime-spinner {
+      .initial-app-body {
+        display: grid;
+        grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+        min-height: 0;
+      }
+
+      .initial-app-sidebar {
+        display: grid;
+        align-content: start;
+        gap: 10px;
+        padding: 14px 12px;
+        border-right: 1px solid rgba(31, 35, 40, 0.08);
+        background: #fbfbf8;
+      }
+
+      .initial-app-main {
+        display: grid;
+        align-content: center;
+        justify-items: center;
+        gap: 12px;
+        min-width: 0;
+        padding: 24px;
+      }
+
+      .initial-app-line {
+        height: 12px;
+        border-radius: 6px;
+        background: #e7e7e2;
+      }
+
+      .initial-app-line.is-short {
+        width: 42%;
+      }
+
+      .initial-app-line.is-medium {
+        width: 68%;
+      }
+
+      .initial-app-line.is-wide {
+        width: min(760px, 82%);
+      }
+
+      .initial-app-loader {
+        position: fixed;
+        inset: 0;
+        z-index: 2147482999;
+        display: grid;
+        place-items: center;
+        color: #57606a;
+        font:
+          13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        pointer-events: none;
+        transition:
+          opacity 160ms ease,
+          visibility 160ms ease;
+      }
+
+      .initial-app-loader-inner {
+        display: grid;
+        justify-items: center;
+        gap: 12px;
+      }
+
+      .initial-app-spinner {
         width: 28px;
         height: 28px;
         border: 2px solid rgba(31, 35, 40, 0.14);
         border-top-color: #2563eb;
         border-radius: 50%;
-        animation: initialRuntimeSpin 720ms linear infinite;
+        animation: initialAppSpin 720ms linear infinite;
       }
 
-      .initial-runtime-shell {
-        position: fixed;
-        inset: 0;
-        z-index: 2147482999;
-        display: grid;
-        grid-template-rows: 52px minmax(0, 1fr);
-        background: #f7f7f5;
-        pointer-events: none;
-      }
-
-      .initial-runtime-topbar {
-        border-bottom: 1px solid rgba(31, 35, 40, 0.08);
-        background: rgba(255, 255, 255, 0.9);
-      }
-
-      .initial-runtime-body {
-        display: grid;
-        grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
-      }
-
-      .initial-runtime-sidebar {
-        padding: 18px 16px;
-        border-right: 1px solid rgba(31, 35, 40, 0.08);
-        background: rgba(255, 255, 255, 0.72);
-      }
-
-      .initial-runtime-main {
-        padding: 22px;
-      }
-
-      .initial-runtime-line {
-        height: 12px;
-        margin-bottom: 12px;
-        border-radius: 999px;
-        background: linear-gradient(90deg, #eceff3 25%, #f7f8fa 37%, #eceff3 63%);
-        background-size: 400% 100%;
-        animation: initialRuntimeShimmer 1.2s ease-in-out infinite;
-      }
-
-      .initial-runtime-line.is-short {
-        width: 42%;
-      }
-
-      .initial-runtime-line.is-medium {
-        width: 68%;
-      }
-
-      .initial-runtime-line.is-wide {
-        width: min(720px, 82%);
-      }
-
-      body[data-bootstrap-state="ready"] .initial-runtime-loader,
-      body[data-bootstrap-state="ready"] .initial-runtime-shell {
+      body[data-bootstrap-state="ready"] .initial-app-shell,
+      body[data-bootstrap-state="ready"] .initial-app-loader {
         visibility: hidden;
         opacity: 0;
       }
 
-      body[data-projects-ready="false"] #projects-list {
-        visibility: hidden;
-      }
-
-      @keyframes initialRuntimeSpin {
+      @keyframes initialAppSpin {
         to {
           transform: rotate(360deg);
         }
       }
 
-      @keyframes initialRuntimeShimmer {
-        0% {
-          background-position: 100% 50%;
-        }
-        100% {
-          background-position: 0 50%;
-        }
-      }
-
       @media (prefers-color-scheme: dark) {
         body,
-        .initial-runtime-loader,
-        .initial-runtime-shell {
-          background: #101214;
-          color: #f3f4f6;
+        .initial-app-shell {
+          background: #181818;
         }
 
-        .initial-runtime-topbar,
-        .initial-runtime-sidebar {
-          background: rgba(17, 19, 23, 0.88);
-          border-color: rgba(255, 255, 255, 0.08);
+        .initial-app-topbar,
+        .initial-app-sidebar {
+          background: #202020;
+          border-color: rgba(255, 255, 255, 0.1);
         }
 
-        .initial-runtime-loader-inner {
-          color: #c9d1d9;
+        .initial-app-line {
+          background: #303030;
         }
 
-        .initial-runtime-spinner {
+        .initial-app-loader {
+          color: #d6d6d6;
+        }
+
+        .initial-app-spinner {
           border-color: rgba(255, 255, 255, 0.16);
-          border-top-color: #60a5fa;
-        }
-
-        .initial-runtime-line {
-          background: linear-gradient(90deg, #23272f 25%, #2f3541 37%, #23272f 63%);
-          background-size: 400% 100%;
+          border-top-color: #339cff;
         }
       }
 
-      @media (max-width: 720px) {
-        .initial-runtime-body {
-          grid-template-columns: 1fr;
+      @media (max-width: 760px) {
+        .initial-app-body {
+          grid-template-columns: minmax(0, 1fr);
         }
 
-        .initial-runtime-sidebar {
+        .initial-app-sidebar {
           display: none;
         }
       }
 
       @media (prefers-reduced-motion: reduce) {
-        .initial-runtime-spinner,
-        .initial-runtime-line {
+        .initial-app-shell,
+        .initial-app-loader {
+          transition: none;
+        }
+
+        .initial-app-spinner {
           animation: none;
         }
       }
     </style>
-    <link rel="stylesheet" href="/css/base.css" />
-    <link rel="stylesheet" href="/css/layout.css" />
-    <link rel="stylesheet" href="/css/components/base.css" />
-    <link rel="stylesheet" href="/css/components/features.css" />
-    <link rel="stylesheet" href="/css/components/session-search.css" />
-    <link rel="stylesheet" href="/css/components/projects.css" />
-    <link rel="stylesheet" href="/css/components/automation.css" />
-    <link rel="stylesheet" href="/css/components/gateway.css" />
-    <link rel="stylesheet" href="/css/components/connectors.css" />
-    <link rel="stylesheet" href="/css/components/memory.css" />
-    <link rel="stylesheet" href="/css/components/messages.css" />
-    <link rel="stylesheet" href="/css/components/orchestration.css" />
-    <link rel="stylesheet" href="/css/components/feedback.css" />
-    <link rel="stylesheet" href="/css/components/rounds.css" />
-    <link rel="stylesheet" href="/css/components/recovery.css" />
-    <link rel="stylesheet" href="/css/components/settings.css" />
-    <link rel="stylesheet" href="/css/components/tokens.css" />
-    <link rel="stylesheet" href="/css/components/tools.css" />
-    <link rel="stylesheet" href="/css/components/triggers.css" />
-    <link rel="stylesheet" href="/css/components/subagent.css" />
-    <link rel="stylesheet" href="/css/components/observability.css" />
-    <link rel="stylesheet" href="/css/components/interface.css" />
-    <link rel="stylesheet" href="/css/components/voice.css" />
-    <link rel="stylesheet" href="/css/components/new-session-draft.css" />
-    <link rel="stylesheet" href="/css/components/new-session-draft-composer.css" />
-    <link rel="stylesheet" href="/css/components/new-session-draft-workspace.css" />
-    <link rel="stylesheet" href="/css/components/new-session-draft-mentions.css" />
-    <link rel="stylesheet" href="/css/components/new-session-draft-cards.css" />
-    <link rel="stylesheet" href="/css/components/new-session-draft-aside.css" />
-    <link rel="stylesheet" href="/css/components/board-todos.css" />
-    <link rel="stylesheet" href="/css/components/highlight.css" />
-    <link rel="stylesheet" href="/css/components/spec-lineage.css" />
+    <script type="module" crossorigin src="/assets/index-DQ3rQinP.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/vendor-Ke9ftV_h.js">
+    <link rel="modulepreload" crossorigin href="/assets/query-mSD5D5ub.js">
+    <link rel="modulepreload" crossorigin href="/assets/antd-D8teJOEX.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-C_3EsbKW.css">
   </head>
-
-  <body data-bootstrap-state="loading" data-projects-ready="false">
-    <div class="initial-runtime-shell" aria-hidden="true">
-      <div class="initial-runtime-topbar"></div>
-      <div class="initial-runtime-body">
-        <div class="initial-runtime-sidebar">
-          <div class="initial-runtime-line is-medium"></div>
-          <div class="initial-runtime-line"></div>
-          <div class="initial-runtime-line is-short"></div>
+  <body data-bootstrap-state="loading">
+    <div class="initial-app-shell" aria-hidden="true">
+      <div class="initial-app-topbar"></div>
+      <div class="initial-app-body">
+        <div class="initial-app-sidebar">
+          <div class="initial-app-line is-medium"></div>
+          <div class="initial-app-line"></div>
+          <div class="initial-app-line is-short"></div>
         </div>
-        <div class="initial-runtime-main">
-          <div class="initial-runtime-line is-wide"></div>
-          <div class="initial-runtime-line is-medium"></div>
-          <div class="initial-runtime-line is-short"></div>
+        <div class="initial-app-main">
+          <div class="initial-app-line is-wide"></div>
+          <div class="initial-app-line is-medium"></div>
+          <div class="initial-app-line is-short"></div>
         </div>
       </div>
     </div>
-    <div id="initial-runtime-loader" class="initial-runtime-loader" role="status" aria-live="polite">
-      <div class="initial-runtime-loader-inner">
-        <span class="initial-runtime-spinner" aria-hidden="true"></span>
-        <span>页面加载中...</span>
+    <div class="initial-app-loader" role="status" aria-live="polite">
+      <div class="initial-app-loader-inner">
+        <span class="initial-app-spinner" aria-hidden="true"></span>
+        <span>Loading Agent Teams...</span>
       </div>
     </div>
-    <div class="app-shell">
-      <header class="topbar">
-        <div class="topbar-section topbar-section-left">
-          <button
-            id="toggle-sidebar"
-            class="icon-btn"
-            title="切换侧边栏"
-            aria-label="切换侧边栏"
-            data-i18n-title="topbar.toggle_sidebar"
-            data-i18n-aria-label="topbar.toggle_sidebar"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              class="icon"
-              aria-hidden="true"
-            >
-              <path
-                d="M4 6h16M4 12h16M4 18h16"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-              />
-            </svg>
-          </button>
-          <div class="workspace-heading">
-            <div class="workspace-title">relay-teams</div>
-          </div>
-        </div>
-        <div class="topbar-section topbar-section-right">
-          <a
-            id="new-interface-link"
-            class="interface-switch-link"
-            href="/app/"
-            title="Open new interface"
-            aria-label="Open new interface"
-          >
-            New UI
-          </a>
-          <button
-            id="language-toggle-btn"
-            class="language-toggle-btn"
-            type="button"
-            title="Switch language"
-            aria-label="Switch language"
-          >
-            中文
-          </button>
-          <button
-            id="observability-btn"
-            class="icon-btn"
-            title="Observability"
-            aria-label="Observability"
-            data-i18n-title="topbar.observability_title"
-            data-i18n-aria-label="topbar.observability_title"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              class="icon"
-              aria-hidden="true"
-            >
-              <path
-                d="M4 19h16M7 16V9m5 7V5m5 11v-6"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-              />
-            </svg>
-          </button>
-          <div class="message-export-control" id="message-export-control">
-            <button
-              id="message-export-btn"
-              class="icon-btn message-export-trigger"
-              type="button"
-              title="导出消息"
-              aria-label="导出消息"
-              aria-haspopup="menu"
-              aria-expanded="false"
-              data-i18n-title="message_export.label"
-              data-i18n-aria-label="message_export.label"
-              disabled
-            >
-              <svg viewBox="0 0 20 20" fill="none" class="icon" aria-hidden="true">
-                <path d="M10 3.5v8m0 0 3.25-3.25M10 11.5 6.75 8.25" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round" />
-                <path d="M4.5 12.75v2.75h11v-2.75" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-            </button>
-            <div
-              id="message-export-menu"
-              class="message-export-menu"
-              role="menu"
-              aria-label="导出消息"
-              data-i18n-aria-label="message_export.label"
-              hidden
-            >
-              <button
-                id="message-export-html"
-                type="button"
-                role="menuitem"
-                class="message-export-menu-item"
-                data-export-format="html"
-                data-i18n="message_export.html"
-              >导出 HTML</button>
-              <button
-                id="message-export-png"
-                type="button"
-                role="menuitem"
-                class="message-export-menu-item"
-                data-export-format="png"
-                data-i18n="message_export.png"
-              >导出图片</button>
-            </div>
-          </div>
-          <button
-            id="settings-btn"
-            class="icon-btn"
-            title="Settings"
-            data-i18n-title="topbar.settings_title"
-            data-i18n-aria-label="topbar.settings_title"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              class="icon"
-              aria-hidden="true"
-            >
-              <path
-                d="M12 15a3 3 0 100-6 3 3 0 000 6z"
-                stroke="currentColor"
-                stroke-width="2"
-              />
-              <path
-                d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"
-                stroke="currentColor"
-                stroke-width="2"
-              />
-            </svg>
-          </button>
-          <button
-            id="toggle-theme"
-            class="icon-btn"
-            title="Toggle Theme"
-            data-i18n-title="topbar.theme_title"
-            data-i18n-aria-label="topbar.theme_title"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              class="icon"
-              aria-hidden="true"
-            >
-              <path
-                d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
-          </button>
-        </div>
-      </header>
-
-      <div class="app-container">
-        <!-- Sidebar -->
-        <aside class="sidebar">
-          <button id="back-btn" class="back-btn" style="display: none">
-            <svg viewBox="0 0 24 24" fill="none" class="icon">
-              <path
-                d="M19 12H5M12 19l-7-7 7-7"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
-            <span data-i18n="sidebar.back">Back</span>
-          </button>
-
-          <div class="rounds-list" id="rounds-list" style="display: none"></div>
-          <div class="projects-list sessions-list" id="projects-list"></div>
-
-          <div class="sidebar-footer">
-            <div id="backend-status" class="status-indicator checking">
-              <span></span>
-              <span
-                id="backend-status-label"
-                data-i18n="sidebar.backend_checking"
-                >Checking backend...</span
-              >
-            </div>
-          </div>
-        </aside>
-        <div
-          class="sidebar-resizer"
-          id="sidebar-resizer"
-          title="拖动调整侧边栏宽度"
-          data-i18n-title="sidebar.resize"
-        ></div>
-
-        <!-- Main Workspace -->
-        <main class="workspace">
-          <!-- Chat Area -->
-          <section
-            id="observability-view"
-            class="observability-view"
-            style="display: none"
-          >
-            <div class="observability-toolbar">
-              <div class="observability-toolbar-copy">
-                <h3 data-i18n="observability.title">Observability</h3>
-                <p data-i18n="observability.subtitle">
-                  Metrics platform overview for the active runtime.
-                </p>
-              </div>
-              <div class="observability-toolbar-actions">
-                <div
-                  class="observability-scope-group"
-                  role="group"
-                  aria-label="Observability Scope"
-                >
-                  <button
-                    id="observability-global-btn"
-                    class="secondary-btn observability-scope-btn"
-                    type="button"
-                    data-i18n="observability.actions.global"
-                  >
-                    Global
-                  </button>
-                  <button
-                    id="observability-session-btn"
-                    class="secondary-btn observability-scope-btn"
-                    type="button"
-                    data-i18n="observability.actions.session"
-                  >
-                    Current Session
-                  </button>
-                </div>
-                <span
-                  id="observability-scope-indicator"
-                  class="observability-scope-indicator"
-                  >Global scope</span
-                >
-                <button
-                  id="observability-session-label"
-                  class="observability-session-label"
-                  type="button"
-                >
-                  --
-                </button>
-                <button
-                  id="observability-back-btn"
-                  class="icon-btn observability-back-icon"
-                  type="button"
-                  title="Back to Chat"
-                  aria-label="Back to Chat"
-                  data-i18n-title="observability.actions.back"
-                  data-i18n-aria-label="observability.actions.back"
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    class="icon"
-                    aria-hidden="true"
-                  >
-                    <path
-                      d="M15 18l-6-6 6-6"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    />
-                  </svg>
-                </button>
-              </div>
-            </div>
-            <div id="observability-overview"></div>
-            <div id="observability-trends" class="observability-section"></div>
-            <div
-              id="observability-breakdowns"
-              class="observability-section"
-            ></div>
-          </section>
-          <section id="project-view" class="project-view" style="display: none">
-            <div class="project-view-toolbar">
-              <div class="project-view-toolbar-copy">
-                <div class="project-view-title-row">
-                  <h3 id="project-view-title" data-i18n="workspace_view.title">
-                    Project
-                  </h3>
-                  <div
-                    id="project-view-title-actions"
-                    class="project-view-title-actions"
-                  ></div>
-                </div>
-                <p id="project-view-summary"></p>
-              </div>
-              <div class="project-view-toolbar-actions">
-                <button
-                  id="project-view-reload"
-                  class="secondary-btn"
-                  type="button"
-                  data-i18n="workspace_view.reload"
-                >
-                  Reload
-                </button>
-                <button
-                  id="project-view-close"
-                  class="icon-btn"
-                  type="button"
-                  title="Back"
-                  aria-label="Back"
-                  data-i18n-title="workspace_view.back"
-                  data-i18n-aria-label="workspace_view.back"
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    class="icon"
-                    aria-hidden="true"
-                  >
-                    <path
-                      d="M15 18l-6-6 6-6"
-                      stroke="currentColor"
-                      stroke-width="2"
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                    />
-                  </svg>
-                </button>
-              </div>
-            </div>
-            <div id="project-view-content" class="project-view-content"></div>
-          </section>
-          <section id="spec-lineage-view" class="spec-lineage-view" style="display: none">
-            <div class="spec-lineage-toolbar">
-              <div class="spec-lineage-toolbar-copy">
-                <h3 id="spec-lineage-title">Spec Lineage</h3>
-                <p id="spec-lineage-summary"></p>
-              </div>
-              <div class="spec-lineage-toolbar-actions">
-                <button
-                  id="spec-lineage-reload"
-                  class="secondary-btn"
-                  type="button"
-                >Reload</button>
-                <button
-                  id="spec-lineage-back-btn"
-                  class="icon-btn"
-                  type="button"
-                  title="Back"
-                  aria-label="Back"
-                >
-                  <svg viewBox="0 0 24 24" fill="none" class="icon" aria-hidden="true">
-                    <path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-            <div class="spec-lineage-body">
-              <div id="spec-lineage-timeline"></div>
-              <div id="spec-lineage-diff"></div>
-            </div>
-          </section>
-          <div id="chat-container" class="chat-container">
-            <!-- Coordinator chat messages -->
-            <div class="chat-scroll" id="chat-messages"></div>
-            <div
-              id="current-session-id-badge"
-              class="current-session-id-badge"
-              title=""
-              hidden
-            ></div>
-
-            <!-- Input Area -->
-            <div id="input-container" class="input-container">
-              <div
-                id="recovery-approval-host"
-                class="recovery-approval-host"
-                style="display: none"
-              ></div>
-              <form id="chat-form">
-                <div
-                  id="runtime-inject-queue"
-                  class="runtime-inject-queue"
-                  aria-live="polite"
-                  hidden
-                ></div>
-                <div class="input-wrapper">
-                  <textarea
-                    id="prompt-input"
-                    placeholder="What would you like the agents to do?"
-                    data-i18n-placeholder="composer.placeholder"
-                    rows="1"
-                  ></textarea>
-                  <div
-                    id="prompt-attachments"
-                    class="prompt-attachments"
-                    hidden
-                  ></div>
-                  <div
-                    id="prompt-mention-menu"
-                    class="prompt-mention-menu"
-                    hidden
-                  ></div>
-                  <div class="composer-actions" aria-label="Composer actions">
-                    <button
-                      type="button"
-                      id="resume-run-btn"
-                      class="composer-resume-btn"
-                      title="Resume run"
-                      data-i18n-title="recovery.action.resume_run"
-                      style="display: none"
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                        <path
-                          d="M8 6.5v11l9-5.5-9-5.5Z"
-                          stroke="currentColor"
-                          stroke-width="2"
-                          stroke-linejoin="round"
-                        />
-                      </svg>
-                      <span data-i18n="recovery.action.resume_run">Resume Run</span>
-                    </button>
-                    <button
-                      type="button"
-                      id="stop-btn"
-                      title="Stop run"
-                      data-i18n-title="composer.stop_title"
-                      style="display: none"
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                        <rect
-                          x="7"
-                          y="7"
-                          width="10"
-                          height="10"
-                          rx="2"
-                          stroke="currentColor"
-                          stroke-width="2"
-                        />
-                      </svg>
-                      <span data-i18n="composer.stop">Stop</span>
-                    </button>
-                    <button
-                      type="button"
-                      id="voice-input-btn"
-                      class="composer-voice-btn"
-                      title="Voice input"
-                      data-i18n-title="voice.input_title"
-                      data-i18n-aria-label="voice.input_title"
-                      hidden
-                      disabled
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                        <path
-                          d="M12 3a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"
-                          stroke="currentColor"
-                          stroke-width="2"
-                          stroke-linecap="round"
-                        />
-                        <path
-                          d="M5 10v1a7 7 0 0 0 14 0v-1M12 18v3"
-                          stroke="currentColor"
-                          stroke-width="2"
-                          stroke-linecap="round"
-                        />
-                      </svg>
-                    </button>
-                    <button
-                      type="submit"
-                      id="send-btn"
-                      title="Send (Enter)"
-                      data-i18n-title="composer.send_title"
-                    >
-                      <svg viewBox="0 0 24 24" fill="none">
-                        <path
-                          d="M22 2L11 13M22 2L15 22L11 13M11 13L2 9L22 2Z"
-                          stroke="currentColor"
-                          stroke-width="2"
-                          stroke-linejoin="round"
-                        />
-                      </svg>
-                      <span class="send-btn-label" data-i18n="new_session_draft.start_button">Start</span>
-                    </button>
-                  </div>
-                  <div
-                    id="prompt-input-hint"
-                    class="input-footer-hint"
-                    data-i18n="composer.hint"
-                  >
-                    Enter to send · Shift+Enter for new line
-                  </div>
-                </div>
-                <div
-                  id="prompt-input-status"
-                  class="prompt-input-status"
-                  role="status"
-                  aria-live="polite"
-                  hidden
-                ></div>
-              </form>
-              <div class="input-controls">
-                <div
-                  class="composer-topology"
-                  id="session-mode-lock"
-                >
-                  <span
-                    class="composer-topology-label"
-                    id="session-mode-label"
-                    data-i18n="composer.mode_normal"
-                    >Normal Mode</span
-                  >
-                  <div
-                    class="composer-segmented"
-                    role="group"
-                    aria-label="Session mode"
-                    data-i18n-aria-label="composer.session_mode"
-                  >
-                    <button
-                      type="button"
-                      class="composer-segmented-btn active"
-                      id="session-mode-normal-btn"
-                      data-i18n="composer.mode_normal"
-                    >
-                      Normal Mode
-                    </button>
-                    <button
-                      type="button"
-                      class="composer-segmented-btn"
-                      id="session-mode-orchestration-btn"
-                      data-i18n="composer.mode_orchestration"
-                    >
-                      Orchestrated Mode
-                    </button>
-                  </div>
-                  <div class="composer-normal-route" id="normal-route-controls">
-                    <div class="composer-preset-field" id="normal-role-field">
-                      <span
-                        class="composer-preset-label"
-                        id="normal-role-label"
-                        data-i18n="composer.role"
-                        >Role</span
-                      >
-                      <select
-                        id="normal-role-select"
-                        class="composer-preset-select composer-native-select"
-                        hidden
-                        aria-hidden="true"
-                        tabindex="-1"
-                      >
-                        <option value="" data-i18n="composer.no_roles">
-                          No roles
-                        </option>
-                      </select>
-                      <div class="composer-select" id="normal-role-menu">
-                        <button
-                          type="button"
-                          class="composer-select-trigger"
-                          id="normal-role-menu-button"
-                          aria-haspopup="listbox"
-                          aria-expanded="false"
-                          aria-controls="normal-role-menu-list"
-                          aria-labelledby="normal-role-label normal-role-menu-value"
-                        >
-                          <span class="composer-select-copy">
-                            <span
-                              class="composer-select-value"
-                              id="normal-role-menu-value"
-                              >No roles</span
-                            >
-                            <span
-                              class="composer-select-meta"
-                              id="normal-role-menu-meta"
-                            ></span>
-                          </span>
-                          <span
-                            class="composer-select-chevron"
-                            aria-hidden="true"
-                          >
-                            <svg viewBox="0 0 16 16" focusable="false">
-                              <path d="M4.5 6.5 8 10l3.5-3.5" />
-                            </svg>
-                          </span>
-                        </button>
-                        <div
-                          class="composer-select-menu"
-                          id="normal-role-menu-list"
-                          role="listbox"
-                          aria-labelledby="normal-role-label"
-                          hidden
-                        ></div>
-                      </div>
-                    </div>
-                    <div
-                      class="composer-preset-field composer-model-field"
-                      id="normal-model-field"
-                    >
-                      <span
-                        class="composer-preset-label"
-                        id="normal-model-label"
-                        data-i18n="composer.model"
-                        >Model</span
-                      >
-                      <select
-                        id="normal-model-select"
-                        class="composer-preset-select composer-model-select composer-native-select"
-                        hidden
-                        aria-hidden="true"
-                        tabindex="-1"
-                      >
-                        <option value="" data-i18n="composer.model_role_default">
-                          Role default
-                        </option>
-                      </select>
-                      <div class="composer-select composer-model-select-menu" id="normal-model-menu">
-                        <button
-                          type="button"
-                          class="composer-select-trigger"
-                          id="normal-model-menu-button"
-                          aria-haspopup="listbox"
-                          aria-expanded="false"
-                          aria-controls="normal-model-menu-list"
-                          aria-labelledby="normal-model-label normal-model-menu-value"
-                        >
-                          <span class="composer-select-copy">
-                            <span
-                              class="composer-select-value"
-                              id="normal-model-menu-value"
-                              >Role default</span
-                            >
-                            <span
-                              class="composer-select-meta"
-                              id="normal-model-menu-meta"
-                            ></span>
-                          </span>
-                          <span
-                            class="composer-select-chevron"
-                            aria-hidden="true"
-                          >
-                            <svg viewBox="0 0 16 16" focusable="false">
-                              <path d="M4.5 6.5 8 10l3.5-3.5" />
-                            </svg>
-                          </span>
-                        </button>
-                        <div
-                          class="composer-select-menu"
-                          id="normal-model-menu-list"
-                          role="listbox"
-                          aria-labelledby="normal-model-label"
-                          hidden
-                        ></div>
-                      </div>
-                    </div>
-                  </div>
-                  <label
-                    class="composer-preset-field"
-                    id="orchestration-preset-field"
-                    hidden
-                  >
-                    <span
-                      class="composer-preset-label"
-                      data-i18n="composer.preset"
-                      >Preset</span
-                    >
-                    <select
-                      id="orchestration-preset-select"
-                      class="composer-preset-select"
-                    >
-                      <option value="" data-i18n="composer.no_presets">
-                        No presets
-                      </option>
-                    </select>
-                  </label>
-                </div>
-                <label
-                  class="composer-mode-toggle"
-                  for="yolo-toggle"
-                  title="When enabled, all tool calls skip approval"
-                  data-i18n-title="composer.yolo_title"
-                >
-                  <input type="checkbox" id="yolo-toggle" checked />
-                  <span class="composer-mode-check" aria-hidden="true"></span>
-                  <span class="composer-mode-copy">
-                    <span class="composer-mode-title">YOLO</span>
-                  </span>
-                </label>
-                <label
-                  class="composer-mode-toggle has-inline-select"
-                  for="thinking-mode-toggle"
-                  title="When off, backend decides thinking mode; Effort depends on backend support"
-                  data-i18n-title="composer.thinking_title"
-                >
-                  <input type="checkbox" id="thinking-mode-toggle" />
-                  <span class="composer-mode-check" aria-hidden="true"></span>
-                  <span class="composer-mode-copy">
-                    <span
-                      class="composer-mode-title"
-                      data-i18n="composer.thinking"
-                      >Thinking</span
-                    >
-                    <span
-                      class="composer-mode-inline"
-                      id="thinking-effort-field"
-                      hidden
-                    >
-                      <span
-                        class="composer-mode-inline-label"
-                        data-i18n="composer.effort"
-                        >Effort</span
-                      >
-                      <select
-                        id="thinking-effort-select"
-                        class="composer-mode-inline-select"
-                      >
-                    <option value="minimal" data-i18n="composer.effort.minimal">最少</option>
-                    <option value="low" data-i18n="composer.effort.low">低</option>
-                    <option value="medium" selected data-i18n="composer.effort.medium">中</option>
-                    <option value="high" data-i18n="composer.effort.high">高</option>
-                      </select>
-                    </span>
-                  </span>
-                </label>
-                <div class="composer-usage-strip">
-                  <div
-                    id="main-context-indicator"
-                    class="context-indicator composer-context-indicator composer-usage-pill"
-                    data-state="idle"
-                    title="Prompt / context window"
-                    data-i18n-title="context_indicator.latest_title"
-                  >
-                    -- / --
-                  </div>
-                  <div
-                    id="session-token-usage"
-                    class="session-token-usage composer-usage-pill"
-                    title="Session token usage"
-                    data-i18n-title="composer.tokens_title"
-                    data-i18n="composer.tokens"
-                  >
-                    ↑ -- ↓ --
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </main>
-      </div>
-    </div>
-
-    <script src="/vendor/chart.js" defer></script>
-    <script src="/js/vendor/marked.min.js" defer></script>
-    <script src="/js/vendor/highlight.min.js" defer></script>
-    <script type="module" src="/js/app.js"></script>
+    <div id="root"></div>
   </body>
 </html>

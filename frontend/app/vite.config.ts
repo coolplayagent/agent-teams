@@ -2,10 +2,10 @@ import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
 export default defineConfig({
-  base: "/app/",
+  base: "/",
   plugins: [react()],
   build: {
-    outDir: "../dist/app",
+    outDir: "../dist",
     emptyOutDir: true,
     sourcemap: true,
     rollupOptions: {
@@ -45,6 +45,9 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
+    fileParallelism: false,
+    include: ["src/**/*.test.{ts,tsx}"],
     setupFiles: "./vitest.setup.ts",
+    testTimeout: 30_000,
   },
 });

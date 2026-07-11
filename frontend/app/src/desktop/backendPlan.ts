@@ -26,6 +26,7 @@ export interface DesktopBackendPlanOptions {
   defaultStartupTimeoutMs?: number;
   defaultHealthPollMs?: number;
   env: Record<string, string | undefined>;
+  managedCommand?: string;
 }
 
 export const desktopBackendUrlEnv = "AGENT_TEAMS_BACKEND_URL";
@@ -63,7 +64,7 @@ export function buildDesktopBackendPlan(
 
   if (externalBaseUrl !== null) {
     return {
-      appUrl: `${externalBaseUrl}/app/`,
+      appUrl: `${externalBaseUrl}/`,
       args: [],
       baseUrl: externalBaseUrl,
       command: null,
@@ -77,13 +78,15 @@ export function buildDesktopBackendPlan(
   }
 
   const command =
-    options.env[desktopBackendCommandEnv]?.trim() || desktopDefaultBackendCommand;
+    options.env[desktopBackendCommandEnv]?.trim()
+    || options.managedCommand
+    || desktopDefaultBackendCommand;
   const args =
     readCommandArgs(options.env[desktopBackendCommandArgsEnv], host, port)
     ?? ["server", "start", "--host", host, "--port", String(port)];
 
   return {
-    appUrl: `${baseUrl}/app/`,
+    appUrl: `${baseUrl}/`,
     args,
     baseUrl,
     command,

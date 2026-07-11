@@ -7,7 +7,7 @@ import {
   installShellState,
   mockShellApi,
   serveFrontendDist,
-  waitForV2Shell,
+  waitForAppShell,
   WORKSPACE_ID,
   type MockApiRouteContext,
 } from "./support/frontend-app";
@@ -571,8 +571,8 @@ async function prepareV2VoiceInputPage(
     handleRequest: handleV2VoiceApi,
     sessionTitle: "TS V2 voice input",
   });
-  await page.goto(`${baseUrl}/app/`);
-  await waitForV2Shell(page);
+  await page.goto(`${baseUrl}/`);
+  await waitForAppShell(page);
   await expect(
     page.getByRole("button", { exact: true, name: "Voice input" }),
   ).toBeEnabled();

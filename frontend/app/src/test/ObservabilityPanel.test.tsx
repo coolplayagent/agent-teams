@@ -43,7 +43,7 @@ afterEach(() => {
 });
 
 describe("ObservabilityPanel", () => {
-  it("renders the missing V1 KPI inventory in the V2 overview", async () => {
+  it("renders the complete legacy KPI inventory in the overview", async () => {
     getObservabilityOverviewMock.mockResolvedValue({
       kpis: {
         cached_input_tokens: 2400,

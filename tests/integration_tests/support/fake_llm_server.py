@@ -1014,10 +1014,25 @@ def _plan_hook_subagent_lifecycle_response(
             user_text,
         )
         tag = tag_match.group(1) if tag_match is not None else ""
+        worker_repeat_match = re.search(
+            r"\[hook-subagent-lifecycle[^\]]*\bworker_repeat=(\d+)",
+            user_text,
+        )
+        worker_delay_match = re.search(
+            r"\[hook-subagent-lifecycle[^\]]*\bworker_delay=(\d+)",
+            user_text,
+        )
+        worker_repeat = (
+            int(worker_repeat_match.group(1)) if worker_repeat_match is not None else 14
+        )
+        worker_delay_ms = (
+            int(worker_delay_match.group(1)) if worker_delay_match is not None else 180
+        )
         worker_prompt = "[hook-subagent-worker] return one short status line"
         if tag:
             worker_prompt = (
-                f"[hook-subagent-worker tag={tag} repeat=14 delay=180 chunk=8] "
+                f"[hook-subagent-worker tag={tag} "
+                f"repeat={worker_repeat} delay={worker_delay_ms} chunk=8] "
                 "stream deterministic subagent status tokens"
             )
         return {

@@ -19,6 +19,7 @@ const EDGE_EXECUTABLE =
 const PROVIDER_SLOT_COUNT = 4;
 const SLOW_PROVIDER_CALL_BUDGET_MS = 70_000;
 const SUBAGENT_PROVIDER_CALL_COUNT = 3;
+const SUBAGENT_TOKEN_COUNT = 48;
 
 interface SessionRecord {
   active_run_id?: string | null;
@@ -134,7 +135,7 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
       const repeat = 72;
       const promptText = isSubagentRun
         ? [
-            `${title}: [hook-subagent-lifecycle tag=${tag}]`,
+            `${title}: [hook-subagent-lifecycle tag=${tag} worker_repeat=${SUBAGENT_TOKEN_COUNT} worker_delay=80]`,
             "通过 spawn_subagent 启动 Explorer，并让子代理流式输出确定性 token。",
             "主代理完成后只输出 fake LLM 的最终完成句。",
           ].join("\n")
@@ -861,7 +862,7 @@ async function highestSubagentTokenIndex(
 ): Promise<number> {
   const text = await latestSubagentPanelRuntimeText(panel);
   let highest = -1;
-  for (let index = 0; index < 14; index += 1) {
+  for (let index = 0; index < SUBAGENT_TOKEN_COUNT; index += 1) {
     if (
       text.includes(
         `SUBAGENT_STREAM_${run.tag}_${String(index).padStart(2, "0")}`,

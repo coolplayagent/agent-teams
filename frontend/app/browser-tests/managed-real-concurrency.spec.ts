@@ -1,5 +1,5 @@
 import { writeFile } from "node:fs/promises";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { waitForAppShell } from "./support/frontend-app";
 import {
@@ -14,7 +14,8 @@ const SESSION_COUNT = boundedSessionCount(
 const STREAM_HOLD_MS = boundedStreamHoldMs(
   process.env.AGENT_TEAMS_REAL_CONCURRENCY_HOLD_MS,
 );
-const EDGE_EXECUTABLE = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?.trim() ?? "";
+const EDGE_EXECUTABLE =
+  process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?.trim() ?? "";
 
 interface SessionRecord {
   active_run_id?: string | null;
@@ -47,6 +48,16 @@ interface BrowserProbeSnapshot {
   peakEventSources: number;
 }
 
+interface FailureCollection {
+  beginExpectedEventAbortWindow: () => void;
+  consoleErrors: string[];
+  crashes: string[];
+  endExpectedEventAbortWindow: () => void;
+  httpFailures: string[];
+  networkFailures: string[];
+  pageErrors: string[];
+}
+
 test.skip(
   !ENABLED,
   "Set AGENT_TEAMS_MANAGED_REAL_CONCURRENCY=1 to run the real concurrency gate.",
@@ -76,7 +87,9 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
   const stamp = Date.now();
   const sessions = await Promise.all(
     Array.from({ length: SESSION_COUNT }, (_, index) =>
-      createSession(`real-concurrency-${stamp}-${String(index + 1).padStart(2, "0")}`),
+      createSession(
+        `real-concurrency-${stamp}-${String(index + 1).padStart(2, "0")}`,
+      ),
     ),
   );
   const startedRuns: StartedRun[] = [];
@@ -100,7 +113,7 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
         throw new Error(`Missing managed session at index ${index}.`);
       }
       const title = session.metadata?.title ?? "";
-      await selectSession(page, title);
+      await selectSession(page, title, failures);
       const tag = title.replace(/[^A-Za-z0-9_-]/g, "_").replace(/-/g, "_");
       const isSubagentRun = index === sessions.length - 1;
       const repeat = 72;
@@ -139,42 +152,155 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
         .toBe(runId);
     }
 
-    expect(
-      await Promise.all(startedRuns.map((run) => activeRunId(run.session.session_id))),
-    ).toContain(startedRuns[0]?.runId);
+    await expect
+      .poll(
+        () =>
+          Promise.all(
+            startedRuns.map((run) => activeRunId(run.session.session_id)),
+          ),
+        { timeout: 20_000 },
+      )
+      .toEqual(startedRuns.map((run) => run.runId));
+    await stableScreenshot(
+      page,
+      test.info().outputPath("managed-real-concurrency-active.jpg"),
+    );
+
+    const reloadRun = startedRuns.at(-2);
+    if (reloadRun === undefined) {
+      throw new Error("Expected a normal stream for reload recovery.");
+    }
+    await selectSession(page, reloadRun.title, failures);
+    await expect
+      .poll(() => mainTimelineText(page), { timeout: 45_000 })
+      .toContain(reloadRun.expectedPrefix);
+    const beforeReloadIndex = await highestSlowStreamTokenIndex(
+      page,
+      reloadRun,
+    );
+    expect(beforeReloadIndex).toBeGreaterThanOrEqual(0);
+    const beforeReloadProbe = await browserProbeSnapshot(page);
+    failures.beginExpectedEventAbortWindow();
+    try {
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await expectShellReady(page);
+      const restoredTitle =
+        (await page.locator(".at-session-item.is-selected").textContent()) ??
+        "";
+      expect
+        .soft(
+          restoredTitle,
+          "reload must restore the session that was selected before navigation",
+        )
+        .toContain(reloadRun.title);
+      if (!restoredTitle.includes(reloadRun.title)) {
+        await selectSession(page, reloadRun.title, failures);
+      }
+    } finally {
+      failures.endExpectedEventAbortWindow();
+    }
+    await expect
+      .poll(() => highestSlowStreamTokenIndex(page, reloadRun), {
+        timeout: 45_000,
+      })
+      .toBeGreaterThan(beforeReloadIndex);
+    await expect
+      .poll(() => messageArticleCount(page, reloadRun.expectedPrefix))
+      .toBe(1);
+    await stableScreenshot(
+      page,
+      test.info().outputPath("managed-real-concurrency-post-reload.jpg"),
+    );
 
     const subagentRun = startedRuns.at(-1);
     if (subagentRun === undefined) {
       throw new Error("Expected a subagent run.");
     }
-    await selectSession(page, subagentRun.title);
-    const subagentCard = page.locator(
-      ".at-chat-view .at-message-tool.is-openable-subagent",
-    ).first();
+    await selectSession(page, subagentRun.title, failures);
+    const subagentCard = page
+      .locator(".at-chat-view .at-message-tool.is-openable-subagent")
+      .first();
     await expect(subagentCard).toBeVisible({ timeout: 90_000 });
-    await subagentCard.click();
+    await recordInteraction(page, () => subagentCard.click());
     const subagentPanel = page.locator(".at-subagent-session-view");
     await expect(subagentPanel).toBeVisible({ timeout: 20_000 });
-    await expect(subagentPanel.locator(".at-subagent-session-prompt"))
-      .toContainText(subagentRun.tag);
-    await page.getByRole("button", { name: /主会话|Main session/ }).click();
+    await expect(
+      subagentPanel.locator(".at-subagent-session-prompt"),
+    ).toContainText(subagentRun.tag);
+    const subagentTimeline = subagentPanel.locator(
+      ".at-subagent-session-body > .at-timeline-frame > .at-timeline",
+    );
+    await expect
+      .poll(() => latestSubagentPanelRuntimeText(subagentPanel), {
+        timeout: 45_000,
+      })
+      .toContain(subagentRun.expectedPrefix);
+    await expect
+      .poll(
+        () =>
+          subagentTimeline.evaluate(
+            (element) => element.scrollHeight - element.clientHeight,
+          ),
+        { timeout: 45_000 },
+      )
+      .toBeGreaterThan(200);
+    const beforeSubagentWheelIndex = await highestSubagentTokenIndex(
+      subagentPanel,
+      subagentRun,
+    );
+    await subagentTimeline.hover();
+    await recordInteraction(page, () => page.mouse.wheel(0, -700));
+    const subagentAway = await timelineMetrics(subagentTimeline);
+    expect(subagentAway.distanceFromBottom).toBeGreaterThan(100);
+    await expect
+      .poll(() => highestSubagentTokenIndex(subagentPanel, subagentRun), {
+        timeout: 45_000,
+      })
+      .toBeGreaterThan(beforeSubagentWheelIndex);
+    const subagentAfterGrowth = await timelineMetrics(subagentTimeline);
+    expect(subagentAfterGrowth.distanceFromBottom).toBeGreaterThan(80);
+    expect(subagentAfterGrowth.scrollTop).toBeLessThanOrEqual(
+      subagentAway.scrollTop + 24,
+    );
+    await stableScreenshot(
+      page,
+      test.info().outputPath("managed-real-concurrency-running-subagent.jpg"),
+    );
+    await withExpectedEventAbortWindow(failures, () =>
+      recordInteraction(page, () =>
+        page.getByRole("button", { name: /主会话|Main session/ }).click(),
+      ),
+    );
     await expect(subagentPanel).toBeHidden();
-    await subagentCard.click();
+    await recordInteraction(page, () => subagentCard.click());
     await expect(subagentPanel).toBeVisible({ timeout: 20_000 });
-    await expect(subagentPanel.locator(".at-subagent-session-prompt"))
-      .toContainText(subagentRun.tag);
-    await page.getByRole("button", { name: /主会话|Main session/ }).click();
+    await expect(
+      subagentPanel.locator(".at-subagent-session-prompt"),
+    ).toContainText(subagentRun.tag);
+    await expect
+      .poll(() => highestSubagentTokenIndex(subagentPanel, subagentRun))
+      .toBeGreaterThanOrEqual(beforeSubagentWheelIndex);
+    await withExpectedEventAbortWindow(failures, () =>
+      recordInteraction(page, () =>
+        page.getByRole("button", { name: /主会话|Main session/ }).click(),
+      ),
+    );
 
     const anchor = startedRuns[0];
     if (anchor === undefined) {
       throw new Error("Expected an anchor run.");
     }
-    await selectSession(page, anchor.title);
+    await selectSession(page, anchor.title, failures);
     const timeline = page.locator(".at-chat-view .at-timeline");
-    await expect.poll(
-      () => timeline.evaluate((element) => element.scrollHeight - element.clientHeight),
-      { timeout: 90_000 },
-    ).toBeGreaterThan(300);
+    await expect
+      .poll(
+        () =>
+          timeline.evaluate(
+            (element) => element.scrollHeight - element.clientHeight,
+          ),
+        { timeout: 90_000 },
+      )
+      .toBeGreaterThan(300);
     await timeline.hover();
     await page.mouse.wheel(0, -700);
     const away = await timelineMetrics(timeline);
@@ -183,10 +309,29 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
     const afterStreaming = await timelineMetrics(timeline);
     expect(afterStreaming.distanceFromBottom).toBeGreaterThan(100);
     expect(afterStreaming.scrollTop).toBeLessThanOrEqual(away.scrollTop + 24);
+    await stableScreenshot(
+      page,
+      test.info().outputPath("managed-real-concurrency-away-scroll.jpg"),
+    );
 
     for (const run of [...startedRuns].reverse()) {
-      await selectSession(page, run.title);
-      await expect(page.locator(".at-session-item.is-selected")).toContainText(run.title);
+      await selectSession(page, run.title, failures);
+      await expect(page.locator(".at-session-item.is-selected")).toContainText(
+        run.title,
+      );
+      if (run.runId === subagentRun.runId) {
+        await expect
+          .poll(() =>
+            page
+              .locator(".at-chat-view .at-message-tool.is-openable-subagent")
+              .count(),
+          )
+          .toBeGreaterThan(0);
+      } else {
+        await expect
+          .poll(() => mainTimelineText(page), { timeout: 45_000 })
+          .toContain(run.expectedPrefix);
+      }
       const visibleText = await mainTimelineText(page);
       for (const other of startedRuns) {
         if (other.runId !== run.runId) {
@@ -195,20 +340,17 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
       }
     }
 
-    await selectSession(page, anchor.title);
-    const beforeReloadProbe = await browserProbeSnapshot(page);
-    await page.reload({ waitUntil: "domcontentloaded" });
-    await expectShellReady(page);
-    await expect(page.locator(".at-session-item.is-selected")).toContainText(anchor.title);
-
     await Promise.all(
       startedRuns.map((run) => waitForRunToLeaveActive(run, 180_000)),
     );
     for (const run of startedRuns) {
-      await selectSession(page, run.title);
+      await selectSession(page, run.title, failures);
       await expect
         .poll(() => mainTimelineText(page), { timeout: 45_000 })
         .toContain(run.expectedFinalToken);
+      await expect
+        .poll(() => messageArticleCount(page, run.expectedFinalToken))
+        .toBe(1);
       const visibleText = await mainTimelineText(page);
       for (const other of startedRuns) {
         if (other.runId !== run.runId) {
@@ -232,7 +374,10 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
         ...beforeReloadProbe.interactionDurations,
         ...afterReloadProbe.interactionDurations,
       ],
-      longTasks: [...beforeReloadProbe.longTasks, ...afterReloadProbe.longTasks],
+      longTasks: [
+        ...beforeReloadProbe.longTasks,
+        ...afterReloadProbe.longTasks,
+      ],
       peakEventSources: Math.max(
         beforeReloadProbe.peakEventSources,
         afterReloadProbe.peakEventSources,
@@ -250,27 +395,38 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
       sessionCount: SESSION_COUNT,
       streamHoldMs: STREAM_HOLD_MS,
     };
-    const evidencePath = test.info().outputPath("managed-real-concurrency-evidence.json");
+    const evidencePath = test
+      .info()
+      .outputPath("managed-real-concurrency-evidence.json");
     await writeFile(evidencePath, JSON.stringify(evidence, null, 2), "utf-8");
     await test.info().attach("managed-real-concurrency-evidence", {
       contentType: "application/json",
       path: evidencePath,
     });
-    await stableScreenshot(page, test.info().outputPath("managed-real-concurrency-final.jpg"));
+    await stableScreenshot(
+      page,
+      test.info().outputPath("managed-real-concurrency-final.jpg"),
+    );
 
     expect.soft(probe.peakEventSources).toBeLessThanOrEqual(2);
     expect.soft(probe.currentEventSources).toBeLessThanOrEqual(1);
     expect.soft(probe.longTasks.length).toBeLessThanOrEqual(15);
     expect.soft(Math.max(0, ...probe.longTasks)).toBeLessThanOrEqual(250);
-    expect.soft(probe.longTasks.reduce((sum, duration) => sum + duration, 0))
+    expect
+      .soft(probe.longTasks.reduce((sum, duration) => sum + duration, 0))
       .toBeLessThanOrEqual(1_000);
-    expect.soft(percentile95(probe.interactionDurations)).toBeLessThanOrEqual(750);
-    expect.soft(Math.max(0, ...probe.interactionDurations)).toBeLessThanOrEqual(1_500);
+    expect
+      .soft(percentile95(probe.interactionDurations))
+      .toBeLessThanOrEqual(750);
+    expect
+      .soft(Math.max(0, ...probe.interactionDurations))
+      .toBeLessThanOrEqual(1_500);
     expect.soft(probe.initialHeapBytes).not.toBeNull();
     expect.soft(probe.finalHeapBytes).not.toBeNull();
     if (probe.initialHeapBytes !== null && probe.finalHeapBytes !== null) {
       expect.soft(probe.finalHeapBytes).toBeLessThanOrEqual(256 * 1024 * 1024);
-      expect.soft(probe.finalHeapBytes - probe.initialHeapBytes)
+      expect
+        .soft(probe.finalHeapBytes - probe.initialHeapBytes)
         .toBeLessThanOrEqual(64 * 1024 * 1024);
     }
 
@@ -281,7 +437,9 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
     expect.soft(failures.networkFailures).toEqual([]);
   } finally {
     await Promise.all(startedRuns.map((run) => stopRun(run.runId)));
-    await Promise.all(sessions.map((session) => deleteSession(session.session_id)));
+    await Promise.all(
+      sessions.map((session) => deleteSession(session.session_id)),
+    );
   }
 });
 
@@ -302,16 +460,20 @@ declare global {
   }
 }
 
-function installFailureCollection(page: Page): {
-  consoleErrors: string[];
-  crashes: string[];
-  httpFailures: string[];
-  networkFailures: string[];
-  pageErrors: string[];
-} {
+function installFailureCollection(page: Page): FailureCollection {
+  let expectedEventAbortWindowDepth = 0;
   const failures = {
+    beginExpectedEventAbortWindow: () => {
+      expectedEventAbortWindowDepth += 1;
+    },
     consoleErrors: [] as string[],
     crashes: [] as string[],
+    endExpectedEventAbortWindow: () => {
+      expectedEventAbortWindowDepth = Math.max(
+        0,
+        expectedEventAbortWindowDepth - 1,
+      );
+    },
     httpFailures: [] as string[],
     networkFailures: [] as string[],
     pageErrors: [] as string[],
@@ -328,7 +490,11 @@ function installFailureCollection(page: Page): {
   page.on("pageerror", (error) => failures.pageErrors.push(error.message));
   page.on("requestfailed", (request) => {
     const errorText = request.failure()?.errorText ?? "unknown";
-    if (request.url().includes("/events") && errorText.includes("ERR_ABORTED")) {
+    if (
+      expectedEventAbortWindowDepth > 0 &&
+      request.url().includes("/events") &&
+      errorText.includes("ERR_ABORTED")
+    ) {
       return;
     }
     failures.networkFailures.push(
@@ -350,85 +516,136 @@ async function installBrowserProbe(
   if (initialSession === undefined) {
     throw new Error("Expected at least one managed session.");
   }
-  await page.addInitScript(({ sessionId, workspaceId }) => {
-    const probe = {
-      currentEventSources: 0,
-      finalHeapBytes: null,
-      initialHeapBytes: null,
-      interactionDurations: [] as number[],
-      longTasks: [] as number[],
-      peakEventSources: 0,
-    };
-    window.__managedRealConcurrencyProbe = probe;
-    const NativeEventSource = window.EventSource;
-    window.EventSource = new Proxy(NativeEventSource, {
-      construct(target, args, newTarget) {
-        const source = Reflect.construct(target, args, newTarget) as EventSource;
-        probe.currentEventSources += 1;
-        probe.peakEventSources = Math.max(
-          probe.peakEventSources,
-          probe.currentEventSources,
-        );
-        let closed = false;
-        const nativeClose = source.close.bind(source);
-        source.close = () => {
-          if (!closed) {
-            closed = true;
-            probe.currentEventSources -= 1;
-          }
-          nativeClose();
-        };
-        return source;
-      },
-    });
-    if ("PerformanceObserver" in window) {
-      try {
-        const observer = new PerformanceObserver((list) => {
-          for (const entry of list.getEntries()) {
-            probe.longTasks.push(entry.duration);
-          }
-        });
-        observer.observe({ entryTypes: ["longtask"] });
-      } catch {
-        // A missing long-task entry type is represented by an empty sample set.
+  await page.addInitScript(
+    ({ sessionId, workspaceId }) => {
+      const probe = {
+        currentEventSources: 0,
+        finalHeapBytes: null,
+        initialHeapBytes: null,
+        interactionDurations: [] as number[],
+        longTasks: [] as number[],
+        peakEventSources: 0,
+      };
+      window.__managedRealConcurrencyProbe = probe;
+      const NativeEventSource = window.EventSource;
+      window.EventSource = new Proxy(NativeEventSource, {
+        construct(target, args, newTarget) {
+          const source = Reflect.construct(
+            target,
+            args,
+            newTarget,
+          ) as EventSource;
+          probe.currentEventSources += 1;
+          probe.peakEventSources = Math.max(
+            probe.peakEventSources,
+            probe.currentEventSources,
+          );
+          let closed = false;
+          const nativeClose = source.close.bind(source);
+          source.close = () => {
+            if (!closed) {
+              closed = true;
+              probe.currentEventSources -= 1;
+            }
+            nativeClose();
+          };
+          return source;
+        },
+      });
+      if ("PerformanceObserver" in window) {
+        try {
+          const observer = new PerformanceObserver((list) => {
+            for (const entry of list.getEntries()) {
+              probe.longTasks.push(entry.duration);
+            }
+          });
+          observer.observe({ entryTypes: ["longtask"] });
+        } catch {
+          // A missing long-task entry type is represented by an empty sample set.
+        }
       }
-    }
-    window.localStorage.setItem("agentTeams.language", "zh");
-    window.localStorage.setItem("agentTeams.themeMode", "light");
-    window.localStorage.setItem("agent_teams_theme", "light");
-    window.localStorage.setItem("agentTeams.selectedSessionId", sessionId);
-    window.localStorage.setItem("agentTeams.selectedWorkspaceId", workspaceId);
-    window.localStorage.setItem("agentTeams.shellView", "chat");
-    window.localStorage.removeItem("agentTeams.activeSubagentPanel");
-  }, {
-    sessionId: initialSession.session_id,
-    workspaceId: initialSession.workspace_id ?? "default",
-  });
+      window.localStorage.setItem("agentTeams.language", "zh");
+      window.localStorage.setItem("agentTeams.themeMode", "light");
+      window.localStorage.setItem("agent_teams_theme", "light");
+      window.localStorage.setItem("agentTeams.selectedSessionId", sessionId);
+      window.localStorage.setItem(
+        "agentTeams.selectedWorkspaceId",
+        workspaceId,
+      );
+      window.localStorage.setItem("agentTeams.shellView", "chat");
+      window.localStorage.removeItem("agentTeams.activeSubagentPanel");
+    },
+    {
+      sessionId: initialSession.session_id,
+      workspaceId: initialSession.workspace_id ?? "default",
+    },
+  );
 }
 
 async function expectShellReady(page: Page): Promise<void> {
   await waitForAppShell(page);
   await expect(page.locator(".at-chat-view")).toBeVisible();
-  await expect(page.getByRole("textbox", { name: /提示词|Prompt/ })).toBeEnabled();
+  await expect(
+    page.getByRole("textbox", { name: /提示词|Prompt/ }),
+  ).toBeEnabled();
 }
 
-async function selectSession(page: Page, title: string): Promise<void> {
-  const item = page.locator(".at-session-item").filter({ hasText: title }).first();
-  for (let pageIndex = 0; pageIndex < 4 && await item.count() === 0; pageIndex += 1) {
+async function selectSession(
+  page: Page,
+  title: string,
+  failures: FailureCollection,
+): Promise<void> {
+  const item = page
+    .locator(".at-session-item")
+    .filter({ hasText: title })
+    .first();
+  for (
+    let pageIndex = 0;
+    pageIndex < 4 && (await item.count()) === 0;
+    pageIndex += 1
+  ) {
     const showMore = page.locator(".at-workspace-group-more").first();
-    if (await showMore.count() === 0) {
+    if ((await showMore.count()) === 0) {
       break;
     }
     await showMore.click();
   }
   await expect(item).toBeVisible({ timeout: 30_000 });
-  const startedAt = Date.now();
-  await item.click();
-  await expect(page.locator(".at-session-item.is-selected")).toContainText(title);
-  const duration = Date.now() - startedAt;
-  await page.evaluate((value) => {
-    window.__managedRealConcurrencyProbe?.interactionDurations.push(value);
-  }, duration);
+  await withExpectedEventAbortWindow(failures, () =>
+    recordInteraction(page, async () => {
+      await item.click();
+      await expect(page.locator(".at-session-item.is-selected")).toContainText(
+        title,
+      );
+    }),
+  );
+}
+
+async function withExpectedEventAbortWindow<T>(
+  failures: FailureCollection,
+  action: () => Promise<T>,
+): Promise<T> {
+  failures.beginExpectedEventAbortWindow();
+  try {
+    return await action();
+  } finally {
+    failures.endExpectedEventAbortWindow();
+  }
+}
+
+async function recordInteraction<T>(
+  page: Page,
+  action: () => Promise<T>,
+): Promise<T> {
+  const startedAt = performance.now();
+  try {
+    return await action();
+  } finally {
+    const duration = performance.now() - startedAt;
+    await page.evaluate((value) => {
+      window.__managedRealConcurrencyProbe?.interactionDurations.push(value);
+    }, duration);
+  }
 }
 
 async function timelineMetrics(timeline: ReturnType<Page["locator"]>): Promise<{
@@ -461,9 +678,14 @@ async function browserProbeSnapshot(page: Page): Promise<BrowserProbeSnapshot> {
 }
 
 async function stableScreenshot(page: Page, path: string): Promise<void> {
-  await page.evaluate(() => new Promise<void>((resolvePaint) => {
-    requestAnimationFrame(() => requestAnimationFrame(() => resolvePaint()));
-  }));
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolvePaint) => {
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => resolvePaint()),
+        );
+      }),
+  );
   await page.waitForTimeout(400);
   await page.screenshot({
     animations: "disabled",
@@ -483,17 +705,74 @@ function percentile95(values: number[]): number {
 }
 
 async function mainTimelineText(page: Page): Promise<string> {
-  return page.locator(".at-chat-view article.at-message").evaluateAll((nodes) =>
-    nodes.map((node) => node.textContent ?? "").join("\n"),
-  );
+  return page
+    .locator(".at-chat-view article.at-message")
+    .evaluateAll((nodes) =>
+      nodes.map((node) => node.textContent ?? "").join("\n"),
+    );
+}
+
+async function messageArticleCount(page: Page, text: string): Promise<number> {
+  return page
+    .locator(".at-chat-view article.at-message")
+    .filter({ hasText: text })
+    .count();
+}
+
+async function highestSlowStreamTokenIndex(
+  page: Page,
+  run: StartedRun,
+): Promise<number> {
+  const text = await mainTimelineText(page);
+  let highest = -1;
+  for (let index = 0; index < 72; index += 1) {
+    if (text.includes(slowStreamToken(run.tag, index))) {
+      highest = index;
+    }
+  }
+  return highest;
+}
+
+async function latestSubagentPanelRuntimeText(panel: Locator): Promise<string> {
+  return panel
+    .locator(
+      ".at-message-tool, .at-message-streaming-text, .at-message-plain-stream, article.at-message",
+    )
+    .evaluateAll((nodes) =>
+      nodes
+        .map((node) => (node.textContent ?? "").replace(/\s+/g, " ").trim())
+        .filter((candidate) => candidate.length > 0)
+        .join("\n"),
+    );
+}
+
+async function highestSubagentTokenIndex(
+  panel: Locator,
+  run: StartedRun,
+): Promise<number> {
+  const text = await latestSubagentPanelRuntimeText(panel);
+  let highest = -1;
+  for (let index = 0; index < 14; index += 1) {
+    if (
+      text.includes(
+        `SUBAGENT_STREAM_${run.tag}_${String(index).padStart(2, "0")}`,
+      )
+    ) {
+      highest = index;
+    }
+  }
+  return highest;
 }
 
 function waitForRunCreateResponse(page: Page): Promise<RunCreateResponse> {
-  return page.waitForResponse((response) =>
-    response.url() === `${apiBaseUrl()}/api/ag-ui/runs` &&
-    response.request().method() === "POST" &&
-    response.ok(),
-  ).then((response) => response.json() as Promise<RunCreateResponse>);
+  return page
+    .waitForResponse(
+      (response) =>
+        response.url() === `${apiBaseUrl()}/api/ag-ui/runs` &&
+        response.request().method() === "POST" &&
+        response.ok(),
+    )
+    .then((response) => response.json() as Promise<RunCreateResponse>);
 }
 
 async function runIdFromResponse(response: RunCreateResponse): Promise<string> {
@@ -506,26 +785,36 @@ async function waitForRunToLeaveActive(
   run: StartedRun,
   timeoutMs: number,
 ): Promise<void> {
-  await expect.poll(async () => {
-    const sessions = await fetchJson<SessionRecord[]>(
-      "/api/sessions?workspace_id=default",
-    );
-    const session = sessions.find((item) => item.session_id === run.session.session_id);
-    if (session?.active_run_id === run.runId) {
-      return "active";
-    }
-    if (session?.latest_terminal_run_id === run.runId) {
-      return session.latest_terminal_run_status ?? "terminal";
-    }
-    return "unknown";
-  }, { timeout: timeoutMs }).not.toBe("active");
+  await expect
+    .poll(
+      async () => {
+        const sessions = await fetchJson<SessionRecord[]>(
+          "/api/sessions?workspace_id=default",
+        );
+        const session = sessions.find(
+          (item) => item.session_id === run.session.session_id,
+        );
+        if (session?.active_run_id === run.runId) {
+          return "active";
+        }
+        if (session?.latest_terminal_run_id === run.runId) {
+          return session.latest_terminal_run_status ?? "terminal";
+        }
+        return "unknown";
+      },
+      { timeout: timeoutMs },
+    )
+    .not.toBe("active");
 }
 
 async function activeRunId(sessionId: string): Promise<string | null> {
   const sessions = await fetchJson<SessionRecord[]>(
     "/api/sessions?workspace_id=default",
   );
-  return sessions.find((item) => item.session_id === sessionId)?.active_run_id ?? null;
+  return (
+    sessions.find((item) => item.session_id === sessionId)?.active_run_id ??
+    null
+  );
 }
 
 async function createSession(title: string): Promise<SessionRecord> {

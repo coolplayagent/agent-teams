@@ -901,14 +901,15 @@ async function highestSlowStreamTokenIndex(
 async function latestSubagentPanelRuntimeText(panel: Locator): Promise<string> {
   return panel
     .locator(
-      ".at-message-tool, .at-message-streaming-text, .at-message-plain-stream, article.at-message",
+      ".at-message-streaming-text, .at-message-plain-stream, article.at-message",
     )
-    .evaluateAll((nodes) =>
-      nodes
+    .evaluateAll((nodes) => {
+      const visibleTexts = nodes
+        .filter((node) => (node as HTMLElement).offsetParent !== null)
         .map((node) => (node.textContent ?? "").replace(/\s+/g, " ").trim())
-        .filter((candidate) => candidate.length > 0)
-        .join("\n"),
-    );
+        .filter((candidate) => candidate.length > 0);
+      return visibleTexts.at(-1) ?? "";
+    });
 }
 
 async function highestSubagentTokenIndex(

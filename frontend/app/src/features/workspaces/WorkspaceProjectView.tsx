@@ -1269,15 +1269,17 @@ function WorkspaceDiffPreview({
   }
   return (
     <div className={loading ? "at-workspace-diff-body is-loading" : "at-workspace-diff-body"}>
-      {lines.map((line) => (
-        <div
-          className={`at-workspace-diff-line is-${line.kind}`}
-          key={`${line.lineNumber}:${line.text}`}
-        >
-          <span className="at-workspace-diff-line-number">{line.lineNumber}</span>
-          <span className="at-workspace-diff-line-text">{line.text}</span>
-        </div>
-      ))}
+      <div className="at-workspace-diff-canvas">
+        {lines.map((line) => (
+          <div
+            className={`at-workspace-diff-line is-${line.kind}`}
+            key={`${line.lineNumber}:${line.text}`}
+          >
+            <span className="at-workspace-diff-line-number">{line.lineNumber}</span>
+            <span className="at-workspace-diff-line-text">{line.text}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

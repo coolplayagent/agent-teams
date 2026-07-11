@@ -3,7 +3,69 @@
 }
 
 .at-workspace-workbench-content.is-changes .at-workspace-diff-preview {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
   border-right: 0;
+}
+
+.at-workspace-diff-body {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  overflow: auto;
+}
+
+.at-workspace-diff-canvas {
+  display: grid;
+  align-content: start;
+  width: max-content;
+  min-width: 100%;
+  min-height: 100%;
+}
+
+.at-workspace-diff-line {
+  --at-workspace-diff-row-bg: color-mix(
+    in srgb,
+    var(--at-bg) 64%,
+    var(--at-surface)
+  );
+  grid-template-columns: 4.5rem max-content;
+  width: 100%;
+  min-width: 100%;
+  background: var(--at-workspace-diff-row-bg);
+}
+
+.at-workspace-diff-line.is-meta,
+.at-workspace-diff-line.is-hunk {
+  --at-workspace-diff-row-bg: color-mix(
+    in srgb,
+    var(--at-surface-muted) 72%,
+    var(--at-surface)
+  );
+}
+
+.at-workspace-diff-line.is-added {
+  --at-workspace-diff-row-bg: var(--at-diff-added-bg);
+}
+
+.at-workspace-diff-line.is-deleted {
+  --at-workspace-diff-row-bg: var(--at-diff-deleted-bg);
+}
+
+.at-workspace-diff-line-number {
+  position: sticky;
+  z-index: 1;
+  left: 0;
+  background: var(--at-workspace-diff-row-bg);
+}
+
+.at-workspace-diff-line-text {
+  width: max-content;
+  min-width: 100%;
+  overflow-wrap: normal;
+  white-space: pre;
 }
 
 .at-workspace-tree-disclosure {
@@ -72,6 +134,10 @@
   .at-workspace-workbench-content.is-changes {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(140px, 0.3fr) minmax(220px, 0.7fr);
+  }
+
+  .at-workspace-diff-line {
+    grid-template-columns: 3.4rem max-content;
   }
 }
 

@@ -658,6 +658,9 @@ describe("WorkspaceProjectView", () => {
     renderProjectView();
 
     expect(await screen.findByText("+changed")).toBeVisible();
+    const diffLine = screen.getByText("+changed").closest(".at-workspace-diff-line");
+    expect(diffLine).not.toBeNull();
+    expect(diffLine?.parentElement).toHaveClass("at-workspace-diff-canvas");
     expect(screen.getByRole("region", { name: "changes" })).toBeVisible();
     expect(screen.getByRole("region", { name: "Diff preview" })).toBeVisible();
     expect(screen.queryByRole("region", { name: "File tree" })).not.toBeInTheDocument();

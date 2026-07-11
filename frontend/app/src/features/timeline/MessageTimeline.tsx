@@ -2,7 +2,15 @@ import { App, Button, Empty, Image, Skeleton, Tooltip, Typography } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDown, Copy, Volume2, Wrench } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  startTransition,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type {
   MouseEvent,
   PointerEvent,
@@ -49,12 +57,22 @@ import {
   timelineFallbackVirtualItems,
   type TimelineDerivationCacheEntry,
 } from "./timelinePerformance";
+import {
+  immediateTimelineHydrationRowKeys,
+  rememberHydratedTimelineRow,
+} from "./timelineRowHydration";
+import {
+  TimelineRowHydrationPlaceholder,
+  TimelineVirtualRow,
+  type TimelineVirtualRowRenderer,
+} from "./TimelineVirtualRow";
 import "./ToolCallDetails.css";
 
 const TIMELINE_BOTTOM_FOLLOW_THRESHOLD_PX = 96;
 const TIMELINE_SCROLL_SCOPE_CACHE_LIMIT = 100;
 const TIMELINE_DERIVED_ROWS_CACHE_LIMIT = 8;
 const TIMELINE_FALLBACK_RENDER_LIMIT = 8;
+const TIMELINE_HYDRATED_OVERSCAN_CACHE_LIMIT = 512;
 const TOOL_PREVIEW_CACHE_LIMIT = 256;
 const ROUND_RAIL_PAGE_LIMIT = 100;
 const ROUND_RAIL_MAX_PAGES = 10;
@@ -212,6 +230,18 @@ export function MessageTimeline({
     () => new Set(),
   );
   const [newContentAvailable, setNewContentAvailable] = useState(false);
+  const hydrationFrameRef = useRef<number | null>(null);
+  const hydratedOverscanRowsRef = useRef({
+    rowKeys: new Set<string>(),
+    scopeKey: scrollScopeKey,
+  });
+  const [, setHydrationRevision] = useState(0);
+  if (hydratedOverscanRowsRef.current.scopeKey !== scrollScopeKey) {
+    hydratedOverscanRowsRef.current = {
+      rowKeys: new Set(),
+      scopeKey: scrollScopeKey,
+    };
+  }
   const runtimeRunList = useRuntimeStore(useShallow((state) =>
     Object.values(state.runtimeState.runs).filter((runState) =>
       runtimeRunStateMatchesScope(runState, {
@@ -528,6 +558,7 @@ export function MessageTimeline({
     }
     return undefined;
   }, [rows]);
+  const lastAnswerKey = lastAnswer?.key ?? null;
   const canReadAnswerAloud = supportsMessageSpeech();
   const handleCopyAnswer = useCallback((row: TimelineRow | undefined) => {
     void copyLastAnswer(row, message, t);
@@ -556,6 +587,50 @@ export function MessageTimeline({
   const timelineHeight = virtualItems.length > 0
     ? virtualizer.getTotalSize()
     : fallbackTotalSize(rows);
+  const immediateHydrationRowKeys = immediateTimelineHydrationRowKeys({
+    alwaysHydrate: (row) => row.roundMarker !== null,
+    anchorRowKey: scrollSnapshotRef.current?.anchor?.rowKey ?? null,
+    container: parentRef.current,
+    estimatedSize: estimateRowSize,
+    lastAnswerKey,
+    rowKey: (row) => row.key,
+    rows,
+    virtualItems: renderedVirtualItems,
+  });
+  const deferredHydrationRowKeys = renderedVirtualItems
+    .map((virtualItem) => rows[virtualItem.index]?.key ?? "")
+    .filter((rowKey) =>
+      rowKey.length > 0 &&
+      !immediateHydrationRowKeys.has(rowKey) &&
+      !hydratedOverscanRowsRef.current.rowKeys.has(rowKey)
+    );
+  const deferredHydrationSignature = deferredHydrationRowKeys.join("|");
+  const hydrateCurrentViewportRows = useCallback((container: HTMLElement) => {
+    const rowKeys = immediateTimelineHydrationRowKeys({
+      alwaysHydrate: (row: TimelineRow) => row.roundMarker !== null,
+      anchorRowKey: scrollSnapshotRef.current?.anchor?.rowKey ?? null,
+      container,
+      estimatedSize: estimateRowSize,
+      lastAnswerKey,
+      rowKey: (row: TimelineRow) => row.key,
+      rows,
+      virtualItems: renderedVirtualItems,
+    });
+    let changed = false;
+    for (const rowKey of rowKeys) {
+      if (!hydratedOverscanRowsRef.current.rowKeys.has(rowKey)) {
+        rememberHydratedTimelineRow(
+          hydratedOverscanRowsRef.current.rowKeys,
+          rowKey,
+          TIMELINE_HYDRATED_OVERSCAN_CACHE_LIMIT,
+        );
+        changed = true;
+      }
+    }
+    if (changed) {
+      setHydrationRevision((revision) => revision + 1);
+    }
+  }, [lastAnswerKey, renderedVirtualItems, rows]);
   const handleTimelineScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
     const container = event.currentTarget;
     if (!visible || timelineContainerIsHidden(container)) {
@@ -592,8 +667,9 @@ export function MessageTimeline({
         setNewContentAvailable(false);
       }
       syncActiveRunIdFromViewport(container, pendingRoundRunIdRef, setActiveRunId);
+      hydrateCurrentViewportRows(container);
     }
-  }, [scrollScopeKey, visible]);
+  }, [hydrateCurrentViewportRows, scrollScopeKey, visible]);
   const handleTimelinePointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
     const target = event.target;
     if (!(target instanceof Element)) {
@@ -683,6 +759,43 @@ export function MessageTimeline({
     }
     window.requestAnimationFrame(() => virtualizer.measureElement(row));
   }, [virtualizer]);
+  const renderVirtualRow = useCallback<TimelineVirtualRowRenderer<TimelineRow>>(
+    (row, index, start, measureElement, contentReady) => timelineRowElement(
+      row,
+      index,
+      start,
+      measureElement,
+      t,
+      lastAnswerKey,
+      streamOpenForSession,
+      canReadAnswerAloud,
+      handleCopyAnswer,
+      handleReadAnswerAloud,
+      handleToggleHistorySegment,
+      expandedDisclosureIds,
+      handleDisclosureChange,
+      handleDisclosureToggle,
+      onSubagentOpen,
+      sessionId ?? "",
+      variant,
+      contentReady,
+    ),
+    [
+      canReadAnswerAloud,
+      expandedDisclosureIds,
+      handleCopyAnswer,
+      handleDisclosureChange,
+      handleDisclosureToggle,
+      handleReadAnswerAloud,
+      handleToggleHistorySegment,
+      lastAnswerKey,
+      onSubagentOpen,
+      sessionId,
+      streamOpenForSession,
+      t,
+      variant,
+    ],
+  );
 
   useEffect(() => {
     pendingRoundRunIdRef.current = null;
@@ -694,6 +807,40 @@ export function MessageTimeline({
         : expandedDisclosureIdsBySessionRef.current.get(sessionId) ?? new Set(),
     );
   }, [sessionId]);
+
+  useEffect(() => {
+    if (deferredHydrationRowKeys.length === 0) {
+      return;
+    }
+    const hydrationScopeKey = scrollScopeKey;
+    hydrationFrameRef.current = window.requestAnimationFrame(() => {
+      hydrationFrameRef.current = null;
+      const hydrationState = hydratedOverscanRowsRef.current;
+      if (hydrationState.scopeKey !== hydrationScopeKey) {
+        return;
+      }
+      for (const rowKey of deferredHydrationRowKeys) {
+        rememberHydratedTimelineRow(
+          hydrationState.rowKeys,
+          rowKey,
+          TIMELINE_HYDRATED_OVERSCAN_CACHE_LIMIT,
+        );
+      }
+      startTransition(() => setHydrationRevision((revision) => revision + 1));
+    });
+    return () => {
+      if (hydrationFrameRef.current !== null) {
+        window.cancelAnimationFrame(hydrationFrameRef.current);
+        hydrationFrameRef.current = null;
+      }
+    };
+  }, [deferredHydrationSignature, scrollScopeKey]);
+
+  useLayoutEffect(() => {
+    if (parentRef.current !== null) {
+      setHydrationRevision((revision) => revision + 1);
+    }
+  }, [rows.length > 0, scrollScopeKey]);
 
   useLayoutEffect(() => {
     if (scrollScopeKeyRef.current !== scrollScopeKey) {
@@ -767,7 +914,9 @@ export function MessageTimeline({
       nextContentSignature,
     );
     syncActiveRunIdFromViewport(container, pendingRoundRunIdRef, setActiveRunId);
+    hydrateCurrentViewportRows(container);
   }, [
+    hydrateCurrentViewportRows,
     rows,
     scrollScopeKey,
     timelineHeight,
@@ -837,27 +986,26 @@ export function MessageTimeline({
           className="at-timeline-virtual"
           style={{ height: `${timelineHeight}px` }}
         >
-          {renderedVirtualItems.map((virtualItem) =>
-            timelineRowElement(
-              rows[virtualItem.index],
-              virtualItem.index,
-              virtualItem.start,
-              virtualizer.measureElement,
-              t,
-              lastAnswer?.key ?? null,
-              streamOpenForSession,
-              canReadAnswerAloud,
-              handleCopyAnswer,
-              handleReadAnswerAloud,
-              handleToggleHistorySegment,
-              expandedDisclosureIds,
-              handleDisclosureChange,
-              handleDisclosureToggle,
-              onSubagentOpen,
-              sessionId,
-              variant,
-            ),
-          )}
+          {renderedVirtualItems.map((virtualItem) => {
+            const row = rows[virtualItem.index];
+            if (row === undefined) {
+              return null;
+            }
+            return (
+              <TimelineVirtualRow
+                contentReady={
+                  immediateHydrationRowKeys.has(row.key) ||
+                  hydratedOverscanRowsRef.current.rowKeys.has(row.key)
+                }
+                index={virtualItem.index}
+                key={row.key}
+                measureElement={virtualizer.measureElement}
+                renderRow={renderVirtualRow}
+                row={row}
+                start={virtualItem.start}
+              />
+            );
+          })}
         </div>
       </div>
       {newContentAvailable ? (
@@ -1393,6 +1541,7 @@ function timelineRowElement(
   onSubagentOpen: ((subagent: TimelineSubagentReference) => void) | undefined,
   sessionId: string,
   variant: "session" | "subagent-panel",
+  contentReady: boolean,
 ) {
   const style = { transform: `translateY(${start}px)` };
   if (row.processedGroup !== undefined) {
@@ -1412,6 +1561,7 @@ function timelineRowElement(
         sessionId={sessionId}
         style={style}
         t={t}
+        contentReady={contentReady}
       />
     );
   }
@@ -1427,6 +1577,7 @@ function timelineRowElement(
         runId={row.runId}
         style={style}
         t={t}
+        contentReady={contentReady}
       />
     );
   }
@@ -1442,7 +1593,7 @@ function timelineRowElement(
         ref={measureElement}
         style={style}
       >
-        <RoundMarker
+        {contentReady ? <RoundMarker
           index={row.roundMarker.index}
           onPromptOpenChange={(expanded) =>
             onDisclosureChange(disclosureId, expanded)}
@@ -1457,7 +1608,12 @@ function timelineRowElement(
           promptOpen={expandedDisclosureIds.has(disclosureId)}
           round={row.roundMarker.round}
           t={t}
-        />
+        /> : (
+          <TimelineRowHydrationPlaceholder
+            estimatedHeight={estimateRowSize(row) - 28}
+            rowKey={row.key}
+          />
+        )}
       </section>
     );
   }
@@ -1487,12 +1643,12 @@ function timelineRowElement(
       ref={measureElement}
       style={style}
     >
-      {showRoleLabel ? (
+      {contentReady && showRoleLabel ? (
         <Typography.Text className="at-message-role">
           {displayRole(row.role, t)}
         </Typography.Text>
       ) : null}
-      <MessageRowContent
+      {contentReady ? <MessageRowContent
         expandedDisclosureIds={expandedDisclosureIds}
         onDisclosureChange={onDisclosureChange}
         onDisclosureToggle={onDisclosureToggle}
@@ -1501,8 +1657,13 @@ function timelineRowElement(
         row={row}
         sessionId={sessionId}
         t={t}
-      />
-      {showActions ? (
+      /> : (
+        <TimelineRowHydrationPlaceholder
+          estimatedHeight={estimateRowSize(row) - 28}
+          rowKey={row.key}
+        />
+      )}
+      {contentReady && showActions ? (
         <MessageRowActions
           canReadAloud={canReadAnswerAloud}
           disabled={streamOpenForSession}
@@ -1516,6 +1677,7 @@ function timelineRowElement(
 }
 
 function ProcessedGroupRow({
+  contentReady,
   expanded,
   expandedDisclosureIds,
   group,
@@ -1530,6 +1692,7 @@ function ProcessedGroupRow({
   style,
   t,
 }: {
+  contentReady: boolean;
   expanded: boolean;
   expandedDisclosureIds: ReadonlySet<string>;
   group: TimelineProcessedGroup;
@@ -1565,7 +1728,7 @@ function ProcessedGroupRow({
       ref={setRowRef}
       style={style}
     >
-      <TimelineDisclosure
+      {contentReady ? <TimelineDisclosure
         className="at-processed-group"
         disclosureId={`processed:${runId ?? rowKey}`}
         expanded={expanded}
@@ -1605,12 +1768,15 @@ function ProcessedGroupRow({
             </div>
           ))}
         </div>
-      </TimelineDisclosure>
+      </TimelineDisclosure> : (
+        <TimelineRowHydrationPlaceholder estimatedHeight={24} rowKey={rowKey} />
+      )}
     </section>
   );
 }
 
 function TimelineHistoryDividerRow({
+  contentReady,
   divider,
   index,
   measureElement,
@@ -1620,6 +1786,7 @@ function TimelineHistoryDividerRow({
   style,
   t,
 }: {
+  contentReady: boolean;
   divider: TimelineHistoryDivider;
   index: number;
   measureElement: (element: Element | null) => void;
@@ -1641,7 +1808,7 @@ function TimelineHistoryDividerRow({
       ref={measureElement}
       style={style}
     >
-      <button
+      {contentReady ? <button
         aria-expanded={divider.expanded}
         className="at-history-divider-button"
         onClick={() => onToggle(divider.segmentId)}
@@ -1656,7 +1823,9 @@ function TimelineHistoryDividerRow({
           })}
         </span>
         <span className="at-history-divider-action">{actionLabel}</span>
-      </button>
+      </button> : (
+        <TimelineRowHydrationPlaceholder estimatedHeight={24} rowKey={rowKey} />
+      )}
     </section>
   );
 }

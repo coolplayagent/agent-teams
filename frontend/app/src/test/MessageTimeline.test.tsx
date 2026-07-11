@@ -11277,6 +11277,62 @@ describe("MessageTimeline", () => {
     }
   });
 
+  it("retains virtual row shells while hydrating offscreen content on the next frame", async () => {
+    const restoreMeasurements = mockElementMeasurements({
+      clientHeight: 180,
+      rowHeight: 84,
+    });
+    const animationFrames: FrameRequestCallback[] = [];
+    const requestAnimationFrame = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((callback) => {
+        animationFrames.push(callback);
+        return animationFrames.length;
+      });
+    const cancelAnimationFrame = vi
+      .spyOn(window, "cancelAnimationFrame")
+      .mockImplementation(() => undefined);
+    try {
+      listSessionMessagesMock.mockResolvedValue(
+        Array.from({ length: 20 }, (_, index) => ({
+          content: `Hydration message ${index + 1}`,
+          message_id: `hydration-message-${index + 1}`,
+          role_id: "MainAgent",
+        })),
+      );
+
+      const { container } = renderTimeline();
+
+      expect(await screen.findByText("Hydration message 20")).toBeVisible();
+      const timeline = timelineElement(container);
+      await waitFor(() =>
+        expect(timeline.scrollTop).toBe(timelineMaxScrollTop(timeline)),
+      );
+      const renderedRowCount = Number(timeline.dataset.renderedRowCount);
+      expect(container.querySelectorAll(".at-timeline-row"))
+        .toHaveLength(renderedRowCount);
+      expect(container.querySelectorAll(".at-timeline-row-placeholder").length)
+        .toBeGreaterThan(0);
+      expect(screen.getByText("Hydration message 20")).toBeVisible();
+
+      act(() => {
+        const callbacks = animationFrames.splice(0);
+        callbacks.forEach((callback) => callback(performance.now()));
+      });
+
+      await waitFor(() =>
+        expect(container.querySelector(".at-timeline-row-placeholder"))
+          .not.toBeInTheDocument(),
+      );
+      expect(container.querySelectorAll(".at-timeline-row"))
+        .toHaveLength(Number(timeline.dataset.renderedRowCount));
+    } finally {
+      requestAnimationFrame.mockRestore();
+      cancelAnimationFrame.mockRestore();
+      restoreMeasurements();
+    }
+  });
+
   it("preserves scroll position when new rows arrive away from bottom", async () => {
     const restoreMeasurements = mockElementMeasurements({
       clientHeight: 320,

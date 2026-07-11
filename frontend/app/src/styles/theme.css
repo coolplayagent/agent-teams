@@ -329,6 +329,13 @@ body {
   overflow: hidden;
   padding: 8px;
   gap: 6px;
+  user-select: none;
+}
+
+.at-sidebar-inner input,
+.at-sidebar-inner textarea,
+.at-sidebar-inner [contenteditable="true"] {
+  user-select: text;
 }
 
 .at-sidebar-new-session {

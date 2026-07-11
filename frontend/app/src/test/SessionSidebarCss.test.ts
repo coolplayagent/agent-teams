@@ -10,4 +10,9 @@ describe("session sidebar row styles", () => {
     expect(css).toMatch(/\.at-session-actions\s*\{[^}]*position:\s*absolute[^}]*right:\s*5px/s);
     expect(css).toMatch(/\.at-session-item:hover \.at-session-actions,[\s\S]*\.at-session-item\.has-open-confirm \.at-session-actions\s*\{[^}]*opacity:\s*1[^}]*pointer-events:\s*auto/s);
   });
+
+  it("prevents drag selection while preserving editable text selection", () => {
+    expect(css).toMatch(/\.at-sidebar-inner\s*\{[^}]*user-select:\s*none/s);
+    expect(css).toMatch(/\.at-sidebar-inner input,[\s\S]*\[contenteditable="true"\]\s*\{[^}]*user-select:\s*text/s);
+  });
 });

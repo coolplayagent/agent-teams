@@ -3,66 +3,49 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const composerCss = readFileSync(
-  "src/features/composer/Composer.css",
-  "utf8",
-);
+const composerCss = readFileSync("src/features/composer/Composer.css", "utf8");
 const composerSource = readFileSync(
   "src/features/composer/Composer.tsx",
   "utf8",
 );
 
-describe("composer control layout CSS", () => {
-  it("keeps the desktop controls compact on one row without fixed wide selects", () => {
-    expect(composerSource).toContain('import "./Composer.css";');
-    expect(composerSource).toContain('className="at-composer-toggles"');
-    expect(composerSource).toContain('className="at-composer-actions"');
-
+describe("contextual composer layout", () => {
+  it("keeps the prompt primary and the action rail fixed inside the composer", () => {
+    expect(composerSource).toContain('className="at-composer-toolbar-start"');
+    expect(composerSource).toContain('className="at-composer-primary-action"');
     expect(composerCss).toMatch(
-      /\.at-composer \.at-composer-controls\s*{[\s\S]*?display:\s*flex;[\s\S]*?gap:\s*8px;[\s\S]*?min-width:\s*0;/,
+      /\.at-composer \.at-composer-sender\.ant-sender\s*{[\s\S]*?min-height:\s*72px;[\s\S]*?background:\s*transparent;/,
     );
     expect(composerCss).toMatch(
-      /\.at-composer \.at-composer-control-set\s*{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?flex-wrap:\s*nowrap;/,
+      /\.at-composer \.at-composer-controls\s*{[\s\S]*?justify-content:\s*space-between;[\s\S]*?min-height:\s*36px;/,
     );
     expect(composerCss).toMatch(
-      /\.at-composer \.at-composer-field\s*{[\s\S]*?flex:\s*1 1 132px;[\s\S]*?min-width:\s*110px;[\s\S]*?max-width:\s*176px;/,
+      /\.at-composer \.at-composer-actions\s*{[\s\S]*?flex:\s*0 0 auto;/,
     );
     expect(composerCss).toMatch(
-      /\.at-composer \.at-composer-mode-field\s*{[\s\S]*?flex:\s*0 1 218px;[\s\S]*?min-width:\s*206px;[\s\S]*?max-width:\s*224px;/,
-    );
-    expect(composerCss).toMatch(
-      /\.at-composer \.at-session-mode-control,[\s\S]*?\.at-composer \.at-model-profile-select\s*{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?min-width:\s*0;[\s\S]*?width:\s*100%;/,
-    );
-    expect(composerCss).not.toContain("width: 218px");
-  });
-
-  it("uses the composer width for orderly wrapping and keeps actions available", () => {
-    expect(composerCss).toMatch(
-      /@container composer \(max-width: 920px\)[\s\S]*?\.at-composer \.at-composer-controls\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) max-content;/,
-    );
-    expect(composerCss).toMatch(
-      /@container composer \(max-width: 680px\)[\s\S]*?\.at-composer \.at-composer-control-set\s*{[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/,
-    );
-    expect(composerCss).toMatch(
-      /@container composer \(max-width: 440px\)[\s\S]*?\.at-composer \.at-composer-control-set\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/,
-    );
-    expect(composerCss).toMatch(
-      /\.at-composer \.at-composer-actions\.ant-space\s*{[\s\S]*?flex:\s*0 0 auto;[\s\S]*?justify-content:\s*flex-end;/,
+      /\.at-composer \.at-composer-primary-action\s*{[\s\S]*?width:\s*36px;[\s\S]*?min-width:\s*36px;[\s\S]*?height:\s*36px;/,
     );
   });
 
-  it("renders mention suggestions as a bounded floating surface", () => {
+  it("moves infrequent configuration into a dense contextual surface", () => {
+    expect(composerSource).toContain('overlayClassName="at-composer-advanced-popover"');
+    expect(composerCss).toMatch(
+      /\.at-composer-advanced-panel\s*{[\s\S]*?width:\s*min\(680px, calc\(100vw - 50px\)\);/,
+    );
+    expect(composerCss).toMatch(
+      /\.at-composer-advanced-panel \.at-composer-control-set\s*{[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/,
+    );
+    expect(composerCss).toMatch(
+      /@media \(max-width:\s*720px\)[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/,
+    );
+  });
+
+  it("renders suggestions as a bounded floating surface", () => {
     expect(composerCss).toMatch(
       /\.at-prompt-mention-menu\.at-prompt-mention-menu\s*{[\s\S]*?position:\s*fixed;[\s\S]*?z-index:\s*1100;[\s\S]*?max-width:\s*calc\(100vw - 24px\);[\s\S]*?overflow:\s*hidden;/,
     );
     expect(composerCss).toMatch(
       /\.at-prompt-mention-menu \.at-prompt-mention-menu-list\s*{[\s\S]*?max-height:\s*inherit;[\s\S]*?overflow-y:\s*auto;/,
-    );
-    expect(composerCss).toMatch(
-      /\.at-prompt-mention-menu \.at-prompt-mention-description\s*{[\s\S]*?overflow:\s*hidden;[\s\S]*?-webkit-line-clamp:\s*2;/,
-    );
-    expect(composerSource).toContain(
-      'className="at-composer-prompt-anchor"',
     );
   });
 });

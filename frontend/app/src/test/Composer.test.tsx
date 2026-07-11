@@ -174,7 +174,9 @@ describe("Composer", () => {
       "placeholder",
       "What would you like the agents to do?",
     );
-    expect(screen.getByText("Mode")).toBeVisible();
+    await openAdvancedControls();
+    await openModelControls();
+    expect(screen.getAllByText("Mode")).not.toHaveLength(0);
     expect(screen.getByText("Role")).toBeVisible();
     expect(screen.getByText("Target")).toBeVisible();
     expect(screen.getAllByText("Model")[0]).toBeVisible();
@@ -218,8 +220,10 @@ describe("Composer", () => {
       "placeholder",
       "你希望这些代理帮你做什么？",
     );
+    await openAdvancedControls("模式: normal");
+    await openModelControls("模型配置");
     expect(screen.getByText("普通模式")).toBeVisible();
-    expect(screen.getByText("模式")).toBeVisible();
+    expect(screen.getAllByText("模式")).not.toHaveLength(0);
     expect(screen.getByText("角色")).toBeVisible();
     expect(screen.getByText("目标")).toBeVisible();
     expect(screen.getAllByText("模型")[0]).toBeVisible();
@@ -299,9 +303,10 @@ describe("Composer", () => {
 
     renderComposer();
 
+    await openAdvancedControls("Mode: orchestration");
     expect(
       await screen.findByRole("combobox", { name: "Orchestration preset" }),
-    ).toBeVisible();
+    ).toBeInTheDocument();
     expect(screen.getByText("Preset")).toBeVisible();
     expect(
       screen.queryByRole("combobox", { name: "Root role" }),
@@ -329,6 +334,7 @@ describe("Composer", () => {
 
     renderComposer(controller);
 
+    await openAdvancedControls();
     fireEvent.mouseDown(
       await screen.findByRole("combobox", { name: "Target role" }),
     );
@@ -3245,9 +3251,28 @@ function segmentedItem(label: string): HTMLElement {
 }
 
 async function waitForRoleOption(label: string) {
+  await openAdvancedControls();
   fireEvent.mouseDown(await screen.findByRole("combobox", { name: "Target role" }));
   await screen.findAllByText(label);
   fireEvent.keyDown(document.body, { key: "Escape" });
+}
+
+async function openAdvancedControls(label = "Mode: normal") {
+  const target = screen.queryByRole("combobox", { name: /Target role|目标角色/ });
+  if (target !== null) {
+    return target;
+  }
+  fireEvent.click(await screen.findByRole("button", { name: label }));
+  return screen.findByRole("combobox", { name: /Target role|目标角色/ });
+}
+
+async function openModelControls(label = "Model profile") {
+  const model = screen.queryByRole("combobox", { name: /Model profile|模型配置/ });
+  if (model !== null) {
+    return model;
+  }
+  fireEvent.click(await screen.findByRole("button", { name: label }));
+  return screen.findByRole("combobox", { name: /Model profile|模型配置/ });
 }
 
 function pasteImage(filename: string, mimeType = "image/png"): File {

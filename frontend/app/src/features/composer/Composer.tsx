@@ -2,6 +2,7 @@ import {
   App,
   Button,
   Checkbox,
+  Popover,
   Segmented,
   Select,
   Space,
@@ -11,7 +12,16 @@ import {
 } from "antd";
 import { Sender } from "@ant-design/x";
 import type { SenderRef } from "@ant-design/x/es/sender";
-import { Mic, MicOff, Pause, Play, Send } from "lucide-react";
+import {
+  Brain,
+  ChevronDown,
+  Mic,
+  MicOff,
+  Play,
+  Send,
+  Settings2,
+  Square,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ClipboardEvent, KeyboardEvent } from "react";
 import {
@@ -820,7 +830,16 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
           </Typography.Text>
         ) : null}
         <div className="at-composer-controls">
-          <div className="at-composer-control-set">
+          <div className="at-composer-toolbar-start">
+            <Popover
+              arrow={false}
+              content={(
+                <div className="at-composer-advanced-panel">
+                  <div className="at-composer-advanced-heading">
+                    <Settings2 aria-hidden size={16} />
+                    <Typography.Text strong>{t("composerMode")}</Typography.Text>
+                  </div>
+                  <div className="at-composer-control-set">
             <div className="at-composer-field at-composer-mode-field">
               <Typography.Text className="at-composer-field-label">
                 {t("composerMode")}
@@ -930,40 +949,6 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
                 value={targetRoleId ?? undefined}
               />
             </div>
-            <div className="at-composer-field at-composer-model-field">
-              <Typography.Text className="at-composer-field-label">
-                {t("composerModel")}
-              </Typography.Text>
-              <Select
-                allowClear
-                aria-label={t("composerModelProfile")}
-                className="at-model-profile-select"
-                disabled={
-                  busy || activeRunId !== null || !canChangeModelProfile
-                }
-                loading={
-                  sessionQuery.isLoading ||
-                  modelProfilesQuery.isLoading ||
-                  updateModelProfileMutation.isPending
-                }
-                onChange={(value) => {
-                  const nextProfile = normalizeProfileName(value);
-                  if (
-                    selectedModelProfile !== null &&
-                    nextProfile !== selectedModelProfile
-                  ) {
-                    updateModelProfileMutation.mutate(nextProfile);
-                  }
-                }}
-                optionFilterProp="label"
-                options={modelProfileOptions}
-                placeholder={t("composerModel")}
-                popupMatchSelectWidth={false}
-                showSearch
-                size="small"
-                value={selectedModelProfile ?? undefined}
-              />
-            </div>
             <div className="at-composer-toggles">
               <Space className="at-thinking-control" size={6}>
                 <Typography.Text
@@ -1015,8 +1000,110 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
                 {t("composerYolo")}
               </Checkbox>
             </div>
+                  </div>
+                </div>
+              )}
+              overlayClassName="at-composer-advanced-popover"
+              placement="topLeft"
+              trigger="click"
+            >
+              <Button
+                aria-label={`${t("composerMode")}: ${selectedSessionMode}`}
+                className="at-composer-summary-button"
+                icon={<Settings2 size={15} />}
+                size="small"
+                type="text"
+              >
+                <span className="at-composer-summary-copy">
+                  {selectedSessionMode === "normal"
+                    ? t("composerNormal")
+                    : t("composerOrchestration")}
+                  <span aria-hidden className="at-composer-summary-separator">·</span>
+                  {selectedSessionMode === "normal"
+                    ? normalRootRoleOptions.find(
+                        (option) => option.value === selectedNormalRootRoleId,
+                      )?.label ?? t("composerRootRole")
+                    : orchestrationPresetOptions.find(
+                        (option) => option.value === selectedOrchestrationPresetId,
+                      )?.label ?? t("composerPreset")}
+                </span>
+                <ChevronDown aria-hidden size={13} />
+              </Button>
+            </Popover>
+            <Popover
+              arrow={false}
+              content={(
+                <div className="at-composer-advanced-panel at-composer-model-panel">
+                  <div className="at-composer-field at-composer-model-field">
+                    <Typography.Text className="at-composer-field-label">
+                      {t("composerModel")}
+                    </Typography.Text>
+                    <Select
+                      allowClear
+                      aria-label={t("composerModelProfile")}
+                      className="at-model-profile-select"
+                      disabled={busy || activeRunId !== null || !canChangeModelProfile}
+                      loading={
+                        sessionQuery.isLoading ||
+                        modelProfilesQuery.isLoading ||
+                        updateModelProfileMutation.isPending
+                      }
+                      onChange={(value) => {
+                        const nextProfile = normalizeProfileName(value);
+                        if (
+                          selectedModelProfile !== null &&
+                          nextProfile !== selectedModelProfile
+                        ) {
+                          updateModelProfileMutation.mutate(nextProfile);
+                        }
+                      }}
+                      optionFilterProp="label"
+                      options={modelProfileOptions}
+                      placeholder={t("composerModel")}
+                      popupMatchSelectWidth={false}
+                      showSearch
+                      size="small"
+                      value={selectedModelProfile ?? undefined}
+                    />
+                  </div>
+                </div>
+              )}
+              overlayClassName="at-composer-advanced-popover"
+              placement="topLeft"
+              trigger="click"
+            >
+              <Button
+                aria-label={t("composerModelProfile")}
+                className="at-composer-summary-button at-composer-model-summary"
+                size="small"
+                type="text"
+              >
+                <span className="at-composer-summary-copy">
+                  {modelProfileOptions.find(
+                    (option) => option.value === selectedModelProfile,
+                  )?.label ?? t("composerModel")}
+                </span>
+                <ChevronDown aria-hidden size={13} />
+              </Button>
+            </Popover>
+            <Tooltip title={t("composerThinking") }>
+              <Button
+                aria-label={t("composerThinking")}
+                className={thinking.enabled ? "at-composer-state-button is-active" : "at-composer-state-button"}
+                icon={<Brain size={15} />}
+                onClick={() => updateThinking({ enabled: !thinking.enabled })}
+                size="small"
+                type="text"
+              >
+                {thinking.enabled
+                  ? thinkingEffortOptions(t).find(
+                      (option) => option.value === thinking.effort,
+                    )?.label ?? t("composerThinking")
+                  : t("composerThinking")}
+              </Button>
+            </Tooltip>
           </div>
-          <Space className="at-composer-actions" size={8}>
+          <div className="at-composer-actions">
             {voiceInput.visible ? (
               <Tooltip title={voiceInput.tooltip}>
                 <Button
@@ -1033,64 +1120,74 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
                       readPromptSelection(draft, inputRef.current?.nativeElement),
                     )
                   }
+                  shape="circle"
+                  type="text"
                 />
               </Tooltip>
             ) : null}
             {activeRunId !== null ? (
               <Tooltip title={t("composerStopRun")}>
                 <Button
+                  aria-label={t("composerStopRun")}
+                  className="at-composer-primary-action at-composer-stop-action"
                   danger
-                  icon={<Pause size={16} />}
+                  icon={<Square fill="currentColor" size={13} />}
                   loading={stopRunMutation.isPending}
                   onClick={() => {
                     stopRunMutation.mutate(activeRunId);
                   }}
-                >
-                  {t("composerStop")}
-                </Button>
+                  shape="circle"
+                />
               </Tooltip>
             ) : null}
             {activeRunId !== null ? (
               <>
-                <Button
-                  disabled={!canInject}
-                  icon={<Send size={16} />}
-                  loading={
-                    injectMessageMutation.isPending &&
-                    injectMessageMutation.variables === "queued"
-                  }
-                  onClick={() => injectMessageMutation.mutate("queued")}
-                  title={injectionButtonTitle || t("composerQueue")}
-                >
-                  {t("composerQueue")}
-                </Button>
-                <Button
-                  danger
-                  disabled={!canInject}
-                  icon={<Play size={16} />}
-                  loading={
-                    injectMessageMutation.isPending &&
-                    injectMessageMutation.variables === "interrupt"
-                  }
-                  onClick={() => injectMessageMutation.mutate("interrupt")}
-                  title={injectionButtonTitle || t("composerInterrupt")}
-                >
-                  {t("composerInterrupt")}
-                </Button>
+                <Tooltip title={injectionButtonTitle || t("composerInterrupt")}>
+                  <Button
+                    aria-label={t("composerInterrupt")}
+                    className="at-composer-secondary-action"
+                    danger
+                    disabled={!canInject}
+                    icon={<Play size={15} />}
+                    loading={
+                      injectMessageMutation.isPending &&
+                      injectMessageMutation.variables === "interrupt"
+                    }
+                    onClick={() => injectMessageMutation.mutate("interrupt")}
+                    shape="circle"
+                    type="text"
+                  />
+                </Tooltip>
+                <Tooltip title={injectionButtonTitle || t("composerQueue")}>
+                  <Button
+                    aria-label={t("composerQueue")}
+                    className="at-composer-primary-action"
+                    disabled={!canInject}
+                    icon={<Send size={16} />}
+                    loading={
+                      injectMessageMutation.isPending &&
+                      injectMessageMutation.variables === "queued"
+                    }
+                    onClick={() => injectMessageMutation.mutate("queued")}
+                    shape="circle"
+                    type="primary"
+                  />
+                </Tooltip>
               </>
             ) : (
               <Button
+                aria-label={t("composerSend")}
+                className="at-composer-primary-action"
                 htmlType="submit"
                 icon={sessionId === null ? <Play size={16} /> : <Send size={16} />}
                 loading={createRunMutation.isPending}
+                shape="circle"
                 type="primary"
                 disabled={!canCreateRun}
                 title={sendButtonTitle}
-              >
-                {t("composerSend")}
-              </Button>
+              />
             )}
-          </Space>
+          </div>
         </div>
       </div>
     </form>

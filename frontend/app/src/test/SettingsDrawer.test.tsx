@@ -1735,12 +1735,10 @@ describe("SettingsDrawer", () => {
     });
     fireEvent.click(within(sections).getByRole("button", { name: "Speech" }));
 
-    fireEvent.change(await screen.findByRole("combobox", { name: "STT profile" }), {
-      target: { value: "stt" },
-    });
-    fireEvent.change(screen.getByRole("combobox", { name: "Language" }), {
-      target: { value: "en-US" },
-    });
+    fireEvent.mouseDown(await screen.findByRole("combobox", { name: "STT profile" }));
+    await clickAntdSelectOption("stt (qwen3-omni-flash)");
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "Language" }));
+    await clickAntdSelectOption("English (US)");
     fireEvent.change(screen.getByLabelText("Prompt"), {
       target: { value: "edited terms" },
     });

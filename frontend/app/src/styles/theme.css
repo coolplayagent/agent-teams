@@ -14,6 +14,7 @@
   --at-success: #257a4f;
   --at-warning: #a16207;
   --at-danger: #b42318;
+  --at-status-disabled: #73766e;
   --at-font-ui: "Aptos", "Helvetica Neue", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --at-font-mono: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
   --at-ui-font-size: 14px;
@@ -61,6 +62,7 @@
   --at-success: #7ebf95;
   --at-warning: #d99a2b;
   --at-danger: #f97066;
+  --at-status-disabled: #91968b;
   --at-code-bg: #242721;
   --at-code-keyword: #d6a4ff;
   --at-code-string: #dfb06d;
@@ -2600,15 +2602,15 @@ body {
 }
 
 .at-connectors-summary-cell.is-connected {
-  border-left-color: #2f8f5f;
+  border-left-color: var(--at-success);
 }
 
 .at-connectors-summary-cell.is-needs_config {
-  border-left-color: #b47d18;
+  border-left-color: var(--at-warning);
 }
 
 .at-connectors-summary-cell.is-disabled {
-  border-left-color: #73766e;
+  border-left-color: var(--at-status-disabled);
 }
 
 .at-connectors-summary-cell.is-error {
@@ -3012,15 +3014,15 @@ body {
 }
 
 .at-connectors-status.is-connected > span {
-  background: #2f8f5f;
+  background: var(--at-success);
 }
 
 .at-connectors-status.is-needs_config > span {
-  background: #b47d18;
+  background: var(--at-warning);
 }
 
 .at-connectors-status.is-disabled > span {
-  background: #73766e;
+  background: var(--at-status-disabled);
 }
 
 .at-connectors-status.is-error > span {
@@ -3079,8 +3081,8 @@ body {
 }
 
 .at-runtime-tools-heading-actions .ant-btn.is-complete {
-  border-color: #2f8f5f;
-  color: #2f8f5f;
+  border-color: var(--at-success);
+  color: var(--at-success);
 }
 
 .at-runtime-tools-grid {

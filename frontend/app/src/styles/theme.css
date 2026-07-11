@@ -1069,6 +1069,17 @@ body {
   background: var(--at-bg);
 }
 
+.at-retained-session-timeline {
+  display: grid;
+  grid-row: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.at-retained-session-timeline[hidden] {
+  display: none;
+}
+
 .at-workspace-chat-shell {
   flex: 1 1 auto;
   display: grid;

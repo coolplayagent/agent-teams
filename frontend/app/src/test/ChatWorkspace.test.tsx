@@ -70,15 +70,26 @@ vi.mock("../features/shell/SessionTokenUsage", () => ({
 
 vi.mock("../features/timeline/MessageTimeline", () => ({
   MessageTimeline: ({
+    primaryRoleId,
+    runtimeUpdatesEnabled,
     sessionId,
     visible,
+    workspaceId,
   }: {
+    primaryRoleId?: string | null;
+    runtimeUpdatesEnabled?: boolean;
     sessionId: string | null;
     visible?: boolean;
+    workspaceId?: string | null;
   }) => {
     timelineRenderMock(sessionId);
     return (
-      <div data-testid="timeline" data-visible={visible === false ? "false" : "true"}>
+      <div
+        data-primary-role-id={primaryRoleId ?? ""}
+        data-testid={runtimeUpdatesEnabled === false ? "retained-timeline" : "timeline"}
+        data-visible={visible === false ? "false" : "true"}
+        data-workspace-id={workspaceId ?? ""}
+      >
         {sessionId}
       </div>
     );
@@ -91,6 +102,98 @@ afterEach(() => {
 });
 
 describe("ChatWorkspace", () => {
+  it("retains two timeline DOM instances across A to B to A navigation", () => {
+    const controller = createRunStreamController();
+    const view = render(
+      <ChatWorkspace
+        primaryRoleId="MainAgent"
+        runStreamController={controller}
+        sessionId="session-a"
+      />,
+    );
+    const timelineA = screen.getByTestId("timeline");
+
+    view.rerender(
+      <ChatWorkspace
+        primaryRoleId="MainAgent"
+        runStreamController={controller}
+        sessionId="session-b"
+      />,
+    );
+    const timelineB = screen.getByTestId("timeline");
+    expect(screen.getByTestId("retained-timeline")).toBe(timelineA);
+    expect(screen.getByTestId("retained-timeline")).not.toBeVisible();
+
+    view.rerender(
+      <ChatWorkspace
+        primaryRoleId="MainAgent"
+        runStreamController={controller}
+        sessionId="session-a"
+      />,
+    );
+
+    expect(screen.getByTestId("timeline")).toBe(timelineA);
+    expect(screen.getByTestId("retained-timeline")).toBe(timelineB);
+    expect(document.querySelectorAll(".at-retained-session-timeline")).toHaveLength(2);
+  });
+
+  it("evicts the least recently used timeline when a third session opens", () => {
+    const controller = createRunStreamController();
+    const view = render(
+      <ChatWorkspace
+        primaryRoleId="MainAgent"
+        runStreamController={controller}
+        sessionId="session-a"
+      />,
+    );
+    for (const sessionId of ["session-b", "session-c"]) {
+      view.rerender(
+        <ChatWorkspace
+          primaryRoleId="MainAgent"
+          runStreamController={controller}
+          sessionId={sessionId}
+        />,
+      );
+    }
+
+    expect(
+      document.querySelector('.at-retained-session-timeline[data-session-id="session-a"]'),
+    ).toBeNull();
+    expect(
+      document.querySelector('.at-retained-session-timeline[data-session-id="session-b"]'),
+    ).not.toBeNull();
+    expect(
+      document.querySelector('.at-retained-session-timeline[data-session-id="session-c"]'),
+    ).not.toBeNull();
+    expect(document.querySelectorAll(".at-retained-session-timeline")).toHaveLength(2);
+  });
+
+  it("updates current timeline metadata without replacing its DOM", () => {
+    const controller = createRunStreamController();
+    const view = render(
+      <ChatWorkspace
+        primaryRoleId="MainAgent"
+        runStreamController={controller}
+        sessionId="session-a"
+        workspaceId="workspace-a"
+      />,
+    );
+    const timeline = screen.getByTestId("timeline");
+
+    view.rerender(
+      <ChatWorkspace
+        primaryRoleId="Coordinator"
+        runStreamController={controller}
+        sessionId="session-a"
+        workspaceId="workspace-b"
+      />,
+    );
+
+    expect(screen.getByTestId("timeline")).toBe(timeline);
+    expect(timeline).toHaveAttribute("data-primary-role-id", "Coordinator");
+    expect(timeline).toHaveAttribute("data-workspace-id", "workspace-b");
+  });
+
   it("does not rebuild the main timeline for an unrelated parent render", () => {
     const controller = createRunStreamController();
     const props = {

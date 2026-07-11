@@ -294,6 +294,7 @@ vi.mock("../features/shell/SettingsDrawer", () => ({
 vi.mock("../features/timeline/MessageTimeline", () => ({
   MessageTimeline: ({
     onSubagentOpen,
+    runtimeUpdatesEnabled,
     sessionId,
     workspaceId,
   }: {
@@ -306,16 +307,21 @@ vi.mock("../features/timeline/MessageTimeline", () => ({
       sessionId: string;
       title?: string;
     }) => void;
+    runtimeUpdatesEnabled?: boolean;
     sessionId: string | null;
     workspaceId?: string | null;
   }) => (
     <div
       data-session-id={sessionId ?? ""}
-      data-testid="timeline"
+      data-testid={runtimeUpdatesEnabled === false ? "retained-timeline" : "timeline"}
       data-workspace-id={workspaceId ?? ""}
     >
       <button
-        data-testid="open-subagent-from-timeline"
+        data-testid={
+          runtimeUpdatesEnabled === false
+            ? "retained-open-subagent-from-timeline"
+            : "open-subagent-from-timeline"
+        }
         onClick={() => {
           const secondSession = sessionId === "session-2";
           onSubagentOpen?.({
@@ -332,7 +338,11 @@ vi.mock("../features/timeline/MessageTimeline", () => ({
         Subagent tool
       </button>
       <button
-        data-testid="open-pending-subagent-from-timeline"
+        data-testid={
+          runtimeUpdatesEnabled === false
+            ? "retained-open-pending-subagent-from-timeline"
+            : "open-pending-subagent-from-timeline"
+        }
         onClick={() => {
           onSubagentOpen?.({
             description: "Explore skills implementation",

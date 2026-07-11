@@ -133,6 +133,7 @@ interface MessageTimelineProps {
   onSubagentOpen?: (subagent: TimelineSubagentReference) => void;
   primaryRoleId?: string | null;
   roundsEnabled?: boolean;
+  runtimeUpdatesEnabled?: boolean;
   runtimeRunId?: string | null;
   sessionId: string | null;
   subagentScopeRoleId?: string | null;
@@ -174,6 +175,7 @@ export function MessageTimeline({
   onSubagentOpen,
   primaryRoleId = null,
   roundsEnabled = true,
+  runtimeUpdatesEnabled = true,
   runtimeRunId = null,
   sessionId,
   subagentScopeRoleId = null,
@@ -201,6 +203,7 @@ export function MessageTimeline({
   const expandedDisclosureIdsBySessionRef = useRef(
     new Map<string, ReadonlySet<string>>(),
   );
+  const retainedRuntimeRunListRef = useRef<RuntimeRunState[]>([]);
   const persistedRowsByScopeRef = useRef(
     new Map<string, TimelineDerivationCacheEntry<TimelineRow[]>>(),
   );
@@ -213,16 +216,21 @@ export function MessageTimeline({
   );
   const [newContentAvailable, setNewContentAvailable] = useState(false);
   const runtimeRunList = useRuntimeStore(useShallow((state) =>
-    Object.values(state.runtimeState.runs).filter((runState) =>
-      runtimeRunStateMatchesScope(runState, {
-        primaryRoleId,
-        runtimeRunId,
-        sessionId,
-        subagentRoleId: subagentScopeRoleId,
-        variant,
-      })
-    )
+    runtimeUpdatesEnabled
+      ? Object.values(state.runtimeState.runs).filter((runState) =>
+          runtimeRunStateMatchesScope(runState, {
+            primaryRoleId,
+            runtimeRunId,
+            sessionId,
+            subagentRoleId: subagentScopeRoleId,
+            variant,
+          })
+        )
+      : retainedRuntimeRunListRef.current
   ));
+  if (runtimeUpdatesEnabled) {
+    retainedRuntimeRunListRef.current = runtimeRunList;
+  }
   const runtimeRuns = useMemo(
     () => Object.fromEntries(runtimeRunList.map((runState) => [runState.runId, runState])),
     [runtimeRunList],
@@ -241,6 +249,7 @@ export function MessageTimeline({
       !messagesQuery.isLoading &&
       !messagesQuery.isError,
     refetchInterval: (query) =>
+      runtimeUpdatesEnabled &&
       roundsNeedLiveRefetch(query.state.data as SessionRound[] | undefined)
         ? LIVE_ROUND_REFETCH_MS
         : false,

@@ -1,4 +1,11 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { Composer } from "../composer/Composer";
 import { RecoveryBar } from "../recovery/RecoveryBar";
@@ -25,6 +32,17 @@ interface ChatWorkspaceProps {
   workspaceId?: string | null;
 }
 
+const RETAINED_TIMELINE_LIMIT = 2;
+
+export interface RetainedTimelineContext {
+  fallbackRunId: string | null;
+  latestTerminalRunId: string | null;
+  latestTerminalRunStatus: string | null;
+  primaryRoleId: string | null;
+  sessionId: string;
+  workspaceId: string | null;
+}
+
 export const ChatWorkspace = memo(function ChatWorkspace({
   contentLoadingKey,
   latestTerminalRunId = null,
@@ -40,6 +58,7 @@ export const ChatWorkspace = memo(function ChatWorkspace({
   const previousContentLoadingKeyRef = useRef<number | undefined>(undefined);
   const previousSessionIdRef = useRef(sessionId);
   const switchFrameRef = useRef<SessionSwitchFrame | null>(null);
+  const retainedTimelinesRef = useRef(new Map<string, RetainedTimelineContext>());
   const [switchingSessionId, setSwitchingSessionId] = useState<string | null>(null);
 
   const startSessionLoadingFrame = useCallback((nextSessionId: string) => {
@@ -93,22 +112,46 @@ export const ChatWorkspace = memo(function ChatWorkspace({
   }, [contentLoadingKey, sessionId, startSessionLoadingFrame]);
 
   const switching = sessionId !== null && switchingSessionId === sessionId;
+  const retainedTimelines = retainedTimelineContexts(
+    retainedTimelinesRef.current,
+    sessionId === null
+      ? null
+      : {
+          fallbackRunId: runStreamController.activeRunId,
+          latestTerminalRunId,
+          latestTerminalRunStatus,
+          primaryRoleId,
+          sessionId,
+          workspaceId: workspaceId ?? null,
+        },
+  );
 
   return (
     <div
       aria-busy={switching ? "true" : undefined}
       className={switching ? "at-chat-view is-session-switching" : "at-chat-view"}
     >
-      <MessageTimeline
-        fallbackRunId={runStreamController.activeRunId}
-        latestTerminalRunId={latestTerminalRunId}
-        latestTerminalRunStatus={latestTerminalRunStatus}
-        onSubagentOpen={onSubagentOpen}
-        primaryRoleId={primaryRoleId}
-        sessionId={sessionId}
-        visible={visible && !switching}
-        workspaceId={workspaceId ?? null}
-      />
+      {sessionId === null ? (
+        <MessageTimeline
+          fallbackRunId={runStreamController.activeRunId}
+          onSubagentOpen={onSubagentOpen}
+          primaryRoleId={primaryRoleId}
+          sessionId={null}
+          visible={visible && !switching}
+          workspaceId={workspaceId ?? null}
+        />
+      ) : retainedTimelines.map((timeline) => {
+        const active = timeline.sessionId === sessionId;
+        return (
+          <RetainedSessionTimeline
+            active={active}
+            context={timeline}
+            key={timeline.sessionId}
+            onSubagentOpen={onSubagentOpen}
+            visible={visible && active && !switching}
+          />
+        );
+      })}
       {switching ? (
         <div className="at-session-switch-loading" role="status">
           {t("sessionSwitchLoading")}
@@ -148,6 +191,75 @@ export const ChatWorkspace = memo(function ChatWorkspace({
     </div>
   );
 });
+
+const RetainedSessionTimeline = memo(function RetainedSessionTimeline({
+  active,
+  context,
+  onSubagentOpen,
+  visible,
+}: {
+  active: boolean;
+  context: RetainedTimelineContext;
+  onSubagentOpen?: (subagent: TimelineSubagentReference) => void;
+  visible: boolean;
+}) {
+  return (
+    <div
+      aria-hidden={active ? undefined : "true"}
+      className="at-retained-session-timeline"
+      data-session-id={context.sessionId}
+      hidden={!active}
+    >
+      <MessageTimeline
+        fallbackRunId={context.fallbackRunId}
+        latestTerminalRunId={context.latestTerminalRunId}
+        latestTerminalRunStatus={context.latestTerminalRunStatus}
+        onSubagentOpen={onSubagentOpen}
+        primaryRoleId={context.primaryRoleId}
+        runtimeUpdatesEnabled={active}
+        sessionId={context.sessionId}
+        visible={visible}
+        workspaceId={context.workspaceId}
+      />
+    </div>
+  );
+});
+
+export function retainedTimelineContexts(
+  retained: Map<string, RetainedTimelineContext>,
+  current: RetainedTimelineContext | null,
+): RetainedTimelineContext[] {
+  if (current === null) {
+    retained.clear();
+    return [];
+  }
+  const existing = retained.get(current.sessionId);
+  const next = existing !== undefined && timelineContextsEqual(existing, current)
+    ? existing
+    : current;
+  retained.delete(current.sessionId);
+  retained.set(current.sessionId, next);
+  while (retained.size > RETAINED_TIMELINE_LIMIT) {
+    const oldestSessionId = retained.keys().next().value;
+    if (typeof oldestSessionId !== "string") {
+      break;
+    }
+    retained.delete(oldestSessionId);
+  }
+  return Array.from(retained.values());
+}
+
+function timelineContextsEqual(
+  left: RetainedTimelineContext,
+  right: RetainedTimelineContext,
+): boolean {
+  return left.fallbackRunId === right.fallbackRunId &&
+    left.latestTerminalRunId === right.latestTerminalRunId &&
+    left.latestTerminalRunStatus === right.latestTerminalRunStatus &&
+    left.primaryRoleId === right.primaryRoleId &&
+    left.sessionId === right.sessionId &&
+    left.workspaceId === right.workspaceId;
+}
 
 function pendingQuestionTimelineReference(
   sessionId: string,

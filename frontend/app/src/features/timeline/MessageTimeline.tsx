@@ -698,7 +698,7 @@ export function MessageTimeline({
     scrollSnapshotRef.current = captureTimelineScrollSnapshot(
       container,
       snapshot?.shouldFollow === false,
-      snapshot?.preferAnchor === true,
+      false,
     );
     rememberTimelineScopeValue(
       scrollSnapshotsByScopeRef.current,

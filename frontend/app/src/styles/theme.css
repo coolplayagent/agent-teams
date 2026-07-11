@@ -556,16 +556,17 @@ body {
   border-radius: 6px;
   background: transparent;
   color: var(--at-text);
+  cursor: pointer;
 }
 
 .at-workspace-group-header:hover,
-.at-workspace-group-header:focus-within {
+.at-workspace-group-header:focus-within,
+.at-workspace-group-header:focus-visible {
   background: var(--at-surface-muted);
   outline: none;
 }
 
-.at-workspace-group-toggle,
-.at-workspace-group-title-button {
+.at-workspace-group-toggle {
   min-width: 0;
   padding: 0;
   border: 0;
@@ -582,18 +583,6 @@ body {
   gap: 1px;
   height: 20px;
   color: var(--at-text-muted);
-}
-
-.at-workspace-group-title-button {
-  display: grid;
-  gap: 1px;
-  min-width: 0;
-  text-align: left;
-}
-
-.at-workspace-group-toggle:focus-visible,
-.at-workspace-group-title-button:focus-visible {
-  outline: none;
 }
 
 .at-workspace-group-title {

@@ -1273,16 +1273,31 @@ describe("SessionsSidebar", () => {
       },
     ]);
 
-    renderSidebar();
+    const openWorkspaceView = vi.fn();
+    renderSidebar({ onOpenWorkspaceView: openWorkspaceView });
 
     expect(await screen.findByText("Alpha")).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Collapse Agent Teams" }));
+    const workspaceRow = screen.getByRole("button", { name: "Collapse Agent Teams" });
+    expect(workspaceRow).toHaveAttribute("aria-description", "C:/work/agent-teams");
+    expect(screen.queryByText("C:/work/agent-teams")).not.toBeInTheDocument();
+    fireEvent.click(workspaceRow);
 
     expect(screen.queryByText("Alpha")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Expand Agent Teams" })).toHaveAttribute(
       "aria-expanded",
       "false",
     );
+
+    fireEvent.keyDown(screen.getByRole("button", { name: "Expand Agent Teams" }), {
+      key: "Enter",
+    });
+    expect(await screen.findByText("Alpha")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", {
+      name: "Open workspace view for Agent Teams",
+    }));
+    expect(openWorkspaceView).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Alpha")).toBeVisible();
 
     window.dispatchEvent(new Event("agent-teams-focus-session-search"));
     const searchbox = await screen.findByRole("searchbox", { name: "Search sessions" });

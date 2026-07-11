@@ -736,34 +736,44 @@ export function SessionsSidebar({
           const hiddenSessionCount = group.sessions.length - visibleSessions.length;
           return (
             <section className="at-workspace-group" key={group.id}>
-              <div className="at-workspace-group-header" title={group.pathHint || group.label}>
-                <button
-                  aria-expanded={groupExpanded}
-                  aria-label={t(
-                    groupExpanded ? "sidebarCollapse" : "sidebarExpand",
-                    { label: group.label },
-                  )}
-                  className="at-workspace-group-toggle"
-                  onClick={() => toggleWorkspaceGroup(group.id)}
-                  type="button"
-                >
+              <div
+                aria-expanded={groupExpanded}
+                aria-description={group.pathHint || undefined}
+                aria-label={t(
+                  groupExpanded ? "sidebarCollapse" : "sidebarExpand",
+                  { label: group.label },
+                )}
+                className="at-workspace-group-header"
+                onClick={(event) => {
+                  if ((event.target as HTMLElement).closest(".at-workspace-group-actions")) {
+                    return;
+                  }
+                  toggleWorkspaceGroup(group.id);
+                }}
+                onKeyDown={(event) => {
+                  if ((event.target as HTMLElement).closest(".at-workspace-group-actions")) {
+                    return;
+                  }
+                  if (event.key !== "Enter" && event.key !== " ") {
+                    return;
+                  }
+                  event.preventDefault();
+                  toggleWorkspaceGroup(group.id);
+                }}
+                role="button"
+                tabIndex={0}
+              >
+                <span className="at-workspace-group-toggle" aria-hidden="true">
                   <FolderClosed aria-hidden="true" size={15} />
                   {groupExpanded ? (
                     <ChevronDown aria-hidden="true" size={13} />
                   ) : (
                     <ChevronRight aria-hidden="true" size={13} />
                   )}
-                </button>
-                <button
-                  className="at-workspace-group-title-button"
-                  onClick={() => setSelectedWorkspaceId(group.id)}
-                  type="button"
-                >
+                </span>
+                <Tooltip title={group.pathHint || group.label}>
                   <span className="at-workspace-group-title">{group.label}</span>
-                  {group.pathHint ? (
-                    <span className="at-workspace-group-path">{group.pathHint}</span>
-                  ) : null}
-                </button>
+                </Tooltip>
                 <div className="at-workspace-group-actions">
                   {onOpenWorkspaceView !== undefined ? (
                     <Tooltip

@@ -24,6 +24,10 @@ from relay_teams.agents.tasks.models import (
     TaskSpecArtifact,
     VerificationPlan,
 )
+from relay_teams.net.async_request_limit_phase import (
+    mark_async_request_limit_acquired,
+    mark_async_request_limit_waiting,
+)
 from relay_teams.roles.role_models import RoleDefinition
 from relay_teams.roles.role_registry import RoleRegistry
 from relay_teams.tools.registry import ToolRegistry
@@ -119,6 +123,30 @@ class _SlowStreamContext:
         traceback: TracebackType | None,
     ) -> bool | None:
         _ = (exc_type, exc, traceback)
+        return None
+
+
+class _QueuedStreamContext:
+    def __init__(self, *, queue_seconds: float, open_seconds: float = 0.0) -> None:
+        self._queue_seconds = queue_seconds
+        self._open_seconds = open_seconds
+        self.exited = False
+
+    async def __aenter__(self) -> session_runtime_module.AgentNodeStream:
+        mark_async_request_limit_waiting()
+        await asyncio.sleep(self._queue_seconds)
+        mark_async_request_limit_acquired()
+        await asyncio.sleep(self._open_seconds)
+        return cast(session_runtime_module.AgentNodeStream, object())
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> bool | None:
+        _ = (exc_type, exc, traceback)
+        self.exited = True
         return None
 
 
@@ -497,6 +525,33 @@ async def test_llm_stream_timeout_helpers_raise_read_timeout() -> None:
         ):
             entered = True
     assert entered is False
+
+
+@pytest.mark.asyncio
+async def test_llm_stream_open_timeout_excludes_request_limiter_queue() -> None:
+    context = _QueuedStreamContext(queue_seconds=0.03)
+
+    async with session_runtime_module._llm_stream_context_with_timeout(
+        cast(session_runtime_module.AgentNodeStreamContext, context),
+        timeout_seconds=0.005,
+    ):
+        assert context.exited is False
+
+    assert context.exited is True
+
+
+@pytest.mark.asyncio
+async def test_llm_stream_open_timeout_starts_after_request_slot_acquired() -> None:
+    context = _QueuedStreamContext(queue_seconds=0.01, open_seconds=0.03)
+
+    with pytest.raises(httpx.ReadTimeout, match="stream to open"):
+        async with session_runtime_module._llm_stream_context_with_timeout(
+            cast(session_runtime_module.AgentNodeStreamContext, context),
+            timeout_seconds=0.005,
+        ):
+            raise AssertionError("provider open hang must not enter the stream context")
+
+    await _wait_for_abandoned_stream_context_cleanup()
 
 
 @pytest.mark.asyncio

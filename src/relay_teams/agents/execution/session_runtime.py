@@ -53,6 +53,10 @@ from relay_teams.metrics.adapters import (
     record_session_step_async,
     record_token_usage_async,
 )
+from relay_teams.net.async_request_limit_phase import (
+    AsyncRequestLimitPhase,
+    observe_async_request_limit_phase,
+)
 from relay_teams.media import user_prompt_content_to_text
 from relay_teams.providers.llm_retry import extract_retry_error_info
 from relay_teams.providers.provider_contracts import LLMRequest
@@ -1839,26 +1843,30 @@ async def _llm_stream_context_with_timeout(
     *,
     timeout_seconds: float,
 ) -> AsyncIterator[AgentNodeStream]:
-    enter_task = asyncio.create_task(context.__aenter__())
+    with observe_async_request_limit_phase() as request_limit_phase:
+        enter_task = asyncio.create_task(context.__aenter__())
+        try:
+            opened = await _wait_for_llm_stream_context_open(
+                enter_task=enter_task,
+                request_limit_phase=request_limit_phase,
+                timeout_seconds=timeout_seconds,
+            )
+        except asyncio.CancelledError:
+            cleanup_timeout_seconds = (
+                _abandoned_llm_stream_context_cleanup_timeout_seconds(timeout_seconds)
+            )
+            _schedule_abandoned_llm_stream_context_cleanup(
+                context=context,
+                enter_task=enter_task,
+                reason="cancelled_while_opening",
+                cleanup_timeout_seconds=cleanup_timeout_seconds,
+            )
+            raise
+
     cleanup_timeout_seconds = _abandoned_llm_stream_context_cleanup_timeout_seconds(
         timeout_seconds
     )
-    try:
-        done, _pending = await asyncio.wait(
-            {enter_task},
-            timeout=timeout_seconds,
-            return_when=asyncio.FIRST_COMPLETED,
-        )
-    except asyncio.CancelledError:
-        _schedule_abandoned_llm_stream_context_cleanup(
-            context=context,
-            enter_task=enter_task,
-            reason="cancelled_while_opening",
-            cleanup_timeout_seconds=cleanup_timeout_seconds,
-        )
-        raise
-
-    if enter_task not in done:
+    if not opened:
         _schedule_abandoned_llm_stream_context_cleanup(
             context=context,
             enter_task=enter_task,
@@ -1889,6 +1897,49 @@ async def _llm_stream_context_with_timeout(
             raise
     else:
         await context.__aexit__(None, None, None)
+
+
+async def _wait_for_llm_stream_context_open(
+    *,
+    enter_task: asyncio.Task[AgentNodeStream],
+    request_limit_phase: AsyncRequestLimitPhase,
+    timeout_seconds: float,
+) -> bool:
+    waiting_task = asyncio.create_task(request_limit_phase.waiting.wait())
+    acquired_task = asyncio.create_task(request_limit_phase.acquired.wait())
+    try:
+        initial_done, _pending = await asyncio.wait(
+            {enter_task, waiting_task},
+            timeout=timeout_seconds,
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if enter_task in initial_done:
+            return True
+        if waiting_task not in initial_done:
+            return False
+
+        queued_done, _pending = await asyncio.wait(
+            {enter_task, acquired_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if enter_task in queued_done:
+            return True
+
+        opened_done, _pending = await asyncio.wait(
+            {enter_task},
+            timeout=timeout_seconds,
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        return enter_task in opened_done
+    finally:
+        for phase_task in (waiting_task, acquired_task):
+            if not phase_task.done():
+                phase_task.cancel()
+        _ = await asyncio.gather(
+            waiting_task,
+            acquired_task,
+            return_exceptions=True,
+        )
 
 
 def _schedule_abandoned_llm_stream_context_cleanup(

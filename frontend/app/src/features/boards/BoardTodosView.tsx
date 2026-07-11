@@ -2,9 +2,9 @@ import {
   Alert,
   App,
   Button,
-  Drawer,
   Empty,
   Input,
+  Modal,
   Popconfirm,
   Select,
   Skeleton,
@@ -31,6 +31,8 @@ import {
   SquareKanban,
 } from "lucide-react";
 import { useMemo, useState } from "react";
+
+import "./BoardModals.css";
 
 import {
   archiveBoardTodo,
@@ -651,7 +653,7 @@ export function BoardTodosView({
           </div>
         )}
       </div>
-      <BoardSourceSettingsDrawer
+      <BoardSourceSettingsModal
         busy={sourceSettingsBusy}
         deletingSourceId={deleteSourceMutation.variables ?? null}
         editor={sourceEditor}
@@ -670,7 +672,7 @@ export function BoardTodosView({
         settings={sourceSettingsQuery.data}
         workspaceLabel={activeWorkspaceLabel}
       />
-      <BoardHandoffDrawer
+      <BoardHandoffModal
         item={handoffTarget}
         onClose={closeHandoffDrawer}
         onPromptChange={setHandoffPrompt}
@@ -683,7 +685,7 @@ export function BoardTodosView({
         startError={startHandoffMutation.error}
         starting={startHandoffMutation.isPending}
       />
-      <BoardRequestChangesDrawer
+      <BoardRequestChangesModal
         feedback={requestChangesFeedback}
         item={requestChangesTarget}
         onClose={closeRequestChangesDrawer}
@@ -914,7 +916,7 @@ function BoardTodoCard({
   );
 }
 
-function BoardSourceSettingsDrawer({
+function BoardSourceSettingsModal({
   busy,
   deletingSourceId,
   editor,
@@ -959,12 +961,15 @@ function BoardSourceSettingsDrawer({
     && editor.repositoryFullName.trim().length > 0
     && !busy;
   return (
-    <Drawer
-      destroyOnClose
-      onClose={onClose}
+    <Modal
+      centered
+      className="at-board-modal at-board-sources-modal"
+      destroyOnHidden
+      footer={null}
+      onCancel={onClose}
       open={open}
       title={t("boardSourceSettingsTitle")}
-      width={560}
+      width={720}
     >
       <div className="at-board-sources">
         <header className="at-board-sources-header">
@@ -1096,7 +1101,7 @@ function BoardSourceSettingsDrawer({
           </section>
         ) : null}
       </div>
-    </Drawer>
+    </Modal>
   );
 }
 
@@ -1177,7 +1182,7 @@ function BoardSourceRow({
   );
 }
 
-function BoardHandoffDrawer({
+function BoardHandoffModal({
   item,
   onClose,
   onPromptChange,
@@ -1206,12 +1211,15 @@ function BoardHandoffDrawer({
   const busy = previewLoading || starting;
   const trimmedPrompt = prompt.trim();
   return (
-    <Drawer
-      destroyOnClose
-      onClose={onClose}
+    <Modal
+      centered
+      className="at-board-modal"
+      destroyOnHidden
+      footer={null}
+      onCancel={onClose}
       open={open}
       title={t("boardHandoffTitle")}
-      width={560}
+      width={640}
     >
       <div className="at-board-handoff">
         {item !== null ? (
@@ -1305,11 +1313,11 @@ function BoardHandoffDrawer({
           </Button>
         </div>
       </div>
-    </Drawer>
+    </Modal>
   );
 }
 
-function BoardRequestChangesDrawer({
+function BoardRequestChangesModal({
   feedback,
   item,
   onClose,
@@ -1345,12 +1353,15 @@ function BoardRequestChangesDrawer({
   const trimmedFeedback = feedback.trim();
   const trimmedPrompt = prompt.trim();
   return (
-    <Drawer
-      destroyOnClose
-      onClose={onClose}
+    <Modal
+      centered
+      className="at-board-modal"
+      destroyOnHidden
+      footer={null}
+      onCancel={onClose}
       open={open}
       title={t("boardRequestChangesTitle")}
-      width={560}
+      width={640}
     >
       <div className="at-board-request">
         {item !== null ? (
@@ -1461,7 +1472,7 @@ function BoardRequestChangesDrawer({
           </Button>
         </div>
       </div>
-    </Drawer>
+    </Modal>
   );
 }
 

@@ -3,9 +3,9 @@ import {
   App,
   Button,
   Checkbox,
-  Drawer,
   Empty,
   Input,
+  Modal,
   Segmented,
   Skeleton,
   Tag,
@@ -58,6 +58,7 @@ import type {
 } from "../../api/contracts";
 import { useTranslations, type Translate } from "../../i18n";
 import { MarkdownMessage } from "../timeline/MarkdownMessage";
+import "./SkillsModals.css";
 
 type SkillsTab = "installed" | "market";
 type SkillsDrawer = "clawhub" | "install";
@@ -371,19 +372,19 @@ export function SkillsView() {
         )}
       </div>
 
-      <SkillDetailDrawer
+      <SkillDetailModal
         detailTarget={detailTarget}
         onClose={() => setDetailTarget(null)}
         t={t}
       />
-      <SkillInstallDrawer
+      <SkillInstallModal
         installing={manualInstallMutation.isPending}
         onClose={() => setActiveDrawer(null)}
         onInstall={(request) => manualInstallMutation.mutate(request)}
         open={activeDrawer === "install"}
         t={t}
       />
-      <ClawHubSettingsDrawer
+      <ClawHubSettingsModal
         onClose={() => setActiveDrawer(null)}
         open={activeDrawer === "clawhub"}
         t={t}
@@ -627,7 +628,7 @@ function RuntimeSkillCard({
   );
 }
 
-function SkillInstallDrawer({
+function SkillInstallModal({
   installing,
   onClose,
   onInstall,
@@ -653,10 +654,12 @@ function SkillInstallDrawer({
   }, [open]);
 
   return (
-    <Drawer
-      className="at-skills-drawer"
-      destroyOnClose
-      onClose={onClose}
+    <Modal
+      centered
+      className="at-skills-modal"
+      destroyOnHidden
+      footer={null}
+      onCancel={onClose}
       open={open}
       title={t("skillsInstallTitle")}
       width={460}
@@ -714,11 +717,11 @@ function SkillInstallDrawer({
           </Button>
         </div>
       </form>
-    </Drawer>
+    </Modal>
   );
 }
 
-function ClawHubSettingsDrawer({
+function ClawHubSettingsModal({
   onClose,
   open,
   t,
@@ -802,10 +805,12 @@ function ClawHubSettingsDrawer({
   }
 
   return (
-    <Drawer
-      className="at-skills-drawer"
-      destroyOnClose
-      onClose={onClose}
+    <Modal
+      centered
+      className="at-skills-modal"
+      destroyOnHidden
+      footer={null}
+      onCancel={onClose}
       open={open}
       title={t("skillsClawHubSettings")}
       width={520}
@@ -874,11 +879,11 @@ function ClawHubSettingsDrawer({
           </div>
         </div>
       ) : null}
-    </Drawer>
+    </Modal>
   );
 }
 
-function SkillDetailDrawer({
+function SkillDetailModal({
   detailTarget,
   onClose,
   t,
@@ -908,13 +913,15 @@ function SkillDetailDrawer({
 
   const detail = detailQuery.data;
   return (
-    <Drawer
-      className="at-skills-detail-drawer"
-      destroyOnClose
-      onClose={onClose}
+    <Modal
+      centered
+      className="at-skills-detail-modal"
+      destroyOnHidden
+      footer={null}
+      onCancel={onClose}
       open={detailTarget !== null}
       title={t("skillsDetail")}
-      width={520}
+      width={720}
     >
       {detailQuery.isLoading ? <Skeleton active paragraph={{ rows: 8 }} /> : null}
       {detailQuery.isError ? (
@@ -943,7 +950,7 @@ function SkillDetailDrawer({
           </dl>
         </div>
       ) : null}
-    </Drawer>
+    </Modal>
   );
 }
 

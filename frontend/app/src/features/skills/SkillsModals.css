@@ -1,0 +1,26 @@
+.at-skills-modal,
+.at-skills-detail-modal {
+  max-width: calc(100vw - 32px);
+  padding-bottom: 0;
+}
+
+.at-skills-modal .ant-modal-body,
+.at-skills-detail-modal .ant-modal-body {
+  max-height: min(720px, calc(100dvh - 160px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+@media (max-width: 640px) {
+  .at-skills-modal,
+  .at-skills-detail-modal {
+    width: calc(100vw - 16px) !important;
+    max-width: calc(100vw - 16px);
+    margin: 8px auto;
+  }
+
+  .at-skills-modal .ant-modal-body,
+  .at-skills-detail-modal .ant-modal-body {
+    max-height: calc(100dvh - 128px);
+  }
+}

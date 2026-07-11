@@ -1,0 +1,22 @@
+.at-board-modal {
+  max-width: calc(100vw - 32px);
+  padding-bottom: 0;
+}
+
+.at-board-modal .ant-modal-body {
+  max-height: min(720px, calc(100dvh - 160px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+@media (max-width: 640px) {
+  .at-board-modal {
+    width: calc(100vw - 16px) !important;
+    max-width: calc(100vw - 16px);
+    margin: 8px auto;
+  }
+
+  .at-board-modal .ant-modal-body {
+    max-height: calc(100dvh - 128px);
+  }
+}

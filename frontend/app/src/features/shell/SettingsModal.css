@@ -1,0 +1,45 @@
+.at-settings-modal {
+  max-width: calc(100vw - 32px);
+  padding-bottom: 0;
+}
+
+.at-settings-modal .ant-modal-content {
+  display: flex;
+  flex-direction: column;
+  height: min(860px, calc(100dvh - 48px));
+  max-height: calc(100dvh - 48px);
+  overflow: hidden;
+  padding: 0;
+}
+
+.at-settings-modal .ant-modal-header {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 18px 52px 16px 20px;
+  border-bottom: 1px solid var(--at-border);
+}
+
+.at-settings-modal .ant-modal-close {
+  inset-block-start: 11px;
+  inset-inline-end: 12px;
+}
+
+.at-settings-modal .ant-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+@media (max-width: 640px) {
+  .at-settings-modal {
+    top: 0;
+    width: calc(100vw - 16px) !important;
+    max-width: calc(100vw - 16px);
+    margin: 8px auto;
+  }
+
+  .at-settings-modal .ant-modal-content {
+    height: calc(100dvh - 16px);
+    max-height: calc(100dvh - 16px);
+  }
+}

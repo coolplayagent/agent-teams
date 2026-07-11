@@ -1,8 +1,9 @@
-import { Drawer } from "antd";
+import { Modal } from "antd";
 
 import { SettingsCenter } from "../settings/SettingsCenter";
 import type { SystemSettingsPage } from "../settings/settingsNavigation";
 import { useTranslations } from "../../i18n";
+import "./SettingsModal.css";
 
 interface SettingsDrawerProps {
   open: boolean;
@@ -18,17 +19,19 @@ export function SettingsDrawer({
   const t = useTranslations();
 
   return (
-    <Drawer
-      className="at-settings-drawer"
-      destroyOnClose
+    <Modal
+      centered
+      className="at-settings-modal"
+      destroyOnHidden
+      footer={null}
       maskClosable={false}
-      onClose={onClose}
+      onCancel={onClose}
       open={open}
       styles={{ body: { padding: 0 } }}
       title={t("settingsTitle")}
-      width="min(960px, 96vw)"
+      width={1120}
     >
       <SettingsCenter initialSystemPage={initialSystemPage} open={open} />
-    </Drawer>
+    </Modal>
   );
 }

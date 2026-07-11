@@ -1609,7 +1609,7 @@ function ModelProfileDetail({
             <Input />
           </Form.Item>
           <Form.Item
-            className="at-model-field-wide"
+            className="at-model-field-short"
             label={t("settingsModelBaseUrl")}
             name="base_url"
             rules={[{ message: t("settingsModelBaseUrlRequired"), required: true }]}
@@ -1630,6 +1630,15 @@ function ModelProfileDetail({
           </Form.Item>
           <Form.Item className="at-model-field-short" label={t("settingsModelTimeoutSeconds")} name="connect_timeout_seconds">
             <Input inputMode="decimal" type="number" />
+          </Form.Item>
+          <Form.Item className="at-model-field-short" label={t("settingsModelSslVerify")} name="ssl_verify">
+            <Select
+              options={[
+                { label: t("settingsProxySslInherit"), value: "" },
+                { label: t("settingsProxySslVerifyOption"), value: "true" },
+                { label: t("settingsProxySslSkipOption"), value: "false" },
+              ]}
+            />
           </Form.Item>
           {showGenericApiKey ? (
             <Form.Item className="at-model-field-wide" label={t("settingsModelApiKey")} name="api_key">
@@ -1720,15 +1729,6 @@ function ModelProfileDetail({
           </Form.Item>
           <Form.Item className="at-model-field-short" label={t("settingsModelFallbackPriority")} name="fallback_priority">
             <Input inputMode="numeric" type="number" />
-          </Form.Item>
-          <Form.Item className="at-model-field-short" label={t("settingsModelSslVerify")} name="ssl_verify">
-            <Select
-              options={[
-                { label: t("settingsProxySslInherit"), value: "" },
-                { label: t("settingsProxySslVerifyOption"), value: "true" },
-                { label: t("settingsProxySslSkipOption"), value: "false" },
-              ]}
-            />
           </Form.Item>
           <Form.Item
             className="at-model-profile-switch-field"

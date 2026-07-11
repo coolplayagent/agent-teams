@@ -86,6 +86,79 @@ test("keeps the V2 timeline anchored away from bottom and follows new text at bo
   }
 });
 
+test("keeps disclosure clicks responsive and anchored during a long interleaved stream", async ({
+  page,
+}, testInfo) => {
+  const appServer = await serveFrontendDist();
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await installMockEventSource(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleTimelineScrollApi(context, longHistoryMessages()),
+      sessionTitle: "TS timeline responsiveness",
+    });
+
+    await page.goto(`${appServer.url}/`);
+    await waitForAppShell(page);
+    await waitForEventSourceUrl(
+      page,
+      new RegExp(`/api/ag-ui/runs/${RUN_ID}/events\\?after_event_id=0$`),
+    );
+    await installResponsivenessProbe(page);
+    await dispatchThinkingBurst(page, 1_200);
+
+    const thinking = page.locator("details.at-message-thinking");
+    await expect(thinking).toHaveCount(1);
+    await expect(thinking).not.toHaveAttribute("open", "");
+    const thinkingSummary = thinking.locator(".at-message-thinking-summary");
+    await thinkingSummary.scrollIntoViewIfNeeded();
+    const thinkingTopBefore = await elementViewportTop(thinkingSummary);
+    const thinkingClickMs = await measuredClick(thinkingSummary);
+    await expect(thinking).toHaveAttribute("open", "");
+    const thinkingHeaderShiftPx = Math.abs(
+      (await elementViewportTop(thinkingSummary)) - thinkingTopBefore,
+    );
+    expect(thinkingClickMs).toBeLessThan(1_000);
+    expect(thinkingHeaderShiftPx).toBeLessThanOrEqual(2);
+
+    await dispatchRuntimeText(page, 1_203, "stream continues while thinking stays open");
+    await expect(thinking).toHaveAttribute("open", "");
+
+    await dispatchToolLifecycle(page, 1_204);
+    const tool = page.locator("details.at-message-tool").last();
+    await expect(tool).toBeVisible();
+    const toolSummary = tool.locator(".at-message-tool-summary");
+    await toolSummary.scrollIntoViewIfNeeded();
+    const toolTopBefore = await elementViewportTop(toolSummary);
+    const toolClickMs = await measuredClick(toolSummary);
+    await expect(tool).toHaveAttribute("open", "");
+    const toolHeaderShiftPx = Math.abs(
+      (await elementViewportTop(toolSummary)) - toolTopBefore,
+    );
+    expect(toolClickMs).toBeLessThan(1_000);
+    expect(toolHeaderShiftPx).toBeLessThanOrEqual(2);
+
+    const probe = await responsivenessProbe(page);
+    await testInfo.attach("timeline-responsiveness", {
+      body: JSON.stringify({
+        ...probe,
+        thinkingClickMs,
+        thinkingHeaderShiftPx,
+        toolClickMs,
+        toolHeaderShiftPx,
+      }, null, 2),
+      contentType: "application/json",
+    });
+    expect(probe.heartbeatCount).toBeGreaterThan(3);
+    expect(probe.maxHeartbeatGapMs).toBeLessThan(1_000);
+    expect(probe.maxLongTaskMs).toBeLessThan(1_000);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+  } finally {
+    await appServer.close();
+  }
+});
+
 async function handleTimelineScrollApi(
   context: MockApiRouteContext,
   messages: Record<string, unknown>[],
@@ -138,6 +211,148 @@ async function dispatchRuntimeText(
     lastEventId: String(eventId),
     type: "message.text.delta",
   });
+}
+
+async function dispatchThinkingBurst(page: Page, deltaCount: number): Promise<void> {
+  await page.evaluate(({ count, runId, sessionId }) => {
+    const harness = window.__agentTeamsBrowserTestEventSource;
+    if (harness === undefined) {
+      throw new Error("Browser test EventSource harness was not installed.");
+    }
+    const dispatch = (
+      type: string,
+      relayEventType: string,
+      eventId: number,
+      payload: Record<string, unknown>,
+    ) => {
+      harness.dispatch(
+        null,
+        type,
+        JSON.stringify({
+          event_id: eventId,
+          occurred_at: "2026-07-01T10:45:00Z",
+          payload,
+          relay_event_type: relayEventType,
+          role_id: "MainAgent",
+          run_id: runId,
+          session_id: sessionId,
+          trace_id: "trace-v2-timeline-pressure",
+          type,
+        }),
+        String(eventId),
+      );
+    };
+    dispatch("thinking.started", "thinking_started", 1, { part_index: 0 });
+    for (let index = 0; index < count; index += 1) {
+      dispatch("thinking.delta", "thinking_delta", index + 2, {
+        part_index: 0,
+        text: `${index % 10}`,
+      });
+    }
+    dispatch("thinking.finished", "thinking_finished", count + 2, {
+      part_index: 0,
+    });
+  }, { count: deltaCount, runId: RUN_ID, sessionId: SESSION_ID });
+}
+
+async function dispatchToolLifecycle(page: Page, eventId: number): Promise<void> {
+  for (const event of [
+    {
+      eventId,
+      payload: {
+        args: { path: "frontend/app/src/features/timeline" },
+        tool_call_id: "pressure-tool-call",
+        tool_name: "read",
+      },
+      relayEventType: "tool_call",
+      type: "tool_call.started",
+    },
+    {
+      eventId: eventId + 1,
+      payload: {
+        content: "timeline source loaded",
+        tool_call_id: "pressure-tool-call",
+        tool_name: "read",
+      },
+      relayEventType: "tool_result",
+      type: "tool_result.completed",
+    },
+  ]) {
+    await dispatchEventSourceMessage(page, {
+      data: {
+        event_id: event.eventId,
+        occurred_at: "2026-07-01T10:46:00Z",
+        payload: event.payload,
+        relay_event_type: event.relayEventType,
+        role_id: "MainAgent",
+        run_id: RUN_ID,
+        session_id: SESSION_ID,
+        trace_id: "trace-v2-timeline-pressure",
+        type: event.type,
+      },
+      lastEventId: String(event.eventId),
+      type: event.type,
+    });
+  }
+}
+
+async function installResponsivenessProbe(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const metrics = {
+      heartbeatCount: 0,
+      lastHeartbeatAt: performance.now(),
+      maxHeartbeatGapMs: 0,
+      maxLongTaskMs: 0,
+    };
+    window.setInterval(() => {
+      const now = performance.now();
+      metrics.maxHeartbeatGapMs = Math.max(
+        metrics.maxHeartbeatGapMs,
+        now - metrics.lastHeartbeatAt,
+      );
+      metrics.lastHeartbeatAt = now;
+      metrics.heartbeatCount += 1;
+    }, 25);
+    if (PerformanceObserver.supportedEntryTypes.includes("longtask")) {
+      new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          metrics.maxLongTaskMs = Math.max(metrics.maxLongTaskMs, entry.duration);
+        }
+      }).observe({ entryTypes: ["longtask"] });
+    }
+    Object.assign(window, { __agentTeamsTimelineResponsiveness: metrics });
+  });
+}
+
+async function responsivenessProbe(page: Page): Promise<ResponsivenessProbe> {
+  return page.evaluate(() => {
+    const value = (window as Window & {
+      __agentTeamsTimelineResponsiveness?: ResponsivenessProbe;
+    }).__agentTeamsTimelineResponsiveness;
+    if (value === undefined) {
+      throw new Error("Timeline responsiveness probe was not installed.");
+    }
+    return value;
+  });
+}
+
+async function measuredClick(locator: import("@playwright/test").Locator): Promise<number> {
+  const startedAt = performance.now();
+  await locator.click();
+  return performance.now() - startedAt;
+}
+
+async function elementViewportTop(
+  locator: import("@playwright/test").Locator,
+): Promise<number> {
+  return locator.evaluate((element) => element.getBoundingClientRect().top);
+}
+
+interface ResponsivenessProbe {
+  heartbeatCount: number;
+  lastHeartbeatAt: number;
+  maxHeartbeatGapMs: number;
+  maxLongTaskMs: number;
 }
 
 async function setTimelineScrollTop(page: Page, top: number): Promise<void> {

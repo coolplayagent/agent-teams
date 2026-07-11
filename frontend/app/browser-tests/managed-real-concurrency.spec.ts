@@ -68,10 +68,17 @@ interface QueueStageObservation {
 }
 
 interface SubagentScrollGrowthEvidence {
-  heightAt24Tokens: number;
-  heightAt48Tokens: number;
+  firstSampleHeight: number;
+  firstSampleTokenIndex: number;
+  secondSampleHeight: number;
+  secondSampleTokenIndex: number;
   overflowHeight: number;
   tokenIndexAtOverflow: number;
+}
+
+interface RunningSubagentVerification {
+  firstIncrementObservedAtMs: number;
+  scrollGrowth: SubagentScrollGrowthEvidence;
 }
 
 interface FailureCollection {
@@ -120,6 +127,7 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
   );
   const startedRuns: StartedRun[] = [];
   const queueStageObservations: QueueStageObservation[] = [];
+  let subagentFirstIncrementObservedAtMs: number | null = null;
   let subagentScrollGrowthEvidence: SubagentScrollGrowthEvidence | null = null;
 
   try {
@@ -195,6 +203,21 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
       test.info().outputPath("managed-real-concurrency-active.jpg"),
     );
 
+    const subagentRun = startedRuns.find((run) => run.isSubagent);
+    if (subagentRun === undefined) {
+      throw new Error("Expected a subagent run.");
+    }
+    const subagentVerification = await verifyRunningSubagent(
+      page,
+      failures,
+      subagentRun,
+      startedRuns,
+      gateStartedAt,
+    );
+    subagentFirstIncrementObservedAtMs =
+      subagentVerification.firstIncrementObservedAtMs;
+    subagentScrollGrowthEvidence = subagentVerification.scrollGrowth;
+
     for (const [index, run] of startedRuns.entries()) {
       await selectSession(page, run.title, failures);
       await expect
@@ -218,7 +241,11 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
           providerCallCount,
         ),
         firstIncrementObservedAtMs:
-          phase === "streaming" ? Date.now() - gateStartedAt : null,
+          run.isSubagent && subagentFirstIncrementObservedAtMs !== null
+            ? subagentFirstIncrementObservedAtMs
+            : phase === "streaming"
+              ? Date.now() - gateStartedAt
+              : null,
         phase,
         providerCallCount,
         runId: run.runId,
@@ -304,140 +331,6 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
     await stableScreenshot(
       page,
       test.info().outputPath("managed-real-concurrency-post-reload.jpg"),
-    );
-
-    const subagentRun = startedRuns.find((run) => run.isSubagent);
-    if (subagentRun === undefined) {
-      throw new Error("Expected a subagent run.");
-    }
-    expect(
-      estimatedSubagentStreamDurationMs(subagentRun),
-      "the deterministic subagent stream must cover running panel interactions",
-    ).toBeGreaterThan(30_000);
-    await selectSession(page, subagentRun.title, failures);
-    const subagentCard = page
-      .locator(".at-chat-view .at-message-tool.is-openable-subagent")
-      .first();
-    await expect
-      .poll(() => subagentCard.count(), {
-        timeout: remainingProviderQueueBudgetMs(
-          gateStartedAt,
-          startedRuns.indexOf(subagentRun),
-          1,
-        ),
-      })
-      .toBeGreaterThan(0);
-    await expandProcessedGroupsUntilCardIsVisible(page, subagentCard);
-    await expect(subagentCard).toBeVisible({ timeout: 10_000 });
-    await expect(subagentCard).toHaveAttribute("data-status", "running");
-    await recordInteraction(page, () => subagentCard.click());
-    const subagentPanel = page.locator(".at-subagent-session-view");
-    await expect(subagentPanel).toBeVisible({ timeout: 20_000 });
-    await expect(
-      subagentPanel.locator(".at-subagent-session-prompt"),
-    ).toContainText(subagentRun.tag);
-    const subagentTimeline = subagentPanel.locator(
-      ".at-subagent-session-body > .at-timeline-frame > .at-timeline",
-    );
-    await expect
-      .poll(() => latestSubagentPanelRuntimeText(subagentPanel), {
-        timeout: remainingProviderQueueBudgetMs(
-          gateStartedAt,
-          startedRuns.indexOf(subagentRun),
-          SUBAGENT_PROVIDER_CALL_COUNT,
-        ),
-      })
-      .toContain(subagentRun.expectedPrefix);
-    markFirstIncrementObserved(
-      queueStageObservations,
-      subagentRun.runId,
-      gateStartedAt,
-    );
-    await expect
-      .poll(() => highestSubagentTokenIndex(subagentPanel, subagentRun), {
-        timeout: 45_000,
-      })
-      .toBeGreaterThanOrEqual(23);
-    const heightAt24Tokens = await subagentTimeline.evaluate(
-      (element) => element.scrollHeight,
-    );
-    await expect
-      .poll(() => highestSubagentTokenIndex(subagentPanel, subagentRun), {
-        timeout: 45_000,
-      })
-      .toBeGreaterThanOrEqual(47);
-    const heightAt48Tokens = await subagentTimeline.evaluate(
-      (element) => element.scrollHeight,
-    );
-    expect(
-      heightAt48Tokens,
-      "visible subagent scrollHeight must grow between token 24 and token 48",
-    ).toBeGreaterThan(heightAt24Tokens);
-    await expect
-      .poll(
-        () =>
-          subagentTimeline.evaluate(
-            (element) => element.scrollHeight - element.clientHeight,
-          ),
-        { timeout: 45_000 },
-      )
-      .toBeGreaterThan(200);
-    const beforeSubagentWheelIndex = await highestSubagentTokenIndex(
-      subagentPanel,
-      subagentRun,
-    );
-    expect(
-      beforeSubagentWheelIndex,
-      "the subagent fixture must retain at least half its tokens after overflow begins",
-    ).toBeLessThanOrEqual(SUBAGENT_TOKEN_COUNT / 2 - 1);
-    subagentScrollGrowthEvidence = {
-      heightAt24Tokens,
-      heightAt48Tokens,
-      overflowHeight: await subagentTimeline.evaluate(
-        (element) => element.scrollHeight,
-      ),
-      tokenIndexAtOverflow: beforeSubagentWheelIndex,
-    };
-    expect(
-      estimatedRemainingSubagentStreamMs(subagentRun, beforeSubagentWheelIndex),
-      "the running subagent must retain enough fixture time for wheel and growth",
-    ).toBeGreaterThan(5_000);
-    await subagentTimeline.hover();
-    await recordInteraction(page, () => page.mouse.wheel(0, -700));
-    const subagentAway = await timelineMetrics(subagentTimeline);
-    expect(subagentAway.distanceFromBottom).toBeGreaterThan(100);
-    await expect
-      .poll(() => highestSubagentTokenIndex(subagentPanel, subagentRun), {
-        timeout: 45_000,
-      })
-      .toBeGreaterThan(beforeSubagentWheelIndex);
-    const subagentAfterGrowth = await timelineMetrics(subagentTimeline);
-    expect(subagentAfterGrowth.distanceFromBottom).toBeGreaterThan(80);
-    expect(subagentAfterGrowth.scrollTop).toBeLessThanOrEqual(
-      subagentAway.scrollTop + 24,
-    );
-    await stableScreenshot(
-      page,
-      test.info().outputPath("managed-real-concurrency-running-subagent.jpg"),
-    );
-    await withExpectedEventAbortWindow(failures, () =>
-      recordInteraction(page, () =>
-        page.getByRole("button", { name: /主会话|Main session/ }).click(),
-      ),
-    );
-    await expect(subagentPanel).toBeHidden();
-    await recordInteraction(page, () => subagentCard.click());
-    await expect(subagentPanel).toBeVisible({ timeout: 20_000 });
-    await expect(
-      subagentPanel.locator(".at-subagent-session-prompt"),
-    ).toContainText(subagentRun.tag);
-    await expect
-      .poll(() => highestSubagentTokenIndex(subagentPanel, subagentRun))
-      .toBeGreaterThanOrEqual(beforeSubagentWheelIndex);
-    await withExpectedEventAbortWindow(failures, () =>
-      recordInteraction(page, () =>
-        page.getByRole("button", { name: /主会话|Main session/ }).click(),
-      ),
     );
 
     const anchor = [...startedRuns].reverse().find((run) => !run.isSubagent);
@@ -758,6 +651,139 @@ async function expectShellReady(page: Page): Promise<void> {
   await expect(
     page.getByRole("textbox", { name: /提示词|Prompt/ }),
   ).toBeEnabled();
+}
+
+async function verifyRunningSubagent(
+  page: Page,
+  failures: FailureCollection,
+  run: StartedRun,
+  startedRuns: StartedRun[],
+  gateStartedAt: number,
+): Promise<RunningSubagentVerification> {
+  expect(
+    estimatedSubagentStreamDurationMs(run),
+    "the deterministic subagent stream must cover running panel interactions",
+  ).toBeGreaterThan(30_000);
+  await selectSession(page, run.title, failures);
+  const card = page
+    .locator(".at-chat-view .at-message-tool.is-openable-subagent")
+    .first();
+  await expect
+    .poll(() => card.count(), {
+      timeout: remainingProviderQueueBudgetMs(
+        gateStartedAt,
+        startedRuns.indexOf(run),
+        1,
+      ),
+    })
+    .toBeGreaterThan(0);
+  await expandProcessedGroupsUntilCardIsVisible(page, card);
+  await expect(card).toBeVisible({ timeout: 10_000 });
+  await expect(card).toHaveAttribute("data-status", "running");
+  await recordInteraction(page, () => card.click());
+  const panel = page.locator(".at-subagent-session-view");
+  await expect(panel).toBeVisible({ timeout: 20_000 });
+  await expect(panel.locator(".at-subagent-session-prompt")).toContainText(
+    run.tag,
+  );
+  const timeline = panel.locator(
+    ".at-subagent-session-body > .at-timeline-frame > .at-timeline",
+  );
+  await expect
+    .poll(() => latestSubagentPanelRuntimeText(panel), {
+      timeout: remainingProviderQueueBudgetMs(
+        gateStartedAt,
+        startedRuns.indexOf(run),
+        SUBAGENT_PROVIDER_CALL_COUNT,
+      ),
+    })
+    .toContain(run.expectedPrefix);
+  const firstIncrementObservedAtMs = Date.now() - gateStartedAt;
+  await expect
+    .poll(() => highestSubagentTokenIndex(panel, run), { timeout: 45_000 })
+    .toBeGreaterThanOrEqual(23);
+  const firstSampleTokenIndex = await highestSubagentTokenIndex(panel, run);
+  expect(
+    firstSampleTokenIndex,
+    "the first height sample must occur within the first quarter of the stream",
+  ).toBeLessThanOrEqual(SUBAGENT_TOKEN_COUNT / 4 - 1);
+  const firstSampleHeight = await timeline.evaluate(
+    (element) => element.scrollHeight,
+  );
+  await expect
+    .poll(() => highestSubagentTokenIndex(panel, run), { timeout: 45_000 })
+    .toBeGreaterThanOrEqual(firstSampleTokenIndex + 24);
+  const secondSampleTokenIndex = await highestSubagentTokenIndex(panel, run);
+  const secondSampleHeight = await timeline.evaluate(
+    (element) => element.scrollHeight,
+  );
+  expect(secondSampleTokenIndex).toBeGreaterThanOrEqual(
+    firstSampleTokenIndex + 24,
+  );
+  expect(
+    secondSampleHeight,
+    "visible subagent scrollHeight must grow across 24 additional tokens",
+  ).toBeGreaterThan(firstSampleHeight);
+  await expect
+    .poll(
+      () =>
+        timeline.evaluate(
+          (element) => element.scrollHeight - element.clientHeight,
+        ),
+      { timeout: 45_000 },
+    )
+    .toBeGreaterThan(200);
+  const tokenIndexAtOverflow = await highestSubagentTokenIndex(panel, run);
+  expect(
+    tokenIndexAtOverflow,
+    "the subagent fixture must retain at least half its tokens after overflow begins",
+  ).toBeLessThanOrEqual(SUBAGENT_TOKEN_COUNT / 2 - 1);
+  const scrollGrowth: SubagentScrollGrowthEvidence = {
+    firstSampleHeight,
+    firstSampleTokenIndex,
+    overflowHeight: await timeline.evaluate((element) => element.scrollHeight),
+    secondSampleHeight,
+    secondSampleTokenIndex,
+    tokenIndexAtOverflow,
+  };
+  expect(
+    estimatedRemainingSubagentStreamMs(run, tokenIndexAtOverflow),
+    "the running subagent must retain enough fixture time for wheel and growth",
+  ).toBeGreaterThan(5_000);
+  await timeline.hover();
+  await recordInteraction(page, () => page.mouse.wheel(0, -700));
+  const away = await timelineMetrics(timeline);
+  expect(away.distanceFromBottom).toBeGreaterThan(100);
+  await expect
+    .poll(() => highestSubagentTokenIndex(panel, run), { timeout: 45_000 })
+    .toBeGreaterThan(tokenIndexAtOverflow);
+  const afterGrowth = await timelineMetrics(timeline);
+  expect(afterGrowth.distanceFromBottom).toBeGreaterThan(80);
+  expect(afterGrowth.scrollTop).toBeLessThanOrEqual(away.scrollTop + 24);
+  await stableScreenshot(
+    page,
+    test.info().outputPath("managed-real-concurrency-running-subagent.jpg"),
+  );
+  await withExpectedEventAbortWindow(failures, () =>
+    recordInteraction(page, () =>
+      page.getByRole("button", { name: /主会话|Main session/ }).click(),
+    ),
+  );
+  await expect(panel).toBeHidden();
+  await recordInteraction(page, () => card.click());
+  await expect(panel).toBeVisible({ timeout: 20_000 });
+  await expect(panel.locator(".at-subagent-session-prompt")).toContainText(
+    run.tag,
+  );
+  await expect
+    .poll(() => highestSubagentTokenIndex(panel, run))
+    .toBeGreaterThanOrEqual(tokenIndexAtOverflow);
+  await withExpectedEventAbortWindow(failures, () =>
+    recordInteraction(page, () =>
+      page.getByRole("button", { name: /主会话|Main session/ }).click(),
+    ),
+  );
+  return { firstIncrementObservedAtMs, scrollGrowth };
 }
 
 async function selectSession(

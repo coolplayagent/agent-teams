@@ -3724,14 +3724,13 @@ describe("SettingsDrawer", () => {
       "placeholder",
       "Leave blank to keep the saved API key.",
     );
-    expect(screen.getByLabelText("Image Input")).toHaveValue("unsupported");
+    expect(screen.getByText("Text only")).toBeVisible();
 
     fireEvent.change(screen.getByLabelText("API Key"), {
       target: { value: "replacement-secret-key" },
     });
-    fireEvent.change(screen.getByLabelText("Image Input"), {
-      target: { value: "supported" },
-    });
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "Image Input" }));
+    await clickAntdSelectOption("Supports image input");
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(saveModelProfileMock).toHaveBeenCalledTimes(1));
@@ -3853,7 +3852,7 @@ describe("SettingsDrawer", () => {
       }),
     );
 
-    expect(await screen.findByLabelText("CodeAgent auth method")).toHaveValue("password");
+    expect(await screen.findByText("Username and password")).toBeVisible();
     expect(screen.getByLabelText("CodeAgent username")).toHaveValue("saved-codeagent-user");
     expect(screen.getByLabelText("CodeAgent password")).toHaveAttribute(
       "placeholder",
@@ -4160,7 +4159,7 @@ describe("SettingsDrawer", () => {
     await waitFor(() =>
       expect(screen.getByLabelText("Server name")).toHaveValue("docs"),
     );
-    expect(screen.getByLabelText("Transport")).toHaveValue("streamable-http");
+    expect(screen.getByText("streamable HTTP")).toBeVisible();
     expect(screen.getByLabelText("URL")).toHaveValue("https://example.com/mcp");
     expect(screen.getByLabelText("Headers")).toHaveValue("Authorization=Bearer token");
 

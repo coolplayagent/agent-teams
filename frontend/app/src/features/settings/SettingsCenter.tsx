@@ -87,6 +87,7 @@ import {
 } from "./settingsNavigation";
 import "./ModelProbeStatus.css";
 import "./SettingsModelEditor.css";
+import "./SettingsRoleEditor.css";
 
 type GeneralRelatedSectionKey = Extract<
   SettingsSectionKey,
@@ -719,6 +720,9 @@ function RoleConfigDetail({
   const [systemPromptView, setSystemPromptView] =
     useState<"edit" | "preview">("edit");
   const [systemPromptPreview, setSystemPromptPreview] = useState("");
+  const registryOptions = roleOptions as
+    | (typeof roleOptions & RoleRegistryOptionsView)
+    | undefined;
   const boundAgentOptions = useMemo(
     () => agentRuntimeSelectOptions(agentRuntimes, document?.bound_agent_id),
     [agentRuntimes, document?.bound_agent_id],
@@ -727,13 +731,33 @@ function RoleConfigDetail({
     () => roleSkillSelectOptions(roleOptions?.skills ?? [], document?.skills ?? [], t),
     [document?.skills, roleOptions?.skills, t],
   );
+  const toolOptions = useMemo(
+    () => roleCapabilitySelectOptions(registryOptions?.tools ?? [], document?.tools ?? [], t),
+    [document?.tools, registryOptions?.tools, t],
+  );
+  const mcpServerOptions = useMemo(
+    () => roleCapabilitySelectOptions(
+      ["*", ...(registryOptions?.mcp_servers ?? [])],
+      document?.mcp_servers ?? [],
+      t,
+    ),
+    [document?.mcp_servers, registryOptions?.mcp_servers, t],
+  );
   const modelProfileOptions = useMemo(
     () => roleModelProfileOptions(modelProfiles, document?.model_profile, t),
     [document?.model_profile, modelProfiles, t],
   );
   const modeOptions = useMemo(
-    () => roleModeOptions(document?.mode, t),
-    [document?.mode, t],
+    () => roleModeOptions(registryOptions?.role_modes, document?.mode, t),
+    [document?.mode, registryOptions?.role_modes, t],
+  );
+  const executionSurfaceOptions = useMemo(
+    () => roleCapabilitySelectOptions(
+      registryOptions?.execution_surfaces ?? [],
+      document?.execution_surface ? [document.execution_surface] : [],
+      t,
+    ),
+    [document?.execution_surface, registryOptions?.execution_surfaces, t],
   );
 
   useEffect(() => {
@@ -816,7 +840,7 @@ function RoleConfigDetail({
           >
             <SettingsFormLayout>
               <SettingsFormCard>
-                <SettingsFormGrid>
+                <SettingsFormGrid className="at-role-primary-grid">
             <Form.Item
               label={t("settingsRoleId")}
               name="role_id"
@@ -832,11 +856,12 @@ function RoleConfigDetail({
               <Input autoComplete="off" />
             </Form.Item>
             <Form.Item
+              className="at-role-description-field"
               label={t("settingsRoleDescription")}
               name="description"
               rules={[{ message: t("settingsRoleDescriptionRequired"), required: true }]}
             >
-              <Input.TextArea autoSize={{ minRows: 2, maxRows: 5 }} />
+              <Input.TextArea autoSize={{ minRows: 3, maxRows: 7 }} />
             </Form.Item>
             <Form.Item
               label={t("settingsRoleVersion")}
@@ -858,47 +883,30 @@ function RoleConfigDetail({
               />
             </Form.Item>
             <Form.Item
-              label={t("settingsRoleExecutionSurface")}
-              name="execution_surface"
-              rules={[{ message: t("settingsRoleExecutionSurfaceRequired"), required: true }]}
-            >
-              <Input autoComplete="off" />
-            </Form.Item>
-            <Form.Item
-              label={t("settingsRoleMemoryEnabled")}
-              name="memory_enabled"
-              valuePropName="checked"
-            >
-              <Switch />
-            </Form.Item>
-            <Form.Item label={t("settingsRoleBoundAgent")} name="bound_agent_id">
-              <Select
-                allowClear
-                loading={agentRuntimesLoading}
-                optionFilterProp="label"
-                options={boundAgentOptions}
-                showSearch
-              />
-            </Form.Item>
-            <Form.Item
               label={t("settingsRoleMode")}
               name="mode"
               rules={[{ message: t("settingsRoleModeRequired"), required: true }]}
             >
               <Select options={modeOptions} />
             </Form.Item>
+                </SettingsFormGrid>
+              </SettingsFormCard>
+              <SettingsFormCard>
+                <SettingsFormGrid className="at-role-capability-grid">
             <Form.Item label={t("settingsMcpToolCount")} name="tools">
               <Select
-                mode="tags"
-                options={stringSelectOptions(document.tools ?? [])}
-                tokenSeparators={[",", "\n", " "]}
+                mode="multiple"
+                optionFilterProp="label"
+                options={toolOptions}
+                showSearch
               />
             </Form.Item>
             <Form.Item label={t("settingsMcpServers")} name="mcp_servers">
               <Select
-                mode="tags"
-                options={stringSelectOptions(document.mcp_servers ?? [])}
-                tokenSeparators={[",", "\n", " "]}
+                mode="multiple"
+                optionFilterProp="label"
+                options={mcpServerOptions}
+                showSearch
               />
             </Form.Item>
             <Form.Item label={t("settingsSkills")} name="skills">
@@ -910,8 +918,42 @@ function RoleConfigDetail({
                 tokenSeparators={[",", "\n"]}
               />
             </Form.Item>
+                </SettingsFormGrid>
+              </SettingsFormCard>
+              <details className="at-role-advanced-disclosure">
+                <summary>{t("settingsRoleAdvanced")}</summary>
+                <SettingsFormGrid>
+                  <Form.Item
+                    label={t("settingsRoleExecutionSurface")}
+                    name="execution_surface"
+                    rules={[{ message: t("settingsRoleExecutionSurfaceRequired"), required: true }]}
+                  >
+                    <Select
+                      optionFilterProp="label"
+                      options={executionSurfaceOptions}
+                      showSearch
+                    />
+                  </Form.Item>
+                  <Form.Item label={t("settingsRoleBoundAgent")} name="bound_agent_id">
+                    <Select
+                      allowClear
+                      loading={agentRuntimesLoading}
+                      optionFilterProp="label"
+                      options={boundAgentOptions}
+                      showSearch
+                    />
+                  </Form.Item>
+                  <Form.Item
+                    label={t("settingsRoleMemoryEnabled")}
+                    name="memory_enabled"
+                    valuePropName="checked"
+                  >
+                    <Switch />
+                  </Form.Item>
+                </SettingsFormGrid>
+              </details>
+              <SettingsFormCard>
             <Form.Item
-              className="at-settings-form-grid-span"
               label={t("settingsRoleSystemPrompt")}
             >
               <div className="at-role-prompt-editor">
@@ -961,24 +1003,9 @@ function RoleConfigDetail({
                 ) : null}
               </div>
             </Form.Item>
-                </SettingsFormGrid>
               </SettingsFormCard>
             </SettingsFormLayout>
           </Form>
-          <div className="at-settings-list at-role-config-properties">
-            <PropertyRow
-              label={t("settingsMcpToolCount")}
-              value={String(document.tools?.length ?? 0)}
-            />
-            <PropertyRow
-              label={t("settingsMcpServers")}
-              value={modalityList(document.mcp_servers ?? []) || "-"}
-            />
-            <PropertyRow
-              label={t("settingsSkills")}
-              value={modalityList(document.skills ?? []) || "-"}
-            />
-          </div>
         </>
       ) : null}
     </div>
@@ -2239,6 +2266,13 @@ interface RoleConfigForm {
   version?: string;
 }
 
+interface RoleRegistryOptionsView {
+  execution_surfaces?: string[];
+  mcp_servers?: string[];
+  role_modes?: string[];
+  tools?: string[];
+}
+
 function SettingsList({
   emptyText,
   items,
@@ -2509,10 +2543,6 @@ function normalizeStringList(values: string[]): string[] {
   );
 }
 
-function stringSelectOptions(values: string[]): Array<{ label: string; value: string }> {
-  return normalizeStringList(values).map((value) => ({ label: value, value }));
-}
-
 function roleSkillSelectOptions(
   skills: RoleSkillOption[],
   selectedSkills: string[],
@@ -2556,20 +2586,45 @@ function roleModelProfileOptions(
 }
 
 function roleModeOptions(
+  availableModes: string[] | undefined,
   currentMode: string | null | undefined,
   t: ReturnType<typeof useTranslations>,
 ): Array<{ label: string; value: string }> {
-  const options = [
-    { label: t("settingsRoleModePrimary"), value: "primary" },
-    { label: t("settingsRoleModeSubagent"), value: "subagent" },
-    { label: t("settingsRoleModeAll"), value: "all" },
-  ];
+  const labels = new Map([
+    ["primary", t("settingsRoleModePrimary")],
+    ["subagent", t("settingsRoleModeSubagent")],
+    ["all", t("settingsRoleModeAll")],
+  ]);
+  const modes = availableModes?.length ? availableModes : ["primary", "subagent", "all"];
+  const options = normalizeStringList(modes).map((mode) => ({
+    label: labels.get(mode) ?? mode,
+    value: mode,
+  }));
   const current = currentMode?.trim() ?? "";
   if (current && options.every((option) => option.value !== current)) {
     options.push({
       label: t("settingsRolePersistedUnknownOption", { value: current }),
       value: current,
     });
+  }
+  return options;
+}
+
+function roleCapabilitySelectOptions(
+  availableValues: string[],
+  selectedValues: string[],
+  t: ReturnType<typeof useTranslations>,
+): Array<{ label: string; value: string }> {
+  const values = normalizeStringList(availableValues);
+  const options = values.map((value) => ({ label: value, value }));
+  const available = new Set(values);
+  for (const selected of normalizeStringList(selectedValues)) {
+    if (!available.has(selected)) {
+      options.push({
+        label: t("settingsRolePersistedUnknownOption", { value: selected }),
+        value: selected,
+      });
+    }
   }
   return options;
 }

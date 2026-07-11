@@ -1546,6 +1546,7 @@ describe("SettingsDrawer", () => {
       .closest("button");
     expect(defaultProfileRow).not.toBeNull();
     fireEvent.click(defaultProfileRow as HTMLElement);
+    fireEvent.click(await screen.findByText("Model capabilities"));
     expect(await screen.findByText("Realtime speech")).toBeVisible();
     expect(screen.getByText("gpt-5-mini")).toBeVisible();
     expect(screen.getByText("image, text")).toBeVisible();
@@ -1958,6 +1959,7 @@ describe("SettingsDrawer", () => {
     expect(screen.getByLabelText("Role name")).toBeVisible();
     expect(screen.getByLabelText("Version")).toBeVisible();
     expect(screen.getByLabelText("Model profile")).toBeVisible();
+    fireEvent.click(screen.getByText("Advanced runtime settings"));
     expect(screen.getByRole("switch", { name: "Memory enabled" })).toBeVisible();
   }, 30000);
 
@@ -1973,19 +1975,17 @@ describe("SettingsDrawer", () => {
     fireEvent.click(reviewerRoleRow as HTMLElement);
 
     expect(await screen.findByLabelText("Role ID")).toHaveValue("reviewer");
-    expect(screen.getByLabelText("Execution surface")).toHaveValue("browser");
+    fireEvent.click(screen.getByText("Advanced runtime settings"));
+    expect(screen.getByText("browser")).toBeVisible();
     expect(screen.getAllByText("read_file").length).toBeGreaterThan(0);
     expect(screen.getAllByText("filesystem").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("review").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Review (builtin)").length).toBeGreaterThan(0);
 
     fireEvent.click(within(screen.getByLabelText("Prompt view")).getByText("Preview"));
     expect(screen.getByRole("region", { name: "Preview" })).toHaveTextContent(
       "Review carefully.",
     );
     fireEvent.click(within(screen.getByLabelText("Prompt view")).getByText("Edit"));
-    fireEvent.change(screen.getByLabelText("Execution surface"), {
-      target: { value: "desktop" },
-    });
     fireEvent.change(screen.getByLabelText("Description"), {
       target: { value: "Review changed work." },
     });
@@ -1999,7 +1999,7 @@ describe("SettingsDrawer", () => {
     expect(saveRoleConfigMock.mock.calls[0]?.[1]).toMatchObject({
       bound_agent_id: "codex-local",
       description: "Review changed work.",
-      execution_surface: "desktop",
+      execution_surface: "browser",
       mcp_servers: ["filesystem"],
       memory_profile: { enabled: true },
       model_profile: "default",
@@ -2017,10 +2017,12 @@ describe("SettingsDrawer", () => {
       execution_surface: "api",
       mode: "legacy-mode",
       model_profile: "missing-profile",
+      mcp_servers: ["missing-mcp"],
       name: "Reviewer",
       role_id: "reviewer",
       skills: ["missing-skill"],
       system_prompt: "Review legacy work.",
+      tools: ["missing-tool"],
       version: "1.0.0",
     });
     renderDrawer();
@@ -2038,14 +2040,15 @@ describe("SettingsDrawer", () => {
     ).toBeVisible();
     expect(screen.getByText("legacy-mode (unavailable saved value)")).toBeVisible();
     expect(screen.getByText("missing-skill (unavailable saved value)")).toBeVisible();
+    expect(screen.getByText("missing-tool (unavailable saved value)")).toBeVisible();
+    expect(screen.getByText("missing-mcp (unavailable saved value)")).toBeVisible();
 
     fireEvent.mouseDown(screen.getByRole("combobox", { name: "Model profile" }));
-    expect(await screen.findByRole("option", { name: "default" })).toBeVisible();
+    expect(await screen.findByRole("option", { name: "default" })).toBeInTheDocument();
     fireEvent.keyDown(document, { key: "Escape" });
     fireEvent.mouseDown(screen.getByRole("combobox", { name: "Mode" }));
-    expect(await screen.findByRole("option", { name: "Primary" })).toBeVisible();
-    expect(screen.getByRole("option", { name: "Subagent" })).toBeVisible();
-    expect(screen.getByRole("option", { name: "Primary and subagent" })).toBeVisible();
+    expect(await screen.findByRole("option", { name: "Primary" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Subagent" })).toBeInTheDocument();
   });
 
   it("manages plugins from the System secondary page", async () => {

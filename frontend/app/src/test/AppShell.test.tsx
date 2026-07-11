@@ -1636,6 +1636,51 @@ describe("AppShell", () => {
     );
   });
 
+  it("does not reopen a closed subagent when authoritative hydration arrives late", async () => {
+    let resolveSubagents: ((records: SessionSubagentRecord[]) => void) | undefined;
+    listSessionSubagentsMock.mockReturnValue(
+      new Promise<SessionSubagentRecord[]>((resolve) => {
+        resolveSubagents = resolve;
+      }),
+    );
+    renderShell();
+
+    expect(await screen.findByTestId("timeline")).toBeVisible();
+    fireEvent.click(screen.getByTestId("open-subagent-from-timeline"));
+    expect(await screen.findByTestId("subagent-session-view")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Back to chat" }));
+    expect(screen.queryByTestId("subagent-session-view")).not.toBeInTheDocument();
+
+    if (resolveSubagents === undefined) {
+      throw new Error("Subagent discovery query did not start.");
+    }
+    const resolveHydratedSubagents = resolveSubagents;
+    await act(async () => {
+      resolveHydratedSubagents([
+        {
+          created_at: "2026-06-23T10:02:00Z",
+          instance_id: "subagent-instance-1",
+          last_event_id: 12,
+          role_id: "explorer",
+          run_id: "subagent-run-1",
+          run_status: "completed",
+          session_id: "session-1",
+          status: "completed",
+          subagent_instance_id: "subagent-instance-1",
+          subagent_kind: "normal",
+          subagent_role_id: "explorer",
+          subagent_run_id: "subagent-run-1",
+          title: "Subagent Explorer",
+          updated_at: "2026-06-23T10:03:00Z",
+        },
+      ]);
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByTestId("subagent-session-view")).not.toBeInTheDocument();
+    expect(window.localStorage.getItem("agentTeams.activeSubagentPanel")).toBeNull();
+  });
+
   it("retains a completed subagent surface while hidden for fast reentry", async () => {
     listSessionSubagentsMock.mockResolvedValue([
       {

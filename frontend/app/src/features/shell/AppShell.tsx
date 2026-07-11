@@ -140,6 +140,7 @@ export function AppShell() {
     useState<SystemSettingsPage | null>(null);
   const terminalViewMarksRef = useRef(new Set<string>());
   const terminalViewRetryTimersRef = useRef(new Set<number>());
+  const subagentOpenGenerationRef = useRef(0);
   const chatShellRef = useRef<HTMLDivElement | null>(null);
   const runStreamController = useRunStreamController();
   const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed);
@@ -207,18 +208,26 @@ export function AppShell() {
   );
   const handleTimelineSubagentOpen = useCallback(
     (reference: TimelineSubagentReference) => {
+      const openGeneration = subagentOpenGenerationRef.current + 1;
+      subagentOpenGenerationRef.current = openGeneration;
       const provisionalSubagent = activeSubagentFromTimelineReference(reference);
       setActiveSubagentAutoRestoreBlocked(false);
       if (provisionalSubagent !== null) {
         setActiveSubagent(provisionalSubagent);
       }
       const resolveAuthoritativeSubagent = (attempt: number) => {
+        if (subagentOpenGenerationRef.current !== openGeneration) {
+          return;
+        }
         void queryClient.fetchQuery({
           queryKey: ["sessions", reference.sessionId, "subagents"],
           queryFn: () => listSessionSubagents(reference.sessionId, true),
           staleTime: 0,
         })
           .then((records) => {
+            if (subagentOpenGenerationRef.current !== openGeneration) {
+              return;
+            }
             const authoritative = matchingSubagentFromRecords(reference, records);
             if (authoritative !== null) {
               setActiveSubagent((current) =>
@@ -240,6 +249,9 @@ export function AppShell() {
             }
           })
           .catch(() => {
+            if (subagentOpenGenerationRef.current !== openGeneration) {
+              return;
+            }
             if (attempt + 1 < subagentTimelineResolveAttempts) {
               window.setTimeout(
                 () => resolveAuthoritativeSubagent(attempt + 1),
@@ -252,6 +264,10 @@ export function AppShell() {
     },
     [queryClient],
   );
+  const closeActiveSubagent = useCallback(() => {
+    subagentOpenGenerationRef.current += 1;
+    setActiveSubagent(null);
+  }, []);
   const refreshSubagentPanelLayoutMax = useCallback(() => {
     setSubagentPanelLayoutMax(
       subagentPanelMaxForContainerWidth(chatShellRef.current?.clientWidth ?? 0),
@@ -918,9 +934,9 @@ export function AppShell() {
                 aria-hidden={visibleActiveSubagent === null ? "true" : undefined}
                 className="at-subagent-side-panel"
                 hidden={visibleActiveSubagent === null}
-              >
-                <SubagentSessionView
-                  onBack={() => setActiveSubagent(null)}
+                >
+                  <SubagentSessionView
+                    onBack={closeActiveSubagent}
                   runStreamController={runStreamController}
                   subagent={renderedSubagent}
                 />

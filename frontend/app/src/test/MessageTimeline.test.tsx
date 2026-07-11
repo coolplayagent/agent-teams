@@ -5737,18 +5737,23 @@ describe("MessageTimeline", () => {
     expect(screen.getByText("Tool validation: read_file")).toBeVisible();
     expect(screen.getByText("Searching: glob")).toBeVisible();
     expect(resultTitle).toHaveAttribute("title", "Ran: execute_command");
-    expect(screen.getByText("tests passed")).toHaveAttribute("title", "tests passed");
+    expect(container.querySelector('.at-message-tool-preview[title="tests passed"]'))
+      .toHaveTextContent("tests passed");
     expect(container.querySelectorAll(".at-message-tool")).toHaveLength(3);
     expect(toolPreviewTexts(container)).toEqual([
       "tests passed",
       "path is required",
       "**/*.ts",
     ]);
-    expect(screen.getByText(/"cmd": "npm test"/)).not.toBeVisible();
+    expect(screen.getAllByText(/"cmd": "npm test"/).every((element) =>
+      element.closest("details:not([open])") !== null
+    )).toBe(true);
 
     fireEvent.click(resultTitle);
 
-    expect(screen.getByText(/"cmd": "npm test"/)).toBeVisible();
+    expect(screen.getAllByText(/"cmd": "npm test"/).some((element) =>
+      element.closest("details:not([open])") === null
+    )).toBe(true);
   });
 
   it("drops duplicate persisted thinking rows left after tool replay merge", async () => {
@@ -11441,11 +11446,15 @@ function toolPreElements(container: ParentNode): HTMLElement[] {
 }
 
 function toolPreElement(container: ParentNode): HTMLElement {
-  const element = toolPreElements(container).at(0);
-  if (element === undefined) {
+  const element = container.querySelector(".at-message-tool-body");
+  if (element instanceof HTMLElement) {
+    return element;
+  }
+  const fallback = toolPreElements(container).at(0);
+  if (fallback === undefined) {
     throw new Error("Expected a tool details pre element.");
   }
-  return element;
+  return fallback;
 }
 
 function textOccurrenceCount(text: string, needle: string): number {

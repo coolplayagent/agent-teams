@@ -29,8 +29,10 @@ import { MarkdownMessage } from "./MarkdownMessage";
 import { RoundMarker } from "./RoundMarker";
 import { RoundRail } from "./RoundRail";
 import { TimelineDisclosure } from "./TimelineDisclosure";
+import { ToolCallDetails } from "./ToolCallDetails";
 import { roundPromptText, roundTitle } from "./roundMetadata";
 import { indexesWithLongerStrictPrefix } from "./timelinePerformance";
+import "./ToolCallDetails.css";
 
 const TIMELINE_BOTTOM_FOLLOW_THRESHOLD_PX = 96;
 const ROUND_RAIL_PAGE_LIMIT = 100;
@@ -751,7 +753,9 @@ interface TimelineToolPart {
   callId: string;
   error: boolean;
   kind: "tool";
+  inputBody?: string;
   mediaParts: TimelineMediaPart[];
+  outputBody?: string;
   phase:
     | "approval-requested"
     | "approval-resolved"
@@ -3086,6 +3090,7 @@ function mergeToolPartState(
   next: TimelineToolPart,
 ): void {
   if (next.phase === "call") {
+    existing.inputBody = next.inputBody || next.body || existing.inputBody;
     existing.body = appendToolCallArgsToResultBody(existing.body, next.body);
     if (existing.toolName === "unknown_tool" && next.toolName !== "unknown_tool") {
       existing.toolName = next.toolName;
@@ -3100,10 +3105,12 @@ function mergeToolPartState(
     ? appendToolCallArgsToResultBody(nextBody, argsBody)
     : nextBody;
   existing.error = next.error;
+  existing.inputBody = existing.inputBody || argsBody || next.inputBody;
   existing.mediaParts = next.mediaParts.length > 0
     ? next.mediaParts
     : existing.mediaParts;
   existing.phase = next.phase;
+  existing.outputBody = next.outputBody || nextBody || existing.outputBody;
   existing.subagent = mergeSubagentReference(existing.subagent, next.subagent);
   existing.toolName = next.toolName || existing.toolName;
 }
@@ -3514,6 +3521,7 @@ function mergeRuntimeToolCallIntoResolvedRow(
   if (resolvedTool === null) {
     return false;
   }
+  resolvedTool.inputBody = callPart.inputBody || callPart.body;
   resolvedTool.body = appendToolCallArgsToResultBody(
     resolvedTool.body,
     callPart.body,
@@ -7102,9 +7110,14 @@ function MessageToolBlock({
       </summary>
       {hasDetails ? (
         <div className="at-message-tool-body">
-          {tool.callId ? (
-            <div className="at-message-tool-meta">{t("timelineCallId")}: {tool.callId}</div>
-          ) : null}
+          <ToolCallDetails
+            callId={tool.callId}
+            error={tool.error}
+            input={tool.inputBody ?? (tool.phase === "call" ? tool.body : "")}
+            output={tool.outputBody ?? (tool.phase === "call" ? "" : tool.body)}
+            raw={tool.body}
+            t={t}
+          />
           {tool.mediaParts.map((media, index) => (
             <MessageMediaPreview
               key={`tool-media:${index}:${media.url}`}
@@ -7112,7 +7125,6 @@ function MessageToolBlock({
               t={t}
             />
           ))}
-          {tool.body ? <pre>{tool.body}</pre> : null}
         </div>
       ) : null}
     </TimelineDisclosure>
@@ -7415,12 +7427,14 @@ function contentPartThinking(part: ContentPart): TimelineThinkingPart | null {
 function contentPartTool(part: ContentPart): TimelineToolPart | null {
   const kind = contentPartKind(part);
   if (kind === "tool-call" || contentPartHasToolCallShape(part)) {
+    const inputBody = toolArgsBody("args" in part ? part.args ?? null : null);
     return {
       action: "",
-      body: toolArgsBody("args" in part ? part.args ?? null : null),
+      body: inputBody,
       callId: "tool_call_id" in part ? part.tool_call_id ?? "" : "",
       error: false,
       kind: "tool",
+      inputBody,
       mediaParts: [],
       phase: "call",
       subagent: subagentReferenceFromValues({
@@ -7435,13 +7449,15 @@ function contentPartTool(part: ContentPart): TimelineToolPart | null {
     const content = "content" in part ? part.content ?? null : null;
     const error = toolReturnIsError(part, content);
     const toolName = "tool_name" in part ? part.tool_name ?? "unknown_tool" : "unknown_tool";
+    const outputBody = toolReturnBody(content, error, toolName);
     return {
       action: "",
-      body: toolReturnBody(content, error, toolName),
+      body: outputBody,
       callId: "tool_call_id" in part ? part.tool_call_id ?? "" : "",
       error,
       kind: "tool",
       mediaParts: toolReturnMediaParts(content),
+      outputBody,
       phase: "result",
       subagent: subagentReferenceFromValues({
         callId: "tool_call_id" in part ? part.tool_call_id ?? "" : "",
@@ -7452,13 +7468,15 @@ function contentPartTool(part: ContentPart): TimelineToolPart | null {
     };
   }
   if (kind === "retry-prompt") {
+    const outputBody = jsonValueText("content" in part ? part.content ?? null : null);
     return {
       action: "",
-      body: jsonValueText("content" in part ? part.content ?? null : null),
+      body: outputBody,
       callId: "tool_call_id" in part ? part.tool_call_id ?? "" : "",
       error: true,
       kind: "tool",
       mediaParts: [],
+      outputBody,
       phase: "validation",
       subagent: null,
       toolName: "tool_name" in part ? part.tool_name ?? "unknown_tool" : "unknown_tool",
@@ -7642,12 +7660,14 @@ function runtimeToolPart(entry: TimelineEntry): TimelineToolPart | null {
     if (!callId && !objectString(payload, "tool_name") && payload.args === undefined) {
       return null;
     }
+    const inputBody = toolArgsBody(payload.args ?? null);
     return {
       action: "",
-      body: toolArgsBody(payload.args ?? null),
+      body: inputBody,
       callId,
       error: false,
       kind: "tool",
+      inputBody,
       mediaParts: [],
       phase: "call",
       subagent: subagentReferenceWithSource(
@@ -7675,6 +7695,7 @@ function runtimeToolPart(entry: TimelineEntry): TimelineToolPart | null {
       error: true,
       kind: "tool",
       mediaParts: [],
+      outputBody: body,
       phase: "validation",
       subagent: null,
       toolName,
@@ -7685,13 +7706,15 @@ function runtimeToolPart(entry: TimelineEntry): TimelineToolPart | null {
     return null;
   }
   const error = objectBoolean(payload, "error") || toolResultIndicatesError(result);
+  const outputBody = toolReturnBody(result, error, toolName);
   return {
     action: "",
-    body: toolReturnBody(result, error, toolName),
+    body: outputBody,
     callId,
     error,
     kind: "tool",
     mediaParts: toolReturnMediaParts(result),
+    outputBody,
     phase: "result",
     subagent: subagentReferenceWithSource(
       subagentReferenceFromValues({

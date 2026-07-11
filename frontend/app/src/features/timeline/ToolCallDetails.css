@@ -1,0 +1,86 @@
+.at-tool-details {
+  display: grid;
+  gap: 8px;
+}
+
+.at-tool-call-id {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--at-text-muted);
+  font-size: 11px;
+}
+
+.at-tool-call-id code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.at-tool-call-id .ant-btn {
+  flex: 0 0 auto;
+  color: var(--at-text-muted);
+}
+
+.at-tool-detail-section {
+  min-width: 0;
+  border-top: 1px solid var(--at-border);
+  padding-top: 7px;
+}
+
+.at-tool-detail-heading {
+  margin-bottom: 4px;
+  color: var(--at-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.at-tool-detail-section pre,
+.at-tool-raw-details pre {
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: var(--at-text);
+  font-family: var(--at-font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.at-tool-detail-section pre.is-clamped {
+  max-height: 240px;
+  overflow: hidden;
+}
+
+.at-tool-detail-section.is-error pre {
+  color: var(--at-danger);
+}
+
+.at-tool-detail-section > .ant-btn {
+  height: 24px;
+  margin-top: 4px;
+  padding-inline: 0;
+  color: var(--at-text-muted);
+  font-size: 11px;
+}
+
+.at-tool-raw-details {
+  border-top: 1px solid var(--at-border);
+  padding-top: 7px;
+}
+
+.at-tool-raw-details > summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--at-text-muted);
+  font-size: 11px;
+}
+
+.at-tool-raw-actions {
+  display: flex;
+  justify-content: flex-end;
+  height: 24px;
+}

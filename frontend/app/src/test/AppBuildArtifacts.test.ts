@@ -8,6 +8,12 @@ const distAppRoot = join("..", "dist");
 const appIndexHtmlPath = join(distAppRoot, "index.html");
 
 describe("React app build artifacts", () => {
+  it("declares an inline favicon so browsers do not request a missing asset", () => {
+    const html = readFileSync("index.html", "utf8");
+
+    expect(html).toContain('<link rel="icon" href="data:," />');
+  });
+
   it("keeps the committed React app entry wired to existing bundled assets", () => {
     const html = readFileSync(appIndexHtmlPath, "utf8");
     const assetPaths = appAssetReferences(html);

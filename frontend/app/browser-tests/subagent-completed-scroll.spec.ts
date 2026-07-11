@@ -81,9 +81,9 @@ test("keeps long completed subagent prompt and transcript independently scrollab
     await page.mouse.wheel(0, 900);
     await expect.poll(() => prompt.evaluate((element) => element.scrollTop))
       .toBeGreaterThan(0);
-    await prompt.evaluate((element) => {
-      element.scrollTop = element.scrollHeight;
-    });
+    for (let index = 0; index < 8; index += 1) {
+      await page.mouse.wheel(0, 2_000);
+    }
     await expect.poll(() => prompt.evaluate((element) =>
       element.scrollHeight - element.clientHeight - element.scrollTop
     )).toBeLessThanOrEqual(1);
@@ -95,9 +95,12 @@ test("keeps long completed subagent prompt and transcript independently scrollab
     const scrolledUp = await timeline.evaluate((element) => element.scrollTop);
     expect(scrolledUp).toBeGreaterThanOrEqual(0);
 
-    await page.mouse.wheel(0, 600);
-    await expect.poll(() => timeline.evaluate((element) => element.scrollTop))
-      .toBeGreaterThan(scrolledUp);
+    for (let index = 0; index < 8; index += 1) {
+      await page.mouse.wheel(0, 2_000);
+    }
+    await expect.poll(() => timeline.evaluate((element) =>
+      element.scrollHeight - element.clientHeight - element.scrollTop
+    )).toBeLessThanOrEqual(1);
     await expectNoDocumentScroll(
       page,
       "completed subagent prompt and transcript must scroll inside the panel",

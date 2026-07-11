@@ -667,9 +667,14 @@ export function MessageTimeline({
         previousContentSignature,
         nextContentSignature,
       );
-    if (
+    const contentAppended =
       previousContentSignature !== undefined &&
-      timelineContentWasAppended(previousContentSignature, nextContentSignature) &&
+      timelineContentWasAppended(
+        previousContentSignature,
+        nextContentSignature,
+      );
+    if (
+      contentAppended &&
       snapshot !== null &&
       !snapshot.shouldFollow
     ) {
@@ -685,7 +690,7 @@ export function MessageTimeline({
               container,
               snapshot,
               rows,
-              snapshot.preferAnchor || contentChanged,
+              snapshot.preferAnchor || (contentChanged && !contentAppended),
             ),
         scrollScopeKey,
       ),

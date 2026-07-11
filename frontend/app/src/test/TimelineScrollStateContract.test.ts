@@ -57,7 +57,7 @@ describe("timeline scroll state contract", () => {
       "snapshot?.shouldFollow === false",
     );
     expect(timelineSource).toContain(
-      "snapshot.preferAnchor || contentChanged",
+      "snapshot.preferAnchor || (contentChanged && !contentAppended)",
     );
   });
 });

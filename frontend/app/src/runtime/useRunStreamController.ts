@@ -91,6 +91,7 @@ export function useRunStreamController(): RunStreamController {
   const reconnectAttemptRef = useRef(0);
   const streamGenerationRef = useRef(0);
   const subagentDiscoveryEventKeysRef = useRef(new Set<string>());
+  const recoveryInteractionEventKeysRef = useRef(new Set<string>());
   const [activeRunIds, setActiveRunIds] = useState<string[]>([]);
   const [suppressedRunIds, setSuppressedRunIds] = useState<string[]>([]);
   const [trackedRunIds, setTrackedRunIds] = useState<string[]>([]);
@@ -151,6 +152,33 @@ export function useRunStreamController(): RunStreamController {
     }
     if (hasNewSubagentDiscoveryEvent) {
       refreshSubagentDiscovery(sessionId);
+    }
+  };
+
+  const refreshRecoveryForNewInteractionEvents = (
+    sessionId: string,
+    nextRuntimeState: RuntimeState,
+  ) => {
+    let hasNewInteractionEvent = false;
+    for (const run of Object.values(nextRuntimeState.runs)) {
+      for (const entry of run.entries) {
+        if (
+          entry.kind !== "user_question_requested" &&
+          entry.kind !== "user_question_answered"
+        ) {
+          continue;
+        }
+        const eventKey = `${entry.runId}:${entry.id}`;
+        if (recoveryInteractionEventKeysRef.current.has(eventKey)) {
+          continue;
+        }
+        recoveryInteractionEventKeysRef.current.add(eventKey);
+        hasNewInteractionEvent = true;
+      }
+    }
+    if (hasNewInteractionEvent) {
+      refreshRecoverySnapshot(sessionId);
+      void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
     }
   };
 
@@ -412,6 +440,7 @@ export function useRunStreamController(): RunStreamController {
           ),
         );
         refreshSubagentDiscoveryForNewEvents(options.sessionId, nextRuntimeState);
+        refreshRecoveryForNewInteractionEvents(options.sessionId, nextRuntimeState);
       },
       onClosed: () => {
         if (streamGeneration !== streamGenerationRef.current) {

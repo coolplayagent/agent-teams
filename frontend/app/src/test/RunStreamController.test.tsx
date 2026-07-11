@@ -298,6 +298,51 @@ describe("useRunStreamController", () => {
     expect(subagentDiscoveryRefreshCallCount(invalidateSpy)).toBe(3);
   });
 
+  it("refreshes pending questions immediately for requested and answered events", () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+    const options = streamMocks.latestOptions as {
+      onState: (state: RuntimeState) => void;
+    };
+    invalidateSpy.mockClear();
+    const requested = runtimeStateEntry({
+      eventId: 8,
+      kind: "user_question_requested",
+      payload: { question_id: "question-1" },
+    });
+
+    act(() => options.onState(runtimeStateWithEntries([requested])));
+    expect(recoveryRefreshCallCount(invalidateSpy)).toBe(1);
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "sidebar"],
+    });
+
+    act(() => options.onState(runtimeStateWithEntries([requested])));
+    expect(recoveryRefreshCallCount(invalidateSpy)).toBe(1);
+
+    act(() => options.onState(runtimeStateWithEntries([
+      requested,
+      runtimeStateEntry({
+        eventId: 9,
+        kind: "user_question_answered",
+        payload: { question_id: "question-1" },
+      }),
+    ])));
+    expect(recoveryRefreshCallCount(invalidateSpy)).toBe(2);
+  });
+
   it("refreshes timeline, sidebar, and session token usage when a run stream closes", async () => {
     listSessionRoundsMock.mockResolvedValue({
       has_more: false,

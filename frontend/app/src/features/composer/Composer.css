@@ -1,0 +1,146 @@
+.at-composer .at-composer-inner {
+  container-name: composer;
+  container-type: inline-size;
+}
+
+.at-composer .at-composer-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.at-composer .at-composer-control-set {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: clamp(4px, 0.6vw, 8px);
+  min-width: 0;
+  padding-bottom: 0;
+  width: auto;
+}
+
+.at-composer .at-composer-field {
+  flex: 1 1 132px;
+  gap: 4px;
+  min-width: 110px;
+  max-width: 176px;
+}
+
+.at-composer .at-composer-mode-field {
+  flex: 0 1 178px;
+  min-width: 156px;
+  max-width: 190px;
+}
+
+.at-composer .at-composer-model-field {
+  flex-basis: 116px;
+  min-width: 100px;
+  max-width: 148px;
+}
+
+.at-composer .at-composer-field-label,
+.at-composer .at-control-label,
+.at-composer .at-composer-toggles .ant-checkbox-wrapper {
+  white-space: nowrap;
+}
+
+.at-composer .at-session-mode-control,
+.at-composer .at-normal-root-role-select,
+.at-composer .at-orchestration-preset-select,
+.at-composer .at-role-select,
+.at-composer .at-model-profile-select {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+}
+
+.at-composer .at-session-mode-control .ant-segmented-group {
+  width: 100%;
+}
+
+.at-composer .at-session-mode-control .ant-segmented-item {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.at-composer .at-composer-toggles {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.at-composer .at-thinking-effort-select {
+  width: 92px;
+}
+
+.at-composer .at-composer-actions.ant-space {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+@container composer (max-width: 920px) {
+  .at-composer .at-composer-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) max-content;
+    align-items: end;
+  }
+
+  .at-composer .at-composer-control-set {
+    flex-wrap: wrap;
+  }
+
+  .at-composer .at-composer-field {
+    max-width: none;
+  }
+}
+
+@container composer (max-width: 680px) {
+  .at-composer .at-composer-controls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .at-composer .at-composer-control-set {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    width: 100%;
+  }
+
+  .at-composer .at-composer-mode-field,
+  .at-composer .at-composer-toggles {
+    grid-column: 1 / -1;
+  }
+
+  .at-composer .at-composer-field {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .at-composer .at-composer-toggles {
+    flex-wrap: wrap;
+  }
+
+  .at-composer .at-composer-actions.ant-space {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+}
+
+@container composer (max-width: 440px) {
+  .at-composer .at-composer-control-set {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .at-composer .at-composer-mode-field,
+  .at-composer .at-composer-toggles {
+    grid-column: auto;
+  }
+}

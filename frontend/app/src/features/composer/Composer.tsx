@@ -77,6 +77,7 @@ import {
   type PromptSkillMentionOption,
 } from "./PromptMentions";
 import { useVoiceInput } from "./useVoiceInput";
+import "./Composer.css";
 
 interface ComposerProps {
   runStreamController: RunStreamController;
@@ -796,7 +797,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
           </Typography.Text>
         ) : null}
         <div className="at-composer-controls">
-          <Space className="at-composer-control-set" size={6}>
+          <div className="at-composer-control-set">
             <div className="at-composer-field at-composer-mode-field">
               <Typography.Text className="at-composer-field-label">
                 {t("composerMode")}
@@ -940,54 +941,59 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
                 value={selectedModelProfile ?? undefined}
               />
             </div>
-            <Space className="at-thinking-control" size={6}>
-              <Typography.Text className="at-control-label" id="at-thinking-label">
-                {t("composerThinking")}
-              </Typography.Text>
-              <Switch
-                aria-labelledby="at-thinking-label"
-                checked={thinking.enabled}
-                disabled={busy || activeRunId !== null}
-                onChange={(enabled) => updateThinking({ enabled })}
-                size="small"
-              />
-              {thinking.enabled ? (
-                <Select
-                  aria-label={t("composerThinkingEffort")}
-                  className="at-thinking-effort-select"
+            <div className="at-composer-toggles">
+              <Space className="at-thinking-control" size={6}>
+                <Typography.Text
+                  className="at-control-label"
+                  id="at-thinking-label"
+                >
+                  {t("composerThinking")}
+                </Typography.Text>
+                <Switch
+                  aria-labelledby="at-thinking-label"
+                  checked={thinking.enabled}
                   disabled={busy || activeRunId !== null}
-                  onChange={(effort) => updateThinking({ effort })}
-                  options={thinkingEffortOptions(t)}
-                  popupMatchSelectWidth={false}
+                  onChange={(enabled) => updateThinking({ enabled })}
                   size="small"
-                  value={thinking.effort ?? DEFAULT_THINKING_EFFORT}
                 />
-              ) : null}
-            </Space>
-            <Tooltip title={t("composerShellSafetyPolicy")}>
+                {thinking.enabled ? (
+                  <Select
+                    aria-label={t("composerThinkingEffort")}
+                    className="at-thinking-effort-select"
+                    disabled={busy || activeRunId !== null}
+                    onChange={(effort) => updateThinking({ effort })}
+                    options={thinkingEffortOptions(t)}
+                    popupMatchSelectWidth={false}
+                    size="small"
+                    value={thinking.effort ?? DEFAULT_THINKING_EFFORT}
+                  />
+                ) : null}
+              </Space>
+              <Tooltip title={t("composerShellSafetyPolicy")}>
+                <Checkbox
+                  aria-label={t("composerShellSafetyPolicy")}
+                  className="at-shell-safety-checkbox"
+                  checked={shellSafetyPolicyEnabled}
+                  disabled={
+                    busy || activeRunId !== null || !canOverrideShellSafetyPolicy
+                  }
+                  onChange={(event) =>
+                    setShellSafetyPolicyEnabled(event.target.checked)
+                  }
+                >
+                  {t("composerShellSafetyShort")}
+                </Checkbox>
+              </Tooltip>
               <Checkbox
-                aria-label={t("composerShellSafetyPolicy")}
-                className="at-shell-safety-checkbox"
-                checked={shellSafetyPolicyEnabled}
-                disabled={
-                  busy || activeRunId !== null || !canOverrideShellSafetyPolicy
-                }
-                onChange={(event) =>
-                  setShellSafetyPolicyEnabled(event.target.checked)
-                }
+                checked={yolo}
+                disabled={busy || activeRunId !== null}
+                onChange={(event) => setYolo(event.target.checked)}
               >
-                {t("composerShellSafetyShort")}
+                {t("composerYolo")}
               </Checkbox>
-            </Tooltip>
-            <Checkbox
-              checked={yolo}
-              disabled={busy || activeRunId !== null}
-              onChange={(event) => setYolo(event.target.checked)}
-            >
-              {t("composerYolo")}
-            </Checkbox>
-          </Space>
-          <Space size={8}>
+            </div>
+          </div>
+          <Space className="at-composer-actions" size={8}>
             {voiceInput.visible ? (
               <Tooltip title={voiceInput.tooltip}>
                 <Button

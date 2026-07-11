@@ -57,14 +57,14 @@ test("merges persisted tool call and result messages into one completed card", a
     await waitForV2Shell(page);
 
     const completedTool = page.locator(".at-message-tool", {
-      hasText: "Tool result: read",
+      hasText: "Read: read",
     });
     await expect(completedTool).toHaveCount(1);
     await expect(completedTool).toHaveAttribute("data-status", "completed");
     await expect(completedTool.locator(".at-message-tool-spinner")).toHaveCount(0);
     await expect(completedTool.locator(".at-message-tool-preview"))
       .toHaveText("README excerpt from history.");
-    await expect(page.getByText("Tool call: read")).toHaveCount(0);
+    await expect(page.getByText("Reading: read")).toHaveCount(0);
     await expect(page.locator(".at-message-tool")).toHaveCount(1);
     await expect(page.locator(".at-message-tool-status")).toHaveCount(0);
 
@@ -209,12 +209,12 @@ test("keeps a live tool call as one card through refresh, result, and terminal r
     await processed.locator(".at-processed-group-summary").click();
     await expect(processed).toHaveAttribute("open", "");
     const replayedTool = processed.locator(".at-message-tool", {
-      hasText: "Tool result: read",
+      hasText: "Read: read",
     });
     await expect(replayedTool).toHaveCount(1);
     await expect(replayedTool).toHaveAttribute("data-status", "completed");
     await expect(replayedTool.locator(".at-message-tool-spinner")).toHaveCount(0);
-    await expect(page.getByText("Tool call: read")).toHaveCount(0);
+    await expect(page.getByText("Reading: read")).toHaveCount(0);
     await replayedTool.locator(".at-message-tool-summary").click();
     await expect(replayedTool.locator(".at-message-tool-body")).toContainText(
       LIVE_TOOL_PATH,
@@ -453,23 +453,23 @@ async function dispatchLiveToolRunEvent(
 }
 
 async function expectRunningReadTool(page: Page): Promise<void> {
-  const tool = page.locator(".at-message-tool", { hasText: "Tool call: read" });
+  const tool = page.locator(".at-message-tool", { hasText: "Reading: read" });
   await expect(tool).toHaveCount(1);
   await expect(tool).toHaveAttribute("data-status", "running");
   await expect(tool.locator(".at-message-tool-spinner")).toHaveCount(1);
   await expect(tool.locator(".at-message-tool-preview"))
     .toHaveText(LIVE_TOOL_PATH);
-  await expect(page.getByText("Tool result: read")).toHaveCount(0);
+  await expect(page.getByText("Read: read")).toHaveCount(0);
   await expect(page.locator(".at-message-tool")).toHaveCount(1);
 }
 
 async function expectCompletedReadTool(page: Page): Promise<void> {
-  const tool = page.locator(".at-message-tool", { hasText: "Tool result: read" });
+  const tool = page.locator(".at-message-tool", { hasText: "Read: read" });
   await expect(tool).toHaveCount(1);
   await expect(tool).toHaveAttribute("data-status", "completed");
   await expect(tool.locator(".at-message-tool-spinner")).toHaveCount(0);
   await expect(tool.locator(".at-message-tool-preview"))
     .toHaveText(LIVE_TOOL_OUTPUT);
-  await expect(page.getByText("Tool call: read")).toHaveCount(0);
+  await expect(page.getByText("Reading: read")).toHaveCount(0);
   await expect(page.locator(".at-message-tool")).toHaveCount(1);
 }

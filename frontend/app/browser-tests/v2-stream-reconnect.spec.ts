@@ -218,15 +218,15 @@ test("preserves non-text stream events after reconnect", async ({ page }) => {
       relayEventType: "tool_result",
       type: "tool_result.completed",
     });
-    await expect(page.getByText("Tool result: read")).toBeVisible();
-    await expect(page.getByText("Tool call: read")).toHaveCount(0);
+    await expect(page.getByText("Read: read")).toBeVisible();
+    await expect(page.getByText("Reading: read")).toHaveCount(0);
     await expect(
       page.locator(".at-message-tool-preview").getByText(toolOutput, {
         exact: true,
       }),
     ).toBeVisible();
     const readTool = page.locator(".at-message-tool").filter({
-      hasText: "Tool result: read",
+      hasText: "Read: read",
     });
     await expect(readTool).toHaveCount(1);
     await readTool.locator(".at-message-tool-summary").click();

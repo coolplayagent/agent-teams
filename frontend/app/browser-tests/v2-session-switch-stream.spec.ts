@@ -364,7 +364,7 @@ test("restores orchestration thinking, tools, and text in order after session sw
       runId: ORCHESTRATION_RUN_ID,
       type: "tool_call.started",
     });
-    await expect(page.locator(".at-message-tool", { hasText: "Tool call: read" }))
+    await expect(page.locator(".at-message-tool", { hasText: "Reading: read" }))
       .toHaveCount(1);
 
     await page.getByRole("button", { name: state.secondarySessionTitle }).click();
@@ -402,7 +402,7 @@ test("restores orchestration thinking, tools, and text in order after session sw
     await expect(page.locator(".at-message-thinking")).toHaveCount(1);
     await expect(page.locator(".at-message-thinking")).toContainText(thinkingText);
     const completedTool = page.locator(".at-message-tool", {
-      hasText: "Tool result: read",
+      hasText: "Read: read",
     });
     await expect(completedTool).toHaveCount(1);
     await completedTool.locator(".at-message-tool-summary").click();
@@ -410,8 +410,8 @@ test("restores orchestration thinking, tools, and text in order after session sw
     await expect(page.getByText(hiddenOutput)).toHaveCount(1);
     await expect(page.locator(".at-message-role")).toHaveCount(0);
     await expect.poll(() =>
-      timelineOrderedCheckpoints(page, [thinkingText, "Tool result: read", hiddenOutput]),
-    ).toEqual([thinkingText, "Tool result: read", hiddenOutput]);
+      timelineOrderedCheckpoints(page, [thinkingText, "Read: read", hiddenOutput]),
+    ).toEqual([thinkingText, "Read: read", hiddenOutput]);
 
     await dispatchRunEvent(page, {
       eventId: 7,

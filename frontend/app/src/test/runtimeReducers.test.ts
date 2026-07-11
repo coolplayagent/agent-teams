@@ -5,9 +5,54 @@ import {
   MAX_SEEN_EVENT_KEYS,
   reduceRunEvent,
 } from "../runtime/reducers";
-import type { AgUiRunEvent, RelayRunEvent } from "../runtime/events";
+import {
+  AG_UI_EVENT_NAMES,
+  type AgUiRunEvent,
+  type RelayRunEvent,
+} from "../runtime/events";
 
 describe("runtime reducers", () => {
+  it("keeps every required frontend AG-UI event family in the public stream contract", () => {
+    expect(new Set(AG_UI_EVENT_NAMES).size).toBe(AG_UI_EVENT_NAMES.length);
+    expect(AG_UI_EVENT_NAMES).toEqual(
+      expect.arrayContaining([
+        "run.started",
+        "run.resumed",
+        "run.completed",
+        "run.stopped",
+        "run.failed",
+        "message.text.delta",
+        "message.output.delta",
+        "thinking.started",
+        "thinking.delta",
+        "thinking.finished",
+        "model_step.started",
+        "model_step.finished",
+        "tool_call.started",
+        "tool_call.validation_failed",
+        "tool_result.completed",
+        "tool_approval.requested",
+        "tool_approval.resolved",
+        "user_question.requested",
+        "user_question.answered",
+        "injection.enqueued",
+        "injection.applied",
+        "state.snapshot",
+        "state.delta",
+        "subagent_session.status_changed",
+        "subagent.stopped",
+        "subagent.resumed",
+        "background_task.started",
+        "background_task.updated",
+        "background_task.completed",
+        "background_task.stopped",
+        "todo.updated",
+        "token_usage.updated",
+        "notification.requested",
+      ]),
+    );
+  });
+
   it("deduplicates replayed events by run and event id", () => {
     const event = runEvent({
       event_id: 7,

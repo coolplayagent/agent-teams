@@ -992,7 +992,7 @@ describe("SubagentSessionView", () => {
 
     await waitFor(() => expect(listAgentMessagesMock).toHaveBeenCalledTimes(3));
     fireEvent.click(screen.getByText("Processed"));
-    expect(await screen.findByText("Tool result: shell")).toBeVisible();
+    expect(await screen.findByText("Ran: shell")).toBeVisible();
     expect(screen.queryByText("Existing subagent answer")).not.toBeInTheDocument();
     expect(
       screen.queryByText("Incomplete persisted subagent answer"),

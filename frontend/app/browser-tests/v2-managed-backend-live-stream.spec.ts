@@ -1422,7 +1422,7 @@ async function expectToolPressureTerminalState(
   const completedTools = processed.locator(".at-message-tool[data-status='completed']");
   await expect(completedTools).toHaveCount(toolCount);
   await expect(processed.locator(".at-message-tool-spinner")).toHaveCount(0);
-  await expect(processed.getByText("Tool call: shell")).toHaveCount(0);
+  await expect(processed.getByText("Running: shell")).toHaveCount(0);
   await expect(page.locator(".at-message-role")).toHaveCount(0);
   for (let index = 1; index <= toolCount; index += 1) {
     await expect(processed).toContainText(`tool-pressure-${index}`);

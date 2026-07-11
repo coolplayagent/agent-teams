@@ -799,8 +799,8 @@ test("continues a tool-heavy replay after refresh from the hydrated cursor", asy
 
     await expect(page.getByText("Hydrated tool-heavy answer before refresh."))
       .toBeVisible();
-    await expect(page.getByText("Tool result: read")).toBeVisible();
-    await expect(page.getByText("Tool call: read")).toHaveCount(0);
+    await expect(page.getByText("Read: read")).toBeVisible();
+    await expect(page.getByText("Reading: read")).toHaveCount(0);
     await expect(page.locator(".at-message-tool")).toHaveCount(1);
     await expectToolChromeState(page, {
       completedCount: 1,
@@ -813,10 +813,10 @@ test("continues a tool-heavy replay after refresh from the hydrated cursor", asy
     await waitForV2Shell(page);
     await expect(page.getByText("Hydrated tool-heavy answer before refresh."))
       .toBeVisible();
-    await expect(page.getByText("Tool result: read")).toBeVisible();
-    await expect(page.getByText("Tool call: read")).toHaveCount(0);
-    await expect(page.getByText("Tool error: shell")).toBeVisible();
-    await expect(page.getByText("Tool call: shell")).toHaveCount(0);
+    await expect(page.getByText("Read: read")).toBeVisible();
+    await expect(page.getByText("Reading: read")).toHaveCount(0);
+    await expect(page.getByText("Run failed: shell")).toBeVisible();
+    await expect(page.getByText("Running: shell")).toHaveCount(0);
     await expect(page.locator(".at-message-tool")).toHaveCount(2);
     await expectToolChromeState(page, {
       completedCount: 1,
@@ -916,11 +916,11 @@ test("continues a tool-heavy replay after refresh from the hydrated cursor", asy
     await expect(page.getByText("Hydrated tool-heavy answer before refresh."))
       .toBeVisible();
     await expect(page.getByText(resumedText)).toBeVisible();
-    await expect(page.getByText("Tool result: read")).toBeVisible();
-    await expect(page.getByText("Tool error: shell")).toBeVisible();
+    await expect(page.getByText("Read: read")).toBeVisible();
+    await expect(page.getByText("Run failed: shell")).toBeVisible();
     await expect(page.getByText("Tool validation: read")).toBeVisible();
-    await expect(page.getByText("Tool call: read")).toHaveCount(0);
-    await expect(page.getByText("Tool call: shell")).toHaveCount(0);
+    await expect(page.getByText("Reading: read")).toHaveCount(0);
+    await expect(page.getByText("Running: shell")).toHaveCount(0);
     await expect(page.locator(".at-message-tool")).toHaveCount(3);
     await expectToolChromeState(page, {
       completedCount: 1,

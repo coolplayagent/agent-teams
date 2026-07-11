@@ -995,8 +995,8 @@ async function runRealSseRichReplayScenario(
     ]) {
       await expect(page.getByText(text)).toHaveCount(0);
     }
-    await expectTimelineTextVisible(page, "Tool result: read");
-    await expect(page.getByText("Tool call: read")).toHaveCount(0);
+    await expectTimelineTextVisible(page, "Read: read");
+    await expect(page.getByText("Reading: read")).toHaveCount(0);
 
     const outputImage = page.getByRole("img", { name: RICH_REPLAY_OUTPUT_IMAGE });
     await expect(outputImage).toBeVisible();

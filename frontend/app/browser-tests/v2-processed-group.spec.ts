@@ -47,7 +47,7 @@ test("processed work stays folded and remeasures when expanded", async ({
     await expect(processed.locator(".at-processed-group-label"))
       .toHaveText("Processed");
     await expect(page.getByText("Processed final answer.")).toBeVisible();
-    await expect(processed.getByText("Tool result: read")).toBeHidden();
+    await expect(processed.getByText("Read: read")).toBeHidden();
     await expect(processed.getByText("Inspecting workspace before final answer."))
       .toBeHidden();
     await expect(page.locator(".at-processed-group-line")).toHaveCount(0);
@@ -60,7 +60,7 @@ test("processed work stays folded and remeasures when expanded", async ({
 
     await processed.locator(".at-processed-group-summary").click();
     await expect(processed).toHaveAttribute("open", "");
-    await expect(processed.getByText("Tool result: read")).toBeVisible();
+    await expect(processed.getByText("Read: read")).toBeVisible();
     await expect(processed.getByText("Inspecting workspace before final answer."))
       .toBeHidden();
 

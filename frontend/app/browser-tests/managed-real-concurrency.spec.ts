@@ -179,10 +179,20 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
       reloadRun,
     );
     expect(beforeReloadIndex).toBeGreaterThanOrEqual(0);
+    const storedSelectionBeforeReload = await page.evaluate(() =>
+      window.localStorage.getItem("agentTeams.selectedSessionId"),
+    );
+    expect(storedSelectionBeforeReload).toBe(reloadRun.session.session_id);
     const beforeReloadProbe = await browserProbeSnapshot(page);
     failures.beginExpectedEventAbortWindow();
     try {
       await page.reload({ waitUntil: "domcontentloaded" });
+      expect(
+        await page.evaluate(() =>
+          window.localStorage.getItem("agentTeams.selectedSessionId"),
+        ),
+        "the init script must not overwrite an existing session selection",
+      ).toBe(storedSelectionBeforeReload);
       await expectShellReady(page);
       const restoredTitle =
         (await page.locator(".at-session-item.is-selected").textContent()) ??
@@ -564,16 +574,17 @@ async function installBrowserProbe(
           // A missing long-task entry type is represented by an empty sample set.
         }
       }
-      window.localStorage.setItem("agentTeams.language", "zh");
-      window.localStorage.setItem("agentTeams.themeMode", "light");
-      window.localStorage.setItem("agent_teams_theme", "light");
-      window.localStorage.setItem("agentTeams.selectedSessionId", sessionId);
-      window.localStorage.setItem(
-        "agentTeams.selectedWorkspaceId",
-        workspaceId,
-      );
-      window.localStorage.setItem("agentTeams.shellView", "chat");
-      window.localStorage.removeItem("agentTeams.activeSubagentPanel");
+      const seedLocalStorage = (key: string, value: string) => {
+        if (window.localStorage.getItem(key) === null) {
+          window.localStorage.setItem(key, value);
+        }
+      };
+      seedLocalStorage("agentTeams.language", "zh");
+      seedLocalStorage("agentTeams.themeMode", "light");
+      seedLocalStorage("agent_teams_theme", "light");
+      seedLocalStorage("agentTeams.selectedSessionId", sessionId);
+      seedLocalStorage("agentTeams.selectedWorkspaceId", workspaceId);
+      seedLocalStorage("agentTeams.shellView", "chat");
     },
     {
       sessionId: initialSession.session_id,

@@ -122,7 +122,7 @@ test("keeps large multi-session and multi-subagent streaming interactive", async
     const hiddenSessionTitle = scaleSessionTitle(17);
     const hiddenClickStarted = performance.now();
     await page.getByRole("button", { name: hiddenSessionTitle }).click();
-    await expect(page.getByText(`${hiddenSessionTitle} history 220`)).toBeAttached();
+    await expect(page.getByText(`${hiddenSessionTitle} history 0220`)).toBeAttached();
     const hiddenSessionClickLatencyMs = performance.now() - hiddenClickStarted;
     await expect(page.getByText("MAIN_SCALE_LIVE_DELTA")).toHaveCount(0);
     await expect(prompt).toBeEnabled();
@@ -414,7 +414,7 @@ function scaleSessionMessages(index: number): Array<Record<string, unknown>> {
   const history = Array.from(
     { length: index === 0 ? MAIN_HISTORY_ROWS : 220 },
     (_, rowIndex) => ({
-      content: `${scaleSessionTitle(index)} history ${rowIndex + 1}`,
+      content: `${scaleSessionTitle(index)} history ${String(rowIndex + 1).padStart(4, "0")}`,
       created_at: `2026-07-12T00:${String(rowIndex % 60).padStart(2, "0")}:00Z`,
       message_id: `scale-message-${index}-${rowIndex}`,
       role_id: "MainAgent",
@@ -475,7 +475,7 @@ function scaleSubagentRecords(): Array<Record<string, unknown>> {
 function scaleSubagentMessages(instanceId: string): Array<Record<string, unknown>> {
   const index = Number(instanceId.replace("scale-instance-", "")) - 1;
   return Array.from({ length: SUBAGENT_HISTORY_ROWS }, (_, rowIndex) => ({
-    content: `${scaleSubagentTitle(index)} history ${rowIndex + 1}`,
+    content: `${scaleSubagentTitle(index)} history ${String(rowIndex + 1).padStart(4, "0")}`,
     created_at: `2026-07-12T01:${String(rowIndex % 60).padStart(2, "0")}:00Z`,
     message_id: `scale-child-message-${index}-${rowIndex}`,
     role_id: scaleSubagentRole(index),

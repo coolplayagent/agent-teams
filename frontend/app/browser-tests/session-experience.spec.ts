@@ -72,7 +72,10 @@ test("keeps an active chat mounted and streaming across feature navigation", asy
 
     const returnStartedAt = Date.now();
     await page.getByRole("button", { name: "TS active navigation stream" }).click();
-    await expect(page.getByText(backgroundText)).toBeVisible({ timeout: 1_000 });
+    const jumpToLatest = page.getByRole("button", {
+      name: "Jump to latest content",
+    });
+    await expect(jumpToLatest).toBeVisible({ timeout: 1_000 });
     const returnReadyMs = Date.now() - returnStartedAt;
     expect(returnReadyMs).toBeLessThan(1_000);
     await expect(prompt).toHaveValue("draft survives feature navigation");
@@ -83,6 +86,9 @@ test("keeps an active chat mounted and streaming across feature navigation", asy
     )).toBe(timelineNodeBefore);
     expect(Math.abs((await timeline.evaluate((element) => element.scrollTop)) - awayScrollTop))
       .toBeLessThanOrEqual(2);
+    await expect(page.getByText(backgroundText)).toHaveCount(0);
+    await jumpToLatest.click();
+    await expect(page.getByText(backgroundText)).toBeVisible();
 
     await testInfo.attach("feature-navigation-stream-continuity", {
       body: JSON.stringify({

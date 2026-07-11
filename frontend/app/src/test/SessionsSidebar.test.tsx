@@ -172,13 +172,25 @@ describe("SessionsSidebar", () => {
 
   it("places the dedicated session search action beside new session", async () => {
     const openSessionSearch = vi.fn();
+    const openNewSession = vi.fn();
+    listWorkspacesMock.mockResolvedValue([{
+      workspace_id: "workspace-1",
+      root_path: "C:/work/agent-teams",
+    }]);
 
-    renderSidebar({ onOpenSessionSearch: openSessionSearch });
+    renderSidebar({
+      onOpenNewSession: openNewSession,
+      onOpenSessionSearch: openSessionSearch,
+    });
 
     const newSession = await screen.findByRole("button", { name: "New session" });
     const search = screen.getByRole("button", { name: "Search sessions" });
     expect(newSession.parentElement).toHaveClass("at-sidebar-primary-actions");
     expect(search.parentElement).toBe(newSession.parentElement);
+
+    await waitFor(() => expect(newSession).toBeEnabled());
+    fireEvent.click(newSession);
+    expect(openNewSession).toHaveBeenCalledTimes(1);
 
     fireEvent.click(search);
 
@@ -1502,6 +1514,7 @@ function renderSidebar(props?: {
   activeSubagent?: ActiveSubagentSession | null;
   backendStatus?: SidebarBackendStatus;
   navigationItems?: SidebarNavigationItem[];
+  onOpenNewSession?: () => void;
   onOpenSessionSearch?: () => void;
   onOpenWorkspaceView?: () => void;
   onSessionSelected?: () => void;
@@ -1524,6 +1537,7 @@ function renderSidebar(props?: {
             activeSubagent={props?.activeSubagent}
             backendStatus={props?.backendStatus}
             navigationItems={props?.navigationItems}
+            onOpenNewSession={props?.onOpenNewSession}
             onOpenSessionSearch={props?.onOpenSessionSearch}
             onOpenWorkspaceView={props?.onOpenWorkspaceView}
             onSessionSelected={props?.onSessionSelected}

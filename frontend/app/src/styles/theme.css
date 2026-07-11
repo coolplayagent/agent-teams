@@ -4363,6 +4363,58 @@ body {
   color: inherit;
 }
 
+.at-new-session-view {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 28px clamp(20px, 6vw, 80px);
+}
+
+.at-new-session-header {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 12px;
+  width: min(720px, 100%);
+  margin: 0 auto 20px;
+}
+
+.at-new-session-header h2 {
+  margin: 0 0 4px !important;
+}
+
+.at-new-session-card {
+  width: min(720px, 100%);
+  margin: 0 auto;
+}
+
+.at-new-session-card .ant-card-body {
+  display: grid;
+  gap: 16px;
+}
+
+.at-new-session-card label {
+  display: grid;
+  gap: 6px;
+  color: var(--at-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.at-new-session-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: var(--at-surface-muted);
+  color: var(--at-primary);
+}
+
+.at-new-session-actions {
+  justify-self: end;
+}
+
 .at-project-view {
   flex: 1 1 auto;
   display: flex;

@@ -138,6 +138,7 @@ vi.mock("../features/sessions/SessionsSidebar", () => ({
   SessionsSidebar: ({
     backendStatus,
     navigationItems = [],
+    onOpenNewSession,
     onOpenSessionSearch,
     onOpenWorkspaceView,
     onSessionSelected,
@@ -154,6 +155,7 @@ vi.mock("../features/sessions/SessionsSidebar", () => ({
       shortcut?: string;
     }>;
     onOpenSessionSearch?: () => void;
+    onOpenNewSession?: () => void;
     onOpenWorkspaceView?: () => void;
     onSessionSelected?: () => void;
   }) => (
@@ -182,7 +184,7 @@ vi.mock("../features/sessions/SessionsSidebar", () => ({
       </button>
       <span
         data-testid="create-new-session-from-sidebar"
-        onClick={onSessionSelected}
+        onClick={onOpenNewSession}
       />
       <span
         data-testid="select-session-from-sidebar"
@@ -216,6 +218,14 @@ vi.mock("../features/shell/CurrentSessionIndicator", () => ({
         {session?.title ?? selectedSessionId ?? ""}
       </span>
     </div>
+  ),
+}));
+
+vi.mock("../features/sessions/NewSessionView", () => ({
+  NewSessionView: ({ onCancel }: { onCancel: () => void }) => (
+    <section data-testid="new-session-view">
+      <button onClick={onCancel} type="button">Cancel new session</button>
+    </section>
   ),
 }));
 
@@ -1289,8 +1299,12 @@ describe("AppShell", () => {
 
     fireEvent.click(screen.getByTestId("create-new-session-from-sidebar"));
 
-    expect(await screen.findByTestId("timeline")).toBeVisible();
+    expect(await screen.findByTestId("new-session-view")).toBeVisible();
     expect(runStreamControllerMock.clearRunStream).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel new session" }));
+
+    expect(await screen.findByTestId("timeline")).toBeVisible();
   });
 
   it("detaches the active foreground stream before opening the workspace view", async () => {

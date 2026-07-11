@@ -111,6 +111,7 @@ interface SessionsSidebarProps {
   activeSubagent?: ActiveSubagentSession | null;
   backendStatus?: SidebarBackendStatus;
   navigationItems?: SidebarNavigationItem[];
+  onOpenNewSession?: () => void;
   onOpenSessionSearch?: () => void;
   onOpenWorkspaceView?: () => void;
   onSessionSelected?: () => void;
@@ -168,6 +169,7 @@ export function SessionsSidebar({
   activeSubagent = null,
   backendStatus,
   navigationItems = [],
+  onOpenNewSession,
   onOpenSessionSearch,
   onOpenWorkspaceView,
   onSessionSelected,
@@ -539,7 +541,13 @@ export function SessionsSidebar({
           disabled={workspaceOptions.length === 0 || !effectiveWorkspaceId.trim()}
           icon={<Plus size={15} />}
           loading={createSessionMutation.isPending}
-          onClick={() => createSessionMutation.mutate(effectiveWorkspaceId)}
+          onClick={() => {
+            if (onOpenNewSession !== undefined) {
+              onOpenNewSession();
+              return;
+            }
+            createSessionMutation.mutate(effectiveWorkspaceId);
+          }}
           type="primary"
         >
           {t("sidebarNewSession")}

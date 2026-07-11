@@ -59,6 +59,7 @@ import {
   type SidebarNavigationItem,
   normalizeSessionSubagent,
 } from "../sessions/SessionsSidebar";
+import { NewSessionView } from "../sessions/NewSessionView";
 import { SubagentSessionView } from "../sessions/SubagentSessionView";
 import type { TimelineSubagentReference } from "../timeline/MessageTimeline";
 import { SettingsDrawer } from "./SettingsDrawer";
@@ -98,6 +99,7 @@ type ShellPrimaryView =
   | "chat"
   | "connectors"
   | "memory"
+  | "new-session"
   | "observability"
   | "search"
   | "skills"
@@ -846,6 +848,7 @@ export function AppShell() {
             <SessionsSidebar
               backendStatus={sidebarBackendStatus}
               navigationItems={sidebarNavigationItems}
+              onOpenNewSession={() => openPrimaryShellView("new-session")}
               onOpenSessionSearch={() => setSessionSearchOpen(true)}
               onOpenWorkspaceView={() => openPrimaryShellView("workspace")}
               onSessionSelected={() => openPrimaryShellView("chat", "replace")}
@@ -899,6 +902,17 @@ export function AppShell() {
             />
           ) : activeView === "memory" ? (
             <MemoryView selectedWorkspaceId={selectedWorkspaceId} />
+          ) : activeView === "new-session" ? (
+            <NewSessionView
+              initialWorkspaceId={selectedWorkspaceId}
+              onCancel={() => openPrimaryShellView("chat", "replace")}
+              onCreated={(session) => {
+                setSelectedWorkspaceId(session.workspace_id);
+                setSelectedSessionId(session.session_id);
+                openPrimaryShellView("chat", "replace");
+              }}
+              workspaces={workspacesQuery.data ?? []}
+            />
           ) : activeView === "skills" ? (
             <SkillsView />
           ) : activeView === "workspace" ? (

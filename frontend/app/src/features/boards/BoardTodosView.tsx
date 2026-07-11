@@ -28,11 +28,11 @@ import {
   Trash2,
   Undo2,
   Search,
-  SquareKanban,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import "./BoardModals.css";
+import "./BoardLayout.css";
 
 import {
   archiveBoardTodo,
@@ -475,15 +475,10 @@ export function BoardTodosView({
     >
       <div className="at-board-toolbar">
         <div className="at-board-title">
-          <span className="at-board-title-icon" aria-hidden="true">
-            <SquareKanban size={18} />
-          </span>
-          <div>
-            <Typography.Title level={3}>{t("boardTitle")}</Typography.Title>
-            <Typography.Text type="secondary">
-              {activeWorkspaceLabel}
-            </Typography.Text>
-          </div>
+          <Typography.Title level={3}>{t("boardTitle")}</Typography.Title>
+          <Typography.Text type="secondary">
+            {activeWorkspaceLabel}
+          </Typography.Text>
         </div>
         <div className="at-board-toolbar-actions">
           <Tooltip title={t("boardSourceSettings")}>
@@ -715,45 +710,50 @@ function BoardScopeSummary({
   language: Language;
 }) {
   const t = useTranslations();
+  const syncedAt = formatDateTime(board.synced_at, language) || t("boardNotSynced");
   return (
-    <dl className="at-board-scope">
-      <div>
-        <dt>{t("boardShowing")}</dt>
-        <dd>{filteredCount}</dd>
-      </div>
-      <div>
-        <dt>{t("boardRevision")}</dt>
-        <dd>{board.revision}</dd>
-      </div>
-      <div>
-        <dt>{t("boardSources")}</dt>
-        <dd>{board.source_groups.length}</dd>
-      </div>
-      <div>
-        <dt>{t("boardSynced")}</dt>
-        <dd>{formatDateTime(board.synced_at, language) || t("boardNotSynced")}</dd>
-      </div>
-      {board.repository_full_name ? (
-        <div>
-          <dt>{t("boardRepository")}</dt>
-          <dd title={board.repository_full_name}>{board.repository_full_name}</dd>
-        </div>
-      ) : null}
-      {board.is_fork_view && board.board_workspace_id ? (
-        <div>
-          <dt>{t("boardBoardWorkspace")}</dt>
-          <dd title={board.board_workspace_id}>{board.board_workspace_id}</dd>
-        </div>
-      ) : null}
+    <div className="at-board-overview-wrap">
+      <details className="at-board-overview">
+        <summary>
+          <span>{t("boardShowing")} {filteredCount}</span>
+          <span>{t("boardSynced")} {syncedAt}</span>
+        </summary>
+        <dl>
+          <div>
+            <dt>{t("boardRevision")}</dt>
+            <dd>{board.revision}</dd>
+          </div>
+          <div>
+            <dt>{t("boardSources")}</dt>
+            <dd>{board.source_groups.length}</dd>
+          </div>
+          <div>
+            <dt>{t("boardSynced")}</dt>
+            <dd>{syncedAt}</dd>
+          </div>
+          {board.repository_full_name ? (
+            <div>
+              <dt>{t("boardRepository")}</dt>
+              <dd title={board.repository_full_name}>{board.repository_full_name}</dd>
+            </div>
+          ) : null}
+          {board.is_fork_view && board.board_workspace_id ? (
+            <div>
+              <dt>{t("boardBoardWorkspace")}</dt>
+              <dd title={board.board_workspace_id}>{board.board_workspace_id}</dd>
+            </div>
+          ) : null}
+        </dl>
+      </details>
       {board.diagnostics.length > 0 ? (
-        <div className="at-board-scope-diagnostics">
-          <dt>{t("boardDiagnostics")}</dt>
-          <dd title={board.diagnostics.join("\n")}>
-            {board.diagnostics.join(" / ")}
-          </dd>
-        </div>
+        <Alert
+          description={board.diagnostics.join(" / ")}
+          message={t("boardDiagnostics")}
+          showIcon
+          type="warning"
+        />
       ) : null}
-    </dl>
+    </div>
   );
 }
 
@@ -804,9 +804,6 @@ function BoardTodoCard({
           </Tooltip>
         ) : null}
       </header>
-      {item.body.trim() ? (
-        <p className="at-board-card-body">{item.body.trim()}</p>
-      ) : null}
       <div className="at-board-card-tags">
         <Tag>{sourceLabel}</Tag>
         {item.run_status ? <Tag>{item.run_status}</Tag> : null}
@@ -816,36 +813,47 @@ function BoardTodoCard({
           </Tag>
         ) : null}
       </div>
-      <dl className="at-board-card-facts">
-        {item.repository_full_name ? (
-          <div>
-            <dt>{t("boardRepository")}</dt>
-            <dd title={item.repository_full_name}>{item.repository_full_name}</dd>
+      {item.body.trim()
+      || item.repository_full_name
+      || item.execution_workspace_id
+      || item.session_id
+      || updatedAt
+      || item.last_status_reason ? (
+        <details className="at-board-card-details">
+          <summary>
+            {updatedAt ? `${t("boardUpdated")} ${updatedAt}` : sourceLabel}
+          </summary>
+          <div className="at-board-card-details-body">
+            {item.body.trim() ? (
+              <p className="at-board-card-body">{item.body.trim()}</p>
+            ) : null}
+            <dl className="at-board-card-facts">
+              {item.repository_full_name ? (
+                <div>
+                  <dt>{t("boardRepository")}</dt>
+                  <dd title={item.repository_full_name}>{item.repository_full_name}</dd>
+                </div>
+              ) : null}
+              {item.execution_workspace_id ? (
+                <div>
+                  <dt>{t("boardExecutionWorkspace")}</dt>
+                  <dd title={item.execution_workspace_id}>
+                    {item.execution_workspace_id}
+                  </dd>
+                </div>
+              ) : null}
+              {item.session_id ? (
+                <div>
+                  <dt>{t("boardSession")}</dt>
+                  <dd title={item.session_id}>{item.session_id}</dd>
+                </div>
+              ) : null}
+            </dl>
+            {item.last_status_reason ? (
+              <div className="at-board-card-reason">{item.last_status_reason}</div>
+            ) : null}
           </div>
-        ) : null}
-        {item.execution_workspace_id ? (
-          <div>
-            <dt>{t("boardExecutionWorkspace")}</dt>
-            <dd title={item.execution_workspace_id}>
-              {item.execution_workspace_id}
-            </dd>
-          </div>
-        ) : null}
-        {item.session_id ? (
-          <div>
-            <dt>{t("boardSession")}</dt>
-            <dd title={item.session_id}>{item.session_id}</dd>
-          </div>
-        ) : null}
-        {updatedAt ? (
-          <div>
-            <dt>{t("boardUpdated")}</dt>
-            <dd>{updatedAt}</dd>
-          </div>
-        ) : null}
-      </dl>
-      {item.last_status_reason ? (
-        <div className="at-board-card-reason">{item.last_status_reason}</div>
+        </details>
       ) : null}
       {boardCardActions(item).length > 0 ? (
         <div className="at-board-card-actions">

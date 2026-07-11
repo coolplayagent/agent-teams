@@ -268,12 +268,32 @@ describe("BoardTodosView", () => {
     expect(screen.getByText("Issue #401")).toBeVisible();
     expect(screen.getByText("Review board handoff")).toBeVisible();
     expect(screen.getByText("PR #12")).toBeVisible();
+    expect(screen.getByText(/Showing 2/)).toBeVisible();
+    expect(screen.getByText(/Synced/)).toBeVisible();
+    expect(screen.getByText("Revision")).not.toBeVisible();
+    fireEvent.click(screen.getByText(/Showing 2/).closest("summary") as HTMLElement);
     expect(screen.getByText("Revision")).toBeVisible();
     expect(screen.getByText("7")).toBeVisible();
     expect(listBoardTodosMock).toHaveBeenCalledWith({
       includeArchived: false,
       workspaceId: "workspace-1",
     });
+  });
+
+  it("keeps secondary card metadata collapsed until requested", async () => {
+    renderView();
+
+    const card = await screen.findByTestId("board-todo-todo-1");
+    expect(within(card).getByText("Issue #401")).toBeVisible();
+    expect(
+      within(card).getByText("Match the fixed shell and keep the board in one viewport."),
+    ).not.toBeVisible();
+
+    fireEvent.click(within(card).getByText(/Updated/).closest("summary") as HTMLElement);
+    expect(
+      within(card).getByText("Match the fixed shell and keep the board in one viewport."),
+    ).toBeVisible();
+    expect(within(card).getByText("openai/agent-teams")).toBeVisible();
   });
 
   it("filters visible cards without refetching the board", async () => {

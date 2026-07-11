@@ -15,6 +15,7 @@ import {
   buildMessageTranscript,
   type MessageTranscript,
   type TranscriptEntry,
+  type TranscriptEntryKind,
 } from "./messageTranscript";
 
 export type MessageExportFormat = "html" | "png";
@@ -26,11 +27,13 @@ export interface ExportSessionMessagesOptions {
 }
 
 interface ExportBlock {
+  kind?: TranscriptEntryKind;
   label: string;
   text: string;
 }
 
 interface PngBlock {
+  kind?: TranscriptEntryKind;
   label: string;
   lines: string[];
   height: number;
@@ -54,7 +57,7 @@ export async function exportSessionMessages({
   rounds,
   sessionId,
 }: ExportSessionMessagesOptions): Promise<number> {
-  const blocks = roundExportBlocks(rounds);
+  const transcript = buildMessageTranscript(sessionId, rounds);
   if (format === "html") {
     const html = buildMessagesHtml(sessionId, rounds);
     downloadBlob(
@@ -64,7 +67,14 @@ export async function exportSessionMessages({
     return 1;
   }
 
-  const blobs = await buildMessagesPngBlobs(sessionId, blocks);
+  const blobs = await buildMessagesPngBlobs(
+    sessionId,
+    transcript.entries.map((entry) => ({
+      kind: entry.kind,
+      label: entry.label,
+      text: entry.text,
+    })),
+  );
   blobs.forEach((blob, index) => {
     const suffix = blobs.length > 1 ? `-${String(index + 1).padStart(2, "0")}` : "";
     downloadBlob(`${messageExportFilenameBase(sessionId)}${suffix}.png`, blob);
@@ -189,6 +199,7 @@ export async function buildMessagesPngBlobs(
   sessionId: string,
   blocks: ExportBlock[],
 ): Promise<Blob[]> {
+  await waitForExportFonts();
   const measureCanvas = document.createElement("canvas");
   const measureContext = measureCanvas.getContext("2d");
   if (measureContext === null) {
@@ -636,6 +647,7 @@ function layoutPngBlocks(
         PNG_LABEL_LINE_HEIGHT
         + Math.max(chunkLines.length, 1) * PNG_TEXT_LINE_HEIGHT
         + PNG_BLOCK_GAP,
+      kind: block.kind,
       label: index === 0 ? block.label : `${block.label} (continued)`,
       lines: chunkLines,
     }));
@@ -718,14 +730,19 @@ function drawMessagesPng(
   }
 
   for (const block of options.blocks) {
-    context.strokeStyle = "#d8d8d0";
-    context.beginPath();
-    context.moveTo(PNG_PADDING_X, cursorY);
-    context.lineTo(PNG_WIDTH - PNG_PADDING_X, cursorY);
-    context.stroke();
+    context.fillStyle = pngBlockBackground(block.kind);
+    context.fillRect(
+      PNG_PADDING_X,
+      cursorY,
+      PNG_WIDTH - PNG_PADDING_X * 2,
+      block.height - 6,
+    );
+
+    context.fillStyle = pngBlockAccent(block.kind);
+    context.fillRect(PNG_PADDING_X, cursorY, 3, block.height - 6);
 
     cursorY += PNG_LABEL_LINE_HEIGHT;
-    context.fillStyle = "#62665f";
+    context.fillStyle = pngBlockAccent(block.kind);
     context.font = PNG_LABEL_FONT;
     context.fillText(block.label, PNG_PADDING_X, cursorY);
 
@@ -737,6 +754,41 @@ function drawMessagesPng(
       cursorY += PNG_TEXT_LINE_HEIGHT;
     }
     cursorY += PNG_BLOCK_GAP - PNG_TEXT_LINE_HEIGHT;
+  }
+}
+
+function pngBlockAccent(kind: TranscriptEntryKind | undefined): string {
+  switch (kind) {
+    case "user":
+    case "injection":
+      return "#2563eb";
+    case "question":
+      return "#9a6700";
+    case "tool":
+      return "#6f42c1";
+    case "status":
+      return "#6b7069";
+    default:
+      return "#3d675c";
+  }
+}
+
+function pngBlockBackground(kind: TranscriptEntryKind | undefined): string {
+  switch (kind) {
+    case "tool":
+    case "question":
+      return "#f0eef7";
+    case "user":
+    case "injection":
+      return "#eef4ff";
+    default:
+      return "#ffffff";
+  }
+}
+
+async function waitForExportFonts(): Promise<void> {
+  if (document.fonts !== undefined) {
+    await document.fonts.ready;
   }
 }
 

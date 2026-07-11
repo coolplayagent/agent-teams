@@ -1,6 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { indexesWithLongerStrictPrefix } from "../features/timeline/timelinePerformance";
+import { terminalRuntimeDerivationSignature } from "../features/timeline/MessageTimeline";
+import {
+  indexesWithLongerStrictPrefix,
+  timelineDerivedValue,
+  type TimelineDerivationCacheEntry,
+} from "../features/timeline/timelinePerformance";
+import type { RuntimeRunState } from "../runtime/reducers";
 
 describe("timeline prefix indexing", () => {
   it("drops only strict prefixes within the same stream group", () => {
@@ -31,3 +37,78 @@ describe("timeline prefix indexing", () => {
     expect(indexes.has(0)).toBe(true);
   });
 });
+
+describe("terminal timeline derivation cache", () => {
+  it("accepts stable closed runs and rejects an active run", () => {
+    const closedRun = runtimeRunState("run-a", "closed");
+    const openRun = runtimeRunState("run-b", "open");
+
+    expect(terminalRuntimeDerivationSignature([closedRun])).toContain(
+      "run-a:closed",
+    );
+    expect(terminalRuntimeDerivationSignature([closedRun, openRun])).toBeNull();
+  });
+
+  it("reuses terminal A rows after switching A to B and back to A", () => {
+    const cache = new Map<string, TimelineDerivationCacheEntry<string[]>>();
+    const messagesA: object[] = [];
+    const roundsA: object[] = [];
+    const messagesB: object[] = [];
+    const roundsB: object[] = [];
+    const deriveRows = vi.fn((sessionId: string) => [`rows:${sessionId}`]);
+    const derive = (
+      key: string,
+      identities: readonly object[],
+      signature: string | null,
+    ) => timelineDerivedValue({
+      cache,
+      derive: () => deriveRows(key),
+      identities,
+      key,
+      limit: 8,
+      signature,
+    });
+
+    const firstA = derive("session:A", [messagesA, roundsA], "run-a:closed:24");
+    derive("session:B", [messagesB, roundsB], "run-b:closed:18");
+    const secondA = derive("session:A", [messagesA, roundsA], "run-a:closed:24");
+
+    expect(secondA).toBe(firstA);
+    expect(deriveRows).toHaveBeenCalledTimes(2);
+  });
+
+  it("never reuses rows while a runtime signature is nonterminal", () => {
+    const cache = new Map<string, TimelineDerivationCacheEntry<string[]>>();
+    const messages: object[] = [];
+    const rounds: object[] = [];
+    const deriveRows = vi.fn(() => ["live rows"]);
+    const derive = () => timelineDerivedValue({
+      cache,
+      derive: deriveRows,
+      identities: [messages, rounds],
+      key: "session:live",
+      limit: 8,
+      signature: null,
+    });
+
+    derive();
+    derive();
+
+    expect(deriveRows).toHaveBeenCalledTimes(2);
+    expect(cache).toHaveLength(0);
+  });
+});
+
+function runtimeRunState(
+  runId: string,
+  status: RuntimeRunState["status"],
+): RuntimeRunState {
+  return {
+    entries: [],
+    lastEventId: 24,
+    runId,
+    seenEventKeys: [],
+    status,
+    terminalEventType: status === "closed" ? "run_completed" : null,
+  };
+}

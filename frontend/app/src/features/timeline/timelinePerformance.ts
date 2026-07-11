@@ -4,6 +4,52 @@ export interface PrefixCandidate {
   text: string;
 }
 
+export interface TimelineDerivationCacheEntry<Value> {
+  identities: readonly object[];
+  signature: string;
+  value: Value;
+}
+
+interface TimelineDerivationOptions<Value> {
+  cache: Map<string, TimelineDerivationCacheEntry<Value>>;
+  derive: () => Value;
+  identities: readonly object[];
+  key: string;
+  limit: number;
+  signature: string | null;
+}
+
+export function timelineDerivedValue<Value>({
+  cache,
+  derive,
+  identities,
+  key,
+  limit,
+  signature,
+}: TimelineDerivationOptions<Value>): Value {
+  const cached = cache.get(key);
+  if (
+    signature !== null &&
+    cached !== undefined &&
+    cached.signature === signature &&
+    cached.identities.length === identities.length &&
+    cached.identities.every((item, index) => item === identities[index])
+  ) {
+    rememberBoundedValue(cache, key, cached, limit);
+    return cached.value;
+  }
+  const value = derive();
+  if (signature !== null) {
+    rememberBoundedValue(
+      cache,
+      key,
+      { identities: [...identities], signature, value },
+      limit,
+    );
+  }
+  return value;
+}
+
 export function indexesWithLongerStrictPrefix(
   candidates: readonly PrefixCandidate[],
 ): ReadonlySet<number> {
@@ -37,4 +83,21 @@ export function indexesWithLongerStrictPrefix(
     }
   }
   return indexes;
+}
+
+function rememberBoundedValue<Value>(
+  values: Map<string, Value>,
+  key: string,
+  value: Value,
+  limit: number,
+): void {
+  values.delete(key);
+  values.set(key, value);
+  while (values.size > limit) {
+    const oldestKey = values.keys().next().value;
+    if (typeof oldestKey !== "string") {
+      return;
+    }
+    values.delete(oldestKey);
+  }
 }

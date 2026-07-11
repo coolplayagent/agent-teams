@@ -42,11 +42,16 @@ import {
   toolDurationMs,
 } from "./toolPresentation";
 import { roundPromptText, roundTitle } from "./roundMetadata";
-import { indexesWithLongerStrictPrefix } from "./timelinePerformance";
+import {
+  indexesWithLongerStrictPrefix,
+  timelineDerivedValue,
+  type TimelineDerivationCacheEntry,
+} from "./timelinePerformance";
 import "./ToolCallDetails.css";
 
 const TIMELINE_BOTTOM_FOLLOW_THRESHOLD_PX = 96;
 const TIMELINE_SCROLL_SCOPE_CACHE_LIMIT = 100;
+const TIMELINE_DERIVED_ROWS_CACHE_LIMIT = 8;
 const ROUND_RAIL_PAGE_LIMIT = 100;
 const ROUND_RAIL_MAX_PAGES = 10;
 const TOOL_RESULT_MAX_LINES = 200;
@@ -189,6 +194,9 @@ export function MessageTimeline({
   const expandedDisclosureIdsBySessionRef = useRef(
     new Map<string, ReadonlySet<string>>(),
   );
+  const persistedRowsByScopeRef = useRef(
+    new Map<string, TimelineDerivationCacheEntry<TimelineRow[]>>(),
+  );
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [expandedHistorySegmentIds, setExpandedHistorySegmentIds] = useState<ReadonlySet<string>>(
     () => new Set(),
@@ -282,44 +290,72 @@ export function MessageTimeline({
     () => visibleRoundRailRounds(displayRounds, expandedHistorySegmentIds),
     [displayRounds, expandedHistorySegmentIds],
   );
-  const messageRoundLookup = useMemo(
-    () => createMessageRoundLookup(displayRounds),
-    [displayRounds],
-  );
-  const scopedMessages = useMemo(
-    () =>
-      messagesVisibleInTimelineScope(
-        messages,
-        displayRounds,
-        runtimeRunId,
-        fallbackRunId,
-        primaryRoleId,
-      ),
-    [displayRounds, fallbackRunId, messages, primaryRoleId, runtimeRunId],
-  );
-  const persistedMessages = useMemo(
-    () => mergeTimelineMessages(scopedMessages, displayRounds),
-    [displayRounds, scopedMessages],
+  const terminalRuntimeSignature = useMemo(
+    () => terminalRuntimeDerivationSignature(runtimeRunList),
+    [runtimeRunList],
   );
   const persistedRows = useMemo(
-    () =>
-      mergeToolRowsByCallId(
-        dropRoundPromptDuplicateUserRows(
-          persistedMessages
-            .map((messageItem, index) =>
-              messageToRow(
-                messageItem,
-                index,
-                messageRoundLookup,
-                fallbackRunId,
-                workspaceId,
-              ),
-            )
-            .filter(timelineRowHasRenderableContent),
+    () => timelineDerivedValue({
+      cache: persistedRowsByScopeRef.current,
+      derive: () => {
+        const messageRoundLookup = createMessageRoundLookup(displayRounds);
+        const scopedMessages = messagesVisibleInTimelineScope(
+          messages,
           displayRounds,
-        ),
-      ),
-    [displayRounds, fallbackRunId, messageRoundLookup, persistedMessages, workspaceId],
+          runtimeRunId,
+          fallbackRunId,
+          primaryRoleId,
+        );
+        const persistedMessages = mergeTimelineMessages(scopedMessages, displayRounds);
+        return mergeToolRowsByCallId(
+          dropRoundPromptDuplicateUserRows(
+            persistedMessages
+              .map((messageItem, index) =>
+                messageToRow(
+                  messageItem,
+                  index,
+                  messageRoundLookup,
+                  fallbackRunId,
+                  workspaceId,
+                ),
+              )
+              .filter(timelineRowHasRenderableContent),
+            displayRounds,
+          ),
+        );
+      },
+      identities: [messages, rounds],
+      key: persistedRowsCacheKey({
+        fallbackRunId,
+        primaryRoleId,
+        runtimeRunId,
+        sessionId,
+        variant,
+        workspaceId,
+      }),
+      limit: TIMELINE_DERIVED_ROWS_CACHE_LIMIT,
+      signature: terminalRuntimeSignature === null
+        ? null
+        : [
+            terminalRuntimeSignature,
+            latestTerminalRunId ?? "",
+            latestTerminalRunStatus ?? "",
+          ].join("|"),
+    }),
+    [
+      displayRounds,
+      fallbackRunId,
+      latestTerminalRunId,
+      latestTerminalRunStatus,
+      messages,
+      primaryRoleId,
+      rounds,
+      runtimeRunId,
+      sessionId,
+      terminalRuntimeSignature,
+      variant,
+      workspaceId,
+    ],
   );
   const roundStreamedPersistedRows = useMemo(
     () => persistedRowsWithOpenRoundStreaming(persistedRows, displayRounds),
@@ -878,6 +914,15 @@ interface TimelineRow {
   copyable: boolean;
 }
 
+interface PersistedRowsCacheKeyOptions {
+  fallbackRunId: string | null;
+  primaryRoleId: string | null;
+  runtimeRunId: string | null;
+  sessionId: string | null;
+  variant: "session" | "subagent-panel";
+  workspaceId: string | null;
+}
+
 interface TimelineInjectionRow {
   clientMessageId: string;
   injectionId: string;
@@ -1016,6 +1061,42 @@ function timelineScrollScopeKey(
   runtimeRunId: string | null,
 ): string {
   return [variant, sessionId ?? "", runtimeRunId?.trim() ?? ""].join(":");
+}
+
+function persistedRowsCacheKey({
+  fallbackRunId,
+  primaryRoleId,
+  runtimeRunId,
+  sessionId,
+  variant,
+  workspaceId,
+}: PersistedRowsCacheKeyOptions): string {
+  return [
+    variant,
+    sessionId ?? "",
+    runtimeRunId?.trim() ?? "",
+    fallbackRunId?.trim() ?? "",
+    primaryRoleId?.trim() ?? "",
+    workspaceId?.trim() ?? "",
+  ].join(":");
+}
+
+export function terminalRuntimeDerivationSignature(
+  runs: readonly RuntimeRunState[],
+): string | null {
+  if (runs.some((run) => run.status !== "closed" && run.status !== "failed")) {
+    return null;
+  }
+  return [...runs]
+    .sort((left, right) => left.runId.localeCompare(right.runId))
+    .map((run) => [
+      run.runId,
+      run.status,
+      run.terminalEventType ?? "",
+      String(run.lastEventId),
+      String(run.entries.length),
+    ].join(":"))
+    .join("|");
 }
 
 function timelineContentSignature(rows: TimelineRow[]): TimelineContentSignature {

@@ -1046,6 +1046,7 @@ body {
 .at-workspace {
   display: flex;
   flex-direction: column;
+  position: relative;
   container-name: at-workspace;
   container-type: inline-size;
   min-width: 0;
@@ -1081,7 +1082,11 @@ body {
 }
 
 .at-workspace-chat-shell[hidden] {
-  display: none;
+  display: grid;
+  position: absolute;
+  inset: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .at-workspace-chat-shell.has-subagent-panel {

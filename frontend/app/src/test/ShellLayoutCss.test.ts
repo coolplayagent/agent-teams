@@ -20,6 +20,14 @@ function cssBlock(selector: string): string {
 }
 
 describe("shell layout CSS", () => {
+  it("keeps hidden chat geometry mounted without exposing interactions", () => {
+    expect(themeCss).toMatch(
+      /\.at-workspace\s*{[\s\S]*?position:\s*relative;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-workspace-chat-shell\[hidden\]\s*{[\s\S]*?display:\s*grid;[\s\S]*?position:\s*absolute;[\s\S]*?inset:\s*0;[\s\S]*?visibility:\s*hidden;[\s\S]*?pointer-events:\s*none;/,
+    );
+  });
   it("keeps the chat shell locked to one page with independent scroll regions", () => {
     expect(themeCss).toMatch(
       /body,\s*#root\s*{[\s\S]*?height:\s*100%;[\s\S]*?min-height:\s*0;[\s\S]*?width:\s*100%;/,

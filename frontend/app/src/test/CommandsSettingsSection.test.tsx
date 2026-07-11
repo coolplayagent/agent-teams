@@ -127,10 +127,11 @@ describe("CommandsSettingsSection", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add Command" }));
 
     const workspaceSelect = await screen.findByLabelText("Workspace");
-    expect(within(workspaceSelect).getByRole("option", { name: /workspace-1/ })).toBeVisible();
-    expect(within(workspaceSelect).getByRole("option", { name: /workspace-2/ })).toBeVisible();
-    expect(within(workspaceSelect).queryByRole("option", { name: /read-only/ })).toBeNull();
-    expect(within(workspaceSelect).queryByRole("option", { name: /remote-only/ })).toBeNull();
+    fireEvent.mouseDown(workspaceSelect);
+    expect(await screen.findByRole("option", { name: /workspace-1/ })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /workspace-2/ })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /read-only/ })).toBeNull();
+    expect(screen.queryByRole("option", { name: /remote-only/ })).toBeNull();
 
     fireEvent.change(screen.getByLabelText("Command name"), {
       target: { value: "opsx:review" },

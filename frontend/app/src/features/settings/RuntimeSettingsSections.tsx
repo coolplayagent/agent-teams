@@ -1137,7 +1137,7 @@ function AgentRuntimeEditor({
       {isCreate || query.data !== undefined ? (
         <>
           <Form<AgentRuntimeFormValues>
-            className="at-settings-form at-settings-wide-form at-agent-runtime-form"
+            className="at-settings-form at-settings-wide-form at-settings-form-layout at-agent-runtime-form"
             disabled={busy}
             form={form}
             layout="vertical"
@@ -1148,7 +1148,7 @@ function AgentRuntimeEditor({
               }
             }}
           >
-            <div className="at-settings-form-card">
+            <div className="at-settings-form-card-layout">
               <Form.Item
                 label={t("settingsAgentRuntimeId")}
                 name="agent_id"
@@ -1167,7 +1167,7 @@ function AgentRuntimeEditor({
                 <Input.TextArea autoSize={{ maxRows: 4, minRows: 2 }} />
               </Form.Item>
             </div>
-            <div className="at-settings-form-card">
+            <div className="at-settings-form-card-layout">
               <div className="at-agent-runtime-form-grid">
                 <Form.Item label={t("settingsAgentRuntimeProtocol")} name="protocol">
                   <Select
@@ -1195,7 +1195,7 @@ function AgentRuntimeEditor({
                 transport={transport}
               />
             </div>
-            <div className="at-settings-form-card">
+            <div className="at-settings-form-card-layout">
               <div className="at-agent-runtime-form-grid">
                 <Form.Item
                   label={t("settingsAgentRuntimeNativeConfig")}

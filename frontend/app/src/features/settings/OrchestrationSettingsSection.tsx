@@ -371,7 +371,7 @@ function OrchestrationPresetDetail({
         <Fact label={t("settingsOrchestrationRoles")} value={String(roleIds.length)} />
       </div>
       <Form
-        className="at-settings-form at-orchestration-preset-form"
+        className="at-settings-form at-settings-form-layout at-orchestration-preset-form"
         form={form}
         id={formId}
         layout="vertical"
@@ -392,7 +392,7 @@ function OrchestrationPresetDetail({
         <Form.Item label={t("settingsRoleDescription")} name="description">
           <Input autoComplete="off" />
         </Form.Item>
-        <div className="at-settings-form-grid">
+        <div className="at-settings-form-grid-layout">
           <Form.Item
             label={t("settingsOrchestrationMaxCycles")}
             name="max_orchestration_cycles"

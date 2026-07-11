@@ -8,7 +8,7 @@ const source = readFileSync(
 );
 
 // V1 reference: 38ec642cb, newSessionDraft.js / newSessionDraftView.js.
-// These assertions protect the useful pre-create Composer contract that V2 restores.
+// These assertions protect the useful pre-create Composer contract restored by the current UI.
 describe("NewSessionView V1 parity contract", () => {
   it.each([
     ["workspace", "createSession"],

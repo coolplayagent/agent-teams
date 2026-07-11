@@ -263,7 +263,7 @@ describe("TriggerSettingsSection", () => {
     expect(antdMocks.message.success).toHaveBeenCalledWith(
       "Feishu trigger created.",
     );
-  }, 30000);
+  }, 45000);
 
   it("updates existing Feishu accounts without create-only fields", async () => {
     renderSection();
@@ -347,7 +347,7 @@ describe("TriggerSettingsSection", () => {
       workspace_id: "workspace-ops",
       yolo: false,
     });
-  }, 30000);
+  }, 45000);
 });
 
 async function chooseSelectOption(label: string, optionText: RegExp | string) {

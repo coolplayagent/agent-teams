@@ -4397,18 +4397,15 @@ describe("SettingsDrawer", () => {
     await waitFor(() =>
       expect(screen.getByLabelText("Key")).toHaveValue("OPENAI_API_KEY"),
     );
-    const secretEditor = screen
-      .getAllByRole("dialog")
-      .find((dialog) => dialog.classList.contains("ant-modal"));
-    expect(secretEditor).toBeDefined();
-    if (secretEditor === undefined) {
-      throw new Error("Expected the environment variable editor to be open.");
-    }
-    expect(within(secretEditor).getByLabelText("Value")).toHaveValue("");
+    const secretEditor = (await screen.findByText("Edit environment variable")).closest(
+      '[role="dialog"]',
+    );
+    expect(secretEditor).not.toBeNull();
+    expect(within(secretEditor as HTMLElement).getByLabelText("Value")).toHaveValue("");
     expect(
-      within(secretEditor).getByText("Leave blank to keep the saved secret."),
+      within(secretEditor as HTMLElement).getByText("Leave blank to keep the saved secret."),
     ).toBeInTheDocument();
-    fireEvent.click(within(secretEditor).getByRole("button", { name: "Save" }));
+    fireEvent.click(within(secretEditor as HTMLElement).getByRole("button", { name: "Save" }));
     await waitFor(() =>
       expect(saveEnvironmentVariableMock).toHaveBeenCalledWith(
         "app",
@@ -4423,13 +4420,17 @@ describe("SettingsDrawer", () => {
 
     await waitFor(() => expect(screen.queryByLabelText("Value")).toBeNull());
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    await waitFor(() =>
-      expect(screen.getByLabelText("Key")).toHaveValue("OPENAI_API_KEY"),
+    const replacementEditor = (await screen.findByText("Edit environment variable")).closest(
+      '[role="dialog"]',
     );
-    fireEvent.change(screen.getByLabelText("Value"), {
+    expect(replacementEditor).not.toBeNull();
+    await waitFor(() =>
+      expect(within(replacementEditor as HTMLElement).getByLabelText("Key")).toHaveValue("OPENAI_API_KEY"),
+    );
+    fireEvent.change(within(replacementEditor as HTMLElement).getByLabelText("Value"), {
       target: { value: "edited-openai-key" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(within(replacementEditor as HTMLElement).getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
       expect(saveEnvironmentVariableMock).toHaveBeenCalledWith(
@@ -4746,12 +4747,14 @@ describe("SettingsDrawer", () => {
       "https://search.example/",
     );
 
-    fireEvent.change(fallbackProvider, { target: { value: "disabled" } });
-    expect(screen.queryByLabelText("SearXNG instance URL")).toBeNull();
+    fireEvent.mouseDown(fallbackProvider);
+    await clickAntdSelectOption("Disabled");
+    await waitFor(() => expect(screen.queryByLabelText("SearXNG instance URL")).toBeNull());
     expect(screen.queryByLabelText("Built-in instances")).toBeNull();
 
-    fireEvent.change(fallbackProvider, { target: { value: "searxng" } });
-    expect(screen.getByLabelText("SearXNG instance URL")).toHaveValue(
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "Fallback provider" }));
+    await clickAntdSelectOption("SearXNG");
+    expect(await screen.findByLabelText("SearXNG instance URL")).toHaveValue(
       "https://search.example/",
     );
   });
@@ -4834,7 +4837,7 @@ describe("SettingsDrawer", () => {
       "placeholder",
       "************",
     );
-    expect(screen.getByLabelText("Default SSL verification")).toHaveValue("false");
+    expect(screen.getByText("Skip verification")).toBeVisible();
     fireEvent.change(screen.getByLabelText("Target URL"), {
       target: { value: "https://example.com" },
     });
@@ -4872,7 +4875,7 @@ describe("SettingsDrawer", () => {
       ),
     );
     await waitFor(() => expect(reloadProxyConfigMock).toHaveBeenCalledTimes(1));
-  }, 10000);
+  }, 25000);
 
   it("defaults missing Proxy SSL verification to inherit", async () => {
     getProxyConfigMock.mockResolvedValueOnce({

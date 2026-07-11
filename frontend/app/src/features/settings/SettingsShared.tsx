@@ -2,6 +2,63 @@ import { Alert, Button, Skeleton, Typography } from "antd";
 import type { ReactNode } from "react";
 
 import { useTranslations } from "../../i18n";
+import "./SettingsFormLayout.css";
+
+export function SettingsFormLayout({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={settingsClassName("at-settings-form-layout", className)}>
+      {children}
+    </div>
+  );
+}
+
+export function SettingsFormCard({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <section className={settingsClassName("at-settings-form-card-layout", className)}>
+      {children}
+    </section>
+  );
+}
+
+export function SettingsFormGrid({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={settingsClassName("at-settings-form-grid-layout", className)}>
+      {children}
+    </div>
+  );
+}
+
+export function SettingsFormActions({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={settingsClassName("at-settings-form-actions-layout", className)}>
+      {children}
+    </div>
+  );
+}
 
 export function SettingsSection({
   children,
@@ -50,4 +107,10 @@ export function SettingsQueryState({
     );
   }
   return null;
+}
+
+function settingsClassName(baseClassName: string, className?: string): string {
+  return className === undefined || className.trim() === ""
+    ? baseClassName
+    : `${baseClassName} ${className}`;
 }

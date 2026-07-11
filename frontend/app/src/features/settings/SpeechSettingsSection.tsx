@@ -1,4 +1,4 @@
-import { App, Button, Form, Input, Typography } from "antd";
+import { App, Button, Form, Input, Select, Typography } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 
@@ -143,18 +143,17 @@ export function SpeechSettingsSection() {
           <div className="at-settings-card-list">
             <div className="at-settings-form-card">
               <Form.Item label={t("settingsSpeechSttProfile")} name="stt_profile_name">
-                <select
-                  className="at-settings-native-select"
-                  id="stt_profile_name"
-                  name="stt_profile_name"
-                >
-                  <option value="">{t("settingsSpeechNoProfile")}</option>
-                  {displayedProfileEntries.map(([name, profile]) => (
-                    <option key={name} value={name}>
-                      {profile ? `${name} (${profile.model ?? "-"})` : name}
-                    </option>
-                  ))}
-                </select>
+                <Select
+                  optionFilterProp="label"
+                  options={[
+                    { label: t("settingsSpeechNoProfile"), value: "" },
+                    ...displayedProfileEntries.map(([name, profile]) => ({
+                      label: profile ? `${name} (${profile.model ?? "-"})` : name,
+                      value: name,
+                    })),
+                  ]}
+                  showSearch
+                />
               </Form.Item>
               {profileEntries.length === 0 ? (
                 <Typography.Text className="at-settings-help">
@@ -164,17 +163,14 @@ export function SpeechSettingsSection() {
             </div>
             <div className="at-settings-form-card">
               <Form.Item label={t("settingsSpeechLanguage")} name="language">
-                <select
-                  className="at-settings-native-select"
-                  id="language"
-                  name="language"
-                >
-                  {languageOptions(selectedLanguage).map(([value, label]) => (
-                    <option key={value || "auto"} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
+                <Select
+                  optionFilterProp="label"
+                  options={languageOptions(selectedLanguage).map(([value, label]) => ({
+                    label,
+                    value,
+                  }))}
+                  showSearch
+                />
               </Form.Item>
               <Form.Item
                 label={t("settingsSpeechPrompt")}

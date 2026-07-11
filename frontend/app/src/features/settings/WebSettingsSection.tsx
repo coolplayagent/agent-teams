@@ -1,4 +1,4 @@
-import { Alert, App, Button, Form, Input, Typography } from "antd";
+import { Alert, App, Button, Form, Input, Select, Typography } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
@@ -125,10 +125,12 @@ export function WebSettingsSection() {
             </div>
             <div className="at-settings-form-card">
               <Form.Item label={t("settingsWebFallbackProvider")} name="fallback_provider">
-                <select className="at-settings-native-select">
-                  <option value="searxng">SearXNG</option>
-                  <option value="disabled">{t("settingsDisabled")}</option>
-                </select>
+                <Select
+                  options={[
+                    { label: "SearXNG", value: "searxng" },
+                    { label: t("settingsDisabled"), value: "disabled" },
+                  ]}
+                />
               </Form.Item>
               <Form.Item
                 noStyle

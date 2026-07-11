@@ -1,4 +1,13 @@
-import { Alert, App, Button, Form, Input, InputNumber, Typography } from "antd";
+import {
+  Alert,
+  App,
+  Button,
+  Form,
+  Input,
+  InputNumber,
+  Select,
+  Typography,
+} from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
@@ -213,15 +222,13 @@ export function ProxySettingsSection() {
                 <Button onClick={clearPassword}>{t("settingsProxyClearPassword")}</Button>
               ) : null}
               <Form.Item label={t("settingsProxySslVerify")} name="ssl_verify">
-                <select
-                  className="at-settings-native-select"
-                  id="ssl_verify"
-                  name="ssl_verify"
-                >
-                  <option value="">{t("settingsProxySslInherit")}</option>
-                  <option value="true">{t("settingsProxySslVerifyOption")}</option>
-                  <option value="false">{t("settingsProxySslSkipOption")}</option>
-                </select>
+                <Select
+                  options={[
+                    { label: t("settingsProxySslInherit"), value: "" },
+                    { label: t("settingsProxySslVerifyOption"), value: "true" },
+                    { label: t("settingsProxySslSkipOption"), value: "false" },
+                  ]}
+                />
               </Form.Item>
             </div>
             <div className="at-settings-form-card">

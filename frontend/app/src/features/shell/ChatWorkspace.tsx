@@ -21,6 +21,7 @@ interface ChatWorkspaceProps {
   primaryRoleId: string | null;
   runStreamController: RunStreamController;
   sessionId: string | null;
+  visible?: boolean;
   workspaceId?: string | null;
 }
 
@@ -32,6 +33,7 @@ export function ChatWorkspace({
   primaryRoleId,
   runStreamController,
   sessionId,
+  visible = true,
   workspaceId,
 }: ChatWorkspaceProps) {
   const t = useTranslations();
@@ -104,6 +106,7 @@ export function ChatWorkspace({
         onSubagentOpen={onSubagentOpen}
         primaryRoleId={primaryRoleId}
         sessionId={sessionId}
+        visible={visible}
         workspaceId={workspaceId ?? null}
       />
       {switching ? (

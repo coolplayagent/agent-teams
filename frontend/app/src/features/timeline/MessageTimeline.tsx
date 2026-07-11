@@ -126,6 +126,7 @@ interface MessageTimelineProps {
   subagentScopeRoleId?: string | null;
   suppressExactText?: string;
   variant?: "session" | "subagent-panel";
+  visible?: boolean;
   workspaceId?: string | null;
 }
 
@@ -166,6 +167,7 @@ export function MessageTimeline({
   subagentScopeRoleId = null,
   suppressExactText = "",
   variant = "session",
+  visible = true,
   workspaceId = null,
 }: MessageTimelineProps) {
   const { message } = App.useApp();
@@ -654,7 +656,11 @@ export function MessageTimeline({
       setNewContentAvailable(false);
     }
     const container = parentRef.current;
-    if (container === null || timelineContainerIsHidden(container)) {
+    if (
+      !visible ||
+      container === null ||
+      timelineContainerIsHidden(container)
+    ) {
       return;
     }
     const snapshot = scrollSnapshotRef.current;
@@ -715,6 +721,7 @@ export function MessageTimeline({
     rows,
     scrollScopeKey,
     timelineHeight,
+    visible,
   ]);
 
   if (sessionId === null) {

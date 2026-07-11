@@ -861,6 +861,7 @@ export function AppShell() {
               primaryRoleId={sessionDetailQuery.data?.normal_root_role_id ?? null}
               runStreamController={runStreamController}
               sessionId={selectedSessionId}
+              visible={activeView === "chat"}
               workspaceId={
                 sessionDetailQuery.data?.workspace_id
                 ?? selectedSession?.workspace_id

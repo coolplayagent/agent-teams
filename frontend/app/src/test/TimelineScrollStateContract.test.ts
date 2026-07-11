@@ -63,4 +63,14 @@ describe("timeline scroll state contract", () => {
       /captureTimelineScrollSnapshot\(\s+container,\s+snapshot\?\.shouldFollow === false,\s+false,/,
     );
   });
+
+  it("replays scoped restoration when a preserved chat becomes visible", () => {
+    expect(timelineSource).toContain("visible?: boolean;");
+    expect(timelineSource).toMatch(
+      /!visible \|\|\s+container === null \|\|\s+timelineContainerIsHidden\(container\)/,
+    );
+    expect(timelineSource).toMatch(
+      /timelineHeight,\s+visible,\s+\]\);/,
+    );
+  });
 });

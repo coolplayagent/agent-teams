@@ -151,7 +151,7 @@ describe("AgentRuntimeSettingsSection", () => {
       expect(startAgentRuntimeTestJobMock).toHaveBeenCalledWith("codex_local"),
     );
     expect(antdMocks.message.success).toHaveBeenLastCalledWith("Connected");
-  }, 15000);
+  });
 
   it("preserves configured registry secrets and registry snapshots on save", async () => {
     runtimes = [runtimeSummary(runtimeConfigs.registry_secret_runtime)];
@@ -193,7 +193,7 @@ describe("AgentRuntimeSettingsSection", () => {
         transport: "registry",
       },
     });
-  }, 15000);
+  });
 
   it("creates registry runtimes with selected Settings environment variables", async () => {
     runtimes = [runtimeSummary(runtimeConfigs.codex_local)];
@@ -242,7 +242,7 @@ describe("AgentRuntimeSettingsSection", () => {
         transport: "registry",
       },
     });
-  }, 15000);
+  });
 });
 
 async function chooseSelectOption(label: string, optionText: string) {

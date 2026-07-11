@@ -86,10 +86,12 @@ describe("ObservabilityPanel", () => {
       ],
       rows: [
         {
-          avg_duration_ms: 120,
+          avg_duration_ms: 120.4567,
           calls: 19,
-          name: "tool",
+          mcp_server: "filesystem",
           success_rate: 0.95,
+          tool_name: "filesystem_read_file",
+          tool_source: "mcp",
         },
       ],
     } satisfies ObservabilityBreakdowns);
@@ -129,6 +131,9 @@ describe("ObservabilityPanel", () => {
     expect(metricCard(container, "gateway_mcp_calls")).toHaveTextContent(
       "Gateway MCP Calls",
     );
+    expect(screen.getByText("filesystem_read_file")).toBeVisible();
+    expect(screen.getByText("120.46")).toBeVisible();
+    expect(screen.queryByText("unknown")).not.toBeInTheDocument();
   });
 
   it("shows loading skeletons instead of empty or zeroed overview cards", () => {
@@ -220,6 +225,29 @@ describe("ObservabilityPanel", () => {
     expect(screen.queryByText("Gateway Signals")).not.toBeInTheDocument();
     expect(screen.queryByTestId("observability-gateway-loading"))
       .not.toBeInTheDocument();
+  });
+
+  it("labels legacy breakdown rows with missing dimensions without merging them", async () => {
+    useUiStore.setState({ language: "zh-CN" });
+    getObservabilityOverviewMock.mockResolvedValue({
+      kpis: { tool_calls: 5 },
+      trends: [],
+    } satisfies ObservabilityOverview);
+    getObservabilityBreakdownsMock.mockResolvedValue({
+      gateway_rows: [],
+      rows: [
+        { avg_duration_ms: 107.72413793103448, calls: 3, success_rate: 1 },
+        { avg_duration_ms: 124.43478260869566, calls: 2, success_rate: 1 },
+      ],
+    } satisfies ObservabilityBreakdowns);
+
+    renderPanel("session-1");
+
+    expect(await screen.findByText("未记录 #1")).toBeVisible();
+    expect(screen.getByText("未记录 #2")).toBeVisible();
+    expect(screen.getByText("107.72")).toBeVisible();
+    expect(screen.getByText("124.43")).toBeVisible();
+    expect(screen.queryByText("unknown")).not.toBeInTheDocument();
   });
 });
 

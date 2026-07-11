@@ -51,8 +51,11 @@ export function ObservabilityPanel({ sessionId }: ObservabilityPanelProps) {
     kpis.gateway_mcp_calls,
     kpis.gateway_cold_start_calls,
   ].some((value) => typeof value === "number" && Number.isFinite(value));
-  const rows = rowsFromJson(breakdownsQuery.data?.rows);
-  const gatewayRows = gatewayRowsFromJson(breakdownsQuery.data?.gateway_rows);
+  const rows = rowsFromJson(breakdownsQuery.data?.rows, copy.notRecorded);
+  const gatewayRows = gatewayRowsFromJson(
+    breakdownsQuery.data?.gateway_rows,
+    copy.notRecorded,
+  );
   const gatewaySummary = gatewaySummaryFromRows(gatewayRows);
   const showPrimaryMetrics = overviewQuery.isLoading || hasOverviewMetrics;
   const showGatewayMetrics =
@@ -145,7 +148,12 @@ export function ObservabilityPanel({ sessionId }: ObservabilityPanelProps) {
           { dataIndex: "name", key: "name", title: t("observabilityBreakdown") },
           { dataIndex: "calls", key: "calls", title: t("observabilityCalls") },
           { dataIndex: "success", key: "success", title: t("observabilitySuccess") },
-          { dataIndex: "duration", key: "duration", title: t("observabilityAvgMs") },
+          {
+            dataIndex: "duration",
+            key: "duration",
+            render: formatDurationMs,
+            title: t("observabilityAvgMs"),
+          },
         ]}
         dataSource={rows}
         loading={breakdownsQuery.isLoading}
@@ -281,6 +289,7 @@ export function ObservabilityPanel({ sessionId }: ObservabilityPanelProps) {
                 {
                   dataIndex: "duration",
                   key: "duration",
+                  render: formatDurationMs,
                   title: t("observabilityGatewayLatency"),
                 },
                 {
@@ -359,15 +368,25 @@ interface GatewayBreakdownRow {
   coldStarts: number;
 }
 
-function rowsFromJson(value: JsonValue[] | undefined): BreakdownRow[] {
+function rowsFromJson(
+  value: JsonValue[] | undefined,
+  notRecordedLabel: string,
+): BreakdownRow[] {
   if (!Array.isArray(value)) {
     return [];
   }
   return value.map((item, index) => {
     const row = jsonRecord(item);
+    const toolName = nonEmptyString(row.tool_name ?? row.name);
+    const toolSource = nonEmptyString(row.tool_source ?? row.source);
+    const mcpServer = nonEmptyString(row.mcp_server);
+    const fallbackName = `${notRecordedLabel} #${index + 1}`;
     return {
-      key: String(row.key ?? row.name ?? row.source ?? index),
-      name: String(row.name ?? row.stage ?? row.source ?? row.role_id ?? "unknown"),
+      key: String(
+        row.key ??
+          `${toolName || fallbackName}-${toolSource}-${mcpServer}-${index}`,
+      ),
+      name: toolName || fallbackName,
       calls: numberValue(row.calls ?? row.count),
       success: percentValue(row.success_rate ?? row.tool_success_rate),
       duration: numberValue(row.avg_duration_ms ?? row.tool_avg_duration_ms),
@@ -375,15 +394,20 @@ function rowsFromJson(value: JsonValue[] | undefined): BreakdownRow[] {
   });
 }
 
-function gatewayRowsFromJson(value: JsonValue[] | undefined): GatewayBreakdownRow[] {
+function gatewayRowsFromJson(
+  value: JsonValue[] | undefined,
+  notRecordedLabel: string,
+): GatewayBreakdownRow[] {
   if (!Array.isArray(value)) {
     return [];
   }
   return value.map((item, index) => {
     const row = jsonRecord(item);
-    const operation = String(row.gateway_operation ?? row.operation ?? "unknown");
-    const phase = String(row.gateway_phase ?? row.phase ?? "unknown");
-    const transport = String(row.gateway_transport ?? row.transport ?? "unknown");
+    const operation =
+      nonEmptyString(row.gateway_operation ?? row.operation) || notRecordedLabel;
+    const phase = nonEmptyString(row.gateway_phase ?? row.phase) || notRecordedLabel;
+    const transport =
+      nonEmptyString(row.gateway_transport ?? row.transport) || notRecordedLabel;
     return {
       calls: numberValue(row.calls ?? row.count),
       coldStarts: numberValue(row.cold_start_calls),
@@ -428,6 +452,17 @@ function percentValue(value: JsonValue | undefined): string {
   return `${(value * 100).toFixed(1)}%`;
 }
 
+function nonEmptyString(value: JsonValue | undefined): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function formatDurationMs(value: number): string {
+  return new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 0,
+  }).format(value);
+}
+
 function observabilityCopy(t: Translate) {
   const isZh = t("observabilityTitle") === "观测";
   return {
@@ -439,6 +474,7 @@ function observabilityCopy(t: Translate) {
     gatewayMcpCalls: isZh ? "Gateway MCP 调用" : "Gateway MCP Calls",
     gatewayPromptStartMs: isZh ? "Prompt 启动 ms" : "Prompt Start ms",
     mcpCalls: isZh ? "MCP 调用" : "MCP calls",
+    notRecorded: isZh ? "未记录" : "Not recorded",
     retrievalDocumentCount: isZh ? "检索文档数" : "Retrieved docs",
     retrievalFailureRate: isZh ? "检索失败率" : "Retrieval failure rate",
     retrievalSearches: isZh ? "检索搜索次数" : "Retrieval searches",

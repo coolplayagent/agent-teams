@@ -1,0 +1,148 @@
+.ant-app,
+.ant-app .ant-typography {
+  color: var(--at-text);
+}
+
+.ant-app .ant-btn-default,
+.ant-app .ant-input,
+.ant-app .ant-input-affix-wrapper,
+.ant-app .ant-input-number,
+.ant-app .ant-picker,
+.ant-app .ant-select-selector {
+  border-color: var(--at-control-border);
+  background: var(--at-control-bg);
+  color: var(--at-control-text);
+}
+
+.ant-app .ant-btn-default:not(:disabled):hover,
+.ant-app .ant-btn-text:not(:disabled):hover {
+  border-color: var(--at-border-strong);
+  background: var(--at-surface-hover);
+  color: var(--at-text);
+}
+
+.ant-app .ant-input::placeholder,
+.ant-app .ant-input-affix-wrapper input::placeholder,
+.ant-app .ant-select-selection-placeholder {
+  color: var(--at-text-subtle);
+}
+
+.ant-app .ant-btn:disabled,
+.ant-app .ant-input:disabled,
+.ant-app .ant-input-affix-wrapper-disabled,
+.ant-app .ant-select-disabled .ant-select-selector,
+.ant-app .ant-segmented-disabled {
+  border-color: var(--at-border);
+  background: var(--at-control-bg-disabled);
+  color: var(--at-control-text-disabled);
+  opacity: 1;
+}
+
+.ant-app .ant-segmented {
+  background: var(--at-surface-muted);
+  color: var(--at-text-muted);
+}
+
+.ant-app .ant-segmented-item:hover,
+.ant-app .ant-segmented-item:focus-visible {
+  background: var(--at-surface-hover);
+  color: var(--at-text);
+}
+
+.ant-app .ant-segmented-item-selected {
+  background: var(--at-surface-elevated);
+  box-shadow: 0 0 0 1px var(--at-border);
+  color: var(--at-text);
+}
+
+.ant-app .ant-checkbox-wrapper {
+  color: var(--at-text);
+}
+
+.ant-app .ant-checkbox-inner {
+  border-color: var(--at-control-border);
+  background: var(--at-control-bg);
+}
+
+.ant-app .ant-checkbox-disabled + span,
+.ant-app .ant-checkbox-wrapper-disabled {
+  color: var(--at-control-text-disabled);
+}
+
+.ant-modal-mask {
+  background: var(--at-overlay-bg) !important;
+}
+
+.ant-modal .ant-modal-content,
+.ant-modal .ant-modal-header,
+.ant-popover .ant-popover-inner,
+.ant-dropdown .ant-dropdown-menu,
+.ant-select-dropdown,
+.ant-tooltip .ant-tooltip-inner {
+  border-color: var(--at-border);
+  background: var(--at-surface-elevated);
+  color: var(--at-text);
+}
+
+.ant-modal .ant-modal-title,
+.ant-popover .ant-popover-title,
+.ant-dropdown .ant-dropdown-menu-title-content,
+.ant-select-dropdown .ant-select-item {
+  color: var(--at-text);
+}
+
+.ant-dropdown .ant-dropdown-menu-item:hover,
+.ant-dropdown .ant-dropdown-menu-submenu-title:hover,
+.ant-select-dropdown .ant-select-item-option-active:not(.ant-select-item-option-disabled) {
+  background: var(--at-surface-hover);
+}
+
+.ant-dropdown .ant-dropdown-menu-item-selected,
+.ant-select-dropdown .ant-select-item-option-selected:not(.ant-select-item-option-disabled) {
+  background: var(--at-surface-selected);
+  color: var(--at-text);
+}
+
+.ant-app :where(button, input, textarea, [role="button"], [role="option"]):focus-visible {
+  outline: 2px solid var(--at-focus-ring);
+  outline-offset: 2px;
+}
+
+.at-composer .ant-select-selector,
+.at-composer .ant-segmented,
+.at-composer .ant-checkbox-inner {
+  background: var(--at-control-bg);
+  color: var(--at-control-text);
+}
+
+.at-composer .ant-segmented-item-selected {
+  background: var(--at-surface-selected);
+}
+
+.at-message-markdown code {
+  border: 1px solid var(--at-code-border);
+  background: var(--at-code-bg);
+  color: var(--at-code-text);
+}
+
+.at-message-markdown pre code {
+  border: 0;
+}
+
+.at-tool-detail-section pre,
+.at-tool-raw-details pre,
+.at-message-tool pre {
+  color: var(--at-code-text);
+}
+
+.at-prompt-mention-menu.at-prompt-mention-menu {
+  border-color: var(--at-border);
+  background: var(--at-surface-elevated);
+  box-shadow: 0 12px 32px var(--at-shadow-color);
+}
+
+.at-prompt-mention-item[aria-selected="true"],
+.at-prompt-mention-item:hover {
+  background: var(--at-surface-selected);
+  color: var(--at-text);
+}

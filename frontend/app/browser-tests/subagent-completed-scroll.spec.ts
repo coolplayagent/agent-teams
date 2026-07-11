@@ -17,7 +17,7 @@ const INSTANCE_ID = "subagent-completed-scroll-instance";
 const RUN_ID = "subagent-completed-scroll-run";
 const SCREENSHOT_FOLDER = "subagent-completed-scroll";
 
-test("scrolls a long completed subagent transcript inside its own pane", async ({
+test("keeps long completed subagent prompt and transcript independently scrollable", async ({
   page,
 }) => {
   const appServer = await serveFrontendDist();
@@ -43,20 +43,50 @@ test("scrolls a long completed subagent transcript inside its own pane", async (
     await expect(panel.getByRole("heading", {
       name: "Long completed investigation",
     })).toBeVisible();
+    const prompt = panel.locator(".at-subagent-session-prompt");
     const timeline = panel.locator(
       ".at-subagent-session-body > .at-timeline-frame > .at-timeline",
     );
+    await expect(prompt).toBeVisible();
     await expect(timeline).toBeVisible();
     await expect(timeline).toHaveAttribute("data-total-row-count", "1");
+    const promptGeometry = await prompt.evaluate((element) => ({
+      clientHeight: element.clientHeight,
+      scrollHeight: element.scrollHeight,
+      scrollTop: element.scrollTop,
+    }));
     const geometryBefore = await timeline.evaluate((element) => ({
       clientHeight: element.clientHeight,
       scrollHeight: element.scrollHeight,
       scrollTop: element.scrollTop,
     }));
-    expect(geometryBefore.clientHeight).toBeGreaterThan(240);
+    expect(promptGeometry.clientHeight).toBeGreaterThan(160);
+    expect(promptGeometry.scrollHeight).toBeGreaterThan(
+      promptGeometry.clientHeight + 500,
+    );
+    expect(geometryBefore.clientHeight).toBeGreaterThan(220);
     expect(geometryBefore.scrollHeight).toBeGreaterThan(
       geometryBefore.clientHeight + 800,
     );
+
+    await page.screenshot({
+      animations: "disabled",
+      path: screenshotPath(
+        "v2-completed-subagent-before-scroll.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+
+    await prompt.hover();
+    await page.mouse.wheel(0, 900);
+    await expect.poll(() => prompt.evaluate((element) => element.scrollTop))
+      .toBeGreaterThan(0);
+    await prompt.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    await expect.poll(() => prompt.evaluate((element) =>
+      element.scrollHeight - element.clientHeight - element.scrollTop
+    )).toBeLessThanOrEqual(1);
 
     await timeline.hover();
     await page.mouse.wheel(0, -900);
@@ -70,13 +100,13 @@ test("scrolls a long completed subagent transcript inside its own pane", async (
       .toBeGreaterThan(scrolledUp);
     await expectNoDocumentScroll(
       page,
-      "completed subagent transcript must scroll inside the panel",
+      "completed subagent prompt and transcript must scroll inside the panel",
     );
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await page.screenshot({
       animations: "disabled",
       path: screenshotPath(
-        "v2-completed-subagent-independent-scroll.png",
+        "v2-completed-subagent-after-scroll.png",
         SCREENSHOT_FOLDER,
       ),
     });
@@ -115,7 +145,7 @@ function completedSubagentToolMessage(): Record<string, unknown> {
     message: {
       parts: [{
         content: {
-          prompt: "Investigate the frontend thoroughly and provide a long report.",
+          prompt: completedSubagentPrompt(),
           subagent_instance_id: INSTANCE_ID,
           subagent_role_id: "Explorer",
           subagent_run_id: RUN_ID,
@@ -131,6 +161,13 @@ function completedSubagentToolMessage(): Record<string, unknown> {
     role_id: "MainAgent",
     run_id: "parent-completed-subagent-scroll",
   };
+}
+
+function completedSubagentPrompt(): string {
+  return Array.from({ length: 36 }, (_, index) => [
+    `${index + 1}. Investigate completed workflow area ${index + 1}.`,
+    "Verify navigation, restoration, streaming state, and failure recovery with concrete evidence.",
+  ].join(" ")).join("\n\n");
 }
 
 function completedSubagentRecord(): Record<string, unknown> {

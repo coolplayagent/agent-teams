@@ -352,7 +352,10 @@ describe("shell layout CSS", () => {
       /\.at-subagent-session-body\s*{[\s\S]*?display:\s*flex;[\s\S]*?flex-direction:\s*column;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/,
     );
     expect(themeCss).toMatch(
-      /\.at-subagent-session-body > \.at-timeline-frame\s*{[\s\S]*?flex:\s*1 1 0;[\s\S]*?height:\s*100%;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/,
+      /\.at-subagent-session-prompt\s*{[\s\S]*?flex:\s*0 1 auto;[\s\S]*?max-height:\s*min\(42%, 360px\);[\s\S]*?overflow-y:\s*auto;[\s\S]*?overscroll-behavior:\s*contain;[\s\S]*?scrollbar-gutter:\s*stable;[\s\S]*?touch-action:\s*pan-y;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-subagent-session-body > \.at-timeline-frame\s*{[\s\S]*?flex:\s*1 1 0;[\s\S]*?height:\s*auto;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/,
     );
     expect(themeCss).toMatch(
       /\.at-subagent-session-body > \.at-timeline-frame > \.at-timeline\s*{[\s\S]*?height:\s*100%;[\s\S]*?overflow-y:\s*auto;[\s\S]*?overscroll-behavior:\s*contain;[\s\S]*?scrollbar-gutter:\s*stable;[\s\S]*?touch-action:\s*pan-y;/,

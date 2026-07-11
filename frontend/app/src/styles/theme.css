@@ -1279,7 +1279,15 @@ body {
 }
 
 .at-subagent-session-prompt {
+  flex: 0 1 auto;
+  max-height: min(42%, 360px);
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 12px 16px;
+  scrollbar-gutter: stable;
+  touch-action: pan-y;
   border-bottom: 1px solid var(--at-border);
   background: var(--at-bg);
   color: var(--at-text);
@@ -1295,7 +1303,7 @@ body {
 
 .at-subagent-session-body > .at-timeline-frame {
   flex: 1 1 0;
-  height: 100%;
+  height: auto;
   min-height: 0;
   overflow: hidden;
 }

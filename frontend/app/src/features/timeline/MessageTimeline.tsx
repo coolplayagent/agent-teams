@@ -7657,11 +7657,7 @@ function MessageText({
       ].filter(Boolean).join(" ")}
       data-streaming={visuallyStreaming ? "true" : undefined}
     >
-      {visuallyStreaming ? (
-        <div className="at-message-markdown at-message-streaming-plain">{text}</div>
-      ) : (
-        <MarkdownMessage text={text} />
-      )}
+      <MarkdownMessage streamingPlain={visuallyStreaming} text={text} />
       {cursorVisible ? <StreamingCursor /> : null}
     </div>
   );

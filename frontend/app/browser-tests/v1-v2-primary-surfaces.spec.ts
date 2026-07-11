@@ -252,6 +252,7 @@ async function assertV1Memory(page: Page): Promise<void> {
   await expect(page.getByText("Reuse")).toBeVisible();
   await expect(page.locator('[data-memory-id="memory-shell-frame"]')).toBeVisible();
   await expect(page.locator(".memory-detail")).toContainText("Fixed shell frame");
+  await expect(page.locator(".memory-architecture-map")).toBeVisible();
   await page.locator('[data-memory-tab="skill-drafts"]').click();
   await expect(page.locator(".memory-draft-shell")).toBeVisible();
   await expect(page.locator('[data-draft-id="draft-1"]')).toBeVisible();
@@ -259,6 +260,10 @@ async function assertV1Memory(page: Page): Promise<void> {
   await expect(page.locator(".memory-draft-editor")).toContainText(
     "Add one usage example before applying.",
   );
+  await expect(page.locator('[data-draft-editor] button[type="submit"]')).toBeVisible();
+  await expect(page.locator("[data-draft-validate]")).toBeVisible();
+  await expect(page.locator("[data-draft-apply]")).toBeVisible();
+  await expect(page.locator("[data-draft-reject]")).toBeVisible();
   await captureStableViewportScreenshot(
     page,
     screenshotPath("primary-pair-v1-memory.png", SCREENSHOT_FOLDER),
@@ -367,6 +372,9 @@ async function assertV2Memory(page: Page): Promise<void> {
   ).toBeVisible();
   await expect(page.getByTestId("memory-row-memory-shell-frame")).toBeVisible();
   await expect(page.getByTestId("memory-detail")).toContainText("Fixed shell frame");
+  await memoryView.getByText("Architecture", { exact: true }).click();
+  await expect(page.getByTestId("memory-architecture-map")).toBeVisible();
+  await expect(page.getByTestId("memory-architecture-map")).toContainText("Working memory");
   await memoryView.getByText("Skill Drafts", { exact: true }).click();
   await expect(page.getByTestId("memory-skill-drafts")).toBeVisible();
   await expect(page.getByTestId("memory-draft-row-draft-1")).toBeVisible();
@@ -377,6 +385,10 @@ async function assertV2Memory(page: Page): Promise<void> {
     "Add one usage example before applying.",
   );
   await expect(page.getByTestId("memory-draft-editor")).toContainText("SKILL.md");
+  for (const action of ["Save", "Validate", "Apply", "Reject"]) {
+    await expect(page.getByTestId("memory-draft-editor").getByRole("button", { name: action }))
+      .toBeVisible();
+  }
   await captureStableViewportScreenshot(
     page,
     screenshotPath("primary-pair-v2-memory.png", SCREENSHOT_FOLDER),

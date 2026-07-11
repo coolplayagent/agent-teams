@@ -162,6 +162,17 @@ afterEach(() => {
 });
 
 describe("AutomationView", () => {
+  it("keeps Schedules primary and routes GitHub through its secondary entry", async () => {
+    const onOpenGitHubSettings = vi.fn();
+    renderAutomation(vi.fn(), onOpenGitHubSettings);
+
+    expect(await screen.findByRole("tab", { name: "Schedules" }))
+      .toHaveAttribute("aria-selected", "true");
+    fireEvent.click(screen.getByRole("tab", { name: "GitHub" }));
+
+    expect(onOpenGitHubSettings).toHaveBeenCalledTimes(1);
+  });
+
   it("renders real automation projects and selected project detail", async () => {
     renderAutomation();
 
@@ -313,7 +324,10 @@ describe("AutomationView", () => {
   });
 });
 
-function renderAutomation(onSessionSelected = vi.fn()) {
+function renderAutomation(
+  onSessionSelected = vi.fn(),
+  onOpenGitHubSettings = vi.fn(),
+) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -323,7 +337,10 @@ function renderAutomation(onSessionSelected = vi.fn()) {
     <ConfigProvider>
       <AntApp>
         <QueryClientProvider client={queryClient}>
-          <AutomationView onSessionSelected={onSessionSelected} />
+          <AutomationView
+            onOpenGitHubSettings={onOpenGitHubSettings}
+            onSessionSelected={onSessionSelected}
+          />
         </QueryClientProvider>
       </AntApp>
     </ConfigProvider>,

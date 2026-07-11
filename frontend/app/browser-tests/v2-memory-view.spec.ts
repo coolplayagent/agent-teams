@@ -6,6 +6,7 @@ import type {
   MemorySkillDraftSummary,
 } from "../src/api/contracts";
 import {
+  captureStableViewportScreenshot,
   ensureScreenshotDir,
   expectNoDocumentScroll,
   expectNoUnhandledApiRoutes,
@@ -253,8 +254,136 @@ test("opens Memory architecture and skill draft secondary pages", async ({
   }
 });
 
+test("keeps Memory skill draft loading and list errors framed at 720px", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state = memoryViewState();
+  state.slowDraftList = true;
+  state.failDraftList = true;
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await page.setViewportSize({ height: 760, width: 720 });
+    await installShellState(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleMemoryApi(context, state),
+      sessionTitle: "TS memory draft states",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    await page
+      .getByRole("navigation", { name: "Primary navigation" })
+      .getByRole("button", { name: "Memory" })
+      .click();
+    const memoryView = page.getByTestId("memory-view");
+    await memoryView.getByText("Skill Drafts", { exact: true }).click();
+    await expect(memoryView.locator(".ant-skeleton")).toBeVisible();
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-memory-skill-drafts-loading-narrow.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+    await expect(memoryView.getByText("Could not load skill drafts."))
+      .toBeVisible();
+    await captureStableViewportScreenshot(
+      page,
+      screenshotPath("v2-memory-skill-drafts-error-narrow.png", SCREENSHOT_FOLDER),
+    );
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "memory skill draft loading and error should remain framed at 720px",
+    );
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("distinguishes Memory skill draft detail errors from an empty selection", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state = memoryViewState();
+  state.failDraftDetail = true;
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleMemoryApi(context, state),
+      sessionTitle: "TS memory draft detail error",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    await page
+      .getByRole("navigation", { name: "Primary navigation" })
+      .getByRole("button", { name: "Memory" })
+      .click();
+    const memoryView = page.getByTestId("memory-view");
+    await memoryView.getByText("Skill Drafts", { exact: true }).click();
+    await expect(memoryView.getByText("Could not load skill draft detail."))
+      .toBeVisible();
+    await expect(page.getByTestId("memory-draft-row-draft-1")).toBeVisible();
+    await expect(memoryView.getByText("No skill draft selected.")).toHaveCount(0);
+    await captureStableViewportScreenshot(
+      page,
+      screenshotPath("v2-memory-skill-draft-detail-error.png", SCREENSHOT_FOLDER),
+    );
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("rejects a Memory skill draft through the visible secondary-page action", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state = memoryViewState();
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleMemoryApi(context, state),
+      sessionTitle: "TS memory draft reject",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/app/`);
+    await waitForV2Shell(page);
+    await page
+      .getByRole("navigation", { name: "Primary navigation" })
+      .getByRole("button", { name: "Memory" })
+      .click();
+    const memoryView = page.getByTestId("memory-view");
+    await memoryView.getByText("Skill Drafts", { exact: true }).click();
+    await expect(page.getByTestId("memory-draft-editor")).toBeVisible();
+    await memoryView.getByRole("button", { name: "Reject" }).click();
+
+    await expect
+      .poll(() => state.skillDraftUpdatePayloads)
+      .toContainEqual(expect.objectContaining({ status: "rejected" }));
+    await expect(page.getByTestId("memory-draft-editor")).toContainText("Rejected");
+    await captureStableViewportScreenshot(
+      page,
+      screenshotPath("v2-memory-skill-draft-rejected.png", SCREENSHOT_FOLDER),
+    );
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+  } finally {
+    await appServer.close();
+  }
+});
+
 interface MemoryViewState {
   draft: MemorySkillDraft;
+  failDraftDetail: boolean;
+  failDraftList: boolean;
   listRequests: string[];
   rebuildPayloads: Record<string, unknown>[];
   searchPayloads: Record<string, unknown>[];
@@ -263,6 +392,7 @@ interface MemoryViewState {
   skillDraftListRequests: string[];
   skillDraftUpdatePayloads: Record<string, unknown>[];
   skillDraftValidateCalls: string[];
+  slowDraftList: boolean;
 }
 
 interface MemorySummary {
@@ -304,6 +434,8 @@ interface MemoryEntry extends MemorySummary {
 function memoryViewState(): MemoryViewState {
   return {
     draft: memorySkillDraft(),
+    failDraftDetail: false,
+    failDraftList: false,
     listRequests: [],
     rebuildPayloads: [],
     searchPayloads: [],
@@ -312,6 +444,7 @@ function memoryViewState(): MemoryViewState {
     skillDraftListRequests: [],
     skillDraftUpdatePayloads: [],
     skillDraftValidateCalls: [],
+    slowDraftList: false,
   };
 }
 
@@ -322,6 +455,13 @@ async function handleMemoryApi(
   if (context.method === "GET" && context.path === "/memories/skill-drafts") {
     const requestKey = `${context.path}${context.url.search}`;
     state.skillDraftListRequests.push(requestKey);
+    if (state.slowDraftList) {
+      await new Promise((resolve) => setTimeout(resolve, 900));
+    }
+    if (state.failDraftList) {
+      await context.fulfillJson({ detail: "skill drafts unavailable" }, 500);
+      return true;
+    }
     await context.fulfillJson({
       items: [memorySkillDraftSummary(state.draft)],
       limit: Number(context.url.searchParams.get("limit") ?? 30),
@@ -349,6 +489,10 @@ async function handleMemoryApi(
     && context.path.startsWith("/memories/skill-drafts/")
     && !context.path.includes(":")
   ) {
+    if (state.failDraftDetail) {
+      await context.fulfillJson({ detail: "skill draft detail unavailable" }, 500);
+      return true;
+    }
     await context.fulfillJson(state.draft);
     return true;
   }

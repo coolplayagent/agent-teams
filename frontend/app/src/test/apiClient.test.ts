@@ -8,15 +8,18 @@ import {
   configurePlugin,
   createAutomationProject,
   createBoardTodoSource,
+  createDiscordGatewayAccount,
   createFeishuGatewayAccount,
   deleteAutomationProject,
   deleteAgentRuntime,
   deleteBoardTodoSource,
+  deleteDiscordGatewayAccount,
   deleteModelProfile,
   deletePlugin,
   deleteRoleConfig,
   deleteSessionSubagent,
   disableAutomationProject,
+  disableDiscordGatewayAccount,
   disablePlugin,
   deleteFeishuGatewayAccount,
   deleteWeChatGatewayAccount,
@@ -28,6 +31,7 @@ import {
   disableWeChatGatewayAccount,
   disableXiaolubanGatewayAccount,
   enableFeishuGatewayAccount,
+  enableDiscordGatewayAccount,
   enableWeChatGatewayAccount,
   enableXiaolubanGatewayAccount,
   enableAutomationProject,
@@ -47,6 +51,7 @@ import {
   getGitHubWebhookTunnelStatus,
   getHooksConfig,
   listAutomationDeliveryBindings,
+  listDiscordGatewayAccounts,
   listFeishuGatewayAccounts,
   listWeChatGatewayAccounts,
   getMemory,
@@ -144,6 +149,7 @@ import {
   uninstallClawHubMarketSkill,
   uninstallRuntimeSkill,
   updateAutomationProject,
+  updateDiscordGatewayAccount,
   updateSession,
   updateBoardTodoSource,
   updateFeishuGatewayAccount,
@@ -3095,6 +3101,84 @@ describe("api client", () => {
       7,
       "/api/gateway/feishu/reload",
       expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("manages Discord gateway accounts through typed endpoints", async () => {
+    const accountPayload = {
+      account_id: "discord-main",
+      allow_channel_messages: true,
+      allowed_channel_ids: ["123"],
+      application_id: "456",
+      bot_user_id: "789",
+      created_at: "2026-07-11T00:00:00Z",
+      display_name: "Discord Main",
+      last_error: null,
+      normal_root_role_id: "MainAgent",
+      orchestration_preset_id: null,
+      running: true,
+      secret_status: { bot_token_configured: true },
+      session_mode: "normal",
+      shell_safety_policy_enabled: true,
+      status: "enabled",
+      thinking: { effort: "medium", enabled: true },
+      updated_at: "2026-07-11T00:00:00Z",
+      workspace_id: "workspace-main",
+      yolo: true,
+    };
+    const createPayload = {
+      allowed_channel_ids: ["123"],
+      bot_token: "discord-token",
+      display_name: "Discord Main",
+      workspace_id: "workspace-main",
+    };
+    const updatePayload = { display_name: "Discord Primary" };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify([accountPayload]), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(accountPayload), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(accountPayload), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(accountPayload), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(accountPayload), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "ok" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(listDiscordGatewayAccounts()).resolves.toEqual([accountPayload]);
+    await expect(createDiscordGatewayAccount(createPayload)).resolves.toEqual(accountPayload);
+    await expect(updateDiscordGatewayAccount("discord-main", updatePayload)).resolves.toEqual(accountPayload);
+    await expect(enableDiscordGatewayAccount("discord-main")).resolves.toEqual(accountPayload);
+    await expect(disableDiscordGatewayAccount("discord-main")).resolves.toEqual(accountPayload);
+    await expect(deleteDiscordGatewayAccount("discord-main")).resolves.toEqual({ status: "ok" });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/gateway/discord/accounts",
+      expect.objectContaining({ headers: expect.any(Headers) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/gateway/discord/accounts",
+      expect.objectContaining({ body: JSON.stringify(createPayload), method: "POST" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/gateway/discord/accounts/discord-main",
+      expect.objectContaining({ body: JSON.stringify(updatePayload), method: "PATCH" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/gateway/discord/accounts/discord-main:enable",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      "/api/gateway/discord/accounts/discord-main:disable",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      6,
+      "/api/gateway/discord/accounts/discord-main",
+      expect.objectContaining({ body: JSON.stringify({ force: true }), method: "DELETE" }),
     );
   });
 

@@ -57,7 +57,6 @@ export function ObservabilityPanel({ sessionId }: ObservabilityPanelProps) {
   const showPrimaryMetrics = overviewQuery.isLoading || hasOverviewMetrics;
   const showGatewayMetrics =
     overviewQuery.isLoading ||
-    breakdownsQuery.isLoading ||
     hasGatewayMetrics ||
     gatewayRows.length > 0;
 

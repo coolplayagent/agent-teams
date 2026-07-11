@@ -2468,6 +2468,57 @@ export interface FeishuGatewayAccountUpdateInput {
   target_config?: FeishuTriggerTargetConfig | null;
 }
 
+export type DiscordGatewayAccountStatus = "disabled" | "enabled";
+
+export interface DiscordGatewaySecretStatus {
+  bot_token_configured: boolean;
+}
+
+export interface DiscordGatewayAccountRecord {
+  account_id: string;
+  allow_channel_messages: boolean;
+  allowed_channel_ids: string[];
+  application_id?: string | null;
+  bot_user_id?: string | null;
+  created_at: string;
+  display_name: string;
+  last_error?: string | null;
+  last_event_at?: string | null;
+  last_inbound_at?: string | null;
+  last_outbound_at?: string | null;
+  normal_root_role_id?: string | null;
+  orchestration_preset_id?: string | null;
+  running: boolean;
+  secret_status: DiscordGatewaySecretStatus;
+  session_mode: SessionMode;
+  shell_safety_policy_enabled: boolean;
+  status: DiscordGatewayAccountStatus;
+  thinking: RunThinkingConfig;
+  updated_at: string;
+  workspace_id: string;
+  yolo: boolean;
+}
+
+export interface DiscordGatewayAccountCreateInput {
+  allow_channel_messages?: boolean;
+  allowed_channel_ids?: string[];
+  application_id?: string | null;
+  bot_token: string;
+  display_name?: string | null;
+  enabled?: boolean;
+  workspace_id: string;
+}
+
+export interface DiscordGatewayAccountUpdateInput {
+  allow_channel_messages?: boolean;
+  allowed_channel_ids?: string[];
+  application_id?: string | null;
+  bot_token?: string | null;
+  display_name?: string | null;
+  enabled?: boolean;
+  workspace_id?: string | null;
+}
+
 export type XiaolubanGatewayAccountStatus = "disabled" | "enabled";
 
 export interface XiaolubanGatewaySecretStatus {

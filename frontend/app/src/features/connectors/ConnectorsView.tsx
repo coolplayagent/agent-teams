@@ -32,6 +32,10 @@ import type {
 import { useTranslations } from "../../i18n";
 import { useUiStore, type Language } from "../../runtime/uiStore";
 import { RuntimeToolsSection } from "./RuntimeToolsSection";
+import {
+  GatewayConnectorEditor,
+  type GatewayConnectorProvider,
+} from "./GatewayConnectorEditor";
 import type { SystemSettingsPage } from "../settings/settingsNavigation";
 
 type ConnectorFilter = "all" | ConnectorStatus;
@@ -60,6 +64,8 @@ export function ConnectorsView({ onOpenSettings }: ConnectorsViewProps) {
     null,
   );
   const [w3ConfigOpen, setW3ConfigOpen] = useState(false);
+  const [gatewayConfigProvider, setGatewayConfigProvider] =
+    useState<GatewayConnectorProvider | null>(null);
 
   const connectorsQuery = useQuery({
     queryKey: ["connectors"],
@@ -261,6 +267,11 @@ export function ConnectorsView({ onOpenSettings }: ConnectorsViewProps) {
                   item={item}
                   key={item.connector_id}
                   onAction={() => {
+                    if (isGatewayConnectorProvider(item.provider)) {
+                      setSelectedConnectorId(item.connector_id);
+                      setGatewayConfigProvider(item.provider);
+                      return;
+                    }
                     if (connectorActionFor(item) === "open") {
                       setW3ConfigOpen(false);
                       setSelectedConnectorId(item.connector_id);
@@ -282,10 +293,20 @@ export function ConnectorsView({ onOpenSettings }: ConnectorsViewProps) {
                 />
               ))}
             </div>
-            <ConnectorDetail
-              item={selectedConnector}
+            {gatewayConfigProvider !== null ? (
+              <GatewayConnectorEditor
+                onClose={() => setGatewayConfigProvider(null)}
+                provider={gatewayConfigProvider}
+              />
+            ) : (
+              <ConnectorDetail
+                item={selectedConnector}
               language={language}
               onAction={(connector) => {
+                if (isGatewayConnectorProvider(connector.provider)) {
+                  setGatewayConfigProvider(connector.provider);
+                  return;
+                }
                 if (connector.provider === "w3") {
                   setW3ConfigOpen(true);
                   return;
@@ -302,10 +323,11 @@ export function ConnectorsView({ onOpenSettings }: ConnectorsViewProps) {
               w3Status={w3Query.data}
               onW3Cancel={() => setW3ConfigOpen(false)}
               onW3Save={(request) => w3SaveMutation.mutate(request)}
-            />
+              />
+            )}
           </div>
         ) : null}
-        <RuntimeToolsSection />
+        {gatewayConfigProvider === null ? <RuntimeToolsSection /> : null}
       </div>
     </section>
   );
@@ -635,7 +657,15 @@ function connectorActionFor(item: ConnectorItem): ConnectorAction | null {
 }
 
 function connectorSettingsAvailable(item: ConnectorItem): boolean {
-  return ["feishu", "github", "w3", "wechat"].includes(item.provider);
+  return ["discord", "feishu", "github", "w3", "wechat", "xiaoluban"].includes(
+    item.provider,
+  );
+}
+
+function isGatewayConnectorProvider(
+  provider: ConnectorItem["provider"],
+): provider is GatewayConnectorProvider {
+  return provider === "discord" || provider === "xiaoluban";
 }
 
 function connectorSettingsPage(

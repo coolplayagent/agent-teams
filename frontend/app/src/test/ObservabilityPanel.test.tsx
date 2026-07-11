@@ -205,6 +205,22 @@ describe("ObservabilityPanel", () => {
     expect(metricCard(container, "cached_input_tokens")).toHaveTextContent("—");
     expect(screen.queryByText("Gateway Signals")).not.toBeInTheDocument();
   });
+
+  it("does not expose an empty Gateway section while only breakdowns are pending", async () => {
+    getObservabilityOverviewMock.mockResolvedValue({
+      kpis: { input_tokens: 12 },
+      trends: [],
+      updated_at: "2026-07-11T09:15:00Z",
+    } satisfies ObservabilityOverview);
+    getObservabilityBreakdownsMock.mockReturnValue(new Promise(() => undefined));
+
+    renderPanel("session-1");
+    await screen.findByText("Input tokens");
+
+    expect(screen.queryByText("Gateway Signals")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("observability-gateway-loading"))
+      .not.toBeInTheDocument();
+  });
 });
 
 function renderPanel(sessionId: string | null) {

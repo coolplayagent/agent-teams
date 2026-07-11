@@ -1411,6 +1411,17 @@ body {
   max-width: 620px;
 }
 
+.at-automation-tabs {
+  display: flex;
+  gap: 2px;
+  margin-top: 3px;
+}
+
+.at-automation-tabs .ant-btn[aria-selected="true"] {
+  background: var(--at-surface-muted);
+  color: var(--at-text);
+}
+
 .at-automation-actions {
   display: inline-flex;
   align-items: center;
@@ -2596,6 +2607,76 @@ body {
   border-radius: 8px;
   background: var(--at-surface);
   padding: 14px;
+}
+
+.at-gateway-connector-editor {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--at-border);
+  border-radius: 8px;
+  background: var(--at-surface);
+  padding: 14px;
+}
+
+.at-gateway-connector-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.at-gateway-connector-head h4 {
+  margin: 0 0 2px !important;
+}
+
+.at-gateway-connector-body {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.38fr) minmax(0, 1fr);
+  gap: 14px;
+  min-height: 0;
+}
+
+.at-gateway-account-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.at-gateway-account-list > button:not(.ant-btn) {
+  display: grid;
+  gap: 2px;
+  padding: 9px 10px;
+  border: 1px solid var(--at-border);
+  border-radius: 6px;
+  background: var(--at-bg);
+  color: var(--at-text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.at-gateway-account-list > button.is-selected {
+  border-color: var(--at-border-strong);
+  box-shadow: inset 3px 0 0 var(--at-primary);
+}
+
+.at-gateway-account-list span {
+  color: var(--at-text-muted);
+  font-size: 12px;
+}
+
+.at-gateway-account-form {
+  min-width: 0;
+}
+
+.at-gateway-account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .at-connectors-detail-header {
@@ -6774,6 +6855,26 @@ body {
 }
 
 @media (max-width: 900px) {
+  .at-automation-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .at-automation-actions {
+    flex-wrap: nowrap;
+    width: 100%;
+  }
+
+  .at-automation-search {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: auto;
+  }
+
+  .at-automation-actions > .ant-btn-icon-only {
+    flex: 0 0 auto;
+  }
+
   .at-appearance-theme-preview {
     height: 120px;
   }
@@ -6831,12 +6932,16 @@ body {
   }
 
   .at-connectors-workbench {
+    flex: 0 0 auto;
     grid-template-columns: minmax(0, 1fr);
+    min-height: auto;
   }
 
   .at-connectors-card-list,
-  .at-connectors-detail {
+  .at-connectors-detail,
+  .at-gateway-connector-editor {
     max-height: 320px;
+    overflow: auto;
   }
 }
 
@@ -8130,12 +8235,18 @@ body {
   }
 
   .at-automation-actions {
+    flex-wrap: wrap;
     width: 100%;
   }
 
   .at-automation-search {
     flex: 1 1 auto;
+    min-width: 160px;
     width: auto;
+  }
+
+  .at-automation-actions > .ant-btn-icon-only {
+    flex: 0 0 auto;
   }
 
   .at-automation-content {
@@ -8301,8 +8412,17 @@ body {
   }
 
   .at-connectors-card-list,
-  .at-connectors-detail {
-    overflow: visible;
+  .at-connectors-detail,
+  .at-gateway-connector-editor {
+    overflow: auto;
+  }
+
+  .at-gateway-connector-head {
+    align-items: stretch;
+  }
+
+  .at-gateway-connector-body {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .at-connectors-detail-header {

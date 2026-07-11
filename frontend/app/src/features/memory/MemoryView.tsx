@@ -837,6 +837,9 @@ function MemorySkillDrafts({
       {draftListQuery.isError ? (
         <Alert message={t("memoryDraftLoadFailed")} showIcon type="error" />
       ) : null}
+      {draftDetailQuery.isError ? (
+        <Alert message={t("memoryDraftDetailFailed")} showIcon type="warning" />
+      ) : null}
       {generateMutation.isError ? (
         <Alert message={t("memoryDraftGenerateFailed")} showIcon type="error" />
       ) : null}

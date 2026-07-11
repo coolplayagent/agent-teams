@@ -55,6 +55,7 @@ import type {
 import { useTranslations, type Translate } from "../../i18n";
 
 interface AutomationViewProps {
+  onOpenGitHubSettings?: () => void;
   onSessionSelected?: (sessionId: string, workspaceId?: string | null) => void;
 }
 
@@ -82,7 +83,10 @@ interface AutomationEditorValues {
   workspaceId: string;
 }
 
-export function AutomationView({ onSessionSelected }: AutomationViewProps) {
+export function AutomationView({
+  onOpenGitHubSettings,
+  onSessionSelected,
+}: AutomationViewProps) {
   const { message, modal } = App.useApp();
   const [createForm] = Form.useForm<AutomationEditorValues>();
   const queryClient = useQueryClient();
@@ -326,6 +330,7 @@ export function AutomationView({ onSessionSelected }: AutomationViewProps) {
           filter={filter}
           onCreate={openCreate}
           onFilterChange={setFilter}
+          onOpenGitHubSettings={onOpenGitHubSettings}
           onRefresh={() => void refreshAutomation(queryClient)}
           refreshing={projectsQuery.isFetching}
           t={t}
@@ -360,6 +365,7 @@ export function AutomationView({ onSessionSelected }: AutomationViewProps) {
           filter={filter}
           onCreate={openCreate}
           onFilterChange={setFilter}
+          onOpenGitHubSettings={onOpenGitHubSettings}
           onRefresh={() => void refreshAutomation(queryClient)}
           refreshing={projectsQuery.isFetching}
           t={t}
@@ -396,6 +402,7 @@ export function AutomationView({ onSessionSelected }: AutomationViewProps) {
         filter={filter}
         onCreate={openCreate}
         onFilterChange={setFilter}
+        onOpenGitHubSettings={onOpenGitHubSettings}
         onRefresh={() => void refreshAutomation(queryClient)}
         refreshing={projectsQuery.isFetching}
         t={t}
@@ -520,6 +527,7 @@ function AutomationToolbar({
   filter,
   onCreate,
   onFilterChange,
+  onOpenGitHubSettings,
   onRefresh,
   refreshing,
   t,
@@ -527,6 +535,7 @@ function AutomationToolbar({
   filter: string;
   onCreate: () => void;
   onFilterChange: (value: string) => void;
+  onOpenGitHubSettings?: () => void;
   onRefresh: () => void;
   refreshing: boolean;
   t: Translate;
@@ -536,6 +545,21 @@ function AutomationToolbar({
       <div className="at-automation-title">
         <h3>{t("automationTitle")}</h3>
         <Typography.Text type="secondary">{t("automationSubtitle")}</Typography.Text>
+        <div className="at-automation-tabs" role="tablist">
+          <Button aria-selected="true" role="tab" size="small" type="text">
+            {t("automationSchedules")}
+          </Button>
+          <Button
+            aria-selected="false"
+            disabled={onOpenGitHubSettings === undefined}
+            onClick={onOpenGitHubSettings}
+            role="tab"
+            size="small"
+            type="text"
+          >
+            {t("automationGitHub")}
+          </Button>
+        </div>
       </div>
       <div className="at-automation-actions">
         <Input

@@ -49,6 +49,9 @@ import type {
   ClawHubSkillMarketUninstallResponse,
   ConnectorListResponse,
   ConnectorTestResult,
+  DiscordGatewayAccountCreateInput,
+  DiscordGatewayAccountRecord,
+  DiscordGatewayAccountUpdateInput,
   W3ConnectorSaveRequest,
   W3ConnectorSaveResponse,
   W3ConnectorStatus,
@@ -1085,6 +1088,56 @@ export function stopGitHubWebhookTunnel(
 
 export function listFeishuGatewayAccounts(): Promise<FeishuGatewayAccountRecord[]> {
   return requestJson<FeishuGatewayAccountRecord[]>("/gateway/feishu/accounts");
+}
+
+export function listDiscordGatewayAccounts(): Promise<DiscordGatewayAccountRecord[]> {
+  return requestJson<DiscordGatewayAccountRecord[]>("/gateway/discord/accounts");
+}
+
+export function createDiscordGatewayAccount(
+  request: DiscordGatewayAccountCreateInput,
+): Promise<DiscordGatewayAccountRecord> {
+  return requestJson<DiscordGatewayAccountRecord>("/gateway/discord/accounts", {
+    method: "POST",
+    body: JSON.stringify(request),
+  });
+}
+
+export function updateDiscordGatewayAccount(
+  accountId: string,
+  request: DiscordGatewayAccountUpdateInput,
+): Promise<DiscordGatewayAccountRecord> {
+  return requestJson<DiscordGatewayAccountRecord>(
+    `/gateway/discord/accounts/${encodeURIComponent(accountId.trim())}`,
+    { method: "PATCH", body: JSON.stringify(request) },
+  );
+}
+
+export function enableDiscordGatewayAccount(
+  accountId: string,
+): Promise<DiscordGatewayAccountRecord> {
+  return requestJson<DiscordGatewayAccountRecord>(
+    `/gateway/discord/accounts/${encodeURIComponent(accountId.trim())}:enable`,
+    { method: "POST" },
+  );
+}
+
+export function disableDiscordGatewayAccount(
+  accountId: string,
+): Promise<DiscordGatewayAccountRecord> {
+  return requestJson<DiscordGatewayAccountRecord>(
+    `/gateway/discord/accounts/${encodeURIComponent(accountId.trim())}:disable`,
+    { method: "POST" },
+  );
+}
+
+export function deleteDiscordGatewayAccount(
+  accountId: string,
+): Promise<{ status: string }> {
+  return requestJson<{ status: string }>(
+    `/gateway/discord/accounts/${encodeURIComponent(accountId.trim())}`,
+    { method: "DELETE", body: JSON.stringify({ force: true }) },
+  );
 }
 
 export function createFeishuGatewayAccount(

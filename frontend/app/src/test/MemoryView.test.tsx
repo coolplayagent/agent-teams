@@ -351,6 +351,19 @@ describe("MemoryView", () => {
     expect(await screen.findByText("Applied skill draft: app:workspace-frame")).toBeVisible();
   }, 10_000);
 
+  it("shows a distinct error when the selected skill draft detail fails", async () => {
+    getMemorySkillDraftMock.mockRejectedValue(new Error("draft detail unavailable"));
+    renderView();
+
+    fireEvent.click(await screen.findByText("Skill Drafts"));
+
+    expect(
+      await screen.findByText("Could not load skill draft detail."),
+    ).toBeVisible();
+    expect(screen.getByTestId("memory-draft-row-draft-1")).toBeVisible();
+    expect(screen.queryByText("No skill draft selected.")).not.toBeInTheDocument();
+  });
+
   it("rebuilds the memory index and reports the result", async () => {
     renderView();
 

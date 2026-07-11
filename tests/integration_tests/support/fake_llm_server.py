@@ -973,15 +973,28 @@ def _plan_hook_subagent_worker_response(messages: list[object]) -> dict[str, obj
         )
         delay_match = re.search(r"\[hook-subagent-worker[^\]]*\bdelay=(\d+)", user_text)
         chunk_match = re.search(r"\[hook-subagent-worker[^\]]*\bchunk=(\d+)", user_text)
+        line_every_match = re.search(
+            r"\[hook-subagent-worker[^\]]*\bline_every=(\d+)", user_text
+        )
         repeat = int(repeat_match.group(1)) if repeat_match is not None else 10
         delay_ms = int(delay_match.group(1)) if delay_match is not None else 160
         chunk_size = int(chunk_match.group(1)) if chunk_match is not None else 10
+        line_every = (
+            int(line_every_match.group(1)) if line_every_match is not None else 0
+        )
+        tokens = [
+            f"SUBAGENT_STREAM_{tag}_{index:02d}"
+            for index in range(max(4, min(192, repeat)))
+        ]
+        content = " ".join(tokens)
+        if line_every > 0:
+            content = "\n\n".join(
+                " ".join(tokens[index : index + line_every])
+                for index in range(0, len(tokens), line_every)
+            )
         return {
             "kind": "text",
-            "content": " ".join(
-                f"SUBAGENT_STREAM_{tag}_{index:02d}"
-                for index in range(max(4, min(96, repeat)))
-            ),
+            "content": content,
             "chunk_size": max(1, min(80, chunk_size)),
             "delay_before_ms": 200,
             "delay_between_chunks_ms": max(0, min(2_000, delay_ms)),
@@ -1022,17 +1035,27 @@ def _plan_hook_subagent_lifecycle_response(
             r"\[hook-subagent-lifecycle[^\]]*\bworker_delay=(\d+)",
             user_text,
         )
+        worker_line_every_match = re.search(
+            r"\[hook-subagent-lifecycle[^\]]*\bworker_line_every=(\d+)",
+            user_text,
+        )
         worker_repeat = (
             int(worker_repeat_match.group(1)) if worker_repeat_match is not None else 14
         )
         worker_delay_ms = (
             int(worker_delay_match.group(1)) if worker_delay_match is not None else 180
         )
+        worker_line_every = (
+            int(worker_line_every_match.group(1))
+            if worker_line_every_match is not None
+            else 0
+        )
         worker_prompt = "[hook-subagent-worker] return one short status line"
         if tag:
             worker_prompt = (
                 f"[hook-subagent-worker tag={tag} "
-                f"repeat={worker_repeat} delay={worker_delay_ms} chunk=8] "
+                f"repeat={worker_repeat} delay={worker_delay_ms} chunk=8 "
+                f"line_every={worker_line_every}] "
                 "stream deterministic subagent status tokens"
             )
         return {

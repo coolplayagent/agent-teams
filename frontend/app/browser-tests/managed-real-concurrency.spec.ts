@@ -20,8 +20,9 @@ const PROVIDER_SLOT_COUNT = 4;
 const SLOW_PROVIDER_CALL_BUDGET_MS = 70_000;
 const SUBAGENT_PROVIDER_CALL_COUNT = 3;
 const SUBAGENT_CHUNK_SIZE = 8;
-const SUBAGENT_CHUNK_DELAY_MS = 80;
-const SUBAGENT_TOKEN_COUNT = 96;
+const SUBAGENT_CHUNK_DELAY_MS = 40;
+const SUBAGENT_LINE_EVERY = 2;
+const SUBAGENT_TOKEN_COUNT = 192;
 
 interface SessionRecord {
   active_run_id?: string | null;
@@ -64,6 +65,13 @@ interface QueueStageObservation {
   sessionId: string;
   title: string;
   userPromptVisibleAtMs: number;
+}
+
+interface SubagentScrollGrowthEvidence {
+  heightAt24Tokens: number;
+  heightAt48Tokens: number;
+  overflowHeight: number;
+  tokenIndexAtOverflow: number;
 }
 
 interface FailureCollection {
@@ -112,6 +120,7 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
   );
   const startedRuns: StartedRun[] = [];
   const queueStageObservations: QueueStageObservation[] = [];
+  let subagentScrollGrowthEvidence: SubagentScrollGrowthEvidence | null = null;
 
   try {
     await installBrowserProbe(page, sessions[0]);
@@ -138,7 +147,7 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
       const repeat = 72;
       const promptText = isSubagentRun
         ? [
-            `${title}: [hook-subagent-lifecycle tag=${tag} worker_repeat=${SUBAGENT_TOKEN_COUNT} worker_delay=${SUBAGENT_CHUNK_DELAY_MS}]`,
+            `${title}: [hook-subagent-lifecycle tag=${tag} worker_repeat=${SUBAGENT_TOKEN_COUNT} worker_delay=${SUBAGENT_CHUNK_DELAY_MS} worker_line_every=${SUBAGENT_LINE_EVERY}]`,
             "通过 spawn_subagent 启动 Explorer，并让子代理流式输出确定性 token。",
             "主代理完成后只输出 fake LLM 的最终完成句。",
           ].join("\n")
@@ -345,6 +354,26 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
       gateStartedAt,
     );
     await expect
+      .poll(() => highestSubagentTokenIndex(subagentPanel, subagentRun), {
+        timeout: 45_000,
+      })
+      .toBeGreaterThanOrEqual(23);
+    const heightAt24Tokens = await subagentTimeline.evaluate(
+      (element) => element.scrollHeight,
+    );
+    await expect
+      .poll(() => highestSubagentTokenIndex(subagentPanel, subagentRun), {
+        timeout: 45_000,
+      })
+      .toBeGreaterThanOrEqual(47);
+    const heightAt48Tokens = await subagentTimeline.evaluate(
+      (element) => element.scrollHeight,
+    );
+    expect(
+      heightAt48Tokens,
+      "visible subagent scrollHeight must grow between token 24 and token 48",
+    ).toBeGreaterThan(heightAt24Tokens);
+    await expect
       .poll(
         () =>
           subagentTimeline.evaluate(
@@ -359,8 +388,16 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
     );
     expect(
       beforeSubagentWheelIndex,
-      "the subagent fixture must retain at least 24 tokens after overflow begins",
-    ).toBeLessThanOrEqual(SUBAGENT_TOKEN_COUNT - 25);
+      "the subagent fixture must retain at least half its tokens after overflow begins",
+    ).toBeLessThanOrEqual(SUBAGENT_TOKEN_COUNT / 2 - 1);
+    subagentScrollGrowthEvidence = {
+      heightAt24Tokens,
+      heightAt48Tokens,
+      overflowHeight: await subagentTimeline.evaluate(
+        (element) => element.scrollHeight,
+      ),
+      tokenIndexAtOverflow: beforeSubagentWheelIndex,
+    };
     expect(
       estimatedRemainingSubagentStreamMs(subagentRun, beforeSubagentWheelIndex),
       "the running subagent must retain enough fixture time for wheel and growth",
@@ -522,6 +559,7 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
       probe,
       queueStageObservations,
       sessionCount: SESSION_COUNT,
+      subagentScrollGrowthEvidence,
       subagentFixtureEstimatedDurationMs:
         estimatedSubagentStreamDurationMs(subagentRun),
       streamHoldMs: STREAM_HOLD_MS,
@@ -927,9 +965,10 @@ async function highestSubagentTokenIndex(
 }
 
 function estimatedSubagentStreamDurationMs(run: StartedRun): number {
-  const content = Array.from({ length: SUBAGENT_TOKEN_COUNT }, (_, index) =>
+  const tokens = Array.from({ length: SUBAGENT_TOKEN_COUNT }, (_, index) =>
     subagentStreamToken(run.tag, index),
-  ).join(" ");
+  );
+  const content = formatSubagentStreamTokens(tokens);
   return (
     Math.ceil(content.length / SUBAGENT_CHUNK_SIZE) * SUBAGENT_CHUNK_DELAY_MS
   );
@@ -939,14 +978,23 @@ function estimatedRemainingSubagentStreamMs(
   run: StartedRun,
   highestObservedIndex: number,
 ): number {
-  const content = Array.from(
+  const tokens = Array.from(
     { length: SUBAGENT_TOKEN_COUNT - highestObservedIndex - 1 },
     (_, offset) =>
       subagentStreamToken(run.tag, highestObservedIndex + offset + 1),
-  ).join(" ");
+  );
+  const content = formatSubagentStreamTokens(tokens);
   return (
     Math.ceil(content.length / SUBAGENT_CHUNK_SIZE) * SUBAGENT_CHUNK_DELAY_MS
   );
+}
+
+function formatSubagentStreamTokens(tokens: string[]): string {
+  const groups: string[] = [];
+  for (let index = 0; index < tokens.length; index += SUBAGENT_LINE_EVERY) {
+    groups.push(tokens.slice(index, index + SUBAGENT_LINE_EVERY).join(" "));
+  }
+  return groups.join("\n\n");
 }
 
 function subagentStreamToken(tag: string, index: number): string {

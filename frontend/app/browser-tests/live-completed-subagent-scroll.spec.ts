@@ -15,8 +15,21 @@ const liveWorkspaceId = process.env.LIVE_WORKSPACE_ID?.trim() || "default";
 const liveSubagentTitle = process.env.LIVE_SUBAGENT_TITLE?.trim() ?? "";
 
 interface LiveAcceptanceWindow extends Window {
+  __agentTeamsActiveEventSources?: number;
   __agentTeamsLongTaskObserver?: PerformanceObserver;
-  __agentTeamsLongTasks?: number[];
+  __agentTeamsLongTasks?: LongTaskSample[];
+  __agentTeamsMaxEventSources?: number;
+}
+
+interface LongTaskSample {
+  duration: number;
+  startTime: number;
+}
+
+interface PerformanceSegment {
+  endTime: number;
+  label: string;
+  startTime: number;
 }
 
 interface PerformanceWithMemory extends Performance {
@@ -57,22 +70,31 @@ test("scrolls and reopens a completed subagent from a live local deployment", as
     }
   });
   await ensureScreenshotDir(SCREENSHOT_FOLDER);
+  await installEventSourceProbe(page);
   await installLiveSessionState(page);
   await page.goto(`${liveBaseUrl}/?live_completed_subagent_scroll=1`, {
     waitUntil: "domcontentloaded",
   });
   await waitForAppShell(page);
-  await installLongTaskObserver(page);
-  const heapBeforeBytes = await usedJsHeapSize(page);
 
   const card = completedSubagentCard(page);
   await expect(card).not.toHaveCount(0);
   await expandProcessedGroupsUntilCardIsVisible(page, card);
   await expect(card).toBeVisible();
+  await card.locator(".at-message-tool-summary").click();
+  const panel = page.locator(".at-subagent-session-view");
+  await expect(panel).toBeVisible();
+  await page.waitForTimeout(100);
+  await closeSubagentPanel(panel);
+  await collectGarbage(page);
+  await installLongTaskObserver(page);
+  const heapBeforeBytes = await usedJsHeapSize(page);
+  const performanceSegments: PerformanceSegment[] = [];
+
   const openStartedAt = performance.now();
+  const openSegment = await beginPerformanceSegment(page, "open-subagent");
   await card.locator(".at-message-tool-summary").click();
 
-  const panel = page.locator(".at-subagent-session-view");
   await expect(panel).toBeVisible();
   const prompt = panel.locator(".at-subagent-session-prompt");
   const timeline = panel.locator(
@@ -80,6 +102,7 @@ test("scrolls and reopens a completed subagent from a live local deployment", as
   );
   await expect(prompt).toBeVisible();
   await expect(timeline).toBeVisible();
+  await endPerformanceSegment(page, openSegment, performanceSegments);
   const openSubagentMs = performance.now() - openStartedAt;
   await expectScrollable(prompt, "live subagent prompt");
   await expectScrollable(timeline, "live subagent transcript");
@@ -87,16 +110,20 @@ test("scrolls and reopens a completed subagent from a live local deployment", as
   await captureStableScreenshot(page, "live-subagent-before-wheel.jpg");
 
   const promptWheelStartedAt = performance.now();
+  const promptWheelSegment = await beginPerformanceSegment(page, "prompt-wheel");
   await wheelToBottom(page, prompt);
+  await endPerformanceSegment(page, promptWheelSegment, performanceSegments);
   const promptWheelToBottomMs = performance.now() - promptWheelStartedAt;
   const timelineBottomBefore = await bottomDistance(timeline);
   const timelineWheelStartedAt = performance.now();
+  const timelineWheelSegment = await beginPerformanceSegment(page, "timeline-wheel");
   await timeline.hover();
   await page.mouse.wheel(0, -900);
   await expect.poll(() => bottomDistance(timeline)).toBeGreaterThan(
     timelineBottomBefore + 100,
   );
   await wheelToBottom(page, timeline);
+  await endPerformanceSegment(page, timelineWheelSegment, performanceSegments);
   const timelineWheelRoundTripMs = performance.now() - timelineWheelStartedAt;
   await expectNoDocumentScroll(
     page,
@@ -105,19 +132,57 @@ test("scrolls and reopens a completed subagent from a live local deployment", as
   await captureStableScreenshot(page, "live-subagent-after-wheel.jpg");
 
   const backStartedAt = performance.now();
-  await panel.locator(".at-subagent-session-header button").click();
-  await expect(panel).toHaveCount(0);
+  const backSegment = await beginPerformanceSegment(page, "back-to-main");
+  await closeSubagentPanel(panel);
+  await endPerformanceSegment(page, backSegment, performanceSegments);
   const backToMainMs = performance.now() - backStartedAt;
-  const switchSessionMs = await switchAwayAndBack(page);
+  const switchSessionMs = await switchAwayAndBack(
+    page,
+    performanceSegments,
+    "initial-switch",
+  );
   const reopenStartedAt = performance.now();
+  const reopenSegment = await beginPerformanceSegment(page, "reopen-subagent");
   await completedSubagentCard(page).locator(".at-message-tool-summary").click();
   await expect(panel).toBeVisible();
   await expect(panel.locator(".at-subagent-session-prompt")).toBeVisible();
   await expect(panel.locator(".at-timeline")).toBeVisible();
+  await endPerformanceSegment(page, reopenSegment, performanceSegments);
   const reopenSubagentMs = performance.now() - reopenStartedAt;
   await captureStableScreenshot(page, "live-subagent-reopened.jpg");
+  await closeSubagentPanel(panel);
+  const repeatedCycles = await exerciseRepeatedNavigation(
+    page,
+    panel,
+    5,
+    performanceSegments,
+  );
+  await collectGarbage(page);
   const heapAfterBytes = await usedJsHeapSize(page);
+  const eventSourceCounts = await page.evaluate(() => ({
+    active: (window as LiveAcceptanceWindow).__agentTeamsActiveEventSources ?? 0,
+    max: (window as LiveAcceptanceWindow).__agentTeamsMaxEventSources ?? 0,
+  }));
   const longTasks = await readLongTasks(page);
+  const segmentLongTasks = performanceSegments.map((segment) => {
+    const matching = longTasks.filter((task) =>
+      task.startTime >= segment.startTime && task.startTime < segment.endTime
+    );
+    return {
+      ...segment,
+      longTaskCount: matching.length,
+      maxLongTaskMs: Math.max(0, ...matching.map((task) => task.duration)),
+      totalLongTaskMs: matching.reduce(
+        (total, task) => total + task.duration,
+        0,
+      ),
+    };
+  });
+  const userActionLongTasks = longTasks.filter((task) =>
+    performanceSegments.some((segment) =>
+      task.startTime >= segment.startTime && task.startTime < segment.endTime
+    )
+  );
   const unexpectedFailedResponses = failedResponses.filter(
     (response) => !response.endsWith("/favicon.ico"),
   );
@@ -128,6 +193,7 @@ test("scrolls and reopens a completed subagent from a live local deployment", as
   const metrics = {
     backToMainMs,
     consoleErrors,
+    eventSourceCounts,
     failedResponses,
     heapAfterBytes,
     heapBeforeBytes,
@@ -136,12 +202,22 @@ test("scrolls and reopens a completed subagent from a live local deployment", as
         ? null
         : heapAfterBytes - heapBeforeBytes,
     longTaskCount: longTasks.length,
-    maxLongTaskMs: Math.max(0, ...longTasks),
+    maxLongTaskMs: Math.max(0, ...longTasks.map((task) => task.duration)),
+    segmentLongTasks,
+    totalLongTaskMs: longTasks.reduce(
+      (total, task) => total + task.duration,
+      0,
+    ),
+    totalUserActionLongTaskMs: userActionLongTasks.reduce(
+      (total, task) => total + task.duration,
+      0,
+    ),
     openSubagentMs,
     pageCrashed,
     pageErrors,
     promptWheelToBottomMs,
     reopenSubagentMs,
+    repeatedCycles,
     switchSessionMs,
     timelineWheelRoundTripMs,
     unexpectedConsoleErrors,
@@ -154,15 +230,24 @@ test("scrolls and reopens a completed subagent from a live local deployment", as
     path: metricsPath,
   });
 
-  expect(openSubagentMs).toBeLessThan(3_000);
-  expect(promptWheelToBottomMs).toBeLessThan(3_000);
-  expect(timelineWheelRoundTripMs).toBeLessThan(3_000);
-  expect(backToMainMs).toBeLessThan(2_000);
-  expect(switchSessionMs).toBeLessThan(5_000);
-  expect(reopenSubagentMs).toBeLessThan(3_000);
-  expect(metrics.maxLongTaskMs).toBeLessThan(1_000);
+  expect(openSubagentMs).toBeLessThan(1_500);
+  expect(promptWheelToBottomMs).toBeLessThan(500);
+  expect(timelineWheelRoundTripMs).toBeLessThan(500);
+  expect(backToMainMs).toBeLessThan(750);
+  expect(switchSessionMs).toBeLessThan(1_500);
+  expect(reopenSubagentMs).toBeLessThan(1_500);
+  expect(Math.max(...repeatedCycles.map((cycle) => cycle.openMs)))
+    .toBeLessThan(1_500);
+  expect(Math.max(...repeatedCycles.map((cycle) => cycle.backMs)))
+    .toBeLessThan(750);
+  expect(Math.max(...repeatedCycles.map((cycle) => cycle.switchMs)))
+    .toBeLessThan(1_500);
+  expect(metrics.maxLongTaskMs).toBeLessThan(300);
+  expect(metrics.totalLongTaskMs).toBeLessThan(2_000);
+  expect(eventSourceCounts.max).toBeLessThanOrEqual(2);
+  expect(eventSourceCounts.active).toBeLessThanOrEqual(1);
   if (metrics.heapGrowthBytes !== null) {
-    expect(metrics.heapGrowthBytes).toBeLessThan(128 * 1024 * 1024);
+    expect(metrics.heapGrowthBytes).toBeLessThan(32 * 1024 * 1024);
   }
   expect(unexpectedFailedResponses).toEqual([]);
   expect(unexpectedConsoleErrors).toEqual([]);
@@ -188,6 +273,44 @@ async function installLiveSessionState(page: Page): Promise<void> {
     window.localStorage.setItem("agentTeams.subagentPanelWidth", "760");
     window.localStorage.removeItem("agentTeams.activeSubagentPanel");
   }, { sessionId: liveSessionId, workspaceId: liveWorkspaceId });
+}
+
+async function installEventSourceProbe(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const acceptanceWindow = window as LiveAcceptanceWindow;
+    const NativeEventSource = window.EventSource;
+    acceptanceWindow.__agentTeamsActiveEventSources = 0;
+    acceptanceWindow.__agentTeamsMaxEventSources = 0;
+    class TrackedEventSource extends NativeEventSource {
+      private acceptanceClosed = false;
+
+      constructor(url: string | URL, eventSourceInitDict?: EventSourceInit) {
+        super(url, eventSourceInitDict);
+        acceptanceWindow.__agentTeamsActiveEventSources =
+          (acceptanceWindow.__agentTeamsActiveEventSources ?? 0) + 1;
+        acceptanceWindow.__agentTeamsMaxEventSources = Math.max(
+          acceptanceWindow.__agentTeamsMaxEventSources ?? 0,
+          acceptanceWindow.__agentTeamsActiveEventSources,
+        );
+      }
+
+      override close(): void {
+        if (!this.acceptanceClosed) {
+          this.acceptanceClosed = true;
+          acceptanceWindow.__agentTeamsActiveEventSources = Math.max(
+            0,
+            (acceptanceWindow.__agentTeamsActiveEventSources ?? 0) - 1,
+          );
+        }
+        super.close();
+      }
+    }
+    Object.defineProperty(window, "EventSource", {
+      configurable: true,
+      value: TrackedEventSource,
+      writable: true,
+    });
+  });
 }
 
 async function expandProcessedGroupsUntilCardIsVisible(
@@ -222,7 +345,11 @@ function completedSubagentCard(page: Page): Locator {
     : cards.first();
 }
 
-async function switchAwayAndBack(page: Page): Promise<number> {
+async function switchAwayAndBack(
+  page: Page,
+  segments?: PerformanceSegment[],
+  label = "switch-session",
+): Promise<number> {
   const selectedSession = page.locator(
     `.at-session-item[data-session-id="${liveSessionId}"] .at-session-select`,
   );
@@ -232,21 +359,73 @@ async function switchAwayAndBack(page: Page): Promise<number> {
   await expect(selectedSession).toHaveAttribute("aria-current", "page");
   await expect(otherSession).toBeVisible();
   const startedAt = performance.now();
+  const segment = await beginPerformanceSegment(page, label);
   await otherSession.click();
   await expect(otherSession).toHaveAttribute("aria-current", "page");
   await selectedSession.click();
   await expect(selectedSession).toHaveAttribute("aria-current", "page");
   await expect(page.locator(".at-message")).not.toHaveCount(0);
+  if (segments !== undefined) {
+    await endPerformanceSegment(page, segment, segments);
+  }
   return performance.now() - startedAt;
 }
 
+async function exerciseRepeatedNavigation(
+  page: Page,
+  panel: Locator,
+  count: number,
+  segments: PerformanceSegment[],
+): Promise<Array<{ backMs: number; openMs: number; switchMs: number }>> {
+  const cycles: Array<{ backMs: number; openMs: number; switchMs: number }> = [];
+  for (let index = 0; index < count; index += 1) {
+    const switchMs = await switchAwayAndBack(
+      page,
+      segments,
+      `repeat-${index + 1}-switch`,
+    );
+    const card = completedSubagentCard(page);
+    await expandProcessedGroupsUntilCardIsVisible(page, card);
+    const openStartedAt = performance.now();
+    const openSegment = await beginPerformanceSegment(
+      page,
+      `repeat-${index + 1}-open`,
+    );
+    await card.locator(".at-message-tool-summary").click();
+    await expect(panel).toBeVisible();
+    await endPerformanceSegment(page, openSegment, segments);
+    const openMs = performance.now() - openStartedAt;
+    const backStartedAt = performance.now();
+    const backSegment = await beginPerformanceSegment(
+      page,
+      `repeat-${index + 1}-back`,
+    );
+    await closeSubagentPanel(panel);
+    await endPerformanceSegment(page, backSegment, segments);
+    cycles.push({
+      backMs: performance.now() - backStartedAt,
+      openMs,
+      switchMs,
+    });
+  }
+  return cycles;
+}
+
+async function closeSubagentPanel(panel: Locator): Promise<void> {
+  const back = panel.getByRole("button", { name: /主会话|Main session/ });
+  await expect(back).toBeVisible();
+  await back.click();
+  await expect(panel).toBeHidden();
+}
+
 async function expectScrollable(locator: Locator, label: string): Promise<void> {
+  await expect.poll(() => locator.evaluate((element) => element.clientHeight), {
+    message: `${label} must retain visible height`,
+  }).toBeGreaterThan(100);
   const geometry = await locator.evaluate((element) => ({
     clientHeight: element.clientHeight,
     scrollHeight: element.scrollHeight,
   }));
-  expect(geometry.clientHeight, `${label} must retain visible height`)
-    .toBeGreaterThan(100);
   expect(geometry.scrollHeight, `${label} fixture must overflow for this acceptance`)
     .toBeGreaterThan(geometry.clientHeight + 100);
 }
@@ -272,7 +451,10 @@ async function installLongTaskObserver(page: Page): Promise<void> {
     acceptanceWindow.__agentTeamsLongTaskObserver?.disconnect();
     const observer = new PerformanceObserver((list) => {
       acceptanceWindow.__agentTeamsLongTasks?.push(
-        ...list.getEntries().map((entry) => entry.duration),
+        ...list.getEntries().map((entry) => ({
+          duration: entry.duration,
+          startTime: entry.startTime,
+        })),
       );
     });
     observer.observe({ entryTypes: ["longtask"] });
@@ -280,11 +462,32 @@ async function installLongTaskObserver(page: Page): Promise<void> {
   });
 }
 
-async function readLongTasks(page: Page): Promise<number[]> {
+async function readLongTasks(page: Page): Promise<LongTaskSample[]> {
   return page.evaluate(() => {
     const acceptanceWindow = window as LiveAcceptanceWindow;
     acceptanceWindow.__agentTeamsLongTaskObserver?.disconnect();
     return acceptanceWindow.__agentTeamsLongTasks ?? [];
+  });
+}
+
+async function beginPerformanceSegment(
+  page: Page,
+  label: string,
+): Promise<Omit<PerformanceSegment, "endTime">> {
+  return {
+    label,
+    startTime: await page.evaluate(() => performance.now()),
+  };
+}
+
+async function endPerformanceSegment(
+  page: Page,
+  segment: Omit<PerformanceSegment, "endTime">,
+  segments: PerformanceSegment[],
+): Promise<void> {
+  segments.push({
+    ...segment,
+    endTime: await page.evaluate(() => performance.now()),
   });
 }
 
@@ -294,24 +497,52 @@ async function usedJsHeapSize(page: Page): Promise<number | null> {
   );
 }
 
+async function collectGarbage(page: Page): Promise<void> {
+  const session = await page.context().newCDPSession(page);
+  try {
+    await session.send("HeapProfiler.collectGarbage");
+  } finally {
+    await session.detach();
+  }
+}
+
 async function captureStableScreenshot(
   page: Page,
   fileName: string,
 ): Promise<void> {
+  await pauseLongTaskObserver(page);
   const path = screenshotPath(fileName, SCREENSHOT_FOLDER);
-  await waitForStablePaint(page);
-  await page.screenshot({
-    animations: "disabled",
-    path,
-    quality: 92,
-    type: "jpeg",
+  try {
+    await waitForStablePaint(page);
+    await page.screenshot({
+      animations: "disabled",
+      path,
+      quality: 92,
+      type: "jpeg",
+    });
+    await waitForStablePaint(page);
+    await page.screenshot({
+      animations: "disabled",
+      path,
+      quality: 92,
+      type: "jpeg",
+    });
+  } finally {
+    await resumeLongTaskObserver(page);
+  }
+}
+
+async function pauseLongTaskObserver(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    (window as LiveAcceptanceWindow).__agentTeamsLongTaskObserver?.disconnect();
   });
-  await waitForStablePaint(page);
-  await page.screenshot({
-    animations: "disabled",
-    path,
-    quality: 92,
-    type: "jpeg",
+}
+
+async function resumeLongTaskObserver(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    (window as LiveAcceptanceWindow).__agentTeamsLongTaskObserver?.observe({
+      entryTypes: ["longtask"],
+    });
   });
 }
 

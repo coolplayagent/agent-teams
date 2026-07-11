@@ -32,9 +32,12 @@ as visual acceptance evidence.
 | `real-backend-live-stream.spec.ts` and `managed-backend-live-stream.spec.ts` | Real or managed local backend with SSE | Start runs, switch sessions, open subagents, recover streams | Stream state and connection lifecycle assertions | Integration coverage; use the real-backend variant for release evidence |
 | `live-completed-subagent-scroll.spec.ts` | Existing localhost deployment and real persisted session | Expand processed tools, open subagent, wheel both regions, back, switch session, return, and reenter | Long tasks, interaction latency, JS heap growth, page/console errors, renderer crash | Required live user-path acceptance when its environment variables are supplied |
 
-The live completed-subagent test writes `live-subagent-pressure-metrics.json` to
-the Playwright result directory. Its current gates are under 3 seconds for open,
-wheel, and reentry interactions, under 5 seconds for switching away and back, no
-long task at or above 1 second, less than 128 MiB heap growth when Chromium exposes
-heap data, and zero page errors, console errors, or renderer crashes. A mock run
-must never be reported as satisfying these live release gates.
+The live completed-subagent test warms the lazy-loaded panel before measurement,
+writes `live-subagent-pressure-metrics.json`, then repeats switch/open/back five
+times. Its gates are under 500 ms for wheel interactions, under 750 ms for back,
+under 1.5 seconds for open, reentry, and session switching, no long task at or
+above 300 ms, under 2 seconds cumulative long-task time, and less than 32 MiB heap
+growth between post-GC samples. It records both long-task count and per-action
+segments. It also requires zero unexpected HTTP/console failures, page errors,
+renderer crashes, or leaked EventSource subscriptions. A mock run must never be
+reported as satisfying these live release gates.

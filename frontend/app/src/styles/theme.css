@@ -749,22 +749,30 @@ body {
 }
 
 .at-session-meta-slot {
-  display: inline-flex;
+  display: inline-grid;
+  grid-template-areas: "session-meta";
   align-items: center;
   justify-content: flex-end;
-  gap: 3px;
   min-width: 0;
+}
+
+.at-session-meta-slot > .at-session-meta,
+.at-session-meta-slot > .at-session-actions {
+  grid-area: session-meta;
+}
+
+.at-session-meta-slot > .at-session-meta {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.12s ease, visibility 0.12s ease;
 }
 
 .at-session-actions {
   display: inline-flex;
   align-items: center;
+  justify-self: end;
   gap: 1px;
-  position: absolute;
-  right: 5px;
-  z-index: 1;
-  padding-left: 4px;
-  background: var(--at-surface-muted);
+  background: inherit;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.12s ease;
@@ -772,10 +780,16 @@ body {
 
 .at-session-item:hover .at-session-actions,
 .at-session-item:focus-within .at-session-actions,
-.at-session-item.is-selected .at-session-actions,
 .at-session-item.has-open-confirm .at-session-actions {
   opacity: 1;
   pointer-events: auto;
+}
+
+.at-session-item:hover .at-session-meta-slot > .at-session-meta,
+.at-session-item:focus-within .at-session-meta-slot > .at-session-meta,
+.at-session-item.has-open-confirm .at-session-meta-slot > .at-session-meta {
+  opacity: 0;
+  visibility: hidden;
 }
 
 .at-session-action-button.ant-btn {

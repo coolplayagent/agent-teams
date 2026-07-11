@@ -507,48 +507,48 @@ export function SessionsSidebar({
             </button>
             <div className="at-session-meta-slot">
               {sessionMeta(session, t, language, indicatorType)}
+              <div className="at-session-actions">
+                <Tooltip title={t("sidebarRenameSession")}>
+                  <Button
+                    aria-label={t("sidebarRenameSession")}
+                    className="at-session-action-button"
+                    icon={<Pencil size={13} />}
+                    onClick={() => openRenameSession(session)}
+                    size="small"
+                    type="text"
+                  />
+                </Tooltip>
+                <Popconfirm
+                  cancelText={t("sidebarDeleteCancel")}
+                  description={t("sidebarDeleteMessage", {
+                    label: sessionLabel(session) || session.session_id,
+                  })}
+                  okButtonProps={{ danger: true, loading: deleteSessionMutation.isPending }}
+                  okText={t("sidebarDeleteConfirm")}
+                  onConfirm={submitDeleteSession}
+                  onOpenChange={(open) => {
+                    if (open) {
+                      setDeleteTarget(session);
+                    } else if (!deleteSessionMutation.isPending) {
+                      resetDeleteSession();
+                    }
+                  }}
+                  open={deleteTarget?.session_id === session.session_id}
+                  title={t("sidebarDeleteTitle")}
+                >
+                  <Tooltip title={t("sidebarDeleteSession")}>
+                    <Button
+                      aria-label={t("sidebarDeleteSession")}
+                      className="at-session-action-button"
+                      danger
+                      icon={<Trash2 size={13} />}
+                      size="small"
+                      type="text"
+                    />
+                  </Tooltip>
+                </Popconfirm>
+              </div>
             </div>
-          </div>
-          <div className="at-session-actions">
-            <Tooltip title={t("sidebarRenameSession")}>
-              <Button
-                aria-label={t("sidebarRenameSession")}
-                className="at-session-action-button"
-                icon={<Pencil size={13} />}
-                onClick={() => openRenameSession(session)}
-                size="small"
-                type="text"
-              />
-            </Tooltip>
-            <Popconfirm
-              cancelText={t("sidebarDeleteCancel")}
-              description={t("sidebarDeleteMessage", {
-                label: sessionLabel(session) || session.session_id,
-              })}
-              okButtonProps={{ danger: true, loading: deleteSessionMutation.isPending }}
-              okText={t("sidebarDeleteConfirm")}
-              onConfirm={submitDeleteSession}
-              onOpenChange={(open) => {
-                if (open) {
-                  setDeleteTarget(session);
-                } else if (!deleteSessionMutation.isPending) {
-                  resetDeleteSession();
-                }
-              }}
-              open={deleteTarget?.session_id === session.session_id}
-              title={t("sidebarDeleteTitle")}
-            >
-              <Tooltip title={t("sidebarDeleteSession")}>
-                <Button
-                  aria-label={t("sidebarDeleteSession")}
-                  className="at-session-action-button"
-                  danger
-                  icon={<Trash2 size={13} />}
-                  size="small"
-                  type="text"
-                />
-              </Tooltip>
-            </Popconfirm>
           </div>
         </div>
       </div>

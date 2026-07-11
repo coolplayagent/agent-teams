@@ -283,6 +283,11 @@ describe("SessionsSidebar", () => {
 
     expect(workspaceHeader).not.toHaveClass("is-selected");
     expect(selectedSession).toHaveClass("is-selected");
+    const metaSlot = selectedSession?.querySelector(".at-session-meta-slot");
+    expect(metaSlot?.querySelector(".at-session-time")).toHaveTextContent(/\S+/);
+    expect(metaSlot?.querySelector(".at-session-actions")).toBeInTheDocument();
+    expect(metaSlot?.querySelector(".at-session-actions")?.parentElement)
+      .toBe(metaSlot);
   });
 
   it("scrolls the selected session into the visible sidebar list", async () => {

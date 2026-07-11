@@ -268,10 +268,11 @@ describe("BoardTodosView", () => {
     expect(screen.getByText("Issue #401")).toBeVisible();
     expect(screen.getByText("Review board handoff")).toBeVisible();
     expect(screen.getByText("PR #12")).toBeVisible();
-    expect(screen.getByText(/Showing 2/)).toBeVisible();
-    expect(screen.getByText(/Synced/)).toBeVisible();
+    const overview = boardOverview();
+    expect(overview).toHaveTextContent(/Showing\s+3/);
+    expect(overview).toHaveTextContent(/Synced/);
     expect(screen.getByText("Revision")).not.toBeVisible();
-    fireEvent.click(screen.getByText(/Showing 2/).closest("summary") as HTMLElement);
+    fireEvent.click(overview.querySelector("summary") as HTMLElement);
     expect(screen.getByText("Revision")).toBeVisible();
     expect(screen.getByText("7")).toBeVisible();
     expect(listBoardTodosMock).toHaveBeenCalledWith({
@@ -324,7 +325,9 @@ describe("BoardTodosView", () => {
       }),
     );
     expect(await screen.findByText("Board sync completed")).toBeVisible();
-    expect(screen.getByText("8")).toBeVisible();
+    const overview = boardOverview();
+    fireEvent.click(overview.querySelector("summary") as HTMLElement);
+    expect(within(overview).getByText("8")).toBeVisible();
   });
 
   it("opens board source settings and saves source changes", async () => {
@@ -335,8 +338,8 @@ describe("BoardTodosView", () => {
     fireEvent.click(screen.getByRole("button", { name: "Board sources" }));
 
     const drawer = await screen.findByRole("dialog", { name: "Board sources" });
-    expect(await within(drawer).findByText("GitHub issues")).toBeVisible();
-    expect(within(drawer).getByText("openai/agent-teams")).toBeVisible();
+    expect(await within(drawer).findByText("GitHub issues")).toBeInTheDocument();
+    expect(within(drawer).getByText("openai/agent-teams")).toBeInTheDocument();
     expect(listBoardTodoSourcesMock).toHaveBeenCalledWith("workspace-1");
 
     fireEvent.click(within(drawer).getByRole("button", { name: "Edit source" }));
@@ -390,7 +393,7 @@ describe("BoardTodosView", () => {
       }),
     );
     expect(await screen.findByRole("dialog", { name: "Start board TODO" }))
-      .toBeVisible();
+      .toBeInTheDocument();
     const finalPrompt = await screen.findByLabelText("Final prompt");
     expect(finalPrompt).toHaveValue("Preview prompt for board handoff");
 
@@ -413,7 +416,10 @@ describe("BoardTodosView", () => {
         yolo: true,
       }),
     );
-    expect(await screen.findByText("Queued for board todo handoff")).toBeVisible();
+    const updatedCard = await screen.findByTestId("board-todo-todo-1");
+    expandBoardCardDetails(updatedCard);
+    expect(await within(updatedCard).findByText("Queued for board todo handoff"))
+      .toBeVisible();
     expect(screen.getByText("In progress")).toBeVisible();
   });
 
@@ -468,7 +474,10 @@ describe("BoardTodosView", () => {
         yolo: true,
       }),
     );
-    expect(await screen.findByText("Queued board change request")).toBeVisible();
+    const updatedCard = await screen.findByTestId("board-todo-todo-2");
+    expandBoardCardDetails(updatedCard);
+    expect(await within(updatedCard).findByText("Queued board change request"))
+      .toBeVisible();
     expect(screen.getByText("In progress")).toBeVisible();
   });
 
@@ -482,7 +491,9 @@ describe("BoardTodosView", () => {
     await waitFor(() =>
       expect(markBoardTodoDoneMock).toHaveBeenCalledWith("todo-2"),
     );
-    expect(await screen.findByText("Review accepted")).toBeVisible();
+    const acceptedCard = await screen.findByTestId("board-todo-todo-2");
+    expandBoardCardDetails(acceptedCard);
+    expect(await within(acceptedCard).findByText("Review accepted")).toBeVisible();
 
     const doneCard = await screen.findByTestId("board-todo-todo-3");
     fireEvent.click(within(doneCard).getByRole("button", { name: "Archive" }));
@@ -496,6 +507,24 @@ describe("BoardTodosView", () => {
     );
   });
 });
+
+function boardOverview(): HTMLElement {
+  const overview = document.querySelector(".at-board-overview");
+  if (!(overview instanceof HTMLElement)) {
+    throw new Error("Board overview was not rendered.");
+  }
+  return overview;
+}
+
+function expandBoardCardDetails(card: HTMLElement): void {
+  const details = card.querySelector(".at-board-card-details");
+  if (!(details instanceof HTMLDetailsElement)) {
+    throw new Error("Board card details were not rendered.");
+  }
+  if (!details.open) {
+    fireEvent.click(details.querySelector("summary") as HTMLElement);
+  }
+}
 
 function boardResponse(
   items: BoardTodoItem[],

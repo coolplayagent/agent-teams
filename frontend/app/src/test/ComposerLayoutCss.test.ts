@@ -53,6 +53,18 @@ describe("contextual composer layout", () => {
     expect(composerCss).toContain("@media (prefers-reduced-motion: reduce)");
   });
 
+  it("uses an intrinsic compact topology summary in split-width composers", () => {
+    expect(composerSource).toContain("composerTopologySummary");
+    expect(composerSource).toContain("abbreviateComposerModeLabel(composerModeLabel)");
+    expect(composerSource).toContain("title={composerTopologySummary}");
+    expect(composerCss).toMatch(
+      /@container composer \(max-width:\s*680px\)[\s\S]*?\.at-composer \.at-composer-topology-summary\s*{[\s\S]*?flex:\s*0 0 auto;/,
+    );
+    expect(composerCss).toMatch(
+      /@container composer \(max-width:\s*680px\)[\s\S]*?\.at-composer \.at-composer-summary-full\s*{[\s\S]*?display:\s*none;[\s\S]*?\.at-composer \.at-composer-summary-compact\s*{[\s\S]*?display:\s*inline;/,
+    );
+  });
+
   it("renders suggestions as a bounded floating surface", () => {
     expect(composerCss).toMatch(
       /\.at-prompt-mention-menu\.at-prompt-mention-menu\s*{[\s\S]*?position:\s*fixed;[\s\S]*?z-index:\s*1100;[\s\S]*?max-width:\s*calc\(100vw - 24px\);[\s\S]*?overflow:\s*hidden;/,

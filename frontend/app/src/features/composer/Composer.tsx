@@ -820,6 +820,17 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     },
     onTextChange: setDraft,
   });
+  const composerModeLabel = selectedSessionMode === "normal"
+    ? t("composerNormal")
+    : t("composerOrchestration");
+  const composerTopologyLabel = selectedSessionMode === "normal"
+    ? normalRootRoleOptions.find(
+        (option) => option.value === selectedNormalRootRoleId,
+      )?.label ?? t("composerRootRole")
+    : orchestrationPresetOptions.find(
+        (option) => option.value === selectedOrchestrationPresetId,
+      )?.label ?? t("composerPreset");
+  const composerTopologySummary = `${composerModeLabel} · ${composerTopologyLabel}`;
 
   return (
     <form
@@ -927,9 +938,10 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
                 type="text"
               />
             </Tooltip>
-            <Popover
-              arrow={false}
-              content={(
+            <Tooltip title={composerTopologySummary}>
+              <Popover
+                arrow={false}
+                content={(
                 <div className="at-composer-advanced-panel">
                   <div className="at-composer-advanced-heading">
                     <Settings2 aria-hidden size={16} />
@@ -1098,34 +1110,28 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
             </div>
                   </div>
                 </div>
-              )}
-              overlayClassName="at-composer-advanced-popover"
-              placement="topLeft"
-              trigger="click"
-            >
-              <Button
-                aria-label={`${t("composerMode")}: ${selectedSessionMode}`}
-                className="at-composer-summary-button"
-                icon={<Settings2 size={15} />}
-                size="small"
-                type="text"
+                )}
+                overlayClassName="at-composer-advanced-popover"
+                placement="topLeft"
+                trigger="click"
               >
-                <span className="at-composer-summary-copy">
-                  {selectedSessionMode === "normal"
-                    ? t("composerNormal")
-                    : t("composerOrchestration")}
-                  <span aria-hidden className="at-composer-summary-separator">·</span>
-                  {selectedSessionMode === "normal"
-                    ? normalRootRoleOptions.find(
-                        (option) => option.value === selectedNormalRootRoleId,
-                      )?.label ?? t("composerRootRole")
-                    : orchestrationPresetOptions.find(
-                        (option) => option.value === selectedOrchestrationPresetId,
-                      )?.label ?? t("composerPreset")}
-                </span>
-                <ChevronDown aria-hidden size={13} />
-              </Button>
-            </Popover>
+                <Button
+                  aria-label={`${t("composerMode")}: ${composerTopologySummary}`}
+                  className="at-composer-summary-button at-composer-topology-summary"
+                  icon={<Settings2 size={15} />}
+                  size="small"
+                  type="text"
+                >
+                  <span aria-hidden className="at-composer-summary-copy at-composer-summary-full">
+                    {composerTopologySummary}
+                  </span>
+                  <span aria-hidden className="at-composer-summary-copy at-composer-summary-compact">
+                    {abbreviateComposerModeLabel(composerModeLabel)}
+                  </span>
+                  <ChevronDown aria-hidden size={13} />
+                </Button>
+              </Popover>
+            </Tooltip>
             <Popover
               arrow={false}
               content={(
@@ -1751,6 +1757,11 @@ function sessionModeOptions(t: Translate): Array<{
     { label: t("composerNormal"), value: "normal" },
     { label: t("composerOrchestration"), value: "orchestration" },
   ];
+}
+
+function abbreviateComposerModeLabel(label: string): string {
+  const characters = Array.from(label.trim());
+  return characters.length > 6 ? `${characters.slice(0, 4).join("")}.` : label;
 }
 
 function resolveValidationRoleId(

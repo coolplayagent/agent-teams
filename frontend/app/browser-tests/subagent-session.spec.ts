@@ -1374,7 +1374,10 @@ test("keeps send, session switch, and subagent view responsive under sidebar loa
       "TS pressure seed 24",
     );
 
-    await page.getByRole("button", { exact: true, name: "New session" }).click();
+    await page
+      .getByLabel("New session", { exact: true })
+      .getByRole("button", { exact: true, name: "New session" })
+      .click();
     await expect(page.getByRole("textbox", { name: "Initial task (optional)" }))
       .toBeVisible();
     await page.getByRole("button", { exact: true, name: "New session" }).click();

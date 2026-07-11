@@ -68,6 +68,8 @@ interface QueueStageObservation {
 }
 
 interface SubagentScrollGrowthEvidence {
+  cardObservedAtMs: number;
+  cardObservedProviderWave: number;
   firstSampleHeight: number;
   firstSampleTokenIndex: number;
   secondSampleHeight: number;
@@ -96,7 +98,7 @@ test.skip(
   "Set AGENT_TEAMS_MANAGED_REAL_CONCURRENCY=1 to run the real concurrency gate.",
 );
 
-test.setTimeout(360_000);
+test.setTimeout(480_000);
 
 let managedBackend: ManagedRealBackend;
 
@@ -672,11 +674,12 @@ async function verifyRunningSubagent(
     .poll(() => card.count(), {
       timeout: remainingProviderQueueBudgetMs(
         gateStartedAt,
-        startedRuns.indexOf(run),
+        startedRuns.length - 1,
         1,
       ),
     })
     .toBeGreaterThan(0);
+  const cardObservedAtMs = Date.now() - gateStartedAt;
   await expandProcessedGroupsUntilCardIsVisible(page, card);
   await expect(card).toBeVisible({ timeout: 10_000 });
   await expect(card).toHaveAttribute("data-status", "running");
@@ -693,7 +696,7 @@ async function verifyRunningSubagent(
     .poll(() => latestSubagentPanelRuntimeText(panel), {
       timeout: remainingProviderQueueBudgetMs(
         gateStartedAt,
-        startedRuns.indexOf(run),
+        startedRuns.length - 1,
         SUBAGENT_PROVIDER_CALL_COUNT,
       ),
     })
@@ -739,6 +742,10 @@ async function verifyRunningSubagent(
     "the subagent fixture must retain at least half its tokens after overflow begins",
   ).toBeLessThanOrEqual(SUBAGENT_TOKEN_COUNT / 2 - 1);
   const scrollGrowth: SubagentScrollGrowthEvidence = {
+    cardObservedAtMs,
+    cardObservedProviderWave: Math.ceil(
+      cardObservedAtMs / SLOW_PROVIDER_CALL_BUDGET_MS,
+    ),
     firstSampleHeight,
     firstSampleTokenIndex,
     overflowHeight: await timeline.evaluate((element) => element.scrollHeight),

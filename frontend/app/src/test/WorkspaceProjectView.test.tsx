@@ -485,7 +485,7 @@ describe("WorkspaceProjectView", () => {
     );
   });
 
-  it("filters the workspace file tree and opens a changed result", async () => {
+  it("reserves the changes view for change navigation and keeps browsing in files", async () => {
     listWorkspacesMock.mockResolvedValue([
       {
         workspace_id: "workspace-1",
@@ -555,20 +555,36 @@ describe("WorkspaceProjectView", () => {
         },
       ],
     });
+    getWorkspaceFileContentMock.mockResolvedValue({
+      workspace_id: "workspace-1",
+      mount_name: "default",
+      path: "frontend/app/src/App.tsx",
+      content: "export function App() {}",
+      encoding: "utf-8",
+      is_binary: false,
+      truncated: false,
+      size_bytes: 24,
+    });
 
     renderProjectView();
 
     expect(await screen.findByText("+changed")).toBeVisible();
+    expect(screen.getByRole("region", { name: "changes" })).toBeVisible();
+    expect(screen.getByRole("region", { name: "Diff preview" })).toBeVisible();
+    expect(screen.queryByRole("region", { name: "File tree" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Filter files...")).not.toBeInTheDocument();
 
-    const filter = screen.getByLabelText("Filter files...");
+    fireEvent.click(screen.getByRole("tab", { name: "Files" }));
+
+    const filter = await screen.findByLabelText("Filter files...");
     fireEvent.change(filter, { target: { value: "App" } });
 
     const result = await screen.findByRole("button", {
-        name: "Open changed file frontend/app/src/App.tsx",
+      name: "Open file frontend/app/src/App.tsx",
     });
     fireEvent.click(result);
 
-    expect(await screen.findByText("+changed")).toBeVisible();
+    expect(await screen.findByText("export function App() {}")).toBeVisible();
     expect(searchWorkspacePathsMock).toHaveBeenCalledWith(
       "workspace-1",
       "App",

@@ -60,6 +60,7 @@ import type {
   WorkspaceUpdateRequest,
 } from "../../api/contracts";
 import { useTranslations, type Translate } from "../../i18n";
+import "./WorkspaceProjectView.css";
 
 type WorkspaceProjectMode = "files" | "changes";
 
@@ -164,7 +165,6 @@ export function WorkspaceProjectView({
     enabled: workspaceId.length > 0 && activeMountName.length > 0,
   });
   const diffFiles = diffsQuery.data?.diff_files ?? [];
-  const diffFilesByPath = new Map(diffFiles.map((file) => [file.path, file]));
   const activeMode: WorkspaceProjectMode =
     modeOverride ?? (diffFiles.length > 0 ? "changes" : "files");
   const selectedDiff =
@@ -493,25 +493,6 @@ export function WorkspaceProjectView({
                 t={t}
               />
             </section>
-            <WorkspaceFilePane
-              diffFilesByPath={diffFilesByPath}
-              entries={filePaneEntries}
-              error={
-                normalizedTreeFilter.length > 0
-                  ? fileSearchQuery.error
-                  : rootTreeQuery.error
-              }
-              filter={treeFilter}
-              loading={
-                normalizedTreeFilter.length > 0
-                  ? fileSearchQuery.isFetching
-                  : rootTreeQuery.isLoading
-              }
-              onFilterChange={setTreeFilter}
-              onSelectDiff={(path) => setSelectedDiffPath(path)}
-              selectedPath={effectiveSelectedDiffPath}
-              t={t}
-            />
           </div>
         )}
       </div>
@@ -1186,127 +1167,6 @@ function WorkspaceFilteredFileRow({
       selected={selected}
       t={t}
     />
-  );
-}
-
-function WorkspaceFilePane({
-  diffFilesByPath,
-  entries,
-  error,
-  filter,
-  loading,
-  onFilterChange,
-  onSelectDiff,
-  selectedPath,
-  t,
-}: {
-  diffFilesByPath: Map<string, WorkspaceDiffFileSummary>;
-  entries: WorkspaceFilePaneEntry[];
-  error: Error | null;
-  filter: string;
-  loading: boolean;
-  onFilterChange: (value: string) => void;
-  onSelectDiff: (path: string) => void;
-  selectedPath: string | null;
-  t: Translate;
-}) {
-  return (
-    <section aria-label={t("workspaceFileTree")} className="at-workspace-file-pane">
-      <div className="at-workspace-file-pane-filter">
-        <Input
-          allowClear
-          aria-label={t("workspaceFilterFiles")}
-          className="at-workspace-tree-filter"
-          onChange={(event) => onFilterChange(event.target.value)}
-          placeholder={t("workspaceFilterFiles")}
-          prefix={<Search aria-hidden="true" size={14} />}
-          size="small"
-          value={filter}
-        />
-      </div>
-      {loading && entries.length === 0 ? <Skeleton active paragraph={{ rows: 10 }} /> : null}
-      {error !== null ? (
-        <div className="at-project-state is-error">
-          {errorMessage(
-            error,
-            filter.trim().length > 0
-              ? t("workspaceSearchFilesError")
-              : t("workspaceLoadTreeError"),
-          )}
-        </div>
-      ) : null}
-      {!loading && error === null && entries.length === 0 ? (
-        <div className="at-project-state">
-          {filter.trim().length > 0
-            ? t("workspaceNoFileMatches")
-            : t("workspaceNoRootEntries")}
-        </div>
-      ) : null}
-      {entries.length > 0 ? (
-        <div className="at-workspace-file-pane-list">
-          {entries.map((entry) => (
-            <WorkspaceFilePaneRow
-              diffFile={diffFilesByPath.get(entry.path)}
-              entry={entry}
-              key={`${entry.kind}:${entry.path}`}
-              onSelectDiff={onSelectDiff}
-              selected={entry.path === selectedPath}
-              t={t}
-            />
-          ))}
-        </div>
-      ) : null}
-    </section>
-  );
-}
-
-function WorkspaceFilePaneRow({
-  diffFile,
-  entry,
-  onSelectDiff,
-  selected,
-  t,
-}: {
-  diffFile: WorkspaceDiffFileSummary | undefined;
-  entry: WorkspaceFilePaneEntry;
-  onSelectDiff: (path: string) => void;
-  selected: boolean;
-  t: Translate;
-}) {
-  const Icon = entry.kind === "directory" ? FolderClosed : File;
-  const content = (
-    <>
-      <Icon aria-hidden="true" size={15} />
-      <span className="at-workspace-file-pane-name">{entry.name}</span>
-      {diffFile !== undefined ? (
-        <span className={`at-workspace-diff-status is-${diffFile.change_type}`}>
-          {changeLabel(diffFile.change_type)}
-        </span>
-      ) : null}
-    </>
-  );
-  if (diffFile !== undefined) {
-    return (
-      <button
-        aria-current={selected ? "page" : undefined}
-        aria-label={t("workspaceOpenChangedFile", { path: entry.path })}
-        className={
-          selected
-            ? "at-workspace-file-pane-row is-action is-selected"
-            : "at-workspace-file-pane-row is-action"
-        }
-        onClick={() => onSelectDiff(entry.path)}
-        title={entry.path}
-        type="button"
-      >
-        {content}
-      </button>
-    );
-  }
-  return (
-    <div className="at-workspace-file-pane-row" title={entry.path}>
-      {content}
-    </div>
   );
 }
 

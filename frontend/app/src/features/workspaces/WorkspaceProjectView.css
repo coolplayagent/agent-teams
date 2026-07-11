@@ -1,0 +1,14 @@
+.at-workspace-workbench-content.is-changes {
+  grid-template-columns: minmax(220px, 24%) minmax(0, 1fr);
+}
+
+.at-workspace-workbench-content.is-changes .at-workspace-diff-preview {
+  border-right: 0;
+}
+
+@media (max-width: 640px) {
+  .at-workspace-workbench-content.is-changes {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(140px, 0.3fr) minmax(220px, 0.7fr);
+  }
+}

@@ -145,7 +145,7 @@ describe("shell layout CSS", () => {
       /\.at-workspace-workbench-content\.is-files\s*{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) minmax\(260px, 28%\);/,
     );
     expect(themeCss).toMatch(
-      /\.at-workspace-workbench-content\.is-changes\s*{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*minmax\(240px, 26%\) minmax\(0, 1fr\) minmax\(240px, 24%\);/,
+      /\.at-workspace-workbench-content\.is-changes\s*{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*minmax\(220px, 24%\) minmax\(0, 1fr\);/,
     );
     expect(themeCss).toMatch(
       /\.at-workspace-tree-list,\s*[\s\S]*?\.at-workspace-file-pane-list\s*{[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*auto;/,
@@ -154,7 +154,7 @@ describe("shell layout CSS", () => {
       /@media \(max-width: 640px\)[\s\S]*?\.at-workspace-workbench-content\.is-files\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);[\s\S]*?grid-template-rows:\s*minmax\(220px, 0\.64fr\) minmax\(150px, 0\.36fr\);/,
     );
     expect(themeCss).toMatch(
-      /@media \(max-width: 640px\)[\s\S]*?\.at-workspace-workbench-content\.is-changes\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);[\s\S]*?grid-template-rows:\s*minmax\(140px, 0\.25fr\) minmax\(220px, 0\.5fr\) minmax\(150px, 0\.25fr\);/,
+      /@media \(max-width: 640px\)[\s\S]*?\.at-workspace-workbench-content\.is-changes\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);[\s\S]*?grid-template-rows:\s*minmax\(140px, 0\.3fr\) minmax\(220px, 0\.7fr\);/,
     );
   });
 

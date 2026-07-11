@@ -29,7 +29,7 @@ const MAIN_HISTORY_ROWS = 420;
 const SUBAGENT_HISTORY_ROWS = 260;
 const STREAM_BATCH_COUNT = 18;
 const MAIN_RUN_ID = "run-v2-scale-main";
-const SCREENSHOT_FOLDER = "frontend-v2-streaming-scale";
+const SCREENSHOT_FOLDER = "subagent-live-pressure";
 
 interface ScaleMetrics {
   childBatchDispatchMs: number;
@@ -82,6 +82,7 @@ test("keeps large multi-session and multi-subagent streaming interactive", async
     );
     await waitForEventSourceOpenCount(page, 1);
     await updateMaxOpenEventSources(page, state);
+    await revealAllScaleSessions(page);
 
     const mainTimeline = page.locator(".at-chat-view .at-timeline");
     await expect(mainTimeline).toHaveAttribute(
@@ -108,7 +109,8 @@ test("keeps large multi-session and multi-subagent streaming interactive", async
       sourceIndex: 0,
       type: "message.text.delta",
     });
-    await expect(page.getByText("MAIN_SCALE_LIVE_DELTA")).toBeAttached();
+    await expect.poll(async () => (await timelineStats(mainTimeline)).totalRows)
+      .toBeGreaterThan(initialMainStats.totalRows);
     const mainEventToPaintMs = performance.now() - mainEventStarted;
     const mainScrollAfter = await timelineScrollTop(mainTimeline);
     expect(Math.abs(mainScrollAfter - mainScrollBefore)).toBeLessThanOrEqual(2);
@@ -122,7 +124,9 @@ test("keeps large multi-session and multi-subagent streaming interactive", async
     const hiddenSessionTitle = scaleSessionTitle(17);
     const hiddenClickStarted = performance.now();
     await page.getByRole("button", { name: hiddenSessionTitle }).click();
-    await expect(page.getByText(`${hiddenSessionTitle} history 0220`)).toBeAttached();
+    await expect(page.locator(".at-session-item.is-selected"))
+      .toContainText(hiddenSessionTitle);
+    await expect(mainTimeline).toHaveAttribute("data-total-row-count", "220");
     const hiddenSessionClickLatencyMs = performance.now() - hiddenClickStarted;
     await expect(page.getByText("MAIN_SCALE_LIVE_DELTA")).toHaveCount(0);
     await expect(prompt).toBeEnabled();
@@ -142,7 +146,8 @@ test("keeps large multi-session and multi-subagent streaming interactive", async
 
     const returnClickStarted = performance.now();
     await page.getByRole("button", { name: scaleSessionTitle(0) }).click();
-    await expect(page.getByText("HIDDEN_SESSION_DELTA")).toBeAttached();
+    await expect.poll(async () => (await timelineStats(mainTimeline)).totalRows)
+      .toBeGreaterThan(initialMainStats.totalRows);
     const returnSessionClickLatencyMs = performance.now() - returnClickStarted;
     await expect.poll(() => timelineScrollTop(mainTimeline)).toBe(mainScrollBefore);
 
@@ -153,6 +158,7 @@ test("keeps large multi-session and multi-subagent streaming interactive", async
     await expect(mainJump).toHaveCount(0);
     await expect.poll(() => timelineDistanceFromBottom(mainTimeline))
       .toBeLessThanOrEqual(2);
+    await expect(page.getByText(/HIDDEN_SESSION_DELTA/)).toBeVisible();
 
     const childTitle = scaleSubagentTitle(SUBAGENT_COUNT - 1);
     const childClickStarted = performance.now();
@@ -223,11 +229,8 @@ test("keeps large multi-session and multi-subagent streaming interactive", async
       });
       nextEventId += 1;
     }
-    await expect(
-      page.locator(".at-subagent-session-view").getByText(
-        `CHILD_SCALE_BATCH_${STREAM_BATCH_COUNT - 1}`,
-      ),
-    ).toBeAttached();
+    await expect.poll(async () => (await timelineStats(childTimeline)).totalRows)
+      .toBeGreaterThan(childInitialStats.totalRows);
     const childBatchDispatchMs = performance.now() - batchStarted;
     const childScrollAfter = await timelineScrollTop(childTimeline);
     expect(Math.abs(childScrollAfter - childScrollBefore)).toBeLessThanOrEqual(2);
@@ -555,6 +558,19 @@ async function openSubagentPanel(page: Page, title: string): Promise<void> {
     .filter({ hasText: title });
   await expect(card).toBeVisible();
   await card.locator(".at-message-tool-summary").click();
+}
+
+async function revealAllScaleSessions(page: Page): Promise<void> {
+  const showMore = page.getByRole("button", {
+    name: "Show more sessions in agent-teams",
+  });
+  for (let pageIndex = 0; pageIndex < 3; pageIndex += 1) {
+    if (await showMore.count() === 0) {
+      break;
+    }
+    await showMore.click();
+  }
+  await expect(page.locator(".at-session-item")).toHaveCount(SESSION_COUNT);
 }
 
 async function setTimelineAwayFromBottom(

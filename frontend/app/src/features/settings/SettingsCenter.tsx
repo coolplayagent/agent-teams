@@ -49,7 +49,6 @@ import type {
   RoleConfigDocument,
   RoleConfigSummary,
   RoleSkillOption,
-  RoleOption,
 } from "../../api/contracts";
 import { useTranslations } from "../../i18n";
 import { useUiStore } from "../../runtime/uiStore";
@@ -565,8 +564,6 @@ function SettingsRoles({
       );
     },
   });
-  const normalRoles = roles?.normal_mode_roles ?? [];
-  const subagentRoles = roles?.subagent_roles ?? [];
   const roleItems = useMemo(
     () => (roleConfigsQuery.data ?? []).map((role) => roleConfigListItem(role)),
     [roleConfigsQuery.data],
@@ -641,12 +638,6 @@ function SettingsRoles({
         />
       ) : !roleConfigsQuery.isLoading && roleConfigsQuery.data !== undefined ? (
         <>
-          <div className="at-settings-facts">
-            <Fact label={t("settingsCoordinator")} value={roleName(roles?.coordinator_role)} />
-            <Fact label={t("settingsMainAgent")} value={roleName(roles?.main_agent_role)} />
-            <Fact label={t("settingsNormalRoles")} value={String(normalRoles.length)} />
-            <Fact label={t("settingsSubagentRoles")} value={String(subagentRoles.length)} />
-          </div>
           <div className="at-settings-section-actions">
             <Button onClick={() => setCreatingRole(true)} type="primary">
               {t("settingsRoleNew")}
@@ -2442,10 +2433,6 @@ function Fact({ label, value }: { label: string; value: string }) {
       <dd>{value}</dd>
     </div>
   );
-}
-
-function roleName(role: RoleOption | null | undefined): string {
-  return role?.name?.trim() || role?.role_id || "-";
 }
 
 function agentRuntimeSelectOptions(

@@ -1556,6 +1556,8 @@ describe("SettingsDrawer", () => {
     await waitFor(() => expect(listRoleConfigsMock).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.getAllByText("Coordinator").length).toBeGreaterThan(0));
     expect(screen.getByText("Reviewer")).toBeVisible();
+    expect(screen.queryByText("Normal roles")).toBeNull();
+    expect(screen.queryByText("Subagent roles")).toBeNull();
     const reviewerRoleRow = screen.getByText("Reviewer").closest("button");
     expect(reviewerRoleRow).not.toBeNull();
     fireEvent.click(reviewerRoleRow as HTMLElement);

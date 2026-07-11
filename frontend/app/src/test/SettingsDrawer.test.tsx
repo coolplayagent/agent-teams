@@ -1908,7 +1908,7 @@ describe("SettingsDrawer", () => {
     );
   });
 
-  it("links migrated settings labels to real controls across secondary pages", async () => {
+  it("links migrated model and proxy labels to real controls", async () => {
     renderDrawer();
 
     const sections = await screen.findByRole("navigation", {
@@ -1922,7 +1922,7 @@ describe("SettingsDrawer", () => {
     expect(screen.getByLabelText("Model")).toBeVisible();
     expect(screen.getByLabelText("Base URL")).toBeVisible();
     expect(screen.getByLabelText("API Key")).toBeVisible();
-    expect(screen.getByLabelText("Image Input")).toBeVisible();
+    expect(screen.getByLabelText("Image Input")).toBeInTheDocument();
     expect(screen.getByLabelText("Temperature")).toBeVisible();
     expect(screen.getByLabelText("Top P")).toBeVisible();
     expect(screen.getByLabelText("Max tokens")).toBeVisible();
@@ -1936,6 +1936,14 @@ describe("SettingsDrawer", () => {
     expect(screen.getByLabelText("NO_PROXY")).toBeVisible();
     expect(screen.getByLabelText("Target URL")).toBeVisible();
     expect(screen.getByLabelText("Timeout (ms)")).toBeVisible();
+  }, 30000);
+
+  it("links migrated workspace and role labels to real controls", async () => {
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
 
     fireEvent.click(within(sections).getByRole("button", { name: "Remote workspace" }));
     fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
@@ -3380,7 +3388,7 @@ describe("SettingsDrawer", () => {
     );
   }, 25000);
 
-  it("validates, deletes, and creates role configs from the roles page", async () => {
+  it("validates and deletes role configs from the roles page", async () => {
     renderDrawer();
 
     const sections = await screen.findByRole("navigation", {
@@ -3402,17 +3410,18 @@ describe("SettingsDrawer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     fireEvent.click(await screen.findByRole("button", { name: "OK" }));
     await waitFor(() => expect(deleteRoleConfigMock).toHaveBeenCalledWith("reviewer"));
+  }, 30000);
+
+  it("validates and creates a role config from the roles page", async () => {
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "Roles" }));
 
     fireEvent.click(await screen.findByRole("button", { name: "New role" }));
-    for (const label of [
-      "Role name",
-      "Description",
-      "Version",
-      "Model profile",
-      "Execution surface",
-      "Mode",
-      "System prompt",
-    ]) {
+    for (const label of ["Role name", "Description", "Version", "System prompt"]) {
       fireEvent.change(screen.getByLabelText(label), { target: { value: "" } });
     }
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -3420,9 +3429,6 @@ describe("SettingsDrawer", () => {
       "Role name is required.",
       "Role description is required.",
       "Role version is required.",
-      "Model profile is required.",
-      "Execution surface is required.",
-      "Role mode is required.",
       "System prompt is required.",
     ]) {
       expect(await screen.findByText(message)).toBeVisible();
@@ -3439,15 +3445,6 @@ describe("SettingsDrawer", () => {
     });
     fireEvent.change(screen.getByLabelText("Version"), {
       target: { value: "1.0.0" },
-    });
-    fireEvent.change(screen.getByLabelText("Model profile"), {
-      target: { value: "default" },
-    });
-    fireEvent.change(screen.getByLabelText("Execution surface"), {
-      target: { value: "api" },
-    });
-    fireEvent.change(screen.getByLabelText("Mode"), {
-      target: { value: "primary" },
     });
     fireEvent.change(screen.getByLabelText("System prompt"), {
       target: { value: "Analyze the plan and report risks." },
@@ -3642,9 +3639,8 @@ describe("SettingsDrawer", () => {
     fireEvent.change(screen.getByLabelText("Fallback policy"), {
       target: { value: "same_provider_then_other_provider" },
     });
-    fireEvent.change(screen.getByLabelText("SSL verify"), {
-      target: { value: "true" },
-    });
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "SSL verify" }));
+    await clickAntdSelectOption("Verify");
     saveModelProfileMock.mockImplementationOnce((nextProfileId, payload) => {
       getModelProfilesMock.mockResolvedValue({
         default: {

@@ -59,6 +59,7 @@ export function RecoveryBar({
     {},
   );
   const [questionErrors, setQuestionErrors] = useState<Record<string, string>>({});
+  const [busyQuestionIds, setBusyQuestionIds] = useState<Record<string, boolean>>({});
   const [collapsedBackgroundRunIds, setCollapsedBackgroundRunIds] = useState<
     Record<string, boolean>
   >({});
@@ -343,8 +344,11 @@ export function RecoveryBar({
     },
   });
 
-  const questionMutation = useMutation({
-    mutationFn: async (question: PendingUserQuestion) => {
+  const answerPendingQuestion = async (question: PendingUserQuestion) => {
+    const questionId = question.question_id;
+    setQuestionErrors((current) => removeRecordKey(current, questionId));
+    setBusyQuestionIds((current) => ({ ...current, [questionId]: true }));
+    try {
       const answers = buildQuestionAnswer(
         question,
         questionSelections,
@@ -356,27 +360,23 @@ export function RecoveryBar({
       if (shouldResumeBeforeRecoveryAction(activeRun, question.run_id)) {
         await resumeRecoverableRun(question.run_id);
       }
-      return answerUserQuestion(question.run_id, question.question_id, answers);
-    },
-    onMutate: (question) => {
-      setQuestionErrors((current) => removeRecordKey(current, question.question_id));
-    },
-    onSuccess: () => {
-      setQuestionSelections({});
-      setQuestionSupplements({});
+      await answerUserQuestion(question.run_id, questionId, answers);
+      setQuestionSelections((current) => removeQuestionInputKeys(current, questionId));
+      setQuestionSupplements((current) => removeQuestionInputKeys(current, questionId));
       void queryClient.invalidateQueries({ queryKey: ["sessions", sessionId, "recovery"] });
       void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
-    },
-    onError: (error, question) => {
+    } catch (error) {
       const messageText =
         error instanceof Error ? error.message : "Question answer failed.";
       setQuestionErrors((current) => ({
         ...current,
-        [question.question_id]: messageText,
+        [questionId]: messageText,
       }));
       void message.error(messageText);
-    },
-  });
+    } finally {
+      setBusyQuestionIds((current) => removeRecordKey(current, questionId));
+    }
+  };
 
   const stopBackgroundTaskMutation = useMutation({
     mutationFn: (request: BackgroundTaskStopRequest) =>
@@ -486,13 +486,9 @@ export function RecoveryBar({
             />
           )}
           <PendingQuestions
-            busyQuestionId={
-              questionMutation.isPending
-                ? questionMutation.variables?.question_id ?? null
-                : null
-            }
+            busyQuestionIds={busyQuestionIds}
             errors={questionErrors}
-            onAnswer={(question) => questionMutation.mutate(question)}
+            onAnswer={(question) => void answerPendingQuestion(question)}
             onSelectionChange={(questionId, promptIndex, selectedLabels) => {
               setQuestionSelections((current) => ({
                 ...current,
@@ -820,7 +816,7 @@ function PendingApprovals({
 }
 
 interface PendingQuestionsProps {
-  busyQuestionId: string | null;
+  busyQuestionIds: Record<string, boolean>;
   errors: Record<string, string>;
   onAnswer: (question: PendingUserQuestion) => void;
   onSelectionChange: (
@@ -840,7 +836,7 @@ interface PendingQuestionsProps {
 }
 
 function PendingQuestions({
-  busyQuestionId,
+  busyQuestionIds,
   errors,
   onAnswer,
   onSelectionChange,
@@ -856,8 +852,8 @@ function PendingQuestions({
   return (
     <div className="at-recovery-panel">
       {questions.map((question) => {
-        const busy = busyQuestionId === question.question_id;
-        const disabled = busyQuestionId !== null;
+        const busy = busyQuestionIds[question.question_id] === true;
+        const disabled = busy;
         const error = errors[question.question_id] ?? "";
         return (
           <div className="at-recovery-question" key={question.question_id}>
@@ -1072,16 +1068,37 @@ function uniqueLabel(label: string, index: number, labels: string[]): boolean {
   return labels.indexOf(label) === index;
 }
 
-function removeRecordKey(
-  record: Record<string, string>,
+function removeRecordKey<Value>(
+  record: Record<string, Value>,
   key: string,
-): Record<string, string> {
+): Record<string, Value> {
   if (!(key in record)) {
     return record;
   }
   const nextRecord = { ...record };
   delete nextRecord[key];
   return nextRecord;
+}
+
+function removeQuestionInputKeys(
+  record: Record<string, string[]>,
+  questionId: string,
+): Record<string, string[]>;
+function removeQuestionInputKeys(
+  record: Record<string, string>,
+  questionId: string,
+): Record<string, string>;
+function removeQuestionInputKeys<Value>(
+  record: Record<string, Value>,
+  questionId: string,
+): Record<string, Value> {
+  const keyPrefix = `${questionId}:`;
+  const retainedEntries = Object.entries(record).filter(
+    ([key]) => !key.startsWith(keyPrefix),
+  );
+  return retainedEntries.length === Object.keys(record).length
+    ? record
+    : Object.fromEntries(retainedEntries);
 }
 
 function visiblePausedSubagent(

@@ -377,15 +377,92 @@ describe("RecoveryBar", () => {
     renderRecoveryBar();
 
     fireEvent.click(await screen.findByLabelText("Go"));
-    fireEvent.click(screen.getByRole("button", { name: "Answer" }));
+    const answerButton = screen.getByRole("button", { name: "Answer" });
+    fireEvent.click(answerButton);
 
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Answer" })).toBeDisabled(),
-    );
+    await waitFor(() => expect(answerButton).toBeDisabled());
     answerDeferred.reject(new Error("question unavailable"));
 
     await screen.findByText("question unavailable");
-    expect(screen.getByRole("button", { name: "Answer" })).not.toBeDisabled();
+    expect(answerButton).not.toBeDisabled();
+  });
+
+  it("keeps concurrent subagent question submissions isolated by run and question", async () => {
+    getRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({
+        pending_user_questions: [
+          {
+            instance_id: "subagent-a",
+            question_id: "question-a",
+            run_id: "sub-run-a",
+            role_id: "Explorer",
+            questions: [
+              {
+                question: "Choose the Explorer path",
+                options: [{ label: "Inspect" }],
+                multiple: false,
+              },
+            ],
+          },
+          {
+            instance_id: "subagent-b",
+            question_id: "question-b",
+            run_id: "sub-run-b",
+            role_id: "Reviewer",
+            questions: [
+              {
+                question: "Choose the Reviewer path",
+                options: [{ label: "Verify" }],
+                multiple: false,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    const firstAnswer = deferredResponse<{ status: string }>();
+    answerUserQuestionMock
+      .mockReturnValueOnce(firstAnswer.promise)
+      .mockResolvedValueOnce({ status: "ok" });
+
+    renderRecoveryBar();
+
+    fireEvent.click(await screen.findByLabelText("Inspect"));
+    fireEvent.click(screen.getByLabelText("Verify"));
+    const explorerItem = screen.getByText("Choose the Explorer path")
+      .closest(".at-recovery-question");
+    const reviewerItem = screen.getByText("Choose the Reviewer path")
+      .closest(".at-recovery-question");
+    if (!(explorerItem instanceof HTMLElement) || !(reviewerItem instanceof HTMLElement)) {
+      throw new Error("Concurrent question recovery items were not rendered.");
+    }
+
+    const explorerAnswer = within(explorerItem).getByRole("button", { name: "Answer" });
+    const reviewerAnswer = within(reviewerItem).getByRole("button", { name: "Answer" });
+    fireEvent.click(explorerAnswer);
+    await waitFor(() => expect(explorerAnswer).toBeDisabled());
+    expect(reviewerAnswer).not.toBeDisabled();
+
+    fireEvent.click(reviewerAnswer);
+    await waitFor(() => expect(answerUserQuestionMock).toHaveBeenCalledTimes(2));
+    expect(answerUserQuestionMock).toHaveBeenNthCalledWith(
+      1,
+      "sub-run-a",
+      "question-a",
+      { answers: [{ selections: [{ label: "Inspect" }] }] },
+    );
+    expect(answerUserQuestionMock).toHaveBeenNthCalledWith(
+      2,
+      "sub-run-b",
+      "question-b",
+      { answers: [{ selections: [{ label: "Verify" }] }] },
+    );
+
+    firstAnswer.reject(new Error("Explorer question unavailable"));
+    await within(explorerItem).findByText("Explorer question unavailable");
+    expect(explorerAnswer).not.toBeDisabled();
+    expect(within(reviewerItem).queryByText("Explorer question unavailable"))
+      .not.toBeInTheDocument();
   });
 
   it("hides the reserved question option label and submits supplements", async () => {

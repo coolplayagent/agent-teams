@@ -3556,6 +3556,70 @@ describe("MessageTimeline", () => {
     expect(container.querySelectorAll("article.at-message")).toHaveLength(0);
   });
 
+  it("restores a queued session prompt when switching back before its first token", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, staleTime: Number.POSITIVE_INFINITY },
+      },
+    });
+    listSessionMessagesMock.mockResolvedValue([]);
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: ["run-session-1", "run-session-2"],
+        runs: {
+          "run-session-1": {
+            entries: [],
+            lastEventId: 0,
+            promptText: "Queued prompt for session one",
+            runId: "run-session-1",
+            seenEventKeys: [],
+            sessionId: "session-1",
+            status: "connecting",
+            terminalEventType: null,
+          },
+          "run-session-2": {
+            entries: [],
+            lastEventId: 0,
+            promptText: "Queued prompt for session two",
+            runId: "run-session-2",
+            seenEventKeys: [],
+            sessionId: "session-2",
+            status: "connecting",
+            terminalEventType: null,
+          },
+        },
+      },
+    });
+
+    const view = render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <MessageTimeline sessionId="session-2" />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("Queued prompt for session two")).toBeVisible();
+    expect(screen.queryByText("Queued prompt for session one"))
+      .not.toBeInTheDocument();
+
+    view.rerender(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <MessageTimeline sessionId="session-1" />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("Queued prompt for session one")).toBeVisible();
+    expect(screen.queryByText("Queued prompt for session two"))
+      .not.toBeInTheDocument();
+  });
+
   it("does not downgrade terminal round markers with stale open runtime state", async () => {
     setRuntimeEntries([], "open", {
       createdAt: "2026-06-23T12:42:33Z",

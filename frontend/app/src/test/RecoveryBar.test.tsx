@@ -1096,6 +1096,35 @@ describe("RecoveryBar", () => {
     expect(controller.startRunStreams).not.toHaveBeenCalled();
   });
 
+  it("rebinds a matching run id when it is tracked for another session", async () => {
+    getRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({
+        active_run: {
+          run_id: "shared-run-id",
+          session_id: "session-1",
+          status: "running",
+          phase: "running",
+          last_event_id: 42,
+          should_show_recover: false,
+        },
+      }),
+    );
+    const controller = runStreamController();
+    controller.trackedRunIds = ["shared-run-id"];
+    controller.trackedSessionId = "session-2";
+
+    renderRecoveryBar(controller);
+
+    await waitFor(() =>
+      expect(controller.startRunStream).toHaveBeenCalledWith({
+        afterEventId: 42,
+        foreground: true,
+        runId: "shared-run-id",
+        sessionId: "session-1",
+      }),
+    );
+  });
+
   it("keeps a standalone stopped recoverable run on explicit resume", async () => {
     getRecoverySnapshotMock.mockResolvedValue(
       recoverySnapshot({

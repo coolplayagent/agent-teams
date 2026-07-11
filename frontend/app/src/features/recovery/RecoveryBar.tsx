@@ -153,9 +153,11 @@ export function RecoveryBar({
     .map(recoveryRunStreamTargetKey)
     .join("|");
   const foregroundRecoveryRunIdsKey = foregroundRecoveryRunIds.join("|");
-  const trackedRunIdsForSession =
+  const tracksSelectedSession =
     runStreamController.trackedSessionId === undefined ||
-      runStreamController.trackedSessionId === sessionId
+    runStreamController.trackedSessionId === sessionId;
+  const trackedRunIdsForSession =
+    tracksSelectedSession
       ? runStreamController.trackedRunIds
       : [];
   const trackedRunIdsKey = trackedRunIdsForSession.join("|");
@@ -269,6 +271,7 @@ export function RecoveryBar({
       return;
     }
     if (
+      tracksSelectedSession &&
       runStreamIdsMatchTargets(
         runStreamController.trackedRunIds,
         streamableRecoveryRunStreamTargets,

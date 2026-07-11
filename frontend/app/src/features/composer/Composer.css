@@ -239,6 +239,10 @@
   display: none;
 }
 
+.at-composer .at-composer-topology-summary {
+  flex: 0 0 auto;
+}
+
 .at-composer .at-composer-summary-separator {
   padding-inline: 5px;
   color: var(--at-text-muted);
@@ -373,10 +377,6 @@
 }
 
 @container composer (max-width: 680px) {
-  .at-composer .at-composer-topology-summary {
-    flex: 0 0 auto;
-  }
-
   .at-composer .at-composer-summary-full {
     display: none;
   }

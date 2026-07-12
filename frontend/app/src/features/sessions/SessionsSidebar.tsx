@@ -610,7 +610,7 @@ function SessionsSidebarView({
                       type="text"
                     />
                     <Button
-                      aria-label={t("sidebarDeleteConfirm")}
+                      aria-label={t("sidebarDeleteConfirmAction")}
                       className="at-session-action-button at-session-confirm-button"
                       danger
                       disabled={deleteSessionMutation.isPending}
@@ -907,7 +907,7 @@ function SessionsSidebarView({
                         type="text"
                       />
                       <Button
-                        aria-label={t("sidebarDeleteConfirm")}
+                        aria-label={t("sidebarDeleteConfirmAction")}
                         className="at-workspace-inline-confirm"
                         danger
                         disabled={deleteWorkspaceMutation.isPending}

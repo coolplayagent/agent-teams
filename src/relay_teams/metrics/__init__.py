@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from relay_teams.metrics.definitions import DEFAULT_DEFINITIONS
 from relay_teams.metrics.models import (
+    MetricDimensionAttribution,
     MetricDefinition,
     MetricEvent,
     MetricKind,
@@ -31,6 +32,7 @@ from relay_teams.metrics.sinks import (
 from relay_teams.metrics.stores import MetricPointRecord, SqliteMetricAggregateStore
 
 __all__ = [
+    "MetricDimensionAttribution",
     "AggregateStoreSink",
     "AsyncMetricsSink",
     "DEFAULT_DEFINITIONS",

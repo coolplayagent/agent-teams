@@ -132,6 +132,7 @@ def test_observability_breakdowns_route_returns_role_rows() -> None:
     assert response.status_code == 200
     assert response.json()["rows"][0]["tool_name"] == "shell"
     assert response.json()["role_rows"][0]["role_id"] == "coordinator"
+    assert response.json()["role_rows"][0]["attribution"] == "recorded"
     assert response.json()["gateway_rows"][0]["gateway_operation"] == "session_prompt"
 
 

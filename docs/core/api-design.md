@@ -4521,7 +4521,10 @@ Returns tool-level breakdown rows for `scope=global|session|run`. Non-global sco
 
 Breakdown payload includes:
 - `rows`: tool-level call/failure/latency breakdown
-- `role_rows`: role-level token/cache/tool-failure breakdown
+- `role_rows`: role-level token/cache/tool-failure breakdown. Each row includes
+  `attribution=recorded|missing_metric_tag`; legacy metric points without a
+  `role_id` return an empty `role_id` with `missing_metric_tag` instead of the
+  ambiguous literal `unknown`.
 - `gateway_rows`: gateway ACP and MCP operation call/failure/latency breakdown grouped by operation, phase, and transport
 
 ## Automation APIs

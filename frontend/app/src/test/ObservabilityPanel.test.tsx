@@ -78,6 +78,7 @@ describe("ObservabilityPanel", () => {
           avg_duration_ms: 150,
           calls: 8,
           cold_start_calls: 1,
+          failures: 1,
           gateway_operation: "responses",
           gateway_phase: "first_update",
           gateway_transport: "sse",
@@ -88,10 +89,25 @@ describe("ObservabilityPanel", () => {
         {
           avg_duration_ms: 120.4567,
           calls: 19,
+          failures: 1,
           mcp_server: "filesystem",
           success_rate: 0.95,
           tool_name: "filesystem_read_file",
           tool_source: "mcp",
+        },
+      ],
+      role_rows: [
+        {
+          attribution: "recorded",
+          cached_input_tokens: 4200,
+          cached_token_ratio: 0.7,
+          input_tokens: 6000,
+          output_tokens: 1200,
+          role_id: "MainAgent",
+          tool_calls: 12,
+          tool_failures: 1,
+          tool_success_rate: 11 / 12,
+          uncached_input_tokens: 1800,
         },
       ],
     } satisfies ObservabilityBreakdowns);
@@ -132,6 +148,8 @@ describe("ObservabilityPanel", () => {
       "Gateway MCP Calls",
     );
     expect(screen.getByText("filesystem_read_file")).toBeVisible();
+    expect(screen.getByText("mcp · filesystem")).toBeVisible();
+    expect(screen.getByText("MainAgent")).toBeVisible();
     expect(screen.getByText("120.46")).toBeVisible();
     expect(screen.queryByText("unknown")).not.toBeInTheDocument();
   });
@@ -227,7 +245,33 @@ describe("ObservabilityPanel", () => {
       .not.toBeInTheDocument();
   });
 
-  it("labels legacy breakdown rows with missing dimensions without merging them", async () => {
+  it("does not treat zero-valued Gateway fields as observed Gateway traffic", async () => {
+    getObservabilityOverviewMock.mockResolvedValue({
+      kpis: {
+        gateway_avg_duration_ms: 0,
+        gateway_calls: 0,
+        gateway_cold_start_calls: 0,
+        gateway_failure_rate: 0,
+        gateway_mcp_calls: 0,
+        gateway_prompt_avg_first_update_ms: 0,
+        gateway_prompt_avg_start_ms: 0,
+        input_tokens: 12,
+      },
+      trends: [],
+    } satisfies ObservabilityOverview);
+    getObservabilityBreakdownsMock.mockResolvedValue({
+      gateway_rows: [],
+      role_rows: [],
+      rows: [],
+    } satisfies ObservabilityBreakdowns);
+
+    renderPanel("session-1");
+    await screen.findByText("Input tokens");
+
+    expect(screen.queryByText("Gateway Signals")).not.toBeInTheDocument();
+  });
+
+  it("diagnoses legacy role metrics whose role tag was not recorded", async () => {
     useUiStore.setState({ language: "zh-CN" });
     getObservabilityOverviewMock.mockResolvedValue({
       kpis: { tool_calls: 5 },
@@ -235,18 +279,28 @@ describe("ObservabilityPanel", () => {
     } satisfies ObservabilityOverview);
     getObservabilityBreakdownsMock.mockResolvedValue({
       gateway_rows: [],
-      rows: [
-        { avg_duration_ms: 107.72413793103448, calls: 3, success_rate: 1 },
-        { avg_duration_ms: 124.43478260869566, calls: 2, success_rate: 1 },
+      role_rows: [
+        {
+          attribution: "missing_metric_tag",
+          cached_input_tokens: 0,
+          cached_token_ratio: 0,
+          input_tokens: 500,
+          output_tokens: 40,
+          role_id: "",
+          tool_calls: 0,
+          tool_failures: 0,
+          tool_success_rate: 0,
+          uncached_input_tokens: 500,
+        },
       ],
+      rows: [],
     } satisfies ObservabilityBreakdowns);
 
     renderPanel("session-1");
 
-    expect(await screen.findByText("未记录 #1")).toBeVisible();
-    expect(screen.getByText("未记录 #2")).toBeVisible();
-    expect(screen.getByText("107.72")).toBeVisible();
-    expect(screen.getByText("124.43")).toBeVisible();
+    expect(
+      await screen.findByText("未记录角色 · 历史指标缺少 role_id"),
+    ).toBeVisible();
     expect(screen.queryByText("unknown")).not.toBeInTheDocument();
   });
 });

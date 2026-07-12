@@ -16,7 +16,12 @@ import {
   getObservabilityOverview,
   jsonRecord,
 } from "../../api/client";
-import type { JsonValue } from "../../api/contracts";
+import type {
+  JsonValue,
+  ObservabilityGatewayBreakdownRow,
+  ObservabilityRoleBreakdownRow,
+  ObservabilityToolBreakdownRow,
+} from "../../api/contracts";
 import { useTranslations, type Translate } from "../../i18n";
 import { SpecLineagePanel } from "./SpecLineagePanel";
 import { ObservabilityTrends } from "./ObservabilityTrends";
@@ -50,14 +55,14 @@ export function ObservabilityPanel({ sessionId }: ObservabilityPanelProps) {
     kpis.gateway_prompt_avg_first_update_ms,
     kpis.gateway_mcp_calls,
     kpis.gateway_cold_start_calls,
-  ].some((value) => typeof value === "number" && Number.isFinite(value));
-  const rows = rowsFromJson(breakdownsQuery.data?.rows, copy.notRecorded);
-  const gatewayRows = gatewayRowsFromJson(
-    breakdownsQuery.data?.gateway_rows,
-    copy.notRecorded,
+  ].some(
+    (value) =>
+      typeof value === "number" && Number.isFinite(value) && value > 0,
   );
+  const rows = toolRowsFromContract(breakdownsQuery.data?.rows);
+  const roleRows = roleRowsFromContract(breakdownsQuery.data?.role_rows, copy);
+  const gatewayRows = gatewayRowsFromContract(breakdownsQuery.data?.gateway_rows);
   const gatewaySummary = gatewaySummaryFromRows(gatewayRows);
-  const showPrimaryMetrics = overviewQuery.isLoading || hasOverviewMetrics;
   const showGatewayMetrics =
     overviewQuery.isLoading ||
     hasGatewayMetrics ||
@@ -142,28 +147,80 @@ export function ObservabilityPanel({ sessionId }: ObservabilityPanelProps) {
         t={t}
         trendValues={overviewQuery.data?.trends}
       />
-      <Table
-        className="at-breakdown-table"
-        columns={[
-          { dataIndex: "name", key: "name", title: t("observabilityBreakdown") },
-          { dataIndex: "calls", key: "calls", title: t("observabilityCalls") },
-          { dataIndex: "success", key: "success", title: t("observabilitySuccess") },
-          {
-            dataIndex: "duration",
-            key: "duration",
-            render: formatDurationMs,
-            title: t("observabilityAvgMs"),
-          },
-        ]}
-        dataSource={rows}
-        loading={breakdownsQuery.isLoading}
-        locale={{
-          emptyText: breakdownsQuery.isLoading ? null : t("observabilityNoMetrics"),
-        }}
-        pagination={false}
-        rowKey="key"
-        size="small"
-      />
+      <section
+        className="at-observability-section"
+        data-observability-section="tools"
+      >
+        <Typography.Title level={4}>{copy.toolBreakdown}</Typography.Title>
+        <Table
+          className="at-breakdown-table"
+          columns={[
+            { dataIndex: "name", key: "name", title: copy.tool },
+            { dataIndex: "source", key: "source", title: copy.source },
+            { dataIndex: "calls", key: "calls", title: t("observabilityCalls") },
+            {
+              dataIndex: "success",
+              key: "success",
+              title: t("observabilitySuccess"),
+            },
+            {
+              dataIndex: "duration",
+              key: "duration",
+              render: formatDurationMs,
+              title: t("observabilityAvgMs"),
+            },
+          ]}
+          dataSource={rows}
+          loading={breakdownsQuery.isLoading}
+          locale={{
+            emptyText: breakdownsQuery.isLoading ? null : t("observabilityNoMetrics"),
+          }}
+          pagination={false}
+          rowKey="key"
+          size="small"
+        />
+      </section>
+      {roleRows.length > 0 ? (
+        <section
+          className="at-observability-section"
+          data-observability-section="roles"
+        >
+          <Typography.Title level={4}>{copy.roleBreakdown}</Typography.Title>
+          <Table
+            className="at-breakdown-table"
+            columns={[
+              { dataIndex: "role", key: "role", title: copy.role },
+              {
+                dataIndex: "inputTokens",
+                key: "inputTokens",
+                render: formatCount,
+                title: t("observabilityInputTokens"),
+              },
+              {
+                dataIndex: "outputTokens",
+                key: "outputTokens",
+                render: formatCount,
+                title: t("observabilityOutputTokens"),
+              },
+              {
+                dataIndex: "toolCalls",
+                key: "toolCalls",
+                render: formatCount,
+                title: t("observabilityToolCalls"),
+              },
+              {
+                dataIndex: "toolSuccess",
+                key: "toolSuccess",
+                title: t("observabilityToolSuccess"),
+              },
+            ]}
+            dataSource={roleRows}
+            pagination={false}
+            rowKey="key"
+            size="small"
+          />
+        </section>
+      ) : null}
       {showGatewayMetrics ? (
         <section
           className="at-observability-section"
@@ -352,9 +409,19 @@ function stat(
 interface BreakdownRow {
   key: string;
   name: string;
+  source: string;
   calls: number;
   success: string;
   duration: number;
+}
+
+interface RoleBreakdownRow {
+  inputTokens: number;
+  key: string;
+  outputTokens: number;
+  role: string;
+  toolCalls: number;
+  toolSuccess: string;
 }
 
 interface GatewayBreakdownRow {
@@ -368,57 +435,50 @@ interface GatewayBreakdownRow {
   coldStarts: number;
 }
 
-function rowsFromJson(
-  value: JsonValue[] | undefined,
-  notRecordedLabel: string,
+function toolRowsFromContract(
+  value: ObservabilityToolBreakdownRow[] | undefined,
 ): BreakdownRow[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.map((item, index) => {
-    const row = jsonRecord(item);
-    const toolName = nonEmptyString(row.tool_name ?? row.name);
-    const toolSource = nonEmptyString(row.tool_source ?? row.source);
-    const mcpServer = nonEmptyString(row.mcp_server);
-    const fallbackName = `${notRecordedLabel} #${index + 1}`;
+  return (value ?? []).map((row, index) => ({
+    calls: finiteNumber(row.calls),
+    duration: finiteNumber(row.avg_duration_ms),
+    key: `${row.tool_name}-${row.tool_source}-${row.mcp_server}-${index}`,
+    name: row.tool_name,
+    source: [row.tool_source, row.mcp_server].filter(Boolean).join(" · ") || "—",
+    success: percentValue(row.success_rate),
+  }));
+}
+
+function roleRowsFromContract(
+  value: ObservabilityRoleBreakdownRow[] | undefined,
+  copy: ReturnType<typeof observabilityCopy>,
+): RoleBreakdownRow[] {
+  return (value ?? []).map((row, index) => {
+    const recordedRole = row.role_id.trim();
+    const missingTag = row.attribution === "missing_metric_tag" || !recordedRole;
     return {
-      key: String(
-        row.key ??
-          `${toolName || fallbackName}-${toolSource}-${mcpServer}-${index}`,
-      ),
-      name: toolName || fallbackName,
-      calls: numberValue(row.calls ?? row.count),
-      success: percentValue(row.success_rate ?? row.tool_success_rate),
-      duration: numberValue(row.avg_duration_ms ?? row.tool_avg_duration_ms),
+      inputTokens: finiteNumber(row.input_tokens),
+      key: `${row.attribution}-${recordedRole}-${index}`,
+      outputTokens: finiteNumber(row.output_tokens),
+      role: missingTag ? copy.roleTagMissing : recordedRole,
+      toolCalls: finiteNumber(row.tool_calls),
+      toolSuccess: percentValue(row.tool_success_rate),
     };
   });
 }
 
-function gatewayRowsFromJson(
-  value: JsonValue[] | undefined,
-  notRecordedLabel: string,
+function gatewayRowsFromContract(
+  value: ObservabilityGatewayBreakdownRow[] | undefined,
 ): GatewayBreakdownRow[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.map((item, index) => {
-    const row = jsonRecord(item);
-    const operation =
-      nonEmptyString(row.gateway_operation ?? row.operation) || notRecordedLabel;
-    const phase = nonEmptyString(row.gateway_phase ?? row.phase) || notRecordedLabel;
-    const transport =
-      nonEmptyString(row.gateway_transport ?? row.transport) || notRecordedLabel;
-    return {
-      calls: numberValue(row.calls ?? row.count),
-      coldStarts: numberValue(row.cold_start_calls),
-      duration: numberValue(row.avg_duration_ms),
-      key: String(row.key ?? `${operation}-${phase}-${transport}-${index}`),
-      operation,
-      phase,
-      success: percentValue(row.success_rate),
-      transport,
-    };
-  });
+  return (value ?? []).map((row, index) => ({
+    calls: finiteNumber(row.calls),
+    coldStarts: finiteNumber(row.cold_start_calls),
+    duration: finiteNumber(row.avg_duration_ms),
+    key: `${row.gateway_operation}-${row.gateway_phase}-${row.gateway_transport}-${index}`,
+    operation: row.gateway_operation,
+    phase: row.gateway_phase,
+    success: percentValue(row.success_rate),
+    transport: row.gateway_transport,
+  }));
 }
 
 function gatewaySummaryFromRows(rows: GatewayBreakdownRow[]) {
@@ -441,25 +501,27 @@ function gatewaySummaryFromRows(rows: GatewayBreakdownRow[]) {
   };
 }
 
-function numberValue(value: JsonValue | undefined): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+function finiteNumber(value: number): number {
+  return Number.isFinite(value) ? value : 0;
 }
 
-function percentValue(value: JsonValue | undefined): string {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
+function percentValue(value: number): string {
+  if (!Number.isFinite(value)) {
     return "";
   }
   return `${(value * 100).toFixed(1)}%`;
-}
-
-function nonEmptyString(value: JsonValue | undefined): string {
-  return typeof value === "string" ? value.trim() : "";
 }
 
 function formatDurationMs(value: number): string {
   return new Intl.NumberFormat(undefined, {
     maximumFractionDigits: 2,
     minimumFractionDigits: 0,
+  }).format(value);
+}
+
+function formatCount(value: number): string {
+  return new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: 0,
   }).format(value);
 }
 
@@ -474,11 +536,18 @@ function observabilityCopy(t: Translate) {
     gatewayMcpCalls: isZh ? "Gateway MCP 调用" : "Gateway MCP Calls",
     gatewayPromptStartMs: isZh ? "Prompt 启动 ms" : "Prompt Start ms",
     mcpCalls: isZh ? "MCP 调用" : "MCP calls",
-    notRecorded: isZh ? "未记录" : "Not recorded",
+    role: isZh ? "角色" : "Role",
+    roleBreakdown: isZh ? "角色分解" : "Role breakdown",
+    roleTagMissing: isZh
+      ? "未记录角色 · 历史指标缺少 role_id"
+      : "Unattributed role · legacy metric missing role_id",
     retrievalDocumentCount: isZh ? "检索文档数" : "Retrieved docs",
     retrievalFailureRate: isZh ? "检索失败率" : "Retrieval failure rate",
     retrievalSearches: isZh ? "检索搜索次数" : "Retrieval searches",
     skillCalls: isZh ? "技能调用" : "Skill calls",
+    source: isZh ? "来源" : "Source",
+    tool: isZh ? "工具" : "Tool",
+    toolBreakdown: isZh ? "工具分解" : "Tool breakdown",
     uncachedInputTokens: isZh ? "未缓存输入 tokens" : "Uncached input tokens",
   };
 }

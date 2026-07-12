@@ -3171,10 +3171,43 @@ export interface ObservabilityOverview {
   [key: string]: JsonValue | undefined;
 }
 
+export interface ObservabilityToolBreakdownRow {
+  avg_duration_ms: number;
+  calls: number;
+  failures: number;
+  mcp_server: string;
+  success_rate: number;
+  tool_name: string;
+  tool_source: string;
+}
+
+export interface ObservabilityRoleBreakdownRow {
+  attribution: "recorded" | "missing_metric_tag";
+  cached_input_tokens: number;
+  cached_token_ratio: number;
+  input_tokens: number;
+  output_tokens: number;
+  role_id: string;
+  tool_calls: number;
+  tool_failures: number;
+  tool_success_rate: number;
+  uncached_input_tokens: number;
+}
+
+export interface ObservabilityGatewayBreakdownRow {
+  avg_duration_ms: number;
+  calls: number;
+  cold_start_calls: number;
+  failures: number;
+  gateway_operation: string;
+  gateway_phase: string;
+  gateway_transport: string;
+  success_rate: number;
+}
+
 export interface ObservabilityBreakdowns {
   updated_at?: string;
-  rows?: JsonValue[];
-  role_rows?: JsonValue[];
-  gateway_rows?: JsonValue[];
-  [key: string]: JsonValue | undefined;
+  rows?: ObservabilityToolBreakdownRow[];
+  role_rows?: ObservabilityRoleBreakdownRow[];
+  gateway_rows?: ObservabilityGatewayBreakdownRow[];
 }

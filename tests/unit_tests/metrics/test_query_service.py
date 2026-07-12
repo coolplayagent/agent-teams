@@ -403,3 +403,33 @@ def test_metrics_query_service_builds_overview_and_breakdowns(tmp_path) -> None:
     session_prompt_request = gateway_rows[("session_prompt", "request", "stdio")]
     assert session_prompt_request.calls == 1
     assert session_prompt_request.cold_start_calls == 1
+
+
+def test_metrics_query_service_marks_missing_role_tags_without_unknown_labels(
+    tmp_path,
+) -> None:
+    store = SqliteMetricAggregateStore(tmp_path / "metrics-missing-role.db")
+    recorder = MetricRecorder(
+        registry=MetricRegistry(DEFAULT_DEFINITIONS),
+        sinks=(AggregateStoreSink(store),),
+    )
+    recorder.emit(
+        definition_name="relay_teams.llm.input_tokens",
+        value=42,
+        tags=MetricTagSet(session_id="session-1", run_id="run-legacy"),
+        occurred_at=datetime.now(tz=timezone.utc),
+    )
+
+    breakdown = MetricsQueryService(store=store).get_breakdowns(
+        MetricsScopeSelector(
+            scope=MetricScope.SESSION,
+            scope_id="session-1",
+            time_window_minutes=60,
+        )
+    )
+
+    assert len(breakdown.role_rows) == 1
+    missing_role = breakdown.role_rows[0]
+    assert missing_role.role_id == ""
+    assert missing_role.attribution.value == "missing_metric_tag"
+    assert "unknown" not in missing_role.model_dump_json()

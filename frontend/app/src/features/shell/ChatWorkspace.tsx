@@ -240,6 +240,7 @@ export const ChatWorkspace = memo(function ChatWorkspace({
         }
         runStreamController={runStreamController}
         sessionId={sessionId}
+        visible={visible && !switching}
       />
       <SessionTokenUsage
         primaryRoleId={primaryRoleId}

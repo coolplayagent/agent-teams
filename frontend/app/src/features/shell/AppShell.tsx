@@ -294,7 +294,8 @@ export function AppShell() {
   const healthQuery = useQuery({
     queryKey: ["server-health"],
     queryFn: getHealth,
-    refetchInterval: 8000,
+    refetchInterval: 30000,
+    refetchOnWindowFocus: false,
   });
   const uiLanguageQuery = useQuery({
     queryKey: uiLanguageSettingsQueryKey,
@@ -985,6 +986,10 @@ export function AppShell() {
                     <SubagentSessionView
                       onBack={closeActiveSubagent}
                       subagent={renderedSubagent}
+                      visible={
+                        visibleActiveSubagent !== null &&
+                        canReuseRetainedSubagent
+                      }
                     />
                   </div>
                 ) : null}

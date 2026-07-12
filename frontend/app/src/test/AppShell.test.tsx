@@ -266,9 +266,11 @@ vi.mock("../features/sessions/SubagentSessionView", () => ({
   SubagentSessionView: ({
     onBack,
     subagent,
+    visible,
   }: {
     onBack: () => void;
     subagent: ActiveSubagentSession;
+    visible?: boolean;
   }) => (
     <div
       data-instance-id={subagent.instanceId}
@@ -277,6 +279,7 @@ vi.mock("../features/sessions/SubagentSessionView", () => ({
       data-run-status={subagent.runStatus}
       data-session-id={subagent.sessionId}
       data-testid="subagent-session-view"
+      data-visible={visible === true ? "true" : "false"}
     >
       <span>{subagent.title}</span>
       <button onClick={onBack} type="button">
@@ -1711,15 +1714,18 @@ describe("AppShell", () => {
     await waitFor(() =>
       expect(subagentSurface).toHaveAttribute("data-run-status", "completed"),
     );
+    expect(subagentSurface).toHaveAttribute("data-visible", "true");
 
     fireEvent.click(screen.getByRole("button", { name: "Back to chat" }));
     expect(subagentSurface).not.toBeVisible();
+    expect(subagentSurface).toHaveAttribute("data-visible", "false");
     expect(subagentSurface.closest(".at-subagent-side-panel"))
       .toHaveClass("is-hidden");
 
     fireEvent.click(screen.getByTestId("open-subagent-from-timeline"));
     expect(await screen.findByTestId("subagent-session-view")).toBe(subagentSurface);
     expect(subagentSurface).toBeVisible();
+    expect(subagentSurface).toHaveAttribute("data-visible", "true");
   });
 
   it("keeps the subagent surface active when pending main session detail resolves", async () => {

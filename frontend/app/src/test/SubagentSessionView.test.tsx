@@ -60,6 +60,49 @@ afterEach(() => {
 });
 
 describe("SubagentSessionView", () => {
+  it("lets the shared runtime update a hidden active panel without duplicate requests", async () => {
+    renderSubagentSessionView({
+      subagent: createSubagent({
+        runId: "subagent_run_hidden",
+        runStatus: "running",
+        status: "running",
+      }),
+      visible: false,
+    });
+
+    act(() => {
+      setRuntimeEntries([
+        runtimeMessageEntry({
+          instanceId: "subagent-instance-1",
+          runId: "subagent_run_hidden",
+          text: "Hidden output from the shared stream",
+        }),
+      ]);
+    });
+
+    expect(await screen.findByText("Hidden output from the shared stream")).toBeInTheDocument();
+    expect(listSessionSubagentsMock).not.toHaveBeenCalled();
+    expect(listAgentMessagesMock).not.toHaveBeenCalled();
+    expect(listSessionRoundsMock).not.toHaveBeenCalled();
+    expect(openSessionSubagentRunStreamMock).not.toHaveBeenCalled();
+  });
+
+  it("does not poll or stream a hidden completed retained panel", async () => {
+    renderSubagentSessionView({
+      subagent: createSubagent({
+        runStatus: "completed",
+        status: "completed",
+      }),
+      visible: false,
+    });
+
+    await act(async () => Promise.resolve());
+    expect(listSessionSubagentsMock).not.toHaveBeenCalled();
+    expect(listAgentMessagesMock).not.toHaveBeenCalled();
+    expect(listSessionRoundsMock).not.toHaveBeenCalled();
+    expect(openSessionSubagentRunStreamMock).not.toHaveBeenCalled();
+  });
+
   it("shows a startup state before a running subagent id is known", async () => {
     const controller = createRunStreamController();
 
@@ -1092,9 +1135,11 @@ describe("SubagentSessionView", () => {
 
 function renderSubagentSessionView({
   subagent = createSubagent(),
+  visible = true,
 }: {
   controller?: RunStreamController;
   subagent?: ActiveSubagentSession;
+  visible?: boolean;
 } = {}) {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -1111,6 +1156,7 @@ function renderSubagentSessionView({
           <SubagentSessionView
             onBack={vi.fn()}
             subagent={subagent}
+            visible={visible}
           />
         </AntApp>
       </ConfigProvider>

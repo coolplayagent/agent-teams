@@ -14,6 +14,7 @@ import type {
   PendingUserQuestion,
   RecoveryBackgroundTask,
   RecoveryPausedSubagent,
+  RecoverySnapshot,
   ToolApprovalAction,
   ToolApprovalOption,
   UserQuestionAnswerSubmission,
@@ -36,6 +37,7 @@ interface RecoveryBarProps {
   ) => void;
   runStreamController: RunStreamController;
   sessionId: string | null;
+  visible?: boolean;
 }
 
 export function RecoveryBar({
@@ -43,6 +45,7 @@ export function RecoveryBar({
   onPausedSubagentOpen,
   runStreamController,
   sessionId,
+  visible = true,
 }: RecoveryBarProps) {
   const { message } = App.useApp();
   const t = useTranslations();
@@ -71,12 +74,24 @@ export function RecoveryBar({
   );
   const currentSessionIdRef = useRef(sessionId);
   currentSessionIdRef.current = sessionId;
+  const tracksSelectedSession =
+    runStreamController.trackedSessionId === undefined ||
+    runStreamController.trackedSessionId === sessionId;
+  const tracksActiveRunForSession =
+    tracksSelectedSession && runStreamController.trackedRunIds.length > 0;
+  const recoveryQueryEnabled =
+    sessionId !== null && (visible || tracksActiveRunForSession);
   const recoveryQuery = useQuery({
     queryKey: ["sessions", sessionId, "recovery"],
     queryFn: () => getRecoverySnapshot(sessionId ?? ""),
-    enabled: sessionId !== null,
-    refetchOnWindowFocus: false,
-    refetchInterval: 10000,
+    enabled: recoveryQueryEnabled,
+    refetchOnWindowFocus: true,
+    refetchInterval: (query) =>
+      recoveryQueryEnabled &&
+      recoverySnapshotNeedsPolling(query.state.data as RecoverySnapshot | undefined)
+        ? 10000
+        : false,
+    staleTime: 30000,
   });
 
   useEffect(() => {
@@ -85,21 +100,6 @@ export function RecoveryBar({
     setQuestionErrors({});
     setBusyQuestionIds({});
   }, [sessionId]);
-
-  useEffect(() => {
-    if (sessionId === null) {
-      return undefined;
-    }
-    const refreshRecovery = () => {
-      void queryClient.fetchQuery({
-        queryKey: ["sessions", sessionId, "recovery"],
-        queryFn: () => getRecoverySnapshot(sessionId, true),
-        staleTime: 0,
-      }).catch(() => undefined);
-    };
-    window.addEventListener("focus", refreshRecovery);
-    return () => window.removeEventListener("focus", refreshRecovery);
-  }, [queryClient, sessionId]);
 
   const activeRun = recoveryQuery.data?.active_run ?? null;
   const pendingApprovals = recoveryQuery.data?.pending_tool_approvals ?? [];
@@ -152,9 +152,6 @@ export function RecoveryBar({
     .map(recoveryRunStreamTargetKey)
     .join("|");
   const foregroundRecoveryRunIdsKey = foregroundRecoveryRunIds.join("|");
-  const tracksSelectedSession =
-    runStreamController.trackedSessionId === undefined ||
-    runStreamController.trackedSessionId === sessionId;
   const trackedRunIdsForSession =
     tracksSelectedSession
       ? runStreamController.trackedRunIds
@@ -514,10 +511,12 @@ export function RecoveryBar({
 }
 
 export function SubagentQuestionBar({
+  enabled = true,
   instanceId,
   runId,
   sessionId,
 }: {
+  enabled?: boolean;
   instanceId: string;
   runId: string;
   sessionId: string;
@@ -531,8 +530,18 @@ export function SubagentQuestionBar({
   const recoveryQuery = useQuery({
     queryKey: ["sessions", sessionId, "recovery"],
     queryFn: () => getRecoverySnapshot(sessionId),
-    refetchOnWindowFocus: false,
-    refetchInterval: 10000,
+    refetchOnWindowFocus: true,
+    enabled,
+    refetchInterval: (query) =>
+      enabled &&
+      subagentRecoveryNeedsPolling(
+        query.state.data as RecoverySnapshot | undefined,
+        runId,
+        instanceId,
+      )
+        ? 10000
+        : false,
+    staleTime: 30000,
   });
   const questions = (recoveryQuery.data?.pending_user_questions ?? []).filter(
     (question) =>
@@ -1367,6 +1376,58 @@ function isStreamingRunStatus(status: string | undefined): boolean {
     default:
       return false;
   }
+}
+
+function recoverySnapshotNeedsPolling(
+  snapshot: RecoverySnapshot | undefined,
+): boolean {
+  if (snapshot === undefined) {
+    return false;
+  }
+  const activeRun = snapshot.active_run;
+  return (
+    activeRun?.should_show_recover === true ||
+    shouldStreamActiveRun(activeRun) ||
+    snapshot.pending_tool_approvals.length > 0 ||
+    snapshot.pending_user_questions.length > 0 ||
+    visiblePausedSubagent(snapshot.paused_subagent) !== null ||
+    snapshot.background_tasks.some(isActiveBackgroundTask)
+  );
+}
+
+function subagentRecoveryNeedsPolling(
+  snapshot: RecoverySnapshot | undefined,
+  runId: string,
+  instanceId: string,
+): boolean {
+  if (snapshot === undefined) {
+    return false;
+  }
+  const normalizedRunId = runId.trim();
+  const normalizedInstanceId = instanceId.trim();
+  const activeRun = snapshot.active_run;
+  if (
+    activeRun?.run_id.trim() === normalizedRunId &&
+    (activeRun.should_show_recover === true || shouldStreamActiveRun(activeRun))
+  ) {
+    return true;
+  }
+  if (
+    snapshot.pending_user_questions.some(
+      (question) =>
+        question.run_id.trim() === normalizedRunId &&
+        (!question.instance_id?.trim() ||
+          question.instance_id.trim() === normalizedInstanceId),
+    )
+  ) {
+    return true;
+  }
+  const pausedSubagent = visiblePausedSubagent(snapshot.paused_subagent);
+  return (
+    pausedSubagent !== null &&
+    normalizedInstanceId.length > 0 &&
+    pausedSubagent.instance_id?.trim() === normalizedInstanceId
+  );
 }
 
 interface BackgroundRecoveryRunStreamTarget {

@@ -52,7 +52,26 @@ afterEach(() => {
 });
 
 describe("RecoveryBar", () => {
-  it("force-refreshes recovery on window focus", async () => {
+  it("does not poll recovery for a hidden idle chat surface", async () => {
+    getRecoverySnapshotMock.mockResolvedValue(recoverySnapshot());
+
+    renderRecoveryBar(runStreamController(), undefined, false);
+
+    await act(async () => Promise.resolve());
+    expect(getRecoverySnapshotMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps centralized recovery observation active for a hidden tracked run", async () => {
+    getRecoverySnapshotMock.mockResolvedValue(recoverySnapshot());
+
+    renderRecoveryBar(runStreamController("run-1"), undefined, false);
+
+    await waitFor(() =>
+      expect(getRecoverySnapshotMock).toHaveBeenCalledWith("session-1"),
+    );
+  });
+
+  it("does not refetch a fresh idle recovery snapshot on repeated focus", async () => {
     getRecoverySnapshotMock.mockResolvedValue(recoverySnapshot());
 
     renderRecoveryBar();
@@ -62,10 +81,10 @@ describe("RecoveryBar", () => {
     );
 
     window.dispatchEvent(new Event("focus"));
+    window.dispatchEvent(new Event("focus"));
 
-    await waitFor(() =>
-      expect(getRecoverySnapshotMock).toHaveBeenCalledWith("session-1", true),
-    );
+    await act(async () => Promise.resolve());
+    expect(getRecoverySnapshotMock).toHaveBeenCalledTimes(1);
   });
 
   it("lets the backend choose the safest ACP approval option", async () => {
@@ -1696,6 +1715,7 @@ describe("RecoveryBar", () => {
 function renderRecoveryBar(
   controller = runStreamController(),
   onPausedSubagentOpen?: ComponentProps<typeof RecoveryBar>["onPausedSubagentOpen"],
+  visible = true,
 ) {
   render(
     <TestProviders>
@@ -1703,6 +1723,7 @@ function renderRecoveryBar(
         onPausedSubagentOpen={onPausedSubagentOpen}
         runStreamController={controller}
         sessionId="session-1"
+        visible={visible}
       />
     </TestProviders>,
   );

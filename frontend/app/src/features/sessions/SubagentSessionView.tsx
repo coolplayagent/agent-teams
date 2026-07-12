@@ -39,11 +39,13 @@ const SUBAGENT_STREAM_RECONNECT_MAX_ATTEMPTS = 3;
 interface SubagentSessionViewProps {
   subagent: ActiveSubagentSession;
   onBack: () => void;
+  visible?: boolean;
 }
 
 export const SubagentSessionView = memo(function SubagentSessionView({
   onBack,
   subagent,
+  visible = true,
 }: SubagentSessionViewProps) {
   const queryClient = useQueryClient();
   const t = useTranslations();
@@ -60,8 +62,8 @@ export const SubagentSessionView = memo(function SubagentSessionView({
   const subagentRecordsQuery = useQuery({
     queryKey: ["sessions", subagent.sessionId, "subagents"],
     queryFn: () => listSessionSubagents(subagent.sessionId, true),
-    enabled: subagent.sessionId.trim().length > 0,
-    refetchInterval: pollSubagentRecord ? 2000 : false,
+    enabled: visible && subagent.sessionId.trim().length > 0,
+    refetchInterval: visible && pollSubagentRecord ? 2000 : false,
     staleTime: 1000,
   });
   const latestSubagentRecord = useMemo(
@@ -179,6 +181,15 @@ export const SubagentSessionView = memo(function SubagentSessionView({
   }, [latestSubagentRecord]);
 
   useEffect(() => {
+    if (!visible) {
+      resetSubagentReconnect();
+      if (streamedRunIdRef.current === runId) {
+        subagentStreamRef.current?.close();
+        subagentStreamRef.current = null;
+        streamedRunIdRef.current = null;
+      }
+      return;
+    }
     if (!shouldStreamSubagentRun(runId, streamStatusKey)) {
       return;
     }
@@ -274,6 +285,7 @@ export const SubagentSessionView = memo(function SubagentSessionView({
     setRuntimeState,
     streamReconnectGeneration,
     streamStatusKey,
+    visible,
   ]);
 
   useEffect(() => {
@@ -328,6 +340,7 @@ export const SubagentSessionView = memo(function SubagentSessionView({
         ) : null}
         {runId ? (
           <SubagentQuestionBar
+            enabled={visible}
             instanceId={instanceId}
             runId={runId}
             sessionId={sessionId}
@@ -355,6 +368,7 @@ export const SubagentSessionView = memo(function SubagentSessionView({
             subagentScopeRoleId={runId.length > 0 ? null : recordAwareSubagent.roleId}
             suppressExactText={subagentPromptText}
             variant="subagent-panel"
+            visible={visible}
           />
         ) : (
           <SubagentPendingState label={t("subagentSessionStarting")} />

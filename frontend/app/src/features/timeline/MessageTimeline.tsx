@@ -284,12 +284,13 @@ export function MessageTimeline({
   const messagesQuery = useQuery({
     queryKey: messageQueryKey ?? ["sessions", sessionId, "messages"],
     queryFn: () => loadMessages(sessionId ?? ""),
-    enabled: sessionId !== null,
+    enabled: visible && sessionId !== null,
   });
   const roundsQuery = useQuery({
     queryKey: ["sessions", sessionId, "rounds", "rail"],
     queryFn: () => collectRoundRailRounds(sessionId ?? ""),
     enabled:
+      visible &&
       roundsEnabled &&
       sessionId !== null &&
       !messagesQuery.isLoading &&

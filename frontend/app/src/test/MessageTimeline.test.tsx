@@ -58,6 +58,14 @@ afterEach(() => {
 });
 
 describe("MessageTimeline", () => {
+  it("does not hydrate or poll a retained hidden timeline", async () => {
+    renderTimeline("session-hidden", { visible: false });
+
+    await act(async () => Promise.resolve());
+    expect(listSessionMessagesMock).not.toHaveBeenCalled();
+    expect(listSessionRoundsMock).not.toHaveBeenCalled();
+  });
+
   it("shows local prompt and connection feedback before run creation resolves", async () => {
     listSessionMessagesMock.mockResolvedValue([]);
     renderTimeline();

@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgUiRunEvent, RelayRunEvent } from "../runtime/events";
 import { initialRuntimeState, type RuntimeState } from "../runtime/reducers";
 import {
-  coalesceStreamDeltaEvents,
   openMultiplexedRunStream,
   openRunStream,
   openSessionSubagentRunStream,
@@ -71,6 +70,7 @@ class MockEventSource {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   vi.clearAllMocks();
@@ -78,34 +78,6 @@ afterEach(() => {
 });
 
 describe("openRunStream", () => {
-  it("reduces a large consecutive delta burst before runtime state work", () => {
-    const chunks = Array.from({ length: 3_000 }, (_, index) => `${index}\n`);
-    const compacted = coalesceStreamDeltaEvents(
-      chunks.map((text, index) => relayEvent({
-        event_id: index + 1,
-        payload_json: JSON.stringify({ part_index: 0, text }),
-      })),
-    );
-
-    expect(compacted).toHaveLength(1);
-    expect(compacted[0]).toMatchObject({ event_id: chunks.length });
-    expect(compacted[0]).toHaveProperty(
-      "payload.text",
-      chunks.join(""),
-    );
-  });
-
-  it("does not coalesce deltas across part or lifecycle boundaries", () => {
-    const compacted = coalesceStreamDeltaEvents([
-      relayEvent({ event_id: 1, payload_json: JSON.stringify({ part_index: 0, text: "A" }) }),
-      relayEvent({ event_id: 2, payload_json: JSON.stringify({ part_index: 1, text: "B" }) }),
-      relayEvent({ event_id: 3, event_type: "thinking_finished" }),
-      relayEvent({ event_id: 4, payload_json: JSON.stringify({ part_index: 1, text: "C" }) }),
-    ]);
-
-    expect(compacted).toHaveLength(4);
-  });
-
   it("opens from the replay cursor and reduces named AG-UI events", () => {
     const stream = openTestStream({ afterEventId: 42 });
 
@@ -388,6 +360,55 @@ describe("openRunStream", () => {
     });
   });
 
+  it("publishes a pending final delta before the terminal lifecycle state", () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    const stream = openTestStream();
+
+    stream.source.dispatchMessage(
+      "message.text.delta",
+      JSON.stringify(agUiEvent({ event_id: 1, payload: { text: "prefix" } })),
+    );
+    stream.source.dispatchMessage(
+      "message.text.delta",
+      JSON.stringify(agUiEvent({ event_id: 2, payload: { text: " final" } })),
+    );
+    stream.source.dispatchMessage(
+      "run.completed",
+      JSON.stringify(relayEvent({
+        event_id: 3,
+        event_type: "run_completed",
+        payload_json: JSON.stringify({ status: "completed" }),
+      })),
+    );
+
+    expect(stream.states).toHaveLength(2);
+    expect(stream.states[1].runs["run-1"]).toMatchObject({
+      status: "open",
+      terminalEventType: null,
+    });
+    expect(stream.states[1].runs["run-1"].entries.map((entry) => entry.text).join(""))
+      .toBe("prefix final");
+
+    vi.advanceTimersByTime(0);
+
+    expect(stream.states).toHaveLength(3);
+    expect(stream.states[2].runs["run-1"]).toMatchObject({
+      status: "closed",
+      terminalEventType: "run_completed",
+    });
+    expect(stream.states[2].runs["run-1"].entries.map((entry) => entry.eventId))
+      .toEqual([2, 3]);
+    expect(stream.states[2].runs["run-1"].entries.map((entry) => entry.text).join(""))
+      .toContain("prefix final");
+    expect(stream.closedStates).toHaveLength(1);
+    vi.useRealTimers();
+  });
+
   it("routes selected normal-mode subagent events from the session stream", () => {
     const stream = openTestSessionSubagentStream({
       afterEventId: 12,
@@ -519,7 +540,13 @@ describe("openRunStream", () => {
     expect(stream.closedStates[0].activeRunIds).toEqual([]);
   });
 
-  it("coalesces burst text deltas and flushes the exact terminal state immediately", () => {
+  it("preserves burst text exactly before publishing the terminal state", () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
     const stream = openTestStream();
     const chunks = Array.from({ length: 200 }, (_, index) =>
       String.fromCharCode(65 + (index % 26)),
@@ -531,7 +558,11 @@ describe("openRunStream", () => {
         JSON.stringify(
           relayEvent({
             event_id: index + 1,
-            payload_json: JSON.stringify({ text }),
+            payload_json: JSON.stringify({
+              metadata: index === 0 ? "first" : `later-${index}`,
+              part_index: 0,
+              text,
+            }),
           }),
         ),
       );
@@ -548,9 +579,18 @@ describe("openRunStream", () => {
     );
 
     expect(stream.states).toHaveLength(2);
+    expect(stream.states.at(-1)?.runs["run-1"]).toMatchObject({
+      lastEventId: chunks.length,
+      status: "open",
+      terminalEventType: null,
+    });
+    vi.advanceTimersByTime(0);
+
+    expect(stream.states).toHaveLength(3);
     const terminalState = stream.states.at(-1);
     expect(terminalState?.runs["run-1"]).toMatchObject({
       lastEventId: chunks.length + 1,
+      seenEventIdRanges: [[1, chunks.length + 1]],
       status: "closed",
       terminalEventType: "run_completed",
     });
@@ -560,6 +600,18 @@ describe("openRunStream", () => {
         .map((entry) => entry.text)
         .join(""),
     ).toBe(chunks.join(""));
+    const compactedTextEntry = terminalState?.runs["run-1"].entries.find(
+      (entry) => entry.kind === "text_delta",
+    );
+    expect(compactedTextEntry).toMatchObject({
+      eventId: chunks.length,
+      id: "run-1:1:0",
+      payload: {
+        metadata: "first",
+        part_index: 0,
+        text: chunks.join(""),
+      },
+    });
     expect(stream.closedStates).toHaveLength(1);
     expect(stream.closedStates[0]).toBe(terminalState);
     expect(stream.source.close).toHaveBeenCalledTimes(1);
@@ -766,6 +818,12 @@ describe("openRunStream", () => {
   });
 
   it("opens multiplexed streams and waits for every tracked run to close", () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
     const stream = openTestMultiplexedStream({
       runs: [
         { afterEventId: 4, runId: "run-a" },
@@ -825,6 +883,8 @@ describe("openRunStream", () => {
         }),
       ),
     );
+
+    vi.advanceTimersByTime(0);
 
     expect(stream.source.close).toHaveBeenCalledTimes(1);
     expect(stream.closedStates).toHaveLength(1);

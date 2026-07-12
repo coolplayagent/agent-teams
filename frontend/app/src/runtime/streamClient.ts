@@ -1,5 +1,4 @@
 import { apiUrl } from "../api/http";
-import type { JsonValue } from "../api/contracts";
 import {
   reduceRunEvents,
   type RuntimeRunState,
@@ -9,7 +8,6 @@ import {
   AG_UI_EVENT_NAMES,
   isTerminalRunEvent,
   parseRunEvent,
-  type ParsedRunEvent,
   type RunEventEnvelope,
 } from "./events";
 
@@ -127,6 +125,9 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
   let didNotifyClosed = false;
   let sourceClosed = false;
   let pendingStateNotification: ReturnType<typeof globalThis.setTimeout> | null = null;
+  let pendingTerminalFrame: number | null = null;
+  let pendingTerminalTimeout: ReturnType<typeof globalThis.setTimeout> | null = null;
+  let pendingTerminalEvents: RunEventEnvelope[] = [];
   let pendingEvents: RunEventEnvelope[] = [];
   let lastStateNotificationAt = Number.NEGATIVE_INFINITY;
   const preferManualReconnect = options.trackedRunIds.length > 1;
@@ -139,11 +140,21 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
     pendingStateNotification = null;
   };
 
+  const cancelPendingTerminalNotification = () => {
+    if (pendingTerminalFrame !== null) {
+      globalThis.cancelAnimationFrame?.(pendingTerminalFrame);
+      pendingTerminalFrame = null;
+    }
+    if (pendingTerminalTimeout !== null) {
+      globalThis.clearTimeout(pendingTerminalTimeout);
+      pendingTerminalTimeout = null;
+    }
+  };
+
   const applyPendingEventBatch = (limit = STREAM_EVENT_BATCH_SIZE) => {
     if (pendingEvents.length === 0) {
       return false;
     }
-    pendingEvents = coalesceStreamDeltaEvents(pendingEvents);
     const events = pendingEvents.slice(0, limit);
     pendingEvents = pendingEvents.slice(events.length);
     const nextRuntimeState = reduceRunEvents(runtimeState, events);
@@ -179,16 +190,51 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
     if (pendingEvents.length === 0) {
       return;
     }
-    const nextRuntimeState = reduceRunEvents(
-      runtimeState,
-      coalesceStreamDeltaEvents(pendingEvents),
-    );
+    const nextRuntimeState = reduceRunEvents(runtimeState, pendingEvents);
     pendingEvents = [];
     if (nextRuntimeState !== runtimeState) {
       runtimeState = nextRuntimeState;
       lastStateNotificationAt = Date.now();
       options.onState(runtimeState);
     }
+  };
+
+  const flushPendingTerminalNotification = () => {
+    if (pendingTerminalEvents.length === 0) {
+      return;
+    }
+    cancelPendingTerminalNotification();
+    pendingEvents.push(...pendingTerminalEvents);
+    pendingTerminalEvents = [];
+    flushPendingStateNotification();
+    if (trackedRunsClosed(runtimeState, options.trackedRunIds)) {
+      notifyClosed();
+    }
+  };
+
+  const scheduleTerminalNotificationAfterDeltaPaint = (
+    terminalEvent: RunEventEnvelope,
+  ) => {
+    pendingTerminalEvents.push(terminalEvent);
+    if (pendingTerminalFrame !== null || pendingTerminalTimeout !== null) {
+      return;
+    }
+    if (typeof globalThis.requestAnimationFrame === "function") {
+      pendingTerminalFrame = globalThis.requestAnimationFrame(() => {
+        pendingTerminalFrame = null;
+        if (pendingTerminalTimeout !== null) {
+          globalThis.clearTimeout(pendingTerminalTimeout);
+        }
+        pendingTerminalTimeout = globalThis.setTimeout(() => {
+          pendingTerminalTimeout = null;
+          flushPendingTerminalNotification();
+        }, 0);
+      });
+    }
+    pendingTerminalTimeout = globalThis.setTimeout(
+      flushPendingTerminalNotification,
+      100,
+    );
   };
 
   const notifyStateOnStreamCadence = () => {
@@ -216,6 +262,7 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
 
   const closeWithStateFlush = () => {
     flushPendingStateNotification();
+    flushPendingTerminalNotification();
     closeSource();
   };
 
@@ -247,10 +294,20 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
     }
     options.onActivity?.();
     pendingEvents.push(event);
-    if (isTerminalRunEvent(parseRunEvent(event).event_type)) {
+    const eventType = parseRunEvent(event).event_type;
+    if (isTerminalRunEvent(eventType)) {
+      markStreamTerminalTiming("received", event.run_id, eventType);
+      const terminalEvent = pendingEvents.pop();
+      const hasPendingDeltaState = pendingEvents.length > 0;
       flushPendingStateNotification();
-      if (trackedRunsClosed(runtimeState, options.trackedRunIds)) {
-        notifyClosed();
+      if (terminalEvent !== undefined && hasPendingDeltaState) {
+        scheduleTerminalNotificationAfterDeltaPaint(terminalEvent);
+      } else if (terminalEvent !== undefined) {
+        pendingEvents.push(terminalEvent);
+        flushPendingStateNotification();
+        if (trackedRunsClosed(runtimeState, options.trackedRunIds)) {
+          notifyClosed();
+        }
       }
       return;
     }
@@ -317,113 +374,18 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
   };
 }
 
-export function coalesceStreamDeltaEvents(
-  events: readonly RunEventEnvelope[],
-): RunEventEnvelope[] {
-  const coalesced: RunEventEnvelope[] = [];
-  let previousParsed: ParsedRunEvent | null = null;
-  for (const rawEvent of events) {
-    const nextParsed = parseRunEvent(rawEvent);
-    const merged: ParsedRunEvent | null = previousParsed === null
-      ? null
-      : mergeAdjacentParsedDeltaEvents(previousParsed, nextParsed);
-    if (merged === null) {
-      coalesced.push(rawEvent);
-      previousParsed = nextParsed;
-      continue;
-    }
-    coalesced[coalesced.length - 1] = parsedRunEventEnvelope(merged);
-    previousParsed = merged;
+function markStreamTerminalTiming(
+  phase: "received",
+  runId: string,
+  eventType: string,
+): void {
+  try {
+    globalThis.performance?.mark(
+      `agent-teams:terminal:${phase}:${runId}:${eventType}`,
+    );
+  } catch {
+    // Performance instrumentation must never affect stream delivery.
   }
-  return coalesced;
-}
-
-function mergeAdjacentParsedDeltaEvents(
-  previous: ParsedRunEvent,
-  next: ParsedRunEvent,
-): ParsedRunEvent | null {
-  if (
-    previous.event_type !== next.event_type ||
-    !isCoalescibleStreamDelta(next.event_type) ||
-    previous.run_id !== next.run_id ||
-    previous.session_id !== next.session_id ||
-    previous.instance_id !== next.instance_id ||
-    previous.role_id !== next.role_id ||
-    typeof previous.event_id !== "number" ||
-    typeof next.event_id !== "number" ||
-    previous.event_id <= 0 ||
-    next.event_id !== previous.event_id + 1
-  ) {
-    return null;
-  }
-  const previousPayload = jsonObject(previous.payload);
-  const nextPayload = jsonObject(next.payload);
-  if (
-    previousPayload === null ||
-    nextPayload === null ||
-    payloadPartIndex(previousPayload) !== payloadPartIndex(nextPayload)
-  ) {
-    return null;
-  }
-  const previousText = rawDeltaText(previousPayload);
-  const nextText = rawDeltaText(nextPayload);
-  if (previousText === null || nextText === null) {
-    return null;
-  }
-  return {
-    ...next,
-    payload: {
-      ...previousPayload,
-      [previousText.key]: previousText.value + nextText.value,
-    },
-  };
-}
-
-function parsedRunEventEnvelope(
-  event: ParsedRunEvent,
-): RunEventEnvelope {
-  return {
-    event_id: event.event_id,
-    instance_id: event.instance_id,
-    occurred_at: event.occurred_at,
-    payload: event.payload,
-    relay_event_type: event.event_type,
-    role_id: event.role_id,
-    run_id: event.run_id,
-    session_id: event.session_id,
-    task_id: event.task_id,
-    trace_id: event.trace_id,
-    type: event.event_type,
-  };
-}
-
-function isCoalescibleStreamDelta(eventType: string): boolean {
-  return eventType === "text_delta" ||
-    eventType === "output_delta" ||
-    eventType === "thinking_delta";
-}
-
-function jsonObject(value: JsonValue): Record<string, JsonValue> | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value
-    : null;
-}
-
-function payloadPartIndex(payload: Record<string, JsonValue>): string {
-  const value = payload.part_index;
-  return typeof value === "string" || typeof value === "number" ? String(value) : "";
-}
-
-function rawDeltaText(
-  payload: Record<string, JsonValue>,
-): { key: string; value: string } | null {
-  for (const key of ["text", "delta", "content", "message"] as const) {
-    const value = payload[key];
-    if (typeof value === "string") {
-      return { key, value };
-    }
-  }
-  return null;
 }
 
 function runStreamUrl(runId: string, afterEventId: number): string {

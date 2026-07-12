@@ -10,7 +10,7 @@ from pydantic_ai.messages import ModelRequest, UserContent, UserPromptPart
 
 from relay_teams.agents.execution.message_repository import MessageRepository
 from relay_teams.agents.execution.prompt_instruction_state import (
-    record_prompt_instruction_paths_loaded_async,
+    schedule_prompt_instruction_paths_loaded,
 )
 from relay_teams.agents.execution.system_prompts import (
     PromptBuildInput,
@@ -156,7 +156,7 @@ class TaskPromptHarness(BaseModel):
                 runtime_tools=runtime_tools,
             )
         )
-        await record_prompt_instruction_paths_loaded_async(
+        _ = schedule_prompt_instruction_paths_loaded(
             shared_store=self.shared_store,
             task_id=task.task_id,
             paths=prompt_sections.local_instruction_paths,

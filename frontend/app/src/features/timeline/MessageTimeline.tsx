@@ -1196,6 +1196,7 @@ interface TimelineInjectionRow {
 type TimelineRunIdSource = "fallback" | "round" | "run_id" | "trace_id";
 
 interface TimelineProcessedGroup {
+  continuity: boolean;
   rows: TimelineRow[];
 }
 
@@ -1700,16 +1701,25 @@ function timelineRowElement(
   const style = { transform: `translateY(${start}px)` };
   if (row.processedGroup !== undefined) {
     const disclosureId = `processed:${row.runId ?? row.key}`;
+    const collapsedDisclosureId = `collapsed:${disclosureId}`;
     return (
       <ProcessedGroupRow
         group={row.processedGroup}
-        expanded={expandedDisclosureIds.has(disclosureId)}
+        expanded={row.processedGroup.continuity
+          ? !expandedDisclosureIds.has(collapsedDisclosureId)
+          : expandedDisclosureIds.has(disclosureId)}
         expandedDisclosureIds={expandedDisclosureIds}
         index={index}
         key={row.key}
         measureElement={measureElement}
         onSubagentOpen={onSubagentOpen}
-        onDisclosureChange={onDisclosureChange}
+        onDisclosureChange={(changedDisclosureId, expanded) => {
+          if (changedDisclosureId === disclosureId && row.processedGroup?.continuity) {
+            onDisclosureChange(`collapsed:${changedDisclosureId}`, !expanded);
+            return;
+          }
+          onDisclosureChange(changedDisclosureId, expanded);
+        }}
         onDisclosureToggle={onDisclosureToggle}
         rowKey={row.key}
         runId={row.runId}
@@ -1874,6 +1884,7 @@ function ProcessedGroupRow({
     }
     window.requestAnimationFrame(() => measureElement(element));
   }, [measureElement]);
+  const GroupItem = group.continuity ? "article" : "div";
   return (
     <section
       className="at-timeline-row at-processed-group-row"
@@ -1899,9 +1910,10 @@ function ProcessedGroupRow({
         </summary>
         <div className="at-processed-group-body">
           {group.rows.map((groupRow) => (
-            <div
+            <GroupItem
               className={[
                 "at-processed-group-item",
+                group.continuity ? "at-message is-runtime" : "",
                 timelineRowIsToolOnly(groupRow) ? "is-tool-only" : "",
               ].filter(Boolean).join(" ")}
               data-instance-id={groupRow.instanceId ?? undefined}
@@ -1920,7 +1932,7 @@ function ProcessedGroupRow({
                 sessionId={sessionId}
                 t={t}
               />
-            </div>
+            </GroupItem>
           ))}
         </div>
       </TimelineDisclosure> : (
@@ -2176,23 +2188,28 @@ function collapseProcessedRows(
       index += 1;
     }
     const hasWork = segment.some(timelineRowHasWorkPart);
+    const runtimeRun = runStates[runId];
+    if (
+      !terminal &&
+      hasWork &&
+      runtimeRun !== undefined &&
+      !runtimeRunStateClosesText(runtimeRun)
+    ) {
+      liveProcessedRunIds.add(runId);
+    }
+    const continuity = liveProcessedRunIds.has(runId);
     if (!terminal) {
-      const runtimeRun = runStates[runId];
-      if (
-        hasWork &&
-        runtimeRun !== undefined &&
-        !runtimeRunStateClosesText(runtimeRun)
-      ) {
-        liveProcessedRunIds.add(runId);
+      if (!continuity) {
+        collapsedRows.push(...segment);
+        continue;
       }
-      collapsedRows.push(...segment);
-      continue;
     }
-    if (liveProcessedRunIds.has(runId)) {
-      collapsedRows.push(...closeTerminalSegmentToolCalls(segment));
-      continue;
-    }
-    collapsedRows.push(...collapseProcessedSegment(segment, runId));
+    collapsedRows.push(...collapseProcessedSegment(
+      segment,
+      runId,
+      terminal,
+      continuity,
+    ));
   }
   return collapsedRows;
 }
@@ -2243,8 +2260,13 @@ function terminalRunIdOverrideSet(
 function collapseProcessedSegment(
   segment: TimelineRow[],
   runId: string,
+  terminal: boolean,
+  continuity: boolean,
 ): TimelineRow[] {
-  const terminalSegment = closeTerminalSegmentToolCalls(segment);
+  const terminalSegment = terminal ? closeTerminalSegmentToolCalls(segment) : segment;
+  if (continuity && terminalSegment.some(timelineRowHasInjectionNotice)) {
+    return terminalSegment;
+  }
   const keepMainNarrationOutside = segment.some(timelineRowHasInjectionNotice);
   const surfacedRows = terminalSegment.filter((row) =>
     timelineRowStaysOutsideProcessedGroup(row, keepMainNarrationOutside),
@@ -2255,10 +2277,10 @@ function collapseProcessedSegment(
   if (surfacedRows.length > 0 && processableSegment.length > 0) {
     return [
       ...surfacedRows,
-      ...collapseProcessedSegmentCore(processableSegment, runId),
+      ...collapseProcessedSegmentCore(processableSegment, runId, continuity),
     ];
   }
-  return collapseProcessedSegmentCore(terminalSegment, runId);
+  return collapseProcessedSegmentCore(terminalSegment, runId, continuity);
 }
 
 function closeTerminalSegmentToolCalls(segment: TimelineRow[]): TimelineRow[] {
@@ -2285,6 +2307,58 @@ function closeTerminalSegmentToolCalls(segment: TimelineRow[]): TimelineRow[] {
 }
 
 function collapseProcessedSegmentCore(
+  segment: TimelineRow[],
+  runId: string,
+  continuity: boolean,
+): TimelineRow[] {
+  if (!continuity) {
+    return collapsePersistedProcessedSegmentCore(segment, runId);
+  }
+  const leadingRows: TimelineRow[] = [];
+  const groupedRows: TimelineRow[] = [];
+  const trailingRows: TimelineRow[] = [];
+  let workSeen = false;
+  for (const row of segment) {
+    const firstWorkPartIndex = row.parts.findIndex(timelinePartIsWork);
+    if (firstWorkPartIndex < 0) {
+      (workSeen ? trailingRows : leadingRows).push(row);
+      continue;
+    }
+    workSeen = true;
+    const workParts = row.parts.filter(timelinePartIsWork);
+    const beforeWorkParts = row.parts.slice(0, firstWorkPartIndex)
+      .filter((part) => !timelinePartIsWork(part));
+    const afterWorkParts = row.parts.slice(firstWorkPartIndex)
+      .filter((part) => !timelinePartIsWork(part));
+    if (beforeWorkParts.length > 0) {
+      const leadingRow = rowWithParts(row, beforeWorkParts, "before-processed");
+      if (timelineRowHasRenderableContent(leadingRow)) {
+        leadingRows.push(leadingRow);
+      }
+    }
+    const workRow = rowWithParts(row, workParts, "processed-work");
+    if (timelineRowHasRenderableContent(workRow)) {
+      groupedRows.push(workRow);
+    }
+    if (afterWorkParts.length > 0) {
+      const trailingRow = afterWorkParts.length === row.parts.length
+        ? row
+        : finalRowWithParts(row, afterWorkParts);
+      if (timelineRowHasRenderableContent(trailingRow)) {
+        trailingRows.push(trailingRow);
+      }
+    }
+  }
+  return groupedRows.length === 0
+    ? segment
+    : [
+        ...leadingRows,
+        processedGroupRow(groupedRows, runId, continuity),
+        ...trailingRows,
+      ];
+}
+
+function collapsePersistedProcessedSegmentCore(
   segment: TimelineRow[],
   runId: string,
 ): TimelineRow[] {
@@ -2320,7 +2394,6 @@ function collapseProcessedSegmentCore(
     partIndex: 0,
     rowIndex: groupableRows.length,
   };
-
   const groupedRows: TimelineRow[] = [];
   const finalSourceRow = finalStart === null ? undefined : groupableRows[finalStart.rowIndex];
   if (finalStart !== null && finalSourceRow === undefined) {
@@ -2330,10 +2403,7 @@ function collapseProcessedSegmentCore(
   const finalParts = finalSourceRow?.parts.slice(finalStart?.partIndex ?? 0) ?? [];
   for (let rowIndex = 0; rowIndex < finalBoundary.rowIndex; rowIndex += 1) {
     const row = groupableRows[rowIndex];
-    if (row === undefined) {
-      continue;
-    }
-    if (row.parts.length > 0) {
+    if (row !== undefined && row.parts.length > 0) {
       groupedRows.push(rowWithParts(row, row.parts, "processed"));
     }
   }
@@ -2345,7 +2415,7 @@ function collapseProcessedSegmentCore(
   }
   const collapsedRows = [
     ...leadingRows,
-    processedGroupRow(groupedRows, runId),
+    processedGroupRow(groupedRows, runId, false),
   ];
   if (finalSourceRow !== undefined && finalStart !== null) {
     const finalRow = finalParts.length === finalSourceRow.parts.length
@@ -2364,6 +2434,9 @@ function timelineRowStaysOutsideProcessedGroup(
   keepMainNarrationOutside: boolean,
 ): boolean {
   if (timelineRowHasInjectionNotice(row)) {
+    return true;
+  }
+  if (row.parts.some((part) => part.kind === "text" && part.cursorOnly === true)) {
     return true;
   }
   return (
@@ -3379,6 +3452,7 @@ function joinHydratedThinkingText(hydratedText: string, runtimeText: string): st
 function processedGroupRow(
   rows: TimelineRow[],
   runId: string,
+  continuity: boolean,
 ): TimelineRow {
   return {
     key: `processed:${runId}`,
@@ -3386,7 +3460,7 @@ function processedGroupRow(
     text: "",
     kind: "processed",
     parts: [],
-    processedGroup: { rows },
+    processedGroup: { continuity, rows },
     roundMarker: null,
     runId,
     source: "message",

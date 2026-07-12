@@ -912,7 +912,7 @@ describe("MessageTimeline", () => {
     ];
     setRuntimeStateFromEvents(liveEvents);
     listSessionMessagesMock.mockResolvedValue([]);
-    const { container } = renderTimeline();
+    const { container, queryClient } = renderTimeline();
 
     const rowsBefore = await waitFor(() => {
       const elements = Array.from(container.querySelectorAll<HTMLElement>(
@@ -921,7 +921,18 @@ describe("MessageTimeline", () => {
       expect(elements.length).toBeGreaterThan(0);
       return elements;
     });
-    expect(container.querySelector(`[data-row-key="processed:${runId}"]`)).toBeNull();
+    const groupBefore = container.querySelector<HTMLElement>(
+      `[data-row-key="processed:${runId}"]`,
+    );
+    expect(groupBefore).not.toBeNull();
+    expect(groupBefore?.querySelector("details.at-processed-group")).toHaveAttribute("open");
+    const answerBefore = container.querySelector<HTMLElement>(
+      `[data-row-key="runtime-text:${runId}:MainAgent:0"]`,
+    );
+    expect(answerBefore).not.toBeNull();
+    expect(answerBefore?.closest("details.at-processed-group")).toBeNull();
+    expect(groupBefore).not.toHaveTextContent("Stable answer");
+    expect(screen.getAllByText("Stable answer")).toHaveLength(1);
     const rowKeysBefore = rowsBefore.map((element) => element.dataset.rowKey ?? "");
     expect(new Set(rowKeysBefore).size).toBe(rowKeysBefore.length);
     storageWrite.mockClear();
@@ -969,7 +980,35 @@ describe("MessageTimeline", () => {
         .toEqual(rowKeysBefore);
       expect(rowsAfter).toEqual(rowsBefore);
     });
-    expect(container.querySelector(`[data-row-key="processed:${runId}"]`)).toBeNull();
+    expect(container.querySelector(`[data-row-key="processed:${runId}"]`))
+      .toBe(groupBefore);
+    expect(container.querySelector(
+      `[data-row-key="runtime-text:${runId}:MainAgent:0"]`,
+    )).toBe(answerBefore);
+    expect(groupBefore).not.toHaveTextContent("Stable answer");
+    expect(screen.getAllByText("Stable answer")).toHaveLength(1);
+    expect(timeline.scrollTop).toBe(120);
+
+    act(() => {
+      queryClient.setQueryData(["sessions", "session-1", "messages"], [
+        {
+          content: "Stable answer",
+          message_id: "assistant-stable-processed-terminal",
+          role_id: "MainAgent",
+          run_id: runId,
+        },
+      ]);
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector(`[data-row-key="processed:${runId}"]`))
+        .toBe(groupBefore);
+      expect(container.querySelector(
+        `[data-row-key="runtime-text:${runId}:MainAgent:0"]`,
+      )).toBe(answerBefore);
+      expect(screen.getAllByText("Stable answer")).toHaveLength(1);
+    });
+    expect(groupBefore).not.toHaveTextContent("Stable answer");
     expect(timeline.scrollTop).toBe(120);
   });
 

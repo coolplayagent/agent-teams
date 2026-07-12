@@ -536,6 +536,19 @@ export function BoardTodosView({
             type="search"
             value={searchText}
           />
+          <Typography.Text
+            aria-live="polite"
+            className="at-board-result-count"
+            title={
+              boardQuery.data?.synced_at
+                ? `${t("boardSynced")} ${formatDateTime(boardQuery.data.synced_at, language)}`
+                : undefined
+            }
+            role="status"
+            type="secondary"
+          >
+            {t("boardShowing")} <strong>{filteredRows.length}</strong>
+          </Typography.Text>
           <label className="at-board-archive-toggle">
             <Switch checked={includeArchived} onChange={setIncludeArchived} />
             <span>{t("boardIncludeArchived")}</span>
@@ -568,11 +581,12 @@ export function BoardTodosView({
           />
         ) : null}
 
-        {boardQuery.data ? (
-          <BoardScopeSummary
-            board={boardQuery.data}
-            filteredCount={filteredRows.length}
-            language={language}
+        {boardQuery.data?.diagnostics.length ? (
+          <Alert
+            description={boardQuery.data.diagnostics.join(" / ")}
+            message={t("boardDiagnostics")}
+            showIcon
+            type="warning"
           />
         ) : null}
 
@@ -697,63 +711,6 @@ export function BoardTodosView({
         submitting={requestChangesMutation.isPending}
       />
     </section>
-  );
-}
-
-function BoardScopeSummary({
-  board,
-  filteredCount,
-  language,
-}: {
-  board: BoardTodoBoardResponse;
-  filteredCount: number;
-  language: Language;
-}) {
-  const t = useTranslations();
-  const syncedAt = formatDateTime(board.synced_at, language) || t("boardNotSynced");
-  return (
-    <div className="at-board-overview-wrap">
-      <details className="at-board-overview">
-        <summary>
-          <span>{t("boardShowing")} {filteredCount}</span>
-          <span>{t("boardSynced")} {syncedAt}</span>
-        </summary>
-        <dl>
-          <div>
-            <dt>{t("boardRevision")}</dt>
-            <dd>{board.revision}</dd>
-          </div>
-          <div>
-            <dt>{t("boardSources")}</dt>
-            <dd>{board.source_groups.length}</dd>
-          </div>
-          <div>
-            <dt>{t("boardSynced")}</dt>
-            <dd>{syncedAt}</dd>
-          </div>
-          {board.repository_full_name ? (
-            <div>
-              <dt>{t("boardRepository")}</dt>
-              <dd title={board.repository_full_name}>{board.repository_full_name}</dd>
-            </div>
-          ) : null}
-          {board.is_fork_view && board.board_workspace_id ? (
-            <div>
-              <dt>{t("boardBoardWorkspace")}</dt>
-              <dd title={board.board_workspace_id}>{board.board_workspace_id}</dd>
-            </div>
-          ) : null}
-        </dl>
-      </details>
-      {board.diagnostics.length > 0 ? (
-        <Alert
-          description={board.diagnostics.join(" / ")}
-          message={t("boardDiagnostics")}
-          showIcon
-          type="warning"
-        />
-      ) : null}
-    </div>
   );
 }
 

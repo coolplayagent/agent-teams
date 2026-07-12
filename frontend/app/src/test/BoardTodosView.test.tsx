@@ -268,13 +268,9 @@ describe("BoardTodosView", () => {
     expect(screen.getByText("Issue #401")).toBeVisible();
     expect(screen.getByText("Review board handoff")).toBeVisible();
     expect(screen.getByText("PR #12")).toBeVisible();
-    const overview = boardOverview();
-    expect(overview).toHaveTextContent(/Showing\s+3/);
-    expect(overview).toHaveTextContent(/Synced/);
-    expect(screen.getByText("Revision")).not.toBeVisible();
-    fireEvent.click(overview.querySelector("summary") as HTMLElement);
-    expect(screen.getByText("Revision")).toBeVisible();
-    expect(screen.getByText("7")).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent(/Showing\s+3/);
+    expect(screen.queryByText("Revision")).not.toBeInTheDocument();
+    expect(document.querySelector(".at-board-overview")).not.toBeInTheDocument();
     expect(listBoardTodosMock).toHaveBeenCalledWith({
       includeArchived: false,
       workspaceId: "workspace-1",
@@ -325,9 +321,7 @@ describe("BoardTodosView", () => {
       }),
     );
     expect(await screen.findByText("Board sync completed")).toBeVisible();
-    const overview = boardOverview();
-    fireEvent.click(overview.querySelector("summary") as HTMLElement);
-    expect(within(overview).getByText("8")).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent(/Showing\s+1/);
   });
 
   it("opens board source settings and saves source changes", async () => {
@@ -507,14 +501,6 @@ describe("BoardTodosView", () => {
     );
   });
 });
-
-function boardOverview(): HTMLElement {
-  const overview = document.querySelector(".at-board-overview");
-  if (!(overview instanceof HTMLElement)) {
-    throw new Error("Board overview was not rendered.");
-  }
-  return overview;
-}
 
 function expandBoardCardDetails(card: HTMLElement): void {
   const details = card.querySelector(".at-board-card-details");

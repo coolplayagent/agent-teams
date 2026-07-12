@@ -3,18 +3,23 @@
   padding: 7px 16px;
 }
 
-.at-board-title {
+.at-board-view .at-board-title {
   display: flex;
   align-items: baseline;
   gap: 10px;
 }
 
-.at-board-title h3 {
+.at-board-view .at-board-title h3 {
+  flex: 0 0 auto;
+  max-width: none;
   margin: 0 !important;
+  overflow: visible;
   font-size: 16px !important;
+  text-overflow: clip;
 }
 
-.at-board-title .ant-typography {
+.at-board-view .at-board-title .ant-typography:not(h3) {
+  min-width: 0;
   max-width: min(48vw, 560px);
   font-size: 12px;
 }
@@ -25,64 +30,23 @@
 }
 
 .at-board-controls {
-  grid-template-columns: minmax(160px, 230px) minmax(180px, 1fr) max-content;
+  grid-template-columns: minmax(160px, 230px) minmax(180px, 1fr) max-content max-content;
 }
 
-.at-board-overview-wrap {
-  flex: 0 0 auto;
-  display: grid;
-  gap: 6px;
-}
-
-.at-board-overview {
-  min-width: 0;
-  border: 1px solid var(--at-border);
-  border-radius: 8px;
-  background: var(--at-surface);
-}
-
-.at-board-overview > summary {
-  display: flex;
+.at-board-result-count {
+  display: inline-flex;
   align-items: center;
-  gap: 8px 16px;
-  min-height: 32px;
-  padding: 6px 10px;
-  color: var(--at-text-muted);
-  cursor: pointer;
+  gap: 4px;
+  min-height: 30px;
+  padding-inline: 4px;
   font-size: 12px;
-  list-style-position: inside;
-}
-
-.at-board-overview > summary > span:first-of-type {
-  color: var(--at-text);
-  font-weight: 600;
-}
-
-.at-board-overview dl {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-  gap: 8px;
-  margin: 0;
-  padding: 8px 10px 10px;
-  border-top: 1px solid var(--at-border);
-}
-
-.at-board-overview dl > div {
-  min-width: 0;
-}
-
-.at-board-overview dt {
-  color: var(--at-text-muted);
-  font-size: 11px;
-}
-
-.at-board-overview dd {
-  margin: 2px 0 0;
-  overflow: hidden;
-  color: var(--at-text);
-  font-size: 12px;
-  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.at-board-result-count strong {
+  color: var(--at-text);
+  font-family: var(--at-font-mono);
+  font-weight: 620;
 }
 
 .at-board-columns,
@@ -128,7 +92,12 @@
 
 @media (max-width: 900px) {
   .at-board-controls {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) max-content max-content;
+  }
+
+  .at-board-search {
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
 
   .at-board-columns,
@@ -140,7 +109,7 @@
 }
 
 @media (max-width: 640px) {
-  .at-board-title .ant-typography:not(h3) {
+  .at-board-view .at-board-title .ant-typography:not(h3) {
     display: none;
   }
 

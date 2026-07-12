@@ -24,6 +24,10 @@ const boardsCss = readFileSync(
   "src/features/boards/BoardModals.css",
   "utf8",
 );
+const boardLayoutCss = readFileSync(
+  "src/features/boards/BoardLayout.css",
+  "utf8",
+);
 
 describe("independent modal surfaces", () => {
   it("opens settings as a centered, non-mask-closable modal", () => {
@@ -52,5 +56,9 @@ describe("independent modal surfaces", () => {
     expect(boardsSource).not.toContain("<Drawer");
     expect(boardsCss).toContain("max-height: min(720px, calc(100dvh - 160px));");
     expect(boardsCss).toContain("overflow-y: auto;");
+    expect(boardLayoutCss).toContain(".at-board-view .at-board-title {");
+    expect(boardLayoutCss).toContain(".at-board-view .at-board-title h3 {");
+    expect(boardLayoutCss).toContain("max-width: none;");
+    expect(boardLayoutCss).toContain("text-overflow: clip;");
   });
 });

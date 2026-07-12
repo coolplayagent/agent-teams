@@ -59,6 +59,7 @@ class _FakeSessionService:
         self.raise_missing_list_subagents = False
         self.raise_missing_subagent_stream = False
         self.subagent_stream_calls: list[tuple[str, int]] = []
+        self.activity_stream_calls: list[tuple[str, int | None]] = []
         self.sessions_force_refresh_calls: list[bool] = []
         self.rounds_force_refresh_calls: list[bool] = []
         self.recovery_force_refresh_calls: list[bool] = []
@@ -239,6 +240,23 @@ class _FakeSessionService:
             event_type=RunEventType.MODEL_STEP_STARTED,
             payload_json="{}",
             event_id=after_event_id + 1,
+        )
+
+    async def stream_session_activity_events(
+        self,
+        session_id: str,
+        *,
+        after_event_id: int | None = None,
+    ) -> AsyncIterator[RunEvent | None]:
+        self.activity_stream_calls.append((session_id, after_event_id))
+        yield None
+        yield RunEvent(
+            session_id=session_id,
+            run_id="run-activity",
+            trace_id="run-activity",
+            event_type=RunEventType.USER_QUESTION_REQUESTED,
+            payload_json='{"question_id":"question-1"}',
+            event_id=(after_event_id or 20) + 1,
         )
 
     def get_session(self, session_id: str) -> SessionRecord:
@@ -1457,6 +1475,25 @@ def test_stream_session_subagent_events_route_reports_missing_session() -> None:
     assert response.status_code == 200
     assert response.text.strip() == 'data: {"error": "Session not found"}'
     assert fake_service.subagent_stream_calls == [("missing-session", 0)]
+
+
+def test_stream_session_activity_events_starts_ready_and_replays_last_event_id() -> (
+    None
+):
+    fake_service = _FakeSessionService()
+    client = _create_client(fake_service)
+
+    response = client.get(
+        "/api/sessions/session-1/activity/events",
+        headers={"Last-Event-ID": "12"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert fake_service.activity_stream_calls == [("session-1", 12)]
+    assert "event: ready" in response.text
+    assert "id: 13" in response.text
+    assert '"event_type":"user_question_requested"' in response.text
 
 
 def test_delete_session_subagent_route_returns_ok() -> None:

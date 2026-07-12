@@ -51,6 +51,10 @@ vi.mock("../runtime/useRunStreamController", () => ({
   useRunStreamController: vi.fn(),
 }));
 
+vi.mock("../runtime/useSessionActivityMonitor", () => ({
+  useSessionActivityMonitor: vi.fn(),
+}));
+
 vi.mock("../features/composer/Composer", () => ({
   Composer: ({ sessionId }: { sessionId: string | null }) => (
     <div data-session-id={sessionId ?? ""} data-testid="composer" />

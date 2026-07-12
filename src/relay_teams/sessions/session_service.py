@@ -239,6 +239,14 @@ _LIST_FRESH_READ_EVENT_TYPES = frozenset(
         RunEventType.USER_QUESTION_ANSWERED,
     }
 )
+_SESSION_ACTIVITY_EVENT_TYPES = frozenset(
+    (_LIST_DIRTY_EVENT_TYPES - {RunEventType.BACKGROUND_TASK_UPDATED})
+    | {
+        RunEventType.SUBAGENT_SESSION_STATUS_CHANGED,
+        RunEventType.SUBAGENT_STOPPED,
+        RunEventType.SUBAGENT_RESUMED,
+    }
+)
 
 
 class BoardTodoSessionLifecycleService(Protocol):
@@ -2088,6 +2096,62 @@ class SessionService:
                         replay_high_watermark,
                         event_id,
                     )
+                yield event
+        finally:
+            if queue is not None and self._run_event_hub is not None:
+                self._run_event_hub.unsubscribe_session(session_id, queue)
+
+    async def stream_session_activity_events(
+        self,
+        session_id: str,
+        *,
+        after_event_id: int | None = None,
+    ) -> AsyncIterator[RunEvent | None]:
+        """Stream recovery-relevant session events, yielding ``None`` when ready."""
+        _ = self._session_repo.get(session_id)
+        queue = (
+            self._run_event_hub.subscribe_session(session_id)
+            if self._run_event_hub is not None
+            else None
+        )
+        replay_high_watermark = max(0, int(after_event_id or 0))
+        try:
+            # The ready marker is emitted only after subscription. Clients can now
+            # refresh their snapshot without a race between the read and listener.
+            yield None
+            if after_event_id is not None and self._event_log is not None:
+                rows = await self._event_log.list_by_session_after_id_async(
+                    session_id,
+                    replay_high_watermark,
+                )
+                for row in rows:
+                    event = self._run_event_from_log_row(row)
+                    if (
+                        event is None
+                        or event.event_type not in _SESSION_ACTIVITY_EVENT_TYPES
+                    ):
+                        continue
+                    if event.event_id is not None:
+                        replay_high_watermark = max(
+                            replay_high_watermark,
+                            event.event_id,
+                        )
+                    yield event
+
+            if queue is None:
+                return
+            while True:
+                event = await queue.get()
+                if (
+                    event.session_id != session_id
+                    or event.event_type not in _SESSION_ACTIVITY_EVENT_TYPES
+                ):
+                    continue
+                event_id = event.event_id
+                if event_id is not None and event_id <= replay_high_watermark:
+                    continue
+                if event_id is not None:
+                    replay_high_watermark = max(replay_high_watermark, event_id)
                 yield event
         finally:
             if queue is not None and self._run_event_hub is not None:

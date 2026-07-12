@@ -144,6 +144,76 @@ async def test_stream_normal_mode_subagent_events_delivers_live_session_events(
 
 
 @pytest.mark.asyncio
+async def test_stream_session_activity_events_signals_ready_then_relevant_events(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "session_activity_events_live.db"
+    event_log = EventLog(db_path)
+    run_event_hub = RunEventHub(
+        event_log=event_log,
+        run_state_repo=RunStateRepository(db_path),
+    )
+    service = _build_service(db_path, event_log, run_event_hub=run_event_hub)
+    _ = service.create_session(session_id="session-1", workspace_id="default")
+    stream = service.stream_session_activity_events("session-1")
+
+    assert await anext(stream) is None
+    await run_event_hub.publish_async(
+        RunEvent(
+            session_id="session-1",
+            run_id="run-1",
+            trace_id="run-1",
+            event_type=RunEventType.TEXT_DELTA,
+            payload_json='{"text":"noise"}',
+        )
+    )
+    await run_event_hub.publish_async(
+        RunEvent(
+            session_id="session-1",
+            run_id="run-1",
+            trace_id="run-1",
+            event_type=RunEventType.USER_QUESTION_REQUESTED,
+            payload_json='{"question_id":"question-1"}',
+        )
+    )
+
+    delivered = await asyncio.wait_for(anext(stream), timeout=1.0)
+    assert delivered is not None
+    assert delivered.event_type is RunEventType.USER_QUESTION_REQUESTED
+    await stream.aclose()
+
+
+@pytest.mark.asyncio
+async def test_stream_session_activity_events_replays_disconnect_gap(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "session_activity_events_replay.db"
+    event_log = EventLog(db_path)
+    service = _build_service(db_path, event_log)
+    _ = service.create_session(session_id="session-1", workspace_id="default")
+    event_id = event_log.emit_run_event(
+        RunEvent(
+            session_id="session-1",
+            run_id="run-1",
+            trace_id="run-1",
+            event_type=RunEventType.TOOL_APPROVAL_REQUESTED,
+            payload_json='{"tool_call_id":"tool-1"}',
+        )
+    )
+    stream = service.stream_session_activity_events(
+        "session-1",
+        after_event_id=event_id - 1,
+    )
+
+    assert await anext(stream) is None
+    replayed = await anext(stream)
+    assert replayed is not None
+    assert replayed.event_id == event_id
+    assert replayed.event_type is RunEventType.TOOL_APPROVAL_REQUESTED
+    await stream.aclose()
+
+
+@pytest.mark.asyncio
 async def test_stream_normal_mode_subagent_events_ignores_orchestration_sessions(
     tmp_path: Path,
 ) -> None:

@@ -1923,6 +1923,19 @@ Replay cursor:
 
 The `data:` payload uses the normal `RunEvent` JSON shape. Clients still deduplicate by event identity because a manual reconnect can overlap a native browser reconnect during transport recovery.
 
+### `GET /sessions/{session_id}/activity/events`
+
+Streams lightweight session-level invalidation events over SSE. The stream includes
+run lifecycle, approval, user-question, background-task, and subagent lifecycle
+changes, but excludes high-volume text and thinking deltas.
+
+The server emits an `event: ready` marker after the session subscription is active.
+Clients should refresh recovery state when this marker arrives, which closes the race
+between the initial snapshot read and listener registration. Events with persisted ids
+emit an SSE `id:` line. Native `EventSource` reconnects provide `Last-Event-ID`; the
+server replays relevant events after that cursor before continuing with live delivery.
+Clients may use low-frequency snapshot polling only while this stream is disconnected.
+
 ### `DELETE /sessions/{session_id}/subagents/{instance_id}`
 
 Deletes one normal-mode child-session subagent projection and its persisted instance/run history.

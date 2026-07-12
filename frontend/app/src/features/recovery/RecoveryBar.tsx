@@ -89,7 +89,7 @@ export function RecoveryBar({
     refetchInterval: (query) =>
       recoveryQueryEnabled &&
       recoverySnapshotNeedsPolling(query.state.data as RecoverySnapshot | undefined)
-        ? 10000
+        ? 30000
         : false,
     staleTime: 30000,
   });
@@ -539,7 +539,7 @@ export function SubagentQuestionBar({
         runId,
         instanceId,
       )
-        ? 10000
+        ? 30000
         : false,
     staleTime: 30000,
   });

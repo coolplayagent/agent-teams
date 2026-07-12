@@ -72,6 +72,7 @@ import { SettingsDrawer } from "./SettingsDrawer";
 import { WorkspaceProjectView } from "../workspaces/WorkspaceProjectView";
 import { workspaceDisplayLabel } from "../workspaces/workspaceLabels";
 import { useRunStreamController } from "../../runtime/useRunStreamController";
+import { useSessionActivityMonitor } from "../../runtime/useSessionActivityMonitor";
 import {
   sidebarWidthMax,
   sidebarWidthMin,
@@ -162,6 +163,11 @@ export function AppShell() {
   const resolvedThemeMode = useResolvedThemeMode(themeMode);
   const language = useUiStore((state) => state.language);
   const selectedSessionId = useUiStore((state) => state.selectedSessionId);
+  useSessionActivityMonitor({
+    locallyTrackedRunIds: runStreamController.trackedRunIds,
+    queryClient,
+    sessionId: selectedSessionId,
+  });
   const previousSelectedSessionIdRef = useRef(selectedSessionId);
   const hasActiveRunStreams = runStreamController.activeRunIds.length > 0;
   const selectedWorkspaceId = useUiStore((state) => state.selectedWorkspaceId);

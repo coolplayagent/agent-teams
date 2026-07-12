@@ -514,6 +514,41 @@ async def stream_session_subagent_events(
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
+@router.get("/{session_id}/activity/events")
+async def stream_session_activity_events(
+    session_id: RequiredIdentifierStr,
+    service: SessionService = Depends(get_session_service),
+    last_event_id: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
+) -> StreamingResponse:
+    replay_after_event_id = (
+        resolve_after_event_id(query_after_event_id=None, last_event_id=last_event_id)
+        if last_event_id is not None
+        else None
+    )
+
+    async def event_generator():
+        try:
+            async for event in service.stream_session_activity_events(
+                session_id,
+                after_event_id=replay_after_event_id,
+            ):
+                if event is None:
+                    yield (
+                        "event: ready\n"
+                        f"data: {json.dumps({'session_id': session_id})}\n\n"
+                    )
+                    continue
+                event_json = event.model_dump_json()
+                if event.event_id is None:
+                    yield f"data: {event_json}\n\n"
+                else:
+                    yield f"id: {event.event_id}\ndata: {event_json}\n\n"
+        except KeyError:
+            yield f"data: {json.dumps({'error': 'Session not found'})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
 @router.delete("/{session_id}/subagents/{instance_id}")
 async def delete_session_subagent(
     session_id: RequiredIdentifierStr,

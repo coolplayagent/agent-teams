@@ -18,6 +18,8 @@ describe("session sidebar row styles", () => {
     expect(css).toMatch(/\.at-session-item:hover \.at-session-actions,[\s\S]*\.at-session-item\.is-confirming \.at-session-actions\s*\{[^}]*opacity:\s*1[^}]*pointer-events:\s*auto/s);
     expect(css).not.toContain(".at-session-item.is-selected .at-session-actions");
     expect(css).toMatch(/\.at-session-item:hover \.at-session-meta-slot > \.at-session-meta,[\s\S]*\.is-confirming \.at-session-meta-slot > \.at-session-meta\s*\{[^}]*opacity:\s*0[^}]*visibility:\s*hidden/s);
+    expect(css).toMatch(/\.at-session-meta-slot > \.at-session-meta\s*\{[^}]*visibility:\s*visible[^}]*\}/s);
+    expect(css).not.toMatch(/\.at-session-meta-slot > \.at-session-meta\s*\{[^}]*transition:/s);
   });
 
   it("keeps rename and destructive confirmation controls inside their owner rows", () => {
@@ -26,6 +28,9 @@ describe("session sidebar row styles", () => {
     expect(sidebar).toContain('className="at-session-inline-rename"');
     expect(sidebar).toContain('confirmingDelete ? (');
     expect(sidebar).toContain('deleteWorkspaceTarget?.workspace_id === group.id ? (');
+    expect(sidebar).toContain('t("sidebarDeleteConfirmAction")');
+    expect(sidebar).toContain('event.key !== "Escape" || !confirmingDelete');
+    expect(sidebar).toContain('deleteWorkspaceTarget?.workspace_id === group.id');
     expect(css).toMatch(/\.at-session-item\s*\{[^}]*height:\s*32px[^}]*overflow:\s*hidden/s);
     expect(css).toMatch(/\.at-session-inline-rename\.ant-input\s*\{[^}]*height:\s*22px/s);
   });

@@ -840,10 +840,12 @@ describe("SessionsSidebar", () => {
     let deletingRow = screen.getByText("Alpha").closest(".at-session-item");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(deletingRow).toHaveClass("is-confirming");
-    expect(within(deletingRow as HTMLElement).getByRole("button", { name: "Cancel" }))
-      .toBeVisible();
-    fireEvent.click(within(deletingRow as HTMLElement)
-      .getByRole("button", { name: "Cancel" }));
+    const cancelDelete = within(deletingRow as HTMLElement)
+      .getByRole("button", { name: "Cancel" });
+    expect(cancelDelete).toBeVisible();
+    expect(within(deletingRow as HTMLElement).getByText("Confirm")).toBeVisible();
+    await waitFor(() => expect(cancelDelete).toHaveFocus());
+    fireEvent.keyDown(cancelDelete, { key: "Escape" });
     await waitFor(() =>
       expect(within(screen.getByText("Alpha").closest(".at-session-item") as HTMLElement)
         .getByRole("button", { name: "Delete session" }))
@@ -927,7 +929,24 @@ describe("SessionsSidebar", () => {
       .not.toBeChecked();
     expect(within(workspaceHeader as HTMLElement)
       .getByRole("button", { name: "Cancel" })).toBeVisible();
-    fireEvent.click(within(workspaceHeader as HTMLElement)
+    expect(within(workspaceHeader as HTMLElement).getByText("Confirm")).toBeVisible();
+    const cancelWorkspaceDelete = within(workspaceHeader as HTMLElement)
+      .getByRole("button", { name: "Cancel" });
+    await waitFor(() => expect(cancelWorkspaceDelete).toHaveFocus());
+    fireEvent.keyDown(cancelWorkspaceDelete, { key: "Escape" });
+    await waitFor(() =>
+      expect(screen.getByRole("button", {
+        name: "Remove workspace Extra Project",
+      })).toHaveFocus(),
+    );
+    expect(deleteWorkspaceMock).not.toHaveBeenCalled();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Remove workspace Extra Project" }),
+    );
+    const reopenedWorkspaceHeader = screen.getByText("Extra Project")
+      .closest(".at-workspace-group-header");
+    fireEvent.click(within(reopenedWorkspaceHeader as HTMLElement)
       .getByRole("button", { name: "Delete" }));
 
     await waitFor(() =>

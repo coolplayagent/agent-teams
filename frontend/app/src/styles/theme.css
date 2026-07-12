@@ -662,6 +662,13 @@ body {
   color: var(--at-text-muted);
 }
 
+.at-workspace-group-actions .at-workspace-inline-confirm.ant-btn {
+  width: auto;
+  min-width: 34px;
+  padding-inline: 5px;
+  font-size: 11px;
+}
+
 .at-workspace-group-actions .ant-btn.is-active,
 .at-workspace-group-actions .ant-btn:hover,
 .at-workspace-group-actions .ant-btn:focus-visible {
@@ -792,7 +799,6 @@ body {
 .at-session-meta-slot > .at-session-meta {
   opacity: 1;
   visibility: visible;
-  transition: opacity 0.12s ease, visibility 0.12s ease;
 }
 
 .at-session-actions {
@@ -835,6 +841,13 @@ body {
   min-width: 22px;
   height: 22px;
   padding: 0;
+}
+
+.at-session-action-button.at-session-confirm-button.ant-btn {
+  width: auto;
+  min-width: 34px;
+  padding-inline: 4px;
+  font-size: 11px;
 }
 
 .at-session-action-button .ant-btn-icon {

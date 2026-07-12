@@ -527,6 +527,14 @@ function SessionsSidebarView({
             confirmingDelete ? "is-confirming" : "",
           ].filter(Boolean).join(" ")}
           data-session-id={session.session_id}
+          onKeyDown={(event) => {
+            if (event.key !== "Escape" || !confirmingDelete) {
+              return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            resetDeleteSession();
+          }}
           ref={selected ? selectedSessionItemRef : undefined}
         >
           <div className="at-session-copy">
@@ -593,6 +601,7 @@ function SessionsSidebarView({
                   <>
                     <Button
                       aria-label={t("sidebarDeleteCancel")}
+                      autoFocus
                       className="at-session-action-button"
                       disabled={deleteSessionMutation.isPending}
                       icon={<X size={13} />}
@@ -602,15 +611,16 @@ function SessionsSidebarView({
                     />
                     <Button
                       aria-label={t("sidebarDeleteConfirm")}
-                      className="at-session-action-button"
+                      className="at-session-action-button at-session-confirm-button"
                       danger
                       disabled={deleteSessionMutation.isPending}
-                      icon={<Trash2 size={13} />}
                       loading={deleteSessionMutation.isPending}
                       onClick={submitDeleteSession}
                       size="small"
                       type="text"
-                    />
+                    >
+                      {t("sidebarDeleteConfirmAction")}
+                    </Button>
                   </>
                 ) : (
                   <>
@@ -842,6 +852,15 @@ function SessionsSidebarView({
                   toggleWorkspaceGroup(group.id);
                 }}
                 onKeyDown={(event) => {
+                  if (
+                    event.key === "Escape" &&
+                    deleteWorkspaceTarget?.workspace_id === group.id
+                  ) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    resetDeleteWorkspace();
+                    return;
+                  }
                   if ((event.target as HTMLElement).closest(".at-workspace-group-actions")) {
                     return;
                   }
@@ -880,6 +899,7 @@ function SessionsSidebarView({
                       </Tooltip>
                       <Button
                         aria-label={t("sidebarDeleteCancel")}
+                        autoFocus
                         disabled={deleteWorkspaceMutation.isPending}
                         icon={<X size={14} />}
                         onClick={resetDeleteWorkspace}
@@ -888,14 +908,16 @@ function SessionsSidebarView({
                       />
                       <Button
                         aria-label={t("sidebarDeleteConfirm")}
+                        className="at-workspace-inline-confirm"
                         danger
                         disabled={deleteWorkspaceMutation.isPending}
-                        icon={<Trash2 size={14} />}
                         loading={deleteWorkspaceMutation.isPending}
                         onClick={submitDeleteWorkspace}
                         size="small"
                         type="text"
-                      />
+                      >
+                        {t("sidebarDeleteConfirmAction")}
+                      </Button>
                     </>
                   ) : (
                     <>
@@ -1015,6 +1037,9 @@ function SessionsSidebarView({
     session: SessionSidebarRecord,
     _trigger: HTMLElement,
   ) {
+    setDeleteTarget(null);
+    setDeleteWorkspaceTarget(null);
+    setDeleteWorkspaceRemoveDirectory(false);
     renameFocusSessionIdRef.current = session.session_id;
     setRenameTarget(session);
     setRenameValue(sessionLabel(session));
@@ -1059,6 +1084,10 @@ function SessionsSidebarView({
     session: SessionSidebarRecord,
     _trigger: HTMLElement,
   ) {
+    setRenameTarget(null);
+    setRenameValue("");
+    setDeleteWorkspaceTarget(null);
+    setDeleteWorkspaceRemoveDirectory(false);
     deleteFocusSessionIdRef.current = session.session_id;
     setDeleteTarget(session);
   }
@@ -1067,6 +1096,9 @@ function SessionsSidebarView({
     workspace: WorkspaceRecord,
     _trigger: HTMLElement,
   ) {
+    setRenameTarget(null);
+    setRenameValue("");
+    setDeleteTarget(null);
     deleteFocusWorkspaceIdRef.current = workspace.workspace_id;
     setDeleteWorkspaceTarget(workspace);
     setDeleteWorkspaceRemoveDirectory(false);

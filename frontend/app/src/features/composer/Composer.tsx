@@ -665,6 +665,14 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       return { result, titlePreview };
     },
     onSuccess: ({ result, titlePreview }, _variables, optimisticPrompt) => {
+      const foreground = sessionIdRef.current === result.session_id;
+      runStreamController.startRunStream({
+        ...(foreground ? {} : { foreground: false }),
+        ...(titlePreview.trim().length > 0 ? { promptText: titlePreview } : {}),
+        runId: result.run_id,
+        sessionId: result.session_id,
+        ...(result.target_role_id?.trim() ? { targetRoleId: result.target_role_id } : {}),
+      });
       setDraft("");
       setPromptAttachments([]);
       setSelectedPromptSkill(null);
@@ -688,14 +696,6 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
         titlePreview,
         sessionQuery.data,
       );
-      const foreground = sessionIdRef.current === result.session_id;
-      runStreamController.startRunStream({
-        ...(foreground ? {} : { foreground: false }),
-        ...(titlePreview.trim().length > 0 ? { promptText: titlePreview } : {}),
-        runId: result.run_id,
-        sessionId: result.session_id,
-        ...(result.target_role_id?.trim() ? { targetRoleId: result.target_role_id } : {}),
-      });
       if (optimisticPrompt != null) {
         useOptimisticRunStore
           .getState()

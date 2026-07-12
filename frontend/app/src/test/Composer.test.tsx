@@ -418,6 +418,7 @@ describe("Composer", () => {
     createRunMock.mockReturnValue(runCreation.promise);
     const controller = runStreamController();
     const queryClient = createComposerQueryClient();
+    const setQueryDataSpy = vi.spyOn(queryClient, "setQueryData");
     queryClient.setQueryData<SessionRecord>(["sessions", "detail", "session-1"], {
       can_switch_mode: true,
       session_id: "session-1",
@@ -453,6 +454,7 @@ describe("Composer", () => {
       text: "preview after run",
     });
     expect(queryClient.getQueryData(["sessions", "sidebar"])).toEqual(sidebarRows);
+    setQueryDataSpy.mockClear();
 
     await act(async () => {
       runCreation.resolve({
@@ -493,6 +495,9 @@ describe("Composer", () => {
       runId: "run-1",
       sessionId: "session-1",
     });
+    expect(controller.startRunStream.mock.invocationCallOrder[0]).toBeLessThan(
+      setQueryDataSpy.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
     expect(useOptimisticRunStore.getState().prompts["session-1"]).toMatchObject({
       runId: "run-1",
       text: "preview after run",

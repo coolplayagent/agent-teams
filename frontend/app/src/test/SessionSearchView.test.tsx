@@ -126,6 +126,27 @@ describe("SessionSearchView", () => {
     });
   });
 
+  it("does not let programmatic scrolling under a stationary pointer replace keyboard selection", async () => {
+    renderSearch();
+
+    const searchbox = screen.getByRole("searchbox", { name: "Search sessions" });
+    const results = screen.getByRole("listbox");
+    const firstOption = screen.getByRole("option", { name: "Open Release notes" });
+    const lastOption = screen.getByRole("option", { name: "Open Alpha session" });
+    await waitFor(() => expect(searchbox).toHaveFocus());
+
+    fireEvent.pointerEnter(results, { clientX: 240, clientY: 220 });
+    fireEvent.keyDown(searchbox, { key: "End" });
+    expect(lastOption).toHaveAttribute("aria-selected", "true");
+
+    fireEvent.pointerMove(firstOption, { clientX: 240, clientY: 220 });
+    expect(lastOption).toHaveAttribute("aria-selected", "true");
+    expect(firstOption).toHaveAttribute("aria-selected", "false");
+
+    fireEvent.pointerMove(firstOption, { clientX: 242, clientY: 220 });
+    expect(firstOption).toHaveAttribute("aria-selected", "true");
+  });
+
   it("shows an empty search state when nothing matches", () => {
     renderSearch();
 

@@ -2,7 +2,7 @@ import { Empty, Input, Skeleton, Typography } from "antd";
 import type { InputRef } from "antd";
 import { MessageSquare, Search } from "lucide-react";
 import { Fragment, useEffect, useId, useMemo, useRef, useState } from "react";
-import type { KeyboardEvent, ReactNode } from "react";
+import type { KeyboardEvent, PointerEvent, ReactNode } from "react";
 
 import type { SessionSidebarRecord, WorkspaceRecord } from "../../api/contracts";
 import { useTranslations } from "../../i18n";
@@ -45,6 +45,7 @@ export function SessionSearchView({
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<InputRef>(null);
   const activeOptionRef = useRef<HTMLButtonElement | null>(null);
+  const pointerPositionRef = useRef<{ x: number; y: number } | null>(null);
   const resultsId = useId();
   const rows = useMemo(
     () =>
@@ -117,6 +118,7 @@ export function SessionSearchView({
         aria-label={hasQuery ? t("searchViewResults") : t("searchRecentSessions")}
         className="at-session-search-results at-scroll-region"
         id={resultsId}
+        onPointerEnter={recordPointerPosition}
         role="listbox"
       >
         {loading && rows.length === 0 ? (
@@ -154,7 +156,7 @@ export function SessionSearchView({
                   id={`${resultsId}-option-${index}`}
                   key={row.session.session_id}
                   onClick={() => onSessionSelected(row.session)}
-                  onMouseEnter={() => setActiveIndex(index)}
+                  onPointerMove={(event) => handleResultPointerMove(event, index)}
                   ref={active ? activeOptionRef : undefined}
                   role="option"
                   type="button"
@@ -226,6 +228,33 @@ export function SessionSearchView({
       event.preventDefault();
       onSessionSelected(rows[activeIndex].session);
     }
+  }
+
+  function recordPointerPosition(event: PointerEvent<HTMLDivElement>) {
+    pointerPositionRef.current = {
+      x: event.clientX,
+      y: event.clientY,
+    };
+  }
+
+  function handleResultPointerMove(
+    event: PointerEvent<HTMLButtonElement>,
+    index: number,
+  ) {
+    const previousPosition = pointerPositionRef.current;
+    const nextPosition = {
+      x: event.clientX,
+      y: event.clientY,
+    };
+    pointerPositionRef.current = nextPosition;
+    if (
+      previousPosition !== null &&
+      previousPosition.x === nextPosition.x &&
+      previousPosition.y === nextPosition.y
+    ) {
+      return;
+    }
+    setActiveIndex(index);
   }
 }
 

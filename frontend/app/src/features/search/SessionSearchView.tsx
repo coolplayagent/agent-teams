@@ -159,6 +159,7 @@ export function SessionSearchView({
                   onPointerMove={(event) => handleResultPointerMove(event, index)}
                   ref={active ? activeOptionRef : undefined}
                   role="option"
+                  title={row.workspaceRoot}
                   type="button"
                 >
                   <span className="at-session-search-result-icon" aria-hidden="true">
@@ -168,8 +169,19 @@ export function SessionSearchView({
                     <span className="at-session-search-result-title">
                       {highlightSearchText(row.title, query)}
                     </span>
-                    <span className="at-session-search-result-workspace">
-                      {highlightSearchText(row.workspaceLabel, query)}
+                    <span className="at-session-search-result-meta">
+                      <span className="at-session-search-result-workspace">
+                        {highlightSearchText(row.workspaceLabel, query)}
+                      </span>
+                      {row.session.updated_at ? (
+                        <span
+                          aria-hidden="true"
+                          className="at-session-search-result-time at-session-search-result-time-compact"
+                          title={row.session.updated_at}
+                        >
+                          {formatRelativeTime(row.session.updated_at, language)}
+                        </span>
+                      ) : null}
                     </span>
                   </span>
                   <Typography.Text
@@ -181,7 +193,7 @@ export function SessionSearchView({
                   </Typography.Text>
                   {row.session.updated_at ? (
                     <span
-                      className="at-session-search-result-time"
+                      className="at-session-search-result-time at-session-search-result-time-wide"
                       title={row.session.updated_at}
                     >
                       {formatRelativeTime(row.session.updated_at, language)}

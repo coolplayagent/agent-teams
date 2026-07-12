@@ -15,4 +15,20 @@ describe("session search modal layout", () => {
     expect(view).toContain('role="searchbox"');
     expect(view).not.toContain('type="search"');
   });
+
+  it("keeps narrow results to a compact title and metadata pair", () => {
+    expect(view).toContain('className="at-session-search-result-meta"');
+    expect(view).toContain("at-session-search-result-time-compact");
+    expect(view).toContain("at-session-search-result-time-wide");
+    expect(view).toContain("title={row.workspaceRoot}");
+    expect(css).toMatch(
+      /@media \(max-width: 900px\)[\s\S]*?\.at-session-search-result\s*\{[^}]*grid-template-columns:\s*1\.35rem minmax\(0, 1fr\)[^}]*align-items:\s*start/s,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 900px\)[\s\S]*?\.at-session-search-result-root,\s*\.at-session-search-result-time-wide\s*\{[^}]*display:\s*none/s,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 900px\)[\s\S]*?\.at-session-search-result-time-compact\s*\{[^}]*display:\s*block[^}]*min-width:\s*max-content[^}]*text-overflow:\s*clip/s,
+    );
+  });
 });

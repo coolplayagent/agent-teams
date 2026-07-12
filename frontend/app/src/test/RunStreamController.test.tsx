@@ -1082,7 +1082,7 @@ describe("useRunStreamController", () => {
     expect(screen.getByTestId("suppressed-run-ids")).toBeEmptyDOMElement();
   });
 
-  it("resumes from the latest local event id when recovery data is stale", () => {
+  it("replays from zero when recovery cursor is not backed by local event coverage", () => {
     useRuntimeStore.setState({
       runtimeState: {
         activeRunIds: ["run-1"],
@@ -1119,7 +1119,84 @@ describe("useRunStreamController", () => {
     fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
 
     const options = streamMocks.latestOptions as RunStreamOptions;
+    expect(options.afterEventId).toBe(0);
+  });
+
+  it("resumes from the local high-watermark when event coverage is continuous", () => {
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: ["run-1"],
+        runs: {
+          "run-1": {
+            entries: [],
+            lastEventId: 108,
+            runId: "run-1",
+            seenEventIdRanges: [[1, 108]],
+            seenEventKeys: [],
+            status: "open",
+            terminalEventType: null,
+          },
+        },
+      },
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness afterEventId={42} />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+
+    const options = streamMocks.latestOptions as RunStreamOptions;
     expect(options.afterEventId).toBe(108);
+  });
+
+  it("replays from zero when local event coverage contains a hole", () => {
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: ["run-1"],
+        runs: {
+          "run-1": {
+            entries: [],
+            lastEventId: 108,
+            replayAfterEventId: 108,
+            runId: "run-1",
+            seenEventIdRanges: [[1, 12], [14, 108]],
+            seenEventKeys: [],
+            status: "open",
+            terminalEventType: null,
+          },
+        },
+      },
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness afterEventId={108} />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+
+    const options = streamMocks.latestOptions as RunStreamOptions;
+    expect(options.afterEventId).toBe(0);
+    expect(useRuntimeStore.getState().runtimeState.runs["run-1"])
+      .not.toHaveProperty("replayAfterEventId");
   });
 
   it("starts multiplexed run streams from each latest local event id", () => {
@@ -1131,6 +1208,7 @@ describe("useRunStreamController", () => {
             entries: [],
             lastEventId: 108,
             runId: "run-1",
+            seenEventIdRanges: [[1, 108]],
             seenEventKeys: ["run-1:108"],
             status: "open",
             terminalEventType: null,
@@ -1139,6 +1217,7 @@ describe("useRunStreamController", () => {
             entries: [],
             lastEventId: 7,
             runId: "run-2",
+            seenEventIdRanges: [[1, 7]],
             seenEventKeys: ["run-2:7"],
             status: "open",
             terminalEventType: null,
@@ -1171,7 +1250,7 @@ describe("useRunStreamController", () => {
     const options = streamMocks.latestOptions as MultiplexedRunStreamOptions;
     expect(options.runs).toEqual([
       { afterEventId: 108, runId: "run-1" },
-      { afterEventId: 9, runId: "run-2" },
+      { afterEventId: 0, runId: "run-2" },
     ]);
     expect(screen.getByTestId("active-run-ids")).toHaveTextContent("run-1,run-2");
   });
@@ -1221,6 +1300,7 @@ describe("useRunStreamController", () => {
             entries: [],
             lastEventId: 8,
             runId: "background-run-1",
+            seenEventIdRanges: [[1, 8]],
             seenEventKeys: ["background-run-1:8"],
             status: "open",
             terminalEventType: null,
@@ -1471,6 +1551,7 @@ describe("useRunStreamController", () => {
             entries: [],
             lastEventId: 20,
             runId: "run-1",
+            seenEventIdRanges: [[1, 20]],
             seenEventKeys: ["run-1:20"],
             status: "open",
             terminalEventType: null,
@@ -1479,6 +1560,7 @@ describe("useRunStreamController", () => {
             entries: [],
             lastEventId: 7,
             runId: "run-2",
+            seenEventIdRanges: [[1, 7]],
             seenEventKeys: ["run-2:7"],
             status: "open",
             terminalEventType: null,
@@ -2189,6 +2271,7 @@ function runtimeStateWithLastEvent(lastEventId: number): RuntimeState {
         entries: [],
         lastEventId,
         runId: "run-1",
+        seenEventIdRanges: [[1, lastEventId]],
         seenEventKeys: [`run-1:${lastEventId}`],
         status: "open",
         terminalEventType: null,
@@ -2247,6 +2330,7 @@ function runtimeStateWithClosedRun(lastEventId: number): RuntimeState {
         entries: [],
         lastEventId,
         runId: "run-1",
+        seenEventIdRanges: [[1, lastEventId]],
         seenEventKeys: [`run-1:${lastEventId}`],
         status: "closed",
         terminalEventType: "run_completed",
@@ -2373,6 +2457,7 @@ function runtimeStateWithRunStatuses(
           entries: [],
           lastEventId: run.lastEventId,
           runId: run.runId,
+          seenEventIdRanges: [[1, run.lastEventId]],
           seenEventKeys: [`${run.runId}:${run.lastEventId}`],
           status: run.status,
           terminalEventType: run.status === "closed" ? "run_completed" : null,

@@ -540,9 +540,12 @@ export function useRunStreamController(): RunStreamController {
     streamGenerationRef.current += 1;
     const streamGeneration = streamGenerationRef.current;
     clearSuppressedRunTargets(runs);
-    const nextRuntimeState = runtimeStateWithStartedTargets(
-      runtimeStateRef.current,
-      options.sessionId,
+    const nextRuntimeState = runtimeStatePreparedForReplayTargets(
+      runtimeStateWithStartedTargets(
+        runtimeStateRef.current,
+        options.sessionId,
+        runs,
+      ),
       runs,
     );
     if (nextRuntimeState !== runtimeStateRef.current) {
@@ -867,8 +870,8 @@ function resolveReplayTargets(
   runtimeState: RuntimeState,
 ): RunStreamTarget[] {
   return normalizeRunTargets(runs).map((run) => ({
-    afterEventId: Math.max(
-      runtimeState.runs[run.runId]?.lastEventId ?? 0,
+    afterEventId: replayCursorWithLocalCoverage(
+      runtimeState.runs[run.runId],
       run.afterEventId ?? 0,
     ),
     runId: run.runId,
@@ -882,12 +885,66 @@ function resolveActiveReplayTargets(
   return normalizeRunTargets(runs)
     .filter((run) => runtimeState.runs[run.runId]?.status !== "closed")
     .map((run) => ({
-      afterEventId: Math.max(
-        runtimeState.runs[run.runId]?.lastEventId ?? 0,
+      afterEventId: replayCursorWithLocalCoverage(
+        runtimeState.runs[run.runId],
         run.afterEventId ?? 0,
       ),
       runId: run.runId,
     }));
+}
+
+function replayCursorWithLocalCoverage(
+  runState: RuntimeRunState | undefined,
+  requestedCursor: number,
+): number {
+  const localHighWatermark = continuousSeenEventHighWatermark(runState);
+  if (
+    localHighWatermark < (runState?.lastEventId ?? 0) ||
+    requestedCursor > localHighWatermark
+  ) {
+    return 0;
+  }
+  return localHighWatermark;
+}
+
+function continuousSeenEventHighWatermark(
+  runState: RuntimeRunState | undefined,
+): number {
+  const ranges = runState?.seenEventIdRanges ?? [];
+  let highWatermark = 0;
+  for (const range of ranges) {
+    if (range[0] > highWatermark + 1) {
+      break;
+    }
+    highWatermark = Math.max(highWatermark, range[1]);
+  }
+  return highWatermark;
+}
+
+function runtimeStatePreparedForReplayTargets(
+  runtimeState: RuntimeState,
+  runs: StartRunStreamTarget[],
+): RuntimeState {
+  let nextRuns: Record<string, RuntimeRunState> | null = null;
+  for (const run of runs) {
+    const currentRun = (nextRuns ?? runtimeState.runs)[run.runId];
+    if (
+      currentRun === undefined ||
+      currentRun.replayAfterEventId === undefined ||
+      replayCursorWithLocalCoverage(currentRun, run.afterEventId ?? 0) > 0
+    ) {
+      continue;
+    }
+    const { replayAfterEventId: _discardedReplayCursor, ...nextRun } = currentRun;
+    nextRuns ??= { ...runtimeState.runs };
+    nextRuns[run.runId] = nextRun;
+  }
+  return nextRuns === null
+    ? runtimeState
+    : {
+        ...runtimeState,
+        runs: nextRuns,
+      };
 }
 
 function trackedRunTargetsClosed(

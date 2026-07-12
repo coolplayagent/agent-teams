@@ -7110,6 +7110,82 @@ describe("MessageTimeline", () => {
     ]);
   });
 
+  it("updates one running subagent card to completed when replay reaches its result", async () => {
+    const onSubagentOpen = vi.fn();
+    const runningEvent = relayRunEvent({
+      event_id: 1,
+      event_type: "tool_call",
+      instance_id: "main-instance",
+      role_id: "MainAgent",
+      run_id: "run-main-tool",
+      trace_id: "run-main-tool",
+      payload_json: JSON.stringify({
+        args: {
+          description: "Inspect the active session",
+          prompt: "Inspect without editing files.",
+          role_id: "Explorer",
+        },
+        tool_call_id: "call-running-subagent",
+        tool_name: "spawn_subagent",
+      }),
+    });
+    setRuntimeStateFromEvents([runningEvent]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline("session-1", {
+      onSubagentOpen,
+      runtimeRunId: "run-main-tool",
+    });
+
+    const runningTitle = await screen.findByText("Starting subagent");
+    const runningCard = runningTitle.closest(".at-message-tool");
+    expect(runningCard).toHaveAttribute("data-status", "running");
+    expect(container.querySelectorAll(".at-message-tool")).toHaveLength(1);
+
+    act(() => {
+      setRuntimeStateFromEvents([
+        runningEvent,
+        relayRunEvent({
+          event_id: 2,
+          event_type: "tool_result",
+          instance_id: "main-instance",
+          role_id: "MainAgent",
+          run_id: "run-main-tool",
+          trace_id: "run-main-tool",
+          payload_json: JSON.stringify({
+            result: {
+              output: "Subagent completed successfully.",
+              subagent_instance_id: "subagent-instance-1",
+              subagent_role_id: "Explorer",
+              subagent_run_id: "subagent-run-1",
+              title: "Inspect the active session",
+            },
+            tool_call_id: "call-running-subagent",
+            tool_name: "spawn_subagent",
+          }),
+        }),
+      ]);
+    });
+
+    const completedTitle = await screen.findByText("Subagent started");
+    const completedCard = completedTitle.closest(".at-message-tool");
+    expect(container.querySelectorAll(".at-message-tool")).toHaveLength(1);
+    expect(completedCard).toBe(runningCard);
+    expect(completedCard).toHaveAttribute("data-status", "completed");
+    expect(completedCard).toHaveAttribute(
+      "data-subagent-instance-id",
+      "subagent-instance-1",
+    );
+    expect(completedCard).toHaveAttribute("data-subagent-run-id", "subagent-run-1");
+
+    fireEvent.click(completedTitle);
+    expect(onSubagentOpen).toHaveBeenLastCalledWith(expect.objectContaining({
+      instanceId: "subagent-instance-1",
+      runId: "subagent-run-1",
+      status: "completed",
+    }));
+  });
+
   it("keeps subagent orphan messages out of the main session timeline", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {

@@ -136,12 +136,14 @@ function sessionsSidebarQueryKey() {
 function previewSessionTitleInSidebarCache(
   queryClient: QueryClient,
   sessionId: string,
+  runId: string,
   title: string,
   session: SessionRecord | undefined,
 ) {
   const safeSessionId = sessionId.trim();
+  const safeRunId = runId.trim();
   const safeTitle = title.trim();
-  if (!safeSessionId || !safeTitle) {
+  if (!safeSessionId || !safeRunId) {
     return;
   }
   const updatedAt = new Date().toISOString();
@@ -166,6 +168,7 @@ function previewSessionTitleInSidebarCache(
               session_id: safeSessionId,
               workspace_id: workspaceId,
             },
+            safeRunId,
             safeTitle,
             updatedAt,
           ),
@@ -173,7 +176,7 @@ function previewSessionTitleInSidebarCache(
       }
       return current.map((record, index) =>
         index === existingIndex
-          ? sessionWithTitlePreview(record, safeTitle, updatedAt)
+          ? sessionWithTitlePreview(record, safeRunId, safeTitle, updatedAt)
           : record,
       );
     },
@@ -182,16 +185,23 @@ function previewSessionTitleInSidebarCache(
 
 function sessionWithTitlePreview(
   session: SessionSidebarRecord,
+  runId: string,
   title: string,
   updatedAt: string,
 ): SessionSidebarRecord {
   return {
     ...session,
-    metadata: {
-      ...(session.metadata ?? {}),
-      title,
-    },
-    title,
+    ...(title
+      ? {
+          metadata: {
+            ...(session.metadata ?? {}),
+            title,
+          },
+          title,
+        }
+      : {}),
+    active_run_id: runId,
+    active_run_status: "running",
     updated_at: updatedAt,
   };
 }
@@ -674,6 +684,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       previewSessionTitleInSidebarCache(
         queryClient,
         result.session_id,
+        result.run_id,
         titlePreview,
         sessionQuery.data,
       );
@@ -697,7 +708,6 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       void queryClient.invalidateQueries({
         queryKey: ["sessions", result.session_id, "messages"],
       });
-      void queryClient.invalidateQueries({ queryKey: sessionsSidebarQueryKey() });
     },
     onError: (error, _variables, optimisticPrompt) => {
       if (optimisticPrompt != null) {

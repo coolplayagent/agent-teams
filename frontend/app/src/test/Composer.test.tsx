@@ -367,7 +367,7 @@ describe("Composer", () => {
     });
   });
 
-  it("refreshes sidebar sessions when a new run starts", async () => {
+  it("updates sidebar run state locally without refreshing the full projection", async () => {
     getRoleConfigOptionsMock.mockResolvedValue({
       normal_mode_roles: [],
     });
@@ -393,7 +393,7 @@ describe("Composer", () => {
         sessionId: "session-1",
       }),
     );
-    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+    expect(invalidateQueriesSpy).not.toHaveBeenCalledWith({
       queryKey: ["sessions", "sidebar"],
     });
     expect(invalidateQueriesSpy).toHaveBeenCalledWith({
@@ -460,6 +460,8 @@ describe("Composer", () => {
           "sidebar",
         ])?.[0],
       ).toMatchObject({
+        active_run_id: "run-1",
+        active_run_status: "running",
         metadata: {
           title: "preview after run",
         },

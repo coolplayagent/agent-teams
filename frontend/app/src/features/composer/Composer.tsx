@@ -1,12 +1,10 @@
 import {
   App,
   Button,
-  Checkbox,
   Popover,
   Segmented,
   Select,
   Space,
-  Switch,
   Tooltip,
   Typography,
 } from "antd";
@@ -48,6 +46,7 @@ import {
   updateSessionNormalModelProfile,
 } from "../../api/client";
 import { showFeedbackMessage } from "../../components/feedbackMessages";
+import { ChoiceControl } from "../../components/ChoiceControl";
 import type {
   InjectionDeliveryMode,
   ModelProfilesPayload,
@@ -253,6 +252,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
   const inputRef = useRef<SenderRef | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const mentionAnchorRef = useRef<HTMLDivElement | null>(null);
+  const quickMenuButtonRef = useRef<HTMLButtonElement | null>(null);
   const sessionIdRef = useRef(sessionId);
   const [draft, setDraft] = useState("");
   const [promptAttachments, setPromptAttachments] = useState<PromptAttachment[]>([]);
@@ -457,6 +457,14 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
   const quickActionOptions = useMemo<PromptActionMentionOption[]>(
     () => [
       {
+        actionId: "browse-workspace",
+        aliases: ["file", "folder", "context"],
+        description: t("composerBrowseWorkspaceHelp"),
+        displayName: t("composerBrowseWorkspace"),
+        insertTerm: "",
+        kind: "action",
+      },
+      {
         actionId: "attach-image",
         aliases: ["image", "attachment"],
         description: t("composerAddImageHelp"),
@@ -513,7 +521,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     [roleOptionsQuery.data],
   );
   const promptMentionOptions = quickMenuOpen
-    ? [...quickActionOptions, ...quickCommandOptions, ...quickMentionOptions]
+    ? [...quickActionOptions, ...quickMentionOptions, ...quickCommandOptions]
     : promptCommandContext !== null
       ? commandMentionOptions
       : promptResourceContext !== null
@@ -572,6 +580,29 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
   useEffect(() => {
     setActiveMentionIndex(0);
   }, [promptMentionOptions.length, quickMenuOpen]);
+
+  useEffect(() => {
+    if (!mentionMenuOpen) {
+      return;
+    }
+    const handleOutsidePointer = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+      if (
+        mentionAnchorRef.current?.contains(target) ||
+        quickMenuButtonRef.current?.contains(target) ||
+        target.closest(".at-prompt-mention-menu") !== null
+      ) {
+        return;
+      }
+      setQuickMenuOpen(false);
+      setDismissedMentionDraft(draft);
+    };
+    document.addEventListener("pointerdown", handleOutsidePointer);
+    return () => document.removeEventListener("pointerdown", handleOutsidePointer);
+  }, [draft, mentionMenuOpen]);
 
   const createRunMutation = useMutation({
     onMutate: () => {
@@ -927,6 +958,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
             emptyLabel={mentionMenuEmptyLabel}
             loading={mentionMenuLoading}
             loadingLabel={t("connectorsRuntimeToolsStatusLoading")}
+            menuLabel={t("composerPromptSuggestions")}
             onSelect={selectPromptMentionOption}
             open={mentionMenuOpen}
             options={promptMentionOptions}
@@ -962,6 +994,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
                 shape="circle"
                 size="small"
                 type="text"
+                ref={quickMenuButtonRef}
               />
             </Tooltip>
             <Tooltip title={composerTopologySummary}>
@@ -1085,18 +1118,13 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
             </div>
             <div className="at-composer-toggles">
               <Space className="at-thinking-control" size={6}>
-                <Typography.Text
-                  className="at-control-label"
-                  id="at-thinking-label"
-                >
-                  {t("composerThinking")}
-                </Typography.Text>
-                <Switch
-                  aria-labelledby="at-thinking-label"
+                <ChoiceControl
+                  ariaLabel={t("composerThinking")}
                   checked={thinking.enabled}
                   disabled={busy || activeRunId !== null}
+                  kind="switch"
+                  label={t("composerThinking")}
                   onChange={(enabled) => updateThinking({ enabled })}
-                  size="small"
                 />
                 {thinking.enabled ? (
                   <Select
@@ -1112,27 +1140,23 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
                 ) : null}
               </Space>
               <Tooltip title={t("composerShellSafetyPolicy")}>
-                <Checkbox
-                  aria-label={t("composerShellSafetyPolicy")}
+                <ChoiceControl
+                  ariaLabel={t("composerShellSafetyPolicy")}
                   className="at-shell-safety-checkbox"
                   checked={shellSafetyPolicyEnabled}
                   disabled={
                     busy || activeRunId !== null || !canOverrideShellSafetyPolicy
                   }
-                  onChange={(event) =>
-                    setShellSafetyPolicyEnabled(event.target.checked)
-                  }
-                >
-                  {t("composerShellSafetyShort")}
-                </Checkbox>
+                  label={t("composerShellSafetyShort")}
+                  onChange={(checked) => setShellSafetyPolicyEnabled(checked)}
+                />
               </Tooltip>
-              <Checkbox
+              <ChoiceControl
                 checked={yolo}
                 disabled={busy || activeRunId !== null}
-                onChange={(event) => setYolo(event.target.checked)}
-              >
-                {t("composerYolo")}
-              </Checkbox>
+                label={t("composerYolo")}
+                onChange={(checked) => setYolo(checked)}
+              />
             </div>
                   </div>
                 </div>
@@ -1404,6 +1428,9 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     if (option.kind === "action") {
       if (option.actionId === "attach-image") {
         attachmentInputRef.current?.click();
+      } else if (option.actionId === "browse-workspace") {
+        setDraft((currentDraft) => appendComposerToken(currentDraft, "@"));
+        setDismissedMentionDraft("");
       } else if (option.actionId === "toggle-thinking") {
         updateThinking({ enabled: !thinking.enabled });
       } else if (option.actionId === "use-normal-mode") {
@@ -1468,6 +1495,13 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       orchestrationPresetId,
     });
   }
+}
+
+function appendComposerToken(draft: string, token: string): string {
+  if (!draft) {
+    return token;
+  }
+  return /\s$/.test(draft) ? `${draft}${token}` : `${draft} ${token}`;
 }
 
 function readSavedThinkingState(): RunThinkingConfig {

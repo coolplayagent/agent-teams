@@ -732,6 +732,7 @@ describe("Composer", () => {
     });
     fireEvent.click(quickActions);
 
+    expect(await screen.findByText("Files and folders")).toBeVisible();
     expect(await screen.findByText("Add image")).toBeVisible();
     await waitFor(() =>
       expect(
@@ -757,6 +758,9 @@ describe("Composer", () => {
         option.textContent?.includes("@Writer"),
       ),
     ).toBe(true);
+    expect(screen.getByText("Targets")).toBeVisible();
+    expect(screen.getAllByText("Command").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Skill").length).toBeGreaterThan(0);
 
     fireEvent.mouseDown(reviewOption);
     expect(prompt).toHaveValue("/review ");
@@ -766,6 +770,38 @@ describe("Composer", () => {
     const writerOption = await screen.findByRole("option", { name: /@Writer.*Role/ });
     fireEvent.mouseDown(writerOption);
     await waitFor(() => expect(prompt).toHaveValue("@Writer "));
+  });
+
+  it("opens workspace mentions from plus and dismisses the shared menu outside", async () => {
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [
+        {
+          role_id: "Writer",
+          name: "Writer",
+          description: "Draft product copy",
+        },
+      ],
+    });
+
+    renderComposer();
+
+    const prompt = await screen.findByLabelText("Prompt");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Add context or command" }),
+    );
+    const browseOption = await screen.findByRole("option", {
+      name: /Files and folders/,
+    });
+    fireEvent.mouseDown(browseOption);
+
+    await waitFor(() => expect(prompt).toHaveValue("@"));
+    expect(await screen.findByRole("option", { name: /@Writer/ })).toBeVisible();
+
+    fireEvent.pointerDown(document.body);
+    await waitFor(() =>
+      expect(screen.queryByLabelText("Prompt suggestions")).toBeNull(),
+    );
+    expect(prompt).toHaveValue("@");
   });
 
   it("shows same-named slash command and skill suggestions separately", async () => {

@@ -60,7 +60,12 @@ export interface PromptResourceMentionOption {
 }
 
 export interface PromptActionMentionOption {
-  actionId: "attach-image" | "toggle-thinking" | "use-normal-mode" | "use-orchestration-mode";
+  actionId:
+    | "attach-image"
+    | "browse-workspace"
+    | "toggle-thinking"
+    | "use-normal-mode"
+    | "use-orchestration-mode";
   aliases: string[];
   description: string;
   displayName: string;

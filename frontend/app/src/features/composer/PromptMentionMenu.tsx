@@ -3,6 +3,7 @@ import {
   AtSign,
   Brain,
   FileText,
+  FolderSearch,
   Paperclip,
   Terminal,
   Users,
@@ -26,6 +27,7 @@ interface PromptMentionMenuProps {
   emptyLabel: string;
   loading: boolean;
   loadingLabel: string;
+  menuLabel?: string;
   onSelect: (option: PromptMentionOption) => void;
   open: boolean;
   options: PromptMentionOption[];
@@ -44,6 +46,7 @@ export function PromptMentionMenu({
   emptyLabel,
   loading,
   loadingLabel,
+  menuLabel = "Prompt suggestions",
   onSelect,
   open,
   options,
@@ -97,7 +100,7 @@ export function PromptMentionMenu({
   const menuStyle: CSSProperties = position;
   return createPortal(
     <div
-      aria-label="Prompt suggestions"
+      aria-label={menuLabel}
       className="at-prompt-mention-menu"
       style={menuStyle}
     >
@@ -247,10 +250,16 @@ function promptMentionGroup(option: PromptMentionOption): string {
   if (option.kind === "action") {
     return "action";
   }
-  if (option.kind === "command" || option.kind === "skill") {
+  if (option.kind === "command") {
     return "command";
   }
-  return "mention";
+  if (option.kind === "skill") {
+    return "skill";
+  }
+  if (option.kind === "resource") {
+    return "resource";
+  }
+  return "role";
 }
 
 function promptMentionGroupLabel(option: PromptMentionOption, t: Translate): string {
@@ -261,13 +270,22 @@ function promptMentionGroupLabel(option: PromptMentionOption, t: Translate): str
   if (group === "command") {
     return t("composerMentionCommand");
   }
-  return t("composerRole");
+  if (group === "skill") {
+    return t("composerMentionSkill");
+  }
+  if (group === "resource") {
+    return t("composerMentionResource");
+  }
+  return t("composerMentionTarget");
 }
 
 function promptMentionIcon(option: PromptMentionOption) {
   if (option.kind === "action") {
     if (option.actionId === "attach-image") {
       return <Paperclip size={15} />;
+    }
+    if (option.actionId === "browse-workspace") {
+      return <FolderSearch size={15} />;
     }
     if (option.actionId === "toggle-thinking") {
       return <Brain size={15} />;

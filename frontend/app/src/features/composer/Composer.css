@@ -62,16 +62,21 @@
   border-bottom: 0;
 }
 
-.at-prompt-mention-option-group + .at-prompt-mention-option-group .at-prompt-mention-item {
-  border-top: 1px solid color-mix(in srgb, var(--at-border) 65%, transparent);
-}
-
 .at-prompt-mention-group-label {
-  padding: 8px 11px 4px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 7px 11px 4px;
+  border-top: 1px solid color-mix(in srgb, var(--at-border) 65%, transparent);
+  background: color-mix(in srgb, var(--at-surface) 96%, transparent);
   color: var(--at-text-muted);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.02em;
+}
+
+.at-prompt-mention-option-group:first-child .at-prompt-mention-group-label {
+  border-top: 0;
 }
 
 .at-prompt-mention-icon {
@@ -335,8 +340,13 @@
 
 .at-composer .at-composer-field-label,
 .at-composer .at-control-label,
-.at-composer .at-composer-toggles .ant-checkbox-wrapper {
+.at-composer .at-composer-toggles .at-choice-control {
   white-space: nowrap;
+}
+
+.at-composer .at-composer-toggles .at-choice-control {
+  min-height: 30px;
+  padding-block: 3px;
 }
 
 .at-composer .at-session-mode-control,

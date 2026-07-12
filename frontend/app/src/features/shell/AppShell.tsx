@@ -70,6 +70,8 @@ import {
   useUiStore,
 } from "../../runtime/uiStore";
 import type { Language } from "../../runtime/uiStore";
+import { oppositeThemeMode } from "../../runtime/themeMode";
+import { useResolvedThemeMode } from "../../runtime/useResolvedThemeMode";
 import { useTranslations } from "../../i18n";
 import { ApiError } from "../../api/http";
 
@@ -146,6 +148,7 @@ export function AppShell() {
   const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed);
   const sidebarWidth = useUiStore((state) => state.sidebarWidth);
   const themeMode = useUiStore((state) => state.themeMode);
+  const resolvedThemeMode = useResolvedThemeMode(themeMode);
   const language = useUiStore((state) => state.language);
   const selectedSessionId = useUiStore((state) => state.selectedSessionId);
   const previousSelectedSessionIdRef = useRef(selectedSessionId);
@@ -855,10 +858,8 @@ export function AppShell() {
             <Button
               aria-label={t("appToggleTheme")}
               className="at-topbar-action"
-              icon={themeMode === "dark" ? <Sun size={17} /> : <Moon size={17} />}
-              onClick={() =>
-                setThemeMode(themeMode === "dark" ? "light" : "dark")
-              }
+              icon={resolvedThemeMode === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+              onClick={() => setThemeMode(oppositeThemeMode(resolvedThemeMode))}
             />
           </Tooltip>
         </Space>
@@ -878,7 +879,7 @@ export function AppShell() {
         {!sidebarCollapsed ? (
           <Sider
             className={sidebarResizing ? "at-sidebar is-resizing" : "at-sidebar"}
-            theme="light"
+            theme={resolvedThemeMode}
             width={sidebarWidth}
           >
             <SessionsSidebar

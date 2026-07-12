@@ -7,7 +7,7 @@ import {
   defaultAppearanceSettings,
   resolveAppearanceColors,
 } from "../runtime/appearance";
-import { applyDocumentThemeMode } from "../runtime/themeMode";
+import { applyDocumentThemeMode, oppositeThemeMode } from "../runtime/themeMode";
 import { antSemanticTokens } from "../runtime/themeTokens";
 
 const themeCss = readFileSync("src/styles/theme.css", "utf8");
@@ -24,6 +24,11 @@ describe("theme infrastructure", () => {
 
     expect(document.documentElement.dataset.theme).toBe("light");
     expect(document.documentElement.dataset.themeMode).toBe("system");
+  });
+
+  it("toggles from the resolved system appearance instead of the stored system label", () => {
+    expect(oppositeThemeMode("dark")).toBe("light");
+    expect(oppositeThemeMode("light")).toBe("dark");
   });
 
   it("does not carry a dark appearance background into light mode", () => {
@@ -67,6 +72,9 @@ describe("theme infrastructure", () => {
       "--at-control-bg",
       "--at-control-text-disabled",
       "--at-text-subtle",
+      "--at-text-secondary",
+      "--at-muted",
+      "--at-font",
       "--at-code-text",
       "--at-danger",
     ]) {

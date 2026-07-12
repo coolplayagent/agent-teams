@@ -20,3 +20,9 @@ export function resolveThemeMode(themeMode: ThemeMode): ResolvedThemeMode {
   }
   return themeMode;
 }
+
+export function oppositeThemeMode(
+  resolvedThemeMode: ResolvedThemeMode,
+): ResolvedThemeMode {
+  return resolvedThemeMode === "dark" ? "light" : "dark";
+}

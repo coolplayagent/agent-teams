@@ -9,6 +9,8 @@
   --at-border-strong: #c2c2b8;
   --at-text: #20231f;
   --at-text-muted: #62665f;
+  --at-text-secondary: var(--at-text-muted);
+  --at-muted: var(--at-text-muted);
   --at-primary: #2f6f5e;
   --at-accent: var(--at-primary);
   --at-success: #257a4f;
@@ -17,6 +19,7 @@
   --at-status-disabled: #73766e;
   --at-font-ui: "Aptos", "Helvetica Neue", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --at-font-mono: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  --at-font: var(--at-font-ui);
   --at-ui-font-size: 14px;
   --at-code-font-size: 0.93em;
   --at-message-line-height: 1.55;
@@ -5371,7 +5374,7 @@ body {
   opacity: 0;
   pointer-events: none;
   visibility: hidden;
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 8px 20px var(--at-shadow-color);
 }
 
 .at-round-rail-detail.is-open {
@@ -6269,7 +6272,7 @@ body {
   border: 1px solid var(--at-border);
   border-radius: 10px;
   background: var(--at-surface);
-  box-shadow: 0 2px 8px rgba(32, 35, 31, 0.08);
+  box-shadow: 0 2px 8px var(--at-shadow-color);
   overflow: hidden;
 }
 
@@ -7111,7 +7114,7 @@ body {
   border: 1px solid var(--at-border);
   border-radius: 8px;
   background: var(--at-surface);
-  box-shadow: 0 2px 8px rgba(32, 35, 31, 0.12);
+  box-shadow: 0 2px 8px var(--at-shadow-color);
 }
 
 .at-appearance-preset-menu-option {

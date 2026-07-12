@@ -9,13 +9,10 @@ import {
   applyAppearanceSettings,
   readAppearanceSettings,
 } from "../runtime/appearance";
-import {
-  applyDocumentThemeMode,
-  currentSystemThemeMode,
-  resolveThemeMode,
-} from "../runtime/themeMode";
+import { applyDocumentThemeMode } from "../runtime/themeMode";
 import { antSemanticTokens } from "../runtime/themeTokens";
 import { useUiStore } from "../runtime/uiStore";
+import { useResolvedThemeMode } from "../runtime/useResolvedThemeMode";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -37,8 +34,7 @@ export function AppProviders({ children }: AppProvidersProps) {
   const [systemPrefersReducedMotion, setSystemPrefersReducedMotion] = useState(
     () => window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
-  const [systemThemeMode, setSystemThemeMode] = useState(currentSystemThemeMode);
-  const resolvedThemeMode = themeMode === "system" ? systemThemeMode : resolveThemeMode(themeMode);
+  const resolvedThemeMode = useResolvedThemeMode(themeMode);
   const algorithm = resolvedThemeMode === "dark" ? theme.darkAlgorithm : theme.defaultAlgorithm;
 
   useLayoutEffect(() => {
@@ -54,14 +50,6 @@ export function AppProviders({ children }: AppProvidersProps) {
       window.removeEventListener(appearanceChangedEvent, syncAppearance);
       window.removeEventListener("storage", syncAppearance);
     };
-  }, []);
-
-  useEffect(() => {
-    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-    const updateSystemThemeMode = () =>
-      setSystemThemeMode(mediaQuery.matches ? "dark" : "light");
-    mediaQuery.addEventListener("change", updateSystemThemeMode);
-    return () => mediaQuery.removeEventListener("change", updateSystemThemeMode);
   }, []);
 
   useEffect(() => {

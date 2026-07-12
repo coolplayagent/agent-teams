@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ChatWorkspace } from "../features/shell/ChatWorkspace";
+import { useOptimisticRunStore } from "../runtime/optimisticRunStore";
 import type { RunStreamController } from "../runtime/useRunStreamController";
 
 const timelineRenderMock = vi.hoisted(() => vi.fn());
@@ -96,6 +97,7 @@ vi.mock("../features/timeline/MessageTimeline", () => ({
 
 afterEach(() => {
   cleanup();
+  useOptimisticRunStore.setState({ prompts: {} });
   vi.clearAllMocks();
 });
 
@@ -353,6 +355,53 @@ describe("ChatWorkspace", () => {
       await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
       expect(chatView).not.toHaveClass("is-session-switching");
       expect(chatView).not.toHaveAttribute("aria-busy");
+    } finally {
+      animationFrame.restore();
+    }
+  });
+
+  it("keeps a newly-created prompt visible while the chat timeline takes ownership", async () => {
+    const animationFrame = captureAnimationFrames();
+    const runStreamController = createRunStreamController();
+
+    try {
+      const view = render(
+        <ChatWorkspace
+          primaryRoleId="MainAgent"
+          runStreamController={runStreamController}
+          sessionId="session-1"
+        />,
+      );
+      const promptId = useOptimisticRunStore
+        .getState()
+        .beginPrompt("session-created", "Keep feedback continuous");
+      useOptimisticRunStore
+        .getState()
+        .confirmPrompt("session-created", promptId, "run-created");
+
+      view.rerender(
+        <ChatWorkspace
+          primaryRoleId="MainAgent"
+          runStreamController={runStreamController}
+          sessionId="session-created"
+        />,
+      );
+
+      expect(screen.getByText("Keep feedback continuous")).toBeVisible();
+      expect(screen.getByText("Connecting to the model")).toBeVisible();
+      expect(screen.getByTestId("timeline")).toHaveAttribute("data-visible", "false");
+
+      await act(async () => animationFrame.flushNext());
+      expect(screen.getByText("Keep feedback continuous")).toBeVisible();
+      expect(useOptimisticRunStore.getState().prompts["session-created"])
+        .toBeDefined();
+
+      await act(async () => animationFrame.flushNext());
+      await waitFor(() => {
+        expect(screen.getByTestId("timeline")).toHaveAttribute("data-visible", "true");
+      });
+      expect(useOptimisticRunStore.getState().prompts["session-created"])
+        .toBeDefined();
     } finally {
       animationFrame.restore();
     }

@@ -1,7 +1,7 @@
 import { App, Button, Checkbox, Input, Select, Switch, Typography } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   createRun,
@@ -18,6 +18,7 @@ import type {
   WorkspaceRecord,
 } from "../../api/contracts";
 import { useTranslations } from "../../i18n";
+import { useOptimisticRunStore } from "../../runtime/optimisticRunStore";
 import { ModelRequestStatus } from "../timeline/ModelRequestStatus";
 import { workspaceDisplayLabel } from "../workspaces/workspaceLabels";
 
@@ -32,6 +33,11 @@ interface NewSessionResult {
 interface PendingNewSession {
   error: string | null;
   promptText: string;
+}
+
+interface NewSessionProgress {
+  session: SessionRecord;
+  topologyReady: boolean;
 }
 
 interface NewSessionViewProps {
@@ -67,6 +73,7 @@ export function NewSessionView({
   const [shellSafetyPolicyEnabled, setShellSafetyPolicyEnabled] = useState(true);
   const [yolo, setYolo] = useState(true);
   const [pendingSession, setPendingSession] = useState<PendingNewSession | null>(null);
+  const sessionProgressRef = useRef<NewSessionProgress | null>(null);
   const rolesQuery = useQuery({
     queryKey: ["roles", "options"],
     queryFn: getRoleConfigOptions,
@@ -147,22 +154,32 @@ export function NewSessionView({
 
   const createMutation = useMutation({
     mutationFn: async (): Promise<NewSessionResult> => {
-      const created = await createSession({
-        workspace_id: workspaceId,
-        normal_model_profile: modelProfile,
-        metadata: title.trim() ? { title: title.trim() } : undefined,
-      });
-      const session = sessionMode === "orchestration"
-        ? await updateSessionTopology(created.session_id, {
-          session_mode: "orchestration",
-          orchestration_preset_id: orchestrationPresetId,
-        })
-        : roleId !== null && roleId !== created.normal_root_role_id
-          ? await updateSessionTopology(created.session_id, {
-            session_mode: "normal",
-            normal_root_role_id: roleId,
+      let progress = sessionProgressRef.current;
+      if (progress === null) {
+        const created = await createSession({
+          workspace_id: workspaceId,
+          normal_model_profile: modelProfile,
+          metadata: title.trim() ? { title: title.trim() } : undefined,
+        });
+        progress = { session: created, topologyReady: false };
+        sessionProgressRef.current = progress;
+      }
+      if (!progress.topologyReady) {
+        const session = sessionMode === "orchestration"
+          ? await updateSessionTopology(progress.session.session_id, {
+            session_mode: "orchestration",
+            orchestration_preset_id: orchestrationPresetId,
           })
-          : created;
+          : roleId !== null && roleId !== progress.session.normal_root_role_id
+            ? await updateSessionTopology(progress.session.session_id, {
+              session_mode: "normal",
+              normal_root_role_id: roleId,
+            })
+            : progress.session;
+        progress = { session, topologyReady: true };
+        sessionProgressRef.current = progress;
+      }
+      const session = progress.session;
       const normalizedPrompt = promptText.trim();
       if (!normalizedPrompt) {
         return { promptText: "", run: null, session };
@@ -183,7 +200,22 @@ export function NewSessionView({
       return { promptText: normalizedPrompt, run, session };
     },
     onSuccess: ({ promptText: createdPrompt, run, session }) => {
+      sessionProgressRef.current = null;
       void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
+      if (createdPrompt.length > 0) {
+        const optimisticStore = useOptimisticRunStore.getState();
+        const promptId = optimisticStore.beginPrompt(
+          session.session_id,
+          createdPrompt,
+        );
+        if (run !== null) {
+          optimisticStore.confirmPrompt(
+            session.session_id,
+            promptId,
+            run.run_id,
+          );
+        }
+      }
       onCreated(session, run, createdPrompt);
     },
     onError: (error) => {

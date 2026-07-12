@@ -1472,6 +1472,37 @@ body {
   color: var(--at-primary);
 }
 
+.at-chat-view.is-session-switching > .at-timeline-frame {
+  visibility: hidden;
+}
+
+.at-session-switch-loading.has-optimistic-prompt {
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: clamp(24px, 6vh, 72px);
+}
+
+.at-session-switch-loading.has-optimistic-prompt::before {
+  display: none;
+}
+
+.at-session-switch-prompt {
+  position: relative;
+  display: grid;
+  gap: 12px;
+  width: min(100%, 960px);
+  pointer-events: none;
+}
+
+.at-session-switch-prompt > .at-message {
+  width: 100%;
+}
+
+.at-session-switch-prompt > .at-model-request-status {
+  position: static;
+  justify-self: start;
+}
+
 .at-model-request-status {
   position: absolute;
   z-index: 3;

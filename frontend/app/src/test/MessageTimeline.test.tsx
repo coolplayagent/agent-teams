@@ -112,6 +112,42 @@ describe("MessageTimeline", () => {
     expect(screen.getAllByText("keep this prompt visible").length).toBeGreaterThan(0);
   });
 
+  it("does not clear a confirmed prompt underneath a hidden switching timeline", async () => {
+    listSessionMessagesMock.mockResolvedValue([]);
+    let promptId = "";
+    act(() => {
+      promptId = useOptimisticRunStore
+        .getState()
+        .beginPrompt("session-1", "survive the ownership handoff");
+      useOptimisticRunStore
+        .getState()
+        .confirmPrompt("session-1", promptId, "run-handoff");
+      useRuntimeStore.setState({
+        runtimeState: {
+          activeRunIds: ["run-handoff"],
+          runs: {
+            "run-handoff": {
+              entries: [],
+              lastEventId: 0,
+              promptText: "survive the ownership handoff",
+              runId: "run-handoff",
+              seenEventKeys: [],
+              sessionId: "session-1",
+              status: "connecting",
+              terminalEventType: null,
+            },
+          },
+        },
+      });
+    });
+
+    renderTimeline("session-1", { visible: false });
+
+    expect((await screen.findAllByText("survive the ownership handoff")).length)
+      .toBeGreaterThan(0);
+    expect(useOptimisticRunStore.getState().prompts["session-1"]?.id).toBe(promptId);
+  });
+
   it("keeps the no-session state inside the timeline frame slot", () => {
     const { container } = renderTimeline(null);
 
@@ -1093,15 +1129,20 @@ describe("MessageTimeline", () => {
     const secondTool = container.querySelector('[data-tool-call-id="call-second"]')
       ?.closest("article");
     const finalAnswer = screen.getByText("Final answer").closest("article");
-    expect(group).not.toBeNull();
-    expect(narration).not.toBeNull();
-    expect(secondTool).not.toBeNull();
-    expect(finalAnswer).not.toBeNull();
-    expect(group?.compareDocumentPosition(narration as Node) & Node.DOCUMENT_POSITION_FOLLOWING)
+    if (
+      group === null ||
+      narration === null ||
+      secondTool === null ||
+      secondTool === undefined ||
+      finalAnswer === null
+    ) {
+      throw new Error("Interleaved live rows were not all rendered.");
+    }
+    expect(group.compareDocumentPosition(narration) & Node.DOCUMENT_POSITION_FOLLOWING)
       .toBeTruthy();
-    expect(narration?.compareDocumentPosition(secondTool as Node) & Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(narration.compareDocumentPosition(secondTool) & Node.DOCUMENT_POSITION_FOLLOWING)
       .toBeTruthy();
-    expect(secondTool?.compareDocumentPosition(finalAnswer as Node) & Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(secondTool.compareDocumentPosition(finalAnswer) & Node.DOCUMENT_POSITION_FOLLOWING)
       .toBeTruthy();
     const rowKeys = Array.from(container.querySelectorAll<HTMLElement>("[data-row-key]"))
       .map((row) => row.dataset.rowKey ?? "");
@@ -12319,6 +12360,7 @@ interface RenderTimelineOptions {
   roundsEnabled?: boolean;
   runtimeRunId?: string | null;
   variant?: Parameters<typeof MessageTimeline>[0]["variant"];
+  visible?: boolean;
   workspaceId?: string | null;
 }
 
@@ -12348,6 +12390,7 @@ function renderTimeline(
             sessionId={sessionId}
             runtimeRunId={options.runtimeRunId ?? null}
             variant={options.variant ?? "session"}
+            visible={options.visible ?? true}
             workspaceId={options.workspaceId ?? null}
           />
         </AntApp>

@@ -19,7 +19,9 @@ import type {
   PendingUserQuestion,
 } from "../../api/contracts";
 import { useTranslations } from "../../i18n";
+import { useOptimisticRunStore } from "../../runtime/optimisticRunStore";
 import type { RunStreamController } from "../../runtime/useRunStreamController";
+import { ModelRequestStatus } from "../timeline/ModelRequestStatus";
 import { SessionTokenUsage } from "./SessionTokenUsage";
 
 interface ChatWorkspaceProps {
@@ -55,6 +57,9 @@ export const ChatWorkspace = memo(function ChatWorkspace({
   workspaceId,
 }: ChatWorkspaceProps) {
   const t = useTranslations();
+  const optimisticPrompt = useOptimisticRunStore((state) =>
+    sessionId === null ? null : state.prompts[sessionId] ?? null
+  );
   const previousContentLoadingKeyRef = useRef<number | undefined>(undefined);
   const previousSessionIdRef = useRef(sessionId);
   const requestedTimelineContextRef = useRef<TimelineContext | null>(null);
@@ -185,8 +190,32 @@ export const ChatWorkspace = memo(function ChatWorkspace({
         workspaceId={timelineContext.workspaceId}
       />
       {switching ? (
-        <div className="at-session-switch-loading" role="status">
-          {t("sessionSwitchLoading")}
+        <div
+          className={
+            optimisticPrompt === null
+              ? "at-session-switch-loading"
+              : "at-session-switch-loading has-optimistic-prompt"
+          }
+          role="status"
+        >
+          {optimisticPrompt === null ? (
+            t("sessionSwitchLoading")
+          ) : (
+            <div className="at-session-switch-prompt">
+              <article
+                className="at-message at-timeline-row"
+                data-row-key={optimisticPrompt.id}
+                data-role-id="user"
+              >
+                <div className="at-message-content">{optimisticPrompt.text}</div>
+              </article>
+              <ModelRequestStatus
+                openingLabel={t("timelineOpeningModelStream")}
+                phase="opening_stream"
+                waitingLabel={t("timelineWaitingForModelSlot")}
+              />
+            </div>
+          )}
         </div>
       ) : null}
       <RecoveryBar

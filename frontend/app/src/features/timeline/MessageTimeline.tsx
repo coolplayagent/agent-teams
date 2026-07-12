@@ -504,7 +504,8 @@ export function MessageTimeline({
       ),
     [anchoredPersistedRows, runtimeRows, runtimeRuns],
   );
-  const optimisticPromptConfirmed = optimisticPrompt?.runId !== undefined &&
+  const optimisticPromptConfirmed = visible &&
+    optimisticPrompt?.runId !== undefined &&
     displayRounds.some((round) =>
       round.run_id === optimisticPrompt.runId &&
       normalizedTimelineText(roundPromptText(round)) ===

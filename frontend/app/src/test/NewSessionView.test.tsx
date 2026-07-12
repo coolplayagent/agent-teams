@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SessionRecord } from "../api/contracts";
 import { NewSessionView } from "../features/sessions/NewSessionView";
+import { useOptimisticRunStore } from "../runtime/optimisticRunStore";
 import { useUiStore } from "../runtime/uiStore";
 
 const api = vi.hoisted(() => ({
@@ -50,6 +51,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  useOptimisticRunStore.setState({ prompts: {} });
   vi.clearAllMocks();
 });
 
@@ -74,7 +76,14 @@ describe("NewSessionView", () => {
   });
 
   it("creates the session with defaults and submits the initial task as the first run", async () => {
-    const onCreated = vi.fn();
+    const onCreated = vi.fn(() => {
+      expect(useOptimisticRunStore.getState().prompts[session.session_id])
+        .toMatchObject({
+          runId: "run-created",
+          sessionId: session.session_id,
+          text: "Plan the release",
+        });
+    });
     renderView(onCreated);
 
     await screen.findByText("Main agent");
@@ -106,6 +115,41 @@ describe("NewSessionView", () => {
       { run_id: "run-created", session_id: "session-created" },
       "Plan the release",
     ));
+    expect(onCreated).toHaveBeenCalledOnce();
+  });
+
+  it("retries a failed initial run without creating a duplicate session", async () => {
+    api.createRun
+      .mockRejectedValueOnce(new Error("provider unavailable"))
+      .mockResolvedValueOnce({
+        run_id: "run-created-after-retry",
+        session_id: session.session_id,
+      });
+    const onCreated = vi.fn();
+    renderView(onCreated);
+
+    await screen.findByText("Main agent");
+    fireEvent.change(screen.getByRole("textbox", { name: "Initial task (optional)" }), {
+      target: { value: "Retry only the run" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create and run" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("provider unavailable");
+    expect(api.createSession).toHaveBeenCalledOnce();
+    expect(api.createRun).toHaveBeenCalledOnce();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith(
+      session,
+      {
+        run_id: "run-created-after-retry",
+        session_id: session.session_id,
+      },
+      "Retry only the run",
+    ));
+    expect(api.createSession).toHaveBeenCalledOnce();
+    expect(api.createRun).toHaveBeenCalledTimes(2);
   });
 
   it("can create an empty session without starting a run", async () => {

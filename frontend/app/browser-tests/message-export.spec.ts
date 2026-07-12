@@ -15,13 +15,14 @@ import {
 
 const SCREENSHOT_FOLDER = "frontend-v2-ts-message-export";
 
-test("downloads message exports as HTML and PNG from the V2 top bar", async ({
+test("downloads semantic JSON, standalone HTML, and rendered PNG transcripts", async ({
   page,
 }, testInfo) => {
   const appServer = await serveFrontendDist();
   let roundsRequestCount = 0;
   try {
     await installShellState(page);
+    await installExportMimeProbe(page);
     const unhandledApiRoutes: string[] = [];
     await mockShellApi(page, appServer.url, unhandledApiRoutes, {
       handleRequest: (context) =>
@@ -39,6 +40,35 @@ test("downloads message exports as HTML and PNG from the V2 top bar", async ({
     await expect.poll(() => roundsRequestCount).toBeGreaterThanOrEqual(1);
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     const roundsRequestCountBeforeExport = roundsRequestCount;
+
+    await page.getByRole("button", { name: "Export messages" }).click();
+    await page.getByRole("menuitem", { name: "JSON" }).click();
+    const jsonDialog = page.getByRole("dialog", { name: "Select rounds" });
+    await expect(jsonDialog).toContainText("2 of 2 selected");
+    const jsonDownloadPromise = page.waitForEvent("download");
+    await jsonDialog.getByRole("button", { name: "Export selected" }).click();
+    const jsonDownload = await jsonDownloadPromise;
+    expect(jsonDownload.suggestedFilename()).toBe(`${SESSION_ID}-messages.json`);
+    const jsonPath = testInfo.outputPath(jsonDownload.suggestedFilename());
+    await jsonDownload.saveAs(jsonPath);
+    const jsonTranscript = JSON.parse(await readFile(jsonPath, "utf8")) as {
+      entries: Array<{ kind: string; text: string }>;
+      schema: string;
+      sessionId: string;
+      version: number;
+    };
+    expect(jsonTranscript).toMatchObject({
+      schema: "relay-teams.session-transcript",
+      sessionId: SESSION_ID,
+      version: 1,
+    });
+    expect(jsonTranscript.entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "user", text: "First user prompt" }),
+        expect.objectContaining({ kind: "assistant", text: "First agent answer." }),
+        expect.objectContaining({ kind: "tool" }),
+      ]),
+    );
 
     await page.getByRole("button", { name: "Export messages" }).click();
     await page.getByRole("menuitem", { name: "HTML" }).click();
@@ -66,28 +96,26 @@ test("downloads message exports as HTML and PNG from the V2 top bar", async ({
     await allHtmlDownload.saveAs(allHtmlPath);
     const allHtml = await readFile(allHtmlPath, "utf8");
     const allHtmlSummary = await summarizeExportHtml(page, allHtml);
-    expect(allHtmlSummary.hasLegacyShareClasses).toBe(true);
+    expect(allHtmlSummary.hasTranscriptStyles).toBe(true);
     expect(allHtmlSummary.turnCount).toBe(2);
-    expect(allHtmlSummary.messageCount).toBe(8);
+    expect(allHtmlSummary.messageCount).toBe(9);
     expect(allHtmlSummary.labels).toEqual(
       expect.arrayContaining([
         "Round 1",
-        "Round 1 prompt",
+        "User",
         "MainAgent",
-        "Round 1 pending approvals",
-        "Round 1 pending user questions",
-        "Round 1 retry 1",
-        "Round 1 diagnostic",
+        "read_file",
+        "Run status",
+        "Retry 1",
         "Round 2",
-        "Round 2 prompt",
       ]),
     );
     expect(allHtmlSummary.bodyText).toContain("First user prompt");
     expect(allHtmlSummary.bodyText).toContain("First agent answer.");
-    expect(allHtmlSummary.bodyText).toContain("Tool call: read_file");
+    expect(allHtmlSummary.bodyText).toContain("read_file");
     expect(allHtmlSummary.bodyText).toContain("src/a.py");
-    expect(allHtmlSummary.bodyText).toContain("2 pending tool approval(s).");
-    expect(allHtmlSummary.bodyText).toContain("1 pending user question(s).");
+    expect(allHtmlSummary.bodyText).toContain("Pending approvals: 2");
+    expect(allHtmlSummary.bodyText).toContain("Pending questions: 1");
     expect(allHtmlSummary.bodyText).toContain("rate limited");
     expect(allHtmlSummary.bodyText).toContain("Waiting for user confirmation");
     expect(allHtmlSummary.bodyText).toContain("Second agent answer.");
@@ -116,13 +144,14 @@ test("downloads message exports as HTML and PNG from the V2 top bar", async ({
     expect(htmlSummary.title).toBe(`${SESSION_ID} transcript`);
     expect(htmlSummary.heading).toBe(SESSION_ID);
     expect(htmlSummary.hasSidebarTime).toBe(false);
-    expect(htmlSummary.hasLegacyShareClasses).toBe(true);
+    expect(htmlSummary.hasTranscriptStyles).toBe(true);
     expect(htmlSummary.turnCount).toBe(1);
-    expect(htmlSummary.messageCount).toBe(2);
+    expect(htmlSummary.messageCount).toBe(3);
     expect(htmlSummary.labels).toEqual([
       "Round 1",
-      "Round 1 prompt",
+      "User",
       "MainAgent",
+      "Run status",
     ]);
     expect(htmlSummary.texts).toEqual(
       expect.arrayContaining([
@@ -157,7 +186,13 @@ test("downloads message exports as HTML and PNG from the V2 top bar", async ({
     expect(pngDecode.width).toBeGreaterThan(0);
     expect(pngDecode.height).toBeGreaterThan(0);
 
-    expect(roundsRequestCount).toBe(roundsRequestCountBeforeExport + 3);
+    expect(await readExportMimeTypes(page)).toEqual([
+      "application/json;charset=utf-8",
+      "text/html;charset=utf-8",
+      "text/html;charset=utf-8",
+      "image/png",
+    ]);
+    expect(roundsRequestCount).toBe(roundsRequestCountBeforeExport + 4);
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
   } finally {
     await appServer.close();
@@ -182,7 +217,7 @@ async function handleMessageExportApi(
 
 interface ExportHtmlSummary {
   bodyText: string;
-  hasLegacyShareClasses: boolean;
+  hasTranscriptStyles: boolean;
   hasSidebarTime: boolean;
   heading: string;
   labels: string[];
@@ -209,29 +244,54 @@ async function summarizeExportHtml(
     const doc = new DOMParser().parseFromString(source, "text/html");
     return {
       bodyText: doc.body.textContent ?? "",
-      hasLegacyShareClasses: !!doc.querySelector(
-        ".message-export-turn, .message-export-user, .message-export-agent",
-      ),
+      hasTranscriptStyles: source.includes(".entry[data-kind=\"user\"]")
+        && !!doc.querySelector(".round .entry[data-kind]"),
       hasSidebarTime: source.includes("1时"),
       heading: doc.querySelector("h1")?.textContent?.trim() ?? "",
       labels: [
-        ...Array.from(doc.querySelectorAll(".message-export-turn-title")).map(
+        ...Array.from(doc.querySelectorAll(".round-title")).map(
           (item) => item.textContent?.trim() ?? "",
         ),
-        ...Array.from(doc.querySelectorAll(".message-export-user .role, .message-export-agent .role, .message-export-status .role")).map(
+        ...Array.from(doc.querySelectorAll(".entry-label")).map(
           (item) => item.textContent?.trim() ?? "",
         ),
       ],
       messageCount: doc.querySelectorAll(
-        ".message-export-user, .message-export-agent, .message-export-status",
+        ".entry",
       ).length,
-      texts: Array.from(doc.querySelectorAll(".message-export-user pre, .message-export-agent pre, .message-export-status pre")).map(
+      texts: Array.from(doc.querySelectorAll(".entry .content")).map(
         (item) => item.textContent?.trim() ?? "",
       ),
       title: doc.title,
-      turnCount: doc.querySelectorAll(".message-export-turn").length,
+      turnCount: doc.querySelectorAll(".round").length,
     };
   }, html);
+}
+
+async function installExportMimeProbe(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const originalCreateObjectUrl = URL.createObjectURL.bind(URL);
+    const mimeTypes: string[] = [];
+    Object.defineProperty(window, "__messageExportMimeTypes", {
+      configurable: true,
+      value: mimeTypes,
+    });
+    URL.createObjectURL = (object: Blob | MediaSource): string => {
+      if (object instanceof Blob) {
+        mimeTypes.push(object.type);
+      }
+      return originalCreateObjectUrl(object);
+    };
+  });
+}
+
+async function readExportMimeTypes(page: Page): Promise<string[]> {
+  return await page.evaluate(() => {
+    const value = Reflect.get(window, "__messageExportMimeTypes");
+    return Array.isArray(value)
+      ? value.filter((item): item is string => typeof item === "string")
+      : [];
+  });
 }
 
 async function decodePngInBrowser(

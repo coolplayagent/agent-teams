@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   buildMessagesHtml,
+  buildMessagesJson,
   exportSessionMessages,
 } from "../features/shell/messageExport";
 
@@ -10,6 +11,33 @@ afterEach(() => {
 });
 
 describe("messageExport", () => {
+  it("downloads a versioned, machine-readable JSON transcript", async () => {
+    const createObjectUrl = mockDownloadUrl();
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+
+    await exportSessionMessages({
+      format: "json",
+      rounds: [{ intent: "Review export", run_id: "run-1" }],
+      sessionId: "session-1",
+    });
+
+    const blob = firstCreatedBlob(createObjectUrl);
+    expect(blob.type).toBe("application/json;charset=utf-8");
+    const transcript = JSON.parse(buildMessagesJson(
+      "session-1",
+      [{ intent: "Review export", run_id: "run-1" }],
+      "2026-07-12T00:00:00Z",
+    ));
+    expect(transcript).toMatchObject({
+      schema: "relay-teams.session-transcript",
+      sessionId: "session-1",
+      version: 1,
+    });
+    expect(transcript.entries).toEqual([
+      expect.objectContaining({ kind: "user", text: "Review export" }),
+    ]);
+  });
+
   it("builds escaped standalone HTML from complete round projections", () => {
     const html = buildMessagesHtml("session/<one>", [
       {

@@ -23,13 +23,36 @@ afterEach(() => {
 });
 
 describe("MessageExportMenu", () => {
-  it("exposes HTML and PNG export choices", async () => {
+  it("exposes HTML, structured JSON, and PNG export choices", async () => {
     renderMessageExportMenu();
 
     fireEvent.click(screen.getByRole("button", { name: "Export messages" }));
 
     expect(await screen.findByText("HTML")).toBeInTheDocument();
+    expect(await screen.findByText("JSON")).toBeInTheDocument();
     expect(await screen.findByText("PNG")).toBeInTheDocument();
+  });
+
+  it("exports selected session rounds as structured JSON", async () => {
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [{ intent: "Inspect exports", run_id: "run-1" }],
+      next_cursor: null,
+    });
+    exportSessionMessagesMock.mockResolvedValue(1);
+    const messenger = renderMessageExportMenu();
+
+    fireEvent.click(screen.getByRole("button", { name: "Export messages" }));
+    fireEvent.click(await screen.findByText("JSON"));
+
+    await waitFor(() => expect(exportSessionMessagesMock).toHaveBeenCalledWith({
+      format: "json",
+      rounds: [{ intent: "Inspect exports", run_id: "run-1" }],
+      sessionId: "session-1",
+    }));
+    expect(messenger.success).toHaveBeenCalledWith(
+      "Messages exported as structured JSON.",
+    );
   });
 
   it("exports selected session rounds as PNG", async () => {
@@ -76,6 +99,24 @@ describe("MessageExportMenu", () => {
       sessionId: "session-1",
     });
     expect(messenger.success).toHaveBeenCalledWith("Messages exported as PNG.");
+  });
+
+  it("reports an export failure without leaving the menu busy", async () => {
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [{ intent: "Review export", run_id: "run-1" }],
+      next_cursor: null,
+    });
+    exportSessionMessagesMock.mockRejectedValue(new Error("PNG export is unavailable."));
+    const messenger = renderMessageExportMenu();
+
+    fireEvent.click(screen.getByRole("button", { name: "Export messages" }));
+    fireEvent.click(await screen.findByText("PNG"));
+
+    await waitFor(() => expect(messenger.error).toHaveBeenCalledWith(
+      "PNG export is unavailable.",
+    ));
+    expect(screen.getByRole("button", { name: "Export messages" })).toBeEnabled();
   });
 
   it("fetches all session round pages before exporting", async () => {

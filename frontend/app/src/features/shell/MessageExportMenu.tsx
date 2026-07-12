@@ -65,11 +65,11 @@ export function useMessageExporter({
       });
       void messenger.success(
         fileCount === 1
-          ? t(format === "html" ? "exportMessagesAsHtml" : "exportMessagesAsPng")
+          ? t(exportSuccessKey(format))
           : t(
-              format === "html"
-                ? "exportMessagesAsHtmlFiles"
-                : "exportMessagesAsPngFiles",
+              format === "png"
+                ? "exportMessagesAsPngFiles"
+                : "exportMessagesAsHtmlFiles",
               { count: fileCount },
             ),
       );
@@ -104,6 +104,10 @@ export function MessageExportMenu({
       label: t("exportAsHtml"),
     },
     {
+      key: "json",
+      label: t("exportAsJson"),
+    },
+    {
       key: "png",
       label: t("exportAsPng"),
     },
@@ -118,7 +122,9 @@ export function MessageExportMenu({
         items: exportMenuItems,
         onClick: ({ key }) => {
           setMenuOpen(false);
-          void exporter.exportMessages(key === "png" ? "png" : "html");
+          void exporter.exportMessages(
+            key === "png" ? "png" : key === "json" ? "json" : "html",
+          );
         },
       }}
       placement="bottomRight"
@@ -332,7 +338,22 @@ function exportFormatLabel(
   format: MessageExportFormat,
   t: ReturnType<typeof useTranslations>,
 ): string {
-  return t(format === "png" ? "exportAsPng" : "exportAsHtml");
+  return t(
+    format === "png"
+      ? "exportAsPng"
+      : format === "json"
+        ? "exportAsJson"
+        : "exportAsHtml",
+  );
+}
+
+function exportSuccessKey(
+  format: MessageExportFormat,
+): "exportMessagesAsHtml" | "exportMessagesAsJson" | "exportMessagesAsPng" {
+  if (format === "json") {
+    return "exportMessagesAsJson";
+  }
+  return format === "png" ? "exportMessagesAsPng" : "exportMessagesAsHtml";
 }
 
 function sortableTimestamp(value: string | undefined): number {

@@ -14,11 +14,12 @@ import {
 import {
   buildMessageTranscript,
   type MessageTranscript,
+  serializeMessageTranscript,
   type TranscriptEntry,
   type TranscriptEntryKind,
 } from "./messageTranscript";
 
-export type MessageExportFormat = "html" | "png";
+export type MessageExportFormat = "html" | "json" | "png";
 
 export interface ExportSessionMessagesOptions {
   format: MessageExportFormat;
@@ -58,6 +59,15 @@ export async function exportSessionMessages({
   sessionId,
 }: ExportSessionMessagesOptions): Promise<number> {
   const transcript = buildMessageTranscript(sessionId, rounds);
+  if (format === "json") {
+    downloadBlob(
+      `${messageExportFilenameBase(sessionId)}.json`,
+      new Blob([serializeMessageTranscript(transcript)], {
+        type: "application/json;charset=utf-8",
+      }),
+    );
+    return 1;
+  }
   if (format === "html") {
     const html = buildMessagesHtml(sessionId, rounds);
     downloadBlob(
@@ -80,6 +90,16 @@ export async function exportSessionMessages({
     downloadBlob(`${messageExportFilenameBase(sessionId)}${suffix}.png`, blob);
   });
   return blobs.length;
+}
+
+export function buildMessagesJson(
+  sessionId: string,
+  rounds: SessionRound[],
+  exportedAt?: string,
+): string {
+  return serializeMessageTranscript(
+    buildMessageTranscript(sessionId, rounds, exportedAt),
+  );
 }
 
 export function buildMessagesHtml(

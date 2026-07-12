@@ -18,6 +18,12 @@
 
 .at-model-profile-switch-field {
   grid-column: span 1;
+  align-self: end;
+  min-height: 32px;
+}
+
+.at-model-profile-switch-field .at-choice-control {
+  min-height: 32px;
 }
 
 .at-settings-detail-page.at-model-profile-detail {

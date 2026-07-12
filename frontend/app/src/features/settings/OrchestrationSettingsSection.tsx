@@ -1,11 +1,11 @@
 import {
   App,
   Button,
-  Checkbox,
   Form,
   Input,
   InputNumber,
   Popconfirm,
+  Select,
   Typography,
 } from "antd";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -21,7 +21,13 @@ import type {
   RoleOption,
 } from "../../api/contracts";
 import { useTranslations } from "../../i18n";
-import { SettingsQueryState, SettingsSection } from "./SettingsShared";
+import {
+  SettingsFormCard,
+  SettingsFormGrid,
+  SettingsFormLayout,
+  SettingsQueryState,
+  SettingsSection,
+} from "./SettingsShared";
 
 interface OrchestrationSettingsSectionProps {
   config: OrchestrationConfig | undefined;
@@ -201,13 +207,6 @@ export function OrchestrationSettingsSection({
           />
         ) : (
           <>
-            <div className="at-settings-facts">
-              <Fact
-                label={t("settingsDefaultPreset")}
-                value={config.default_orchestration_preset_id ?? "-"}
-              />
-              <Fact label={t("settingsPresetCount")} value={String(presets.length)} />
-            </div>
             <div className="at-settings-section-actions">
               <Button
                 disabled={roleOptionsLoading || roleOptionsError !== null}
@@ -324,7 +323,7 @@ function OrchestrationPresetDetail({
   const roleIds = preset.role_ids?.map((roleId) => roleId.trim()).filter(Boolean) ?? [];
   const isDefault = preset.preset_id === defaultPresetId;
   const canDelete = !creating && (config.presets?.length ?? 0) > 1;
-  const checkboxOptions = orchestrationRoleCheckboxOptions(roleOptions, roleIds);
+  const selectOptions = orchestrationRoleSelectOptions(roleOptions, roleIds);
 
   useEffect(() => {
     form.setFieldsValue(orchestrationPresetFormValues(preset));
@@ -335,6 +334,11 @@ function OrchestrationPresetDetail({
       <div className="at-settings-detail-header">
         <div className="at-settings-list-main">
           <span>{preset.name ?? preset.preset_id}</span>
+          {isDefault ? (
+            <Typography.Text type="secondary">
+              {t("settingsOrchestrationDefaultBadge")}
+            </Typography.Text>
+          ) : null}
         </div>
         <div className="at-settings-detail-actions">
           {!creating && !isDefault ? (
@@ -360,14 +364,8 @@ function OrchestrationPresetDetail({
           <Button onClick={onBack}>{t("settingsBack")}</Button>
         </div>
       </div>
-      <div className="at-settings-facts at-settings-workspace-facts at-orchestration-preset-metadata">
-        <Fact
-          label={t("settingsModelDefault")}
-          value={isDefault ? t("settingsEnabled") : t("settingsDisabled")}
-        />
-      </div>
       <Form
-        className="at-settings-form at-settings-form-layout at-orchestration-preset-form"
+        className="at-settings-form at-orchestration-preset-form"
         form={form}
         id={formId}
         layout="vertical"
@@ -375,77 +373,99 @@ function OrchestrationPresetDetail({
           onSave(values);
         }}
       >
-        <Form.Item
-          label={t("settingsOrchestrationPresetId")}
-          name="preset_id"
-          rules={[{ required: true, message: t("settingsOrchestrationPresetIdRequired") }]}
-        >
-          <Input autoComplete="off" />
-        </Form.Item>
-        <Form.Item label={t("settingsPresetName")} name="name">
-          <Input autoComplete="off" />
-        </Form.Item>
-        <Form.Item label={t("settingsRoleDescription")} name="description">
-          <Input autoComplete="off" />
-        </Form.Item>
-        <div className="at-settings-form-grid-layout">
-          <Form.Item
-            label={t("settingsOrchestrationMaxCycles")}
-            name="max_orchestration_cycles"
-            rules={[{ required: true, message: t("settingsOrchestrationMaxCyclesRequired") }]}
-          >
-            <InputNumber max={64} min={0} />
-          </Form.Item>
-          <Form.Item
-            label={t("settingsOrchestrationMaxParallel")}
-            name="max_parallel_delegated_tasks"
-            rules={[{ required: true, message: t("settingsOrchestrationMaxParallelRequired") }]}
-          >
-            <InputNumber max={16} min={0} />
-          </Form.Item>
-        </div>
-        <Form.Item
-          label={t("settingsOrchestrationRoles")}
-          name="role_ids"
-          rules={[{ required: true, message: t("settingsOrchestrationRoleRequired") }]}
-        >
-          <Checkbox.Group options={checkboxOptions} />
-        </Form.Item>
-        <Form.Item
-          label={t("settingsOrchestrationPrompt")}
-          name="orchestration_prompt"
-          rules={[{ required: true, message: t("settingsOrchestrationPromptRequired") }]}
-        >
-          <Input.TextArea autoSize={{ minRows: 4, maxRows: 10 }} />
-        </Form.Item>
-        <Form.Item
-          label={t("settingsOrchestrationGraph")}
-          name="graph"
-          rules={[
-            {
-              validator: (_rule, value: string | undefined) => {
-                try {
-                  parseOptionalGraph(value, {
-                    graphInvalid: t("settingsOrchestrationGraphInvalid"),
-                    graphObjectRequired: t("settingsOrchestrationGraphObjectRequired"),
-                  });
-                  return Promise.resolve();
-                } catch (validationError) {
-                  return Promise.reject(
-                    validationError instanceof Error
-                      ? validationError
-                      : new Error(t("settingsOrchestrationGraphInvalid")),
-                  );
-                }
-              },
-            },
-          ]}
-        >
-          <Input.TextArea
-            autoSize={{ minRows: 3, maxRows: 8 }}
-            placeholder='{"nodes":[]}'
-          />
-        </Form.Item>
+        <SettingsFormLayout>
+          <SettingsFormCard>
+            <SettingsFormGrid>
+              <Form.Item
+                label={t("settingsOrchestrationPresetId")}
+                name="preset_id"
+                rules={[{ required: true, message: t("settingsOrchestrationPresetIdRequired") }]}
+              >
+                <Input autoComplete="off" />
+              </Form.Item>
+              <Form.Item label={t("settingsPresetName")} name="name">
+                <Input autoComplete="off" />
+              </Form.Item>
+              <Form.Item
+                className="at-settings-form-grid-span"
+                label={t("settingsRoleDescription")}
+                name="description"
+              >
+                <Input.TextArea autoSize={{ minRows: 2, maxRows: 5 }} />
+              </Form.Item>
+              <Form.Item
+                label={t("settingsOrchestrationMaxCycles")}
+                name="max_orchestration_cycles"
+                rules={[{ required: true, message: t("settingsOrchestrationMaxCyclesRequired") }]}
+              >
+                <InputNumber max={64} min={0} />
+              </Form.Item>
+              <Form.Item
+                label={t("settingsOrchestrationMaxParallel")}
+                name="max_parallel_delegated_tasks"
+                rules={[{ required: true, message: t("settingsOrchestrationMaxParallelRequired") }]}
+              >
+                <InputNumber max={16} min={0} />
+              </Form.Item>
+              <Form.Item
+                className="at-settings-form-grid-span"
+                label={t("settingsOrchestrationRoles")}
+                name="role_ids"
+                rules={[{ required: true, message: t("settingsOrchestrationRoleRequired") }]}
+              >
+                <Select
+                  mode="multiple"
+                  optionFilterProp="label"
+                  options={selectOptions}
+                  showSearch
+                />
+              </Form.Item>
+            </SettingsFormGrid>
+          </SettingsFormCard>
+          <SettingsFormCard>
+            <Form.Item
+              label={t("settingsOrchestrationPrompt")}
+              name="orchestration_prompt"
+              rules={[{ required: true, message: t("settingsOrchestrationPromptRequired") }]}
+            >
+              <Input.TextArea autoSize={{ minRows: 5, maxRows: 12 }} />
+            </Form.Item>
+          </SettingsFormCard>
+          <details className="at-settings-advanced-disclosure">
+            <summary>{t("settingsOrchestrationGraph")}</summary>
+            <SettingsFormGrid>
+              <Form.Item
+                className="at-settings-form-grid-span"
+                name="graph"
+                rules={[
+                  {
+                    validator: (_rule, value: string | undefined) => {
+                      try {
+                        parseOptionalGraph(value, {
+                          graphInvalid: t("settingsOrchestrationGraphInvalid"),
+                          graphObjectRequired: t("settingsOrchestrationGraphObjectRequired"),
+                        });
+                        return Promise.resolve();
+                      } catch (validationError) {
+                        return Promise.reject(
+                          validationError instanceof Error
+                            ? validationError
+                            : new Error(t("settingsOrchestrationGraphInvalid")),
+                        );
+                      }
+                    },
+                  },
+                ]}
+              >
+                <Input.TextArea
+                  aria-label={t("settingsOrchestrationGraph")}
+                  autoSize={{ minRows: 4, maxRows: 10 }}
+                  placeholder='{"nodes":[]}'
+                />
+              </Form.Item>
+            </SettingsFormGrid>
+          </details>
+        </SettingsFormLayout>
       </Form>
     </div>
   );
@@ -735,7 +755,7 @@ function orchestrationRoleOptions(
   return [...byId.values()].sort((left, right) => left.name.localeCompare(right.name));
 }
 
-function orchestrationRoleCheckboxOptions(
+function orchestrationRoleSelectOptions(
   roles: RoleOption[],
   selectedRoleIds: string[],
 ): Array<{ label: string; value: string }> {
@@ -757,13 +777,4 @@ function orchestrationRoleCheckboxOptions(
 
 function textValue(value: string | undefined): string {
   return value?.trim() ?? "";
-}
-
-function Fact({ label, value }: { label: string; value: string }) {
-  return (
-    <dl>
-      <dt>{label}</dt>
-      <dd>{value}</dd>
-    </dl>
-  );
 }

@@ -1507,6 +1507,17 @@ export interface ModelProfileRecord {
 
 export type ModelProfilesPayload = Record<string, ModelProfileRecord>;
 
+export interface ModelFallbackPolicy {
+  policy_id: string;
+  name: string;
+  description?: string;
+  enabled?: boolean;
+}
+
+export interface ModelFallbackConfig {
+  policies?: ModelFallbackPolicy[];
+}
+
 export interface ModelCatalogModel {
   id: string;
   name: string;

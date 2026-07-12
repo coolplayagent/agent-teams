@@ -57,9 +57,14 @@
 }
 
 .at-settings-detail-page.at-orchestration-preset-detail,
-.at-orchestration-preset-detail .at-orchestration-preset-form {
+.at-orchestration-preset-detail .at-orchestration-preset-form,
+.at-orchestration-preset-form > .at-settings-form-layout {
   width: 100%;
   max-width: none;
+}
+
+.at-orchestration-preset-form .ant-input-number {
+  width: 100%;
 }
 
 @media (max-width: 720px) {

@@ -1,6 +1,7 @@
 .at-notification-rule-list {
   display: grid;
   gap: 10px;
+  container-type: inline-size;
 }
 
 .at-notification-rule {
@@ -80,6 +81,21 @@
     align-items: stretch;
     gap: 12px;
     padding: 13px 14px;
+  }
+
+  .at-notification-rule-controls {
+    padding-top: 10px;
+    padding-left: 0;
+    border-top: 1px solid var(--at-border);
+    border-left: 0;
+  }
+}
+
+@container (max-width: 620px) {
+  .at-notification-rule {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+    gap: 12px;
   }
 
   .at-notification-rule-controls {

@@ -29,5 +29,11 @@ describe("notification settings layout", () => {
     expect(css).toMatch(
       /@media \(max-width: 720px\)[\s\S]*?\.at-notification-rule-controls\s*{[\s\S]*?border-left:\s*0;/,
     );
+    expect(css).toMatch(
+      /\.at-notification-rule-list\s*{[\s\S]*?container-type:\s*inline-size;/,
+    );
+    expect(css).toMatch(
+      /@container \(max-width: 620px\)[\s\S]*?\.at-notification-rule\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/,
+    );
   });
 });

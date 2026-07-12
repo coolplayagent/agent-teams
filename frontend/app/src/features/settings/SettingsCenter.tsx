@@ -6,7 +6,6 @@ import {
   Popconfirm,
   Segmented,
   Select,
-  Switch,
   Typography,
 } from "antd";
 import type { FormInstance } from "antd";
@@ -20,6 +19,7 @@ import {
   getGeneralConfig,
   getConfigStatus,
   getModelCatalog,
+  getModelFallbackConfig,
   getModelProfiles,
   getOrchestrationConfig,
   getRoleConfig,
@@ -43,6 +43,7 @@ import type {
   ModelCatalogProvider,
   ModelCatalogResult,
   ModelConnectivityProbeResult,
+  ModelFallbackPolicy,
   ModelProfileRecord,
   ModelProfileSaveRequest,
   JsonValue,
@@ -50,6 +51,7 @@ import type {
   RoleConfigSummary,
   RoleSkillOption,
 } from "../../api/contracts";
+import { ChoiceControl } from "../../components/ChoiceControl";
 import { useTranslations } from "../../i18n";
 import { useUiStore } from "../../runtime/uiStore";
 import { ClawHubSettingsSection } from "./ClawHubSettingsSection";
@@ -440,16 +442,16 @@ function SettingsGeneral({
               <Form.Item
                 name="shell_safety_policy_enabled"
                 noStyle
-                valuePropName="checked"
+                getValueProps={booleanChoiceValueProps}
               >
-                <Switch aria-label={t("settingsShellSafetyPolicy")} />
+                <ChoiceControl
+                  ariaLabel={t("settingsShellSafetyPolicy")}
+                  checked={form.getFieldValue("shell_safety_policy_enabled") === true}
+                  kind="switch"
+                  label={t("settingsEnabled")}
+                  onChange={() => undefined}
+                />
               </Form.Item>
-            </div>
-            <div className="at-general-field">
-              <Typography.Text>{t("settingsShellSafetyPolicy")}</Typography.Text>
-              <Typography.Text className="at-settings-help">
-                {t("settingsGeneralShellPolicyState")}
-              </Typography.Text>
             </div>
           </section>
 
@@ -848,6 +850,13 @@ function RoleConfigDetail({
               <Input autoComplete="off" />
             </Form.Item>
             <Form.Item
+              label={t("settingsRoleVersion")}
+              name="version"
+              rules={[{ message: t("settingsRoleVersionRequired"), required: true }]}
+            >
+              <Input autoComplete="off" />
+            </Form.Item>
+            <Form.Item
               className="at-role-description-field"
               label={t("settingsRoleDescription")}
               name="description"
@@ -856,13 +865,7 @@ function RoleConfigDetail({
               <Input.TextArea autoSize={{ minRows: 3, maxRows: 7 }} />
             </Form.Item>
             <Form.Item
-              label={t("settingsRoleVersion")}
-              name="version"
-              rules={[{ message: t("settingsRoleVersionRequired"), required: true }]}
-            >
-              <Input autoComplete="off" />
-            </Form.Item>
-            <Form.Item
+              className="at-role-model-field"
               label={t("settingsRoleModelProfile")}
               name="model_profile"
               rules={[{ message: t("settingsRoleModelProfileRequired"), required: true }]}
@@ -912,9 +915,9 @@ function RoleConfigDetail({
             </Form.Item>
                 </SettingsFormGrid>
               </SettingsFormCard>
-              <details className="at-role-advanced-disclosure">
+              <details className="at-settings-advanced-disclosure at-role-advanced-disclosure">
                 <summary>{t("settingsRoleAdvanced")}</summary>
-                <SettingsFormGrid>
+                <SettingsFormGrid className="at-role-advanced-grid">
                   <Form.Item
                     label={t("settingsRoleExecutionSurface")}
                     name="execution_surface"
@@ -936,11 +939,15 @@ function RoleConfigDetail({
                     />
                   </Form.Item>
                   <Form.Item
-                    label={t("settingsRoleMemoryEnabled")}
+                    getValueProps={booleanChoiceValueProps}
                     name="memory_enabled"
-                    valuePropName="checked"
                   >
-                    <Switch />
+                    <ChoiceControl
+                      checked={form.getFieldValue("memory_enabled") === true}
+                      kind="switch"
+                      label={t("settingsRoleMemoryEnabled")}
+                      onChange={() => undefined}
+                    />
                   </Form.Item>
                 </SettingsFormGrid>
               </details>
@@ -1031,6 +1038,11 @@ function SettingsModels({
     queryFn: () => getModelCatalog(false),
     enabled: catalogEnabled,
   });
+  const fallbackQuery = useQuery({
+    queryKey: ["settings", "models", "fallback"],
+    queryFn: getModelFallbackConfig,
+  });
+  const fallbackPolicies = fallbackQuery.data?.policies ?? [];
   const entries = useMemo(
     () => Object.entries(profiles ?? {}).sort(([left], [right]) => left.localeCompare(right)),
     [profiles],
@@ -1244,6 +1256,8 @@ function SettingsModels({
             catalogError={catalogQuery.error}
             catalogLoading={catalogQuery.isLoading || refreshCatalogMutation.isPending}
             deleting={false}
+            fallbackPolicies={fallbackPolicies}
+            fallbackPoliciesLoading={fallbackQuery.isLoading}
             mode="create"
             onBack={cancelCreateProfile}
             onDelete={requestDelete}
@@ -1263,6 +1277,8 @@ function SettingsModels({
             catalog={undefined}
             catalogError={null}
             catalogLoading={false}
+            fallbackPolicies={fallbackPolicies}
+            fallbackPoliciesLoading={fallbackQuery.isLoading}
             mode="edit"
             onBack={() => setSelectedProfileId(null)}
             onDelete={requestDelete}
@@ -1403,6 +1419,8 @@ function ModelProfileDetail({
   catalogError,
   catalogLoading,
   deleting,
+  fallbackPolicies,
+  fallbackPoliciesLoading,
   mode,
   onBack,
   onDelete,
@@ -1421,6 +1439,8 @@ function ModelProfileDetail({
   catalogError: Error | null;
   catalogLoading: boolean;
   deleting: boolean;
+  fallbackPolicies: ModelFallbackPolicy[];
+  fallbackPoliciesLoading: boolean;
   mode: "create" | "edit";
   onBack: () => void;
   onDelete: (profileId: string) => void;
@@ -1460,6 +1480,11 @@ function ModelProfileDetail({
   const showMaasAuth = normalizedProvider === "maas";
   const showCodeAgentAuth = normalizedProvider === "codeagent";
   const showGenericApiKey = !showMaasAuth && !showCodeAgentAuth;
+  const providerOptions = modelProviderOptions(effectiveProfile.provider);
+  const fallbackPolicyOptions = modelFallbackPolicyOptions(
+    fallbackPolicies,
+    effectiveProfile.fallback_policy_id,
+  );
 
   useEffect(() => {
     form.setFieldsValue(modelProfileToFormValues(profileId, profile));
@@ -1598,10 +1623,15 @@ function ModelProfileDetail({
             name="provider"
             rules={[{ message: t("settingsModelProviderRequired"), required: true }]}
           >
-            <Input onChange={(event) => setProviderOverride(event.target.value)} />
+            <Select
+              onChange={(value) => setProviderOverride(value)}
+              optionFilterProp="label"
+              options={providerOptions}
+              showSearch
+            />
           </Form.Item>
           <Form.Item
-            className="at-model-field-short"
+            className="at-model-field-wide"
             label={t("settingsModelName")}
             name="model"
             rules={[{ message: t("settingsModelNameRequired"), required: true }]}
@@ -1609,7 +1639,7 @@ function ModelProfileDetail({
             <Input />
           </Form.Item>
           <Form.Item
-            className="at-model-field-short"
+            className="at-model-field-wide"
             label={t("settingsModelBaseUrl")}
             name="base_url"
             rules={[{ message: t("settingsModelBaseUrlRequired"), required: true }]}
@@ -1725,18 +1755,28 @@ function ModelProfileDetail({
             />
           </Form.Item>
           <Form.Item className="at-model-field-short" label={t("settingsModelFallbackPolicy")} name="fallback_policy_id">
-            <Input />
+            <Select
+              allowClear
+              loading={fallbackPoliciesLoading}
+              optionFilterProp="label"
+              options={fallbackPolicyOptions}
+              showSearch
+            />
           </Form.Item>
           <Form.Item className="at-model-field-short" label={t("settingsModelFallbackPriority")} name="fallback_priority">
             <Input inputMode="numeric" type="number" />
           </Form.Item>
           <Form.Item
             className="at-model-profile-switch-field"
-            label={t("settingsModelDefault")}
+            getValueProps={booleanChoiceValueProps}
             name="is_default"
-            valuePropName="checked"
           >
-            <Switch />
+            <ChoiceControl
+              checked={form.getFieldValue("is_default") === true}
+              kind="switch"
+              label={t("settingsModelDefault")}
+              onChange={() => undefined}
+            />
           </Form.Item>
         </div>
       </Form>
@@ -1974,6 +2014,51 @@ function looksLikeMaskedSecret(value: string): boolean {
 
 function normalizeModelProvider(value: string | null | undefined): string {
   return value?.trim().toLowerCase() ?? "";
+}
+
+const MODEL_PROVIDER_OPTIONS = [
+  "openai_compatible",
+  "anthropic",
+  "bigmodel",
+  "minimax",
+  "maas",
+  "codeagent",
+  "echo",
+];
+
+function modelProviderOptions(currentProvider: string | undefined): Array<{
+  label: string;
+  value: string;
+}> {
+  const normalizedCurrent = normalizeModelProvider(currentProvider);
+  const providers = new Set(MODEL_PROVIDER_OPTIONS);
+  if (normalizedCurrent) {
+    providers.add(normalizedCurrent);
+  }
+  return [...providers].map((provider) => ({
+    label: provider,
+    value: provider,
+  }));
+}
+
+function modelFallbackPolicyOptions(
+  policies: ModelFallbackPolicy[],
+  currentPolicyId: string | null | undefined,
+): Array<{ label: string; value: string }> {
+  const options = policies
+    .filter((policy) => policy.enabled !== false && policy.policy_id.trim())
+    .map((policy) => ({
+      label:
+        policy.name.trim() && policy.name.trim() !== policy.policy_id
+          ? `${policy.name} (${policy.policy_id})`
+          : policy.policy_id,
+      value: policy.policy_id,
+    }));
+  const current = currentPolicyId?.trim() ?? "";
+  if (current && options.every((option) => option.value !== current)) {
+    options.push({ label: current, value: current });
+  }
+  return options;
 }
 
 function jsonString(value: JsonValue | undefined): string {
@@ -2501,6 +2586,10 @@ function policyValue(value: boolean | number | string | null | undefined): strin
     return value ? "true" : "false";
   }
   return String(value);
+}
+
+function booleanChoiceValueProps(value: boolean | undefined): { checked: boolean } {
+  return { checked: value === true };
 }
 
 function modalityList(values: string[]): string {

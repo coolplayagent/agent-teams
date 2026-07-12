@@ -158,7 +158,7 @@ function NotificationRuleRow({
               <Form.Item
                 name={[typeId, "enabled"]}
                 noStyle
-                valuePropName="checked"
+                getValueProps={booleanChoiceValueProps}
               >
                 <ChoiceControl
                   ariaLabel={`${title} · ${t("settingsEnabled")}`}
@@ -177,7 +177,7 @@ function NotificationRuleRow({
                 <Form.Item
                   name={[typeId, "browser"]}
                   noStyle
-                  valuePropName="checked"
+                  getValueProps={booleanChoiceValueProps}
                 >
                   <ChoiceControl
                     checked={form.getFieldValue([typeId, "browser"]) === true}
@@ -190,7 +190,7 @@ function NotificationRuleRow({
                 <Form.Item
                   name={[typeId, "toast"]}
                   noStyle
-                  valuePropName="checked"
+                  getValueProps={booleanChoiceValueProps}
                 >
                   <ChoiceControl
                     checked={form.getFieldValue([typeId, "toast"]) === true}
@@ -256,6 +256,10 @@ function cloneRule(rule: NotificationRule): NotificationRule {
     ...rule,
     channels: [...rule.channels],
   };
+}
+
+function booleanChoiceValueProps(value: boolean | undefined): { checked: boolean } {
+  return { checked: value === true };
 }
 
 function mergeRule(

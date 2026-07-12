@@ -20,8 +20,12 @@ describe("role settings editor", () => {
 
   it("keeps dirty persisted values visible and folds low-frequency fields", () => {
     expect(source).toContain("settingsRolePersistedUnknownOption");
-    expect(source).toContain('<details className="at-role-advanced-disclosure">');
-    expect(css).toMatch(/\.at-role-primary-grid\s*{[\s\S]*?repeat\(4,/);
+    expect(source).toContain(
+      '<details className="at-settings-advanced-disclosure at-role-advanced-disclosure">',
+    );
+    expect(css).toMatch(/\.at-role-primary-grid\s*{[\s\S]*?repeat\(3,/);
+    expect(css).toMatch(/\.at-role-primary-grid \.at-role-model-field\s*{[\s\S]*?span 2;/);
+    expect(css).toMatch(/\.at-role-advanced-grid\s*{[\s\S]*?repeat\(3,/);
     expect(source).not.toContain('className="at-settings-list at-role-config-properties"');
     expect(source).toContain("at-role-config-metadata");
     expect(source).not.toMatch(/at-role-config-metadata[\s\S]{0,300}?settingsRoleModelProfile/);

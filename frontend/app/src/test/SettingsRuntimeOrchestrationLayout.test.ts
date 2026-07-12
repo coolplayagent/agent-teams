@@ -17,10 +17,30 @@ describe("runtime and orchestration settings layouts", () => {
     expect(runtime).toContain("at-settings-form-layout at-agent-runtime-form");
     expect(runtime).toContain("at-settings-form-card-layout");
     expect(orchestration).toContain(
-      "at-settings-form-layout at-orchestration-preset-form",
+      'className="at-settings-form at-orchestration-preset-form"',
     );
-    expect(orchestration).toContain("at-settings-form-grid-layout");
+    expect(orchestration).toContain("<SettingsFormLayout>");
+    expect(orchestration).toContain("<SettingsFormCard>");
+    expect(orchestration).toContain("<SettingsFormGrid>");
     expect(orchestration).not.toContain("at-orchestration-preset-properties");
-    expect(orchestration).toContain("at-orchestration-preset-metadata");
+    expect(orchestration).not.toContain("at-orchestration-preset-metadata");
+  });
+
+  it("uses contextual field types and progressively discloses raw graph JSON", () => {
+    const orchestration = readFileSync(
+      "src/features/settings/OrchestrationSettingsSection.tsx",
+      "utf8",
+    );
+
+    expect(orchestration).toMatch(
+      /name="description"[\s\S]*?<Input\.TextArea/,
+    );
+    expect(orchestration).toMatch(
+      /name="role_ids"[\s\S]*?<Select[\s\S]*?mode="multiple"/,
+    );
+    expect(orchestration).not.toContain("<Checkbox.Group");
+    expect(orchestration).toContain(
+      '<details className="at-settings-advanced-disclosure">',
+    );
   });
 });

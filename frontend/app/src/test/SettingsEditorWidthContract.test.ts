@@ -17,6 +17,9 @@ describe("settings editor width contract", () => {
     expect(formCss).toMatch(
       /\.at-settings-detail-page\.at-orchestration-preset-detail[\s\S]*?width:\s*100%;[\s\S]*?max-width:\s*none;/,
     );
+    expect(formCss).toMatch(
+      /\.at-orchestration-preset-form > \.at-settings-form-layout[\s\S]*?max-width:\s*none;/,
+    );
   });
 
   it("lets the model catalog use the available settings width", () => {

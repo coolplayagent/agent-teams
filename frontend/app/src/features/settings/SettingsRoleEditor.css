@@ -6,24 +6,32 @@
 }
 
 .at-role-primary-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .at-role-primary-grid .at-role-description-field {
   grid-column: 1 / -1;
 }
 
+.at-role-primary-grid .at-role-model-field {
+  grid-column: span 2;
+}
+
 .at-role-capability-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.at-role-advanced-disclosure {
+.at-role-advanced-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.at-settings-advanced-disclosure {
   border: 1px solid var(--at-border);
   border-radius: 10px;
   background: var(--at-surface);
 }
 
-.at-role-advanced-disclosure > summary {
+.at-settings-advanced-disclosure > summary {
   padding: 10px 14px;
   color: var(--at-muted);
   cursor: pointer;
@@ -31,25 +39,32 @@
   font-weight: 600;
 }
 
-.at-role-advanced-disclosure > summary:focus-visible {
+.at-settings-advanced-disclosure > summary:focus-visible {
   outline: 2px solid var(--at-accent);
   outline-offset: 2px;
 }
 
-.at-role-advanced-disclosure > .at-settings-form-grid-layout {
+.at-settings-advanced-disclosure > .at-settings-form-grid-layout {
   padding: 0 14px 14px;
 }
 
 @media (max-width: 900px) {
   .at-role-primary-grid,
-  .at-role-capability-grid {
+  .at-role-capability-grid,
+  .at-role-advanced-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+
+  .at-role-primary-grid .at-role-model-field {
+    grid-column: span 1;
   }
 }
 
 @media (max-width: 720px) {
   .at-role-primary-grid,
-  .at-role-capability-grid {
+  .at-role-capability-grid,
+  .at-role-advanced-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 }

@@ -103,6 +103,7 @@ import type {
   ModelConnectivityProbeRequest,
   ModelConnectivityProbeResult,
   ModelCatalogResult,
+  ModelFallbackConfig,
   ModelProfileSaveRequest,
   ModelProfilesPayload,
   NotificationConfig,
@@ -937,6 +938,10 @@ function roleConfigSaveRequest(config: RoleConfigDocument): RoleConfigSaveReques
 
 export function getModelProfiles(): Promise<ModelProfilesPayload> {
   return requestJson<ModelProfilesPayload>("/system/configs/model/profiles");
+}
+
+export function getModelFallbackConfig(): Promise<ModelFallbackConfig> {
+  return requestJson<ModelFallbackConfig>("/system/configs/model-fallback");
 }
 
 export function getModelCatalog(refresh = false): Promise<ModelCatalogResult> {

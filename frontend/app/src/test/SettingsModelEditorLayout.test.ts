@@ -29,7 +29,7 @@ describe("model profile editor layout", () => {
 
   it("pairs related connection and fallback controls without empty grid cells", () => {
     expect(source).toMatch(
-      /name="model"[\s\S]*?className="at-model-field-short"[\s\S]*?name="base_url"/,
+      /className="at-model-field-wide"[\s\S]*?name="model"[\s\S]*?className="at-model-field-wide"[\s\S]*?name="base_url"/,
     );
     expect(source).toMatch(
       /name="connect_timeout_seconds"[\s\S]*?name="ssl_verify"/,

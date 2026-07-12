@@ -314,6 +314,54 @@ def test_create_run_route_uses_session_run_service() -> None:
     assert run_service.scheduled_runs == [("run-1", "session-1")]
 
 
+def test_create_run_preserves_execution_policy_independent_of_prompt_length() -> None:
+    client, run_service, _session_service = _create_client()
+    configured_request = {
+        "session_id": "session-1",
+        "display_input": [{"kind": "text", "text": "display"}],
+        "execution_mode": "ai",
+        "yolo": True,
+        "shell_safety_policy_enabled": False,
+        "thinking": {"enabled": True, "effort": "high"},
+        "target_role_id": "writer",
+        "skills": ["pdf"],
+    }
+
+    short_response = client.post(
+        "/api/ag-ui/runs",
+        json={
+            **configured_request,
+            "input": [{"kind": "text", "text": "你好"}],
+        },
+    )
+    long_response = client.post(
+        "/api/ag-ui/runs",
+        json={
+            **configured_request,
+            "input": [
+                {
+                    "kind": "text",
+                    "text": "Please inspect this workflow carefully. " * 80,
+                }
+            ],
+        },
+    )
+
+    assert short_response.status_code == 200
+    assert long_response.status_code == 200
+    short_intent, long_intent = run_service.created_inputs
+    excluded_content_fields = {"input", "display_input"}
+    assert short_intent.model_dump(exclude=excluded_content_fields) == (
+        long_intent.model_dump(exclude=excluded_content_fields)
+    )
+    assert short_intent.thinking.enabled is True
+    assert short_intent.thinking.effort == "high"
+    assert short_intent.yolo is True
+    assert short_intent.shell_safety_policy_enabled is False
+    assert short_intent.target_role_id == "writer"
+    assert short_intent.skills == ("pdf",)
+
+
 def test_create_run_route_reuses_input_media_refs_for_display_input() -> None:
     media_service = _FakeMediaAssetService()
     client, run_service, _session_service = _create_client(

@@ -1,9 +1,11 @@
 import { Button } from "antd";
-import { Copy } from "lucide-react";
-import { useState } from "react";
+import { Check, Copy, TriangleAlert } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import type { Translate } from "../../i18n";
 import { humanReadableToolText } from "./toolPresentation";
+
+const COPY_FEEDBACK_RESET_MS = 4_000;
 
 interface ToolCallDetailsProps {
   callId: string;
@@ -30,7 +32,7 @@ export function ToolCallDetails({
         <div className="at-tool-call-id">
           <span>{t("timelineCallId")}</span>
           <code>{callId}</code>
-          <CopyButton label={t("timelineCopyCallId")} text={callId} />
+          <CopyButton label={t("timelineCopyCallId")} t={t} text={callId} />
         </div>
       ) : null}
       {input.trim() ? (
@@ -54,7 +56,7 @@ export function ToolCallDetails({
         <details className="at-tool-raw-details">
           <summary>{t("timelineToolRawDetails")}</summary>
           <div className="at-tool-raw-actions">
-            <CopyButton label={t("timelineCopyRawDetails")} text={raw} />
+            <CopyButton label={t("timelineCopyRawDetails")} t={t} text={raw} />
           </div>
           <pre>{raw}</pre>
         </details>
@@ -94,14 +96,61 @@ function ToolDetailSection({
   );
 }
 
-function CopyButton({ label, text }: { label: string; text: string }) {
+function CopyButton({
+  label,
+  t,
+  text,
+}: {
+  label: string;
+  t: Translate;
+  text: string;
+}) {
+  const [status, setStatus] = useState<"copied" | "error" | "idle">("idle");
+  const resetTimerRef = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (resetTimerRef.current !== null) {
+      window.clearTimeout(resetTimerRef.current);
+    }
+  }, []);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setStatus("copied");
+    } catch {
+      setStatus("error");
+    }
+    if (resetTimerRef.current !== null) {
+      window.clearTimeout(resetTimerRef.current);
+    }
+    resetTimerRef.current = window.setTimeout(() => {
+      resetTimerRef.current = null;
+      setStatus("idle");
+    }, COPY_FEEDBACK_RESET_MS);
+  };
+  const feedback = status === "copied"
+    ? t("timelineCopied")
+    : status === "error"
+      ? t("timelineCopyFailed")
+      : "";
   return (
-    <Button
-      aria-label={label}
-      icon={<Copy size={12} />}
-      onClick={() => void navigator.clipboard.writeText(text)}
-      size="small"
-      type="text"
-    />
+    <span className="at-tool-copy-control">
+      <Button
+        aria-label={feedback || label}
+        className={status === "error" ? "is-error" : ""}
+        icon={status === "copied"
+          ? <Check size={12} />
+          : status === "error"
+            ? <TriangleAlert size={12} />
+            : <Copy size={12} />}
+        onClick={() => void copy()}
+        size="small"
+        type="text"
+      />
+      <span aria-live="polite" className="at-tool-copy-feedback">
+        {feedback}
+      </span>
+    </span>
   );
 }

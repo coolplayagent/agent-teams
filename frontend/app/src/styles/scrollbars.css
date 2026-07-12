@@ -1,6 +1,14 @@
 :root {
-  --at-scrollbar-thumb: color-mix(in srgb, var(--at-text-muted) 42%, transparent);
-  --at-scrollbar-thumb-active: color-mix(in srgb, var(--at-text) 58%, transparent);
+  --at-scrollbar-thumb: color-mix(
+    in srgb,
+    var(--at-text-muted) 42%,
+    transparent
+  );
+  --at-scrollbar-thumb-active: color-mix(
+    in srgb,
+    var(--at-text) 58%,
+    transparent
+  );
   --at-scrollbar-edge: color-mix(in srgb, var(--at-text) 18%, transparent);
 }
 
@@ -13,7 +21,11 @@
   .at-connectors-workbench,
   .at-runtime-tools,
   .at-session-search-results,
-  .at-new-session-view
+  .at-new-session-view,
+  .at-workspace-tree-list,
+  .at-workspace-diff-list,
+  .at-workspace-file-preview,
+  .at-workspace-file-pane
 ) {
   scrollbar-color: var(--at-scrollbar-thumb) transparent;
   scrollbar-gutter: stable;
@@ -29,7 +41,11 @@
   .at-connectors-workbench,
   .at-runtime-tools,
   .at-session-search-results,
-  .at-new-session-view
+  .at-new-session-view,
+  .at-workspace-tree-list,
+  .at-workspace-diff-list,
+  .at-workspace-file-preview,
+  .at-workspace-file-pane
 )::-webkit-scrollbar {
   width: 10px;
   height: 10px;
@@ -44,7 +60,11 @@
   .at-connectors-workbench,
   .at-runtime-tools,
   .at-session-search-results,
-  .at-new-session-view
+  .at-new-session-view,
+  .at-workspace-tree-list,
+  .at-workspace-diff-list,
+  .at-workspace-file-preview,
+  .at-workspace-file-pane
 )::-webkit-scrollbar-track {
   background: transparent;
 }
@@ -58,7 +78,11 @@
   .at-connectors-workbench,
   .at-runtime-tools,
   .at-session-search-results,
-  .at-new-session-view
+  .at-new-session-view,
+  .at-workspace-tree-list,
+  .at-workspace-diff-list,
+  .at-workspace-file-preview,
+  .at-workspace-file-pane
 )::-webkit-scrollbar-thumb {
   border: 3px solid transparent;
   border-radius: 999px;
@@ -68,27 +92,27 @@
 }
 
 :where(
-  .at-scroll-region,
-  .at-settings-nav,
-  .at-settings-section-body,
-  .at-skills-content,
-  .at-board-column-list,
-  .at-connectors-workbench,
-  .at-runtime-tools,
-  .at-session-search-results,
-  .at-new-session-view
-):hover::-webkit-scrollbar-thumb,
+    .at-scroll-region,
+    .at-settings-nav,
+    .at-settings-section-body,
+    .at-skills-content,
+    .at-board-column-list,
+    .at-connectors-workbench,
+    .at-runtime-tools,
+    .at-session-search-results,
+    .at-new-session-view
+  ):hover::-webkit-scrollbar-thumb,
 :where(
-  .at-scroll-region,
-  .at-settings-nav,
-  .at-settings-section-body,
-  .at-skills-content,
-  .at-board-column-list,
-  .at-connectors-workbench,
-  .at-runtime-tools,
-  .at-session-search-results,
-  .at-new-session-view
-):focus-within::-webkit-scrollbar-thumb {
+    .at-scroll-region,
+    .at-settings-nav,
+    .at-settings-section-body,
+    .at-skills-content,
+    .at-board-column-list,
+    .at-connectors-workbench,
+    .at-runtime-tools,
+    .at-session-search-results,
+    .at-new-session-view
+  ):focus-within::-webkit-scrollbar-thumb {
   background-color: var(--at-scrollbar-thumb-active);
 }
 
@@ -130,7 +154,11 @@
     .at-connectors-workbench,
     .at-runtime-tools,
     .at-session-search-results,
-    .at-new-session-view
+    .at-new-session-view,
+    .at-workspace-tree-list,
+    .at-workspace-diff-list,
+    .at-workspace-file-preview,
+    .at-workspace-file-pane
   )::-webkit-scrollbar-thumb {
     transition: none;
   }

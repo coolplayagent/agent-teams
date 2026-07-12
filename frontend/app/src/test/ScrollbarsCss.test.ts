@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 const css = readFileSync("src/styles/scrollbars.css", "utf8");
 const main = readFileSync("src/main.tsx", "utf8");
 
-describe("scoped native scrollbars", () => {
+describe("scoped application scrollbars", () => {
   it("is loaded after the application theme and stays opt-in", () => {
     expect(main.indexOf('import "./styles/scrollbars.css"')).toBeGreaterThan(
       main.indexOf('import "./styles/theme.css"'),
@@ -16,7 +16,9 @@ describe("scoped native scrollbars", () => {
   });
 
   it("supports Firefox and WebKit with stable native gutters", () => {
-    expect(css).toContain("scrollbar-color: var(--at-scrollbar-thumb) transparent;");
+    expect(css).toContain(
+      "scrollbar-color: var(--at-scrollbar-thumb) transparent;",
+    );
     expect(css).toContain("scrollbar-gutter: stable;");
     expect(css).toContain("scrollbar-width: thin;");
     expect(css).toContain("::-webkit-scrollbar-thumb");
@@ -40,6 +42,10 @@ describe("scoped native scrollbars", () => {
     ".at-connectors-modal .ant-modal-body",
     ".at-settings-modal .ant-modal-body",
     ".at-skills-detail-modal .ant-modal-body",
+    ".at-workspace-tree-list",
+    ".at-workspace-diff-list",
+    ".at-workspace-file-preview",
+    ".at-workspace-file-pane",
     ".at-workspace-diff-body",
     ".at-message-markdown pre",
     ".at-prompt-mention-menu-list",

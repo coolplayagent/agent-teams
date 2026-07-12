@@ -32,6 +32,23 @@
   color: var(--at-text-muted);
 }
 
+.at-tool-copy-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 24px;
+}
+
+.at-tool-copy-control .ant-btn.is-error {
+  color: var(--at-danger);
+}
+
+.at-tool-copy-feedback {
+  color: var(--at-text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 .at-tool-detail-section {
   min-width: 0;
   border-top: 1px solid var(--at-border);

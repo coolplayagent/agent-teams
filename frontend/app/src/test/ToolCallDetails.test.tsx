@@ -1,11 +1,11 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { ToolCallDetails } from "../features/timeline/ToolCallDetails";
 import { useTranslations } from "../i18n";
 
 describe("ToolCallDetails", () => {
-  it("separates input and output, formats common lists, and copies raw values", () => {
+  it("separates input and output, formats common lists, and confirms copied values locally", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -21,11 +21,25 @@ describe("ToolCallDetails", () => {
     expect(screen.getByText(/- ToolCallDetails\.tsx/)).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Copy call id" }));
-    expect(writeText).toHaveBeenCalledWith("call-123");
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("call-123"));
+    expect(screen.getByRole("button", { name: "Copied" })).toBeVisible();
 
     fireEvent.click(screen.getByText("Raw details"));
     fireEvent.click(screen.getByRole("button", { name: "Copy raw details" }));
-    expect(writeText).toHaveBeenCalledWith("raw tool payload");
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("raw tool payload"));
+    expect(screen.getAllByRole("button", { name: "Copied" })).toHaveLength(2);
+  });
+
+  it("keeps clipboard failures next to the tool detail action", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: vi.fn().mockRejectedValue(new Error("denied")) },
+    });
+
+    render(<ToolDetailsHarness />);
+    fireEvent.click(screen.getByRole("button", { name: "Copy call id" }));
+
+    expect(await screen.findByRole("button", { name: "Copy failed" })).toBeVisible();
   });
 });
 

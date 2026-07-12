@@ -40,9 +40,11 @@ interface RunCreateResponse {
 interface StartedRun {
   expectedFinalToken: string;
   expectedPrefix: string;
+  isReloadProbe: boolean;
   isSubagent: boolean;
   runId: string;
   session: SessionRecord;
+  slowTokenCount: number;
   tag: string;
   title: string;
 }
@@ -166,7 +168,9 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
       await selectSession(page, title, failures);
       const tag = title.replace(/[^A-Za-z0-9_-]/g, "_").replace(/-/g, "_");
       const isSubagentRun = index === sessions.length - 1;
-      const repeat = 72;
+      const isReloadProbe = index === sessions.length - 2;
+      const repeat = isReloadProbe ? 80 : 72;
+      const delayMs = isReloadProbe ? 200 : 90;
       const promptText = isSubagentRun
         ? [
             `${title}: [hook-subagent-lifecycle tag=${tag} worker_repeat=${SUBAGENT_TOKEN_COUNT} worker_delay=${SUBAGENT_CHUNK_DELAY_MS} worker_line_every=${SUBAGENT_LINE_EVERY} background=true]`,
@@ -174,7 +178,7 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
             "主代理完成后只输出 fake LLM 的最终完成句。",
           ].join("\n")
         : [
-            `${title}: [slow-stream tag=${tag} repeat=${repeat} delay=90 chunk=8 hold=${STREAM_HOLD_MS}]`,
+            `${title}: [slow-stream tag=${tag} repeat=${repeat} delay=${delayMs} chunk=8 hold=${STREAM_HOLD_MS}]`,
             "只输出 fake LLM 返回的确定性慢速文本。",
           ].join("\n");
       const runResponse = waitForRunCreateResponse(page);
@@ -192,9 +196,11 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
         expectedPrefix: isSubagentRun
           ? `SUBAGENT_STREAM_${tag}_`
           : `SLOW_STREAM_${tag}_`,
+        isReloadProbe,
         isSubagent: isSubagentRun,
         runId,
         session,
+        slowTokenCount: isSubagentRun ? 0 : repeat,
         tag,
         title,
       });
@@ -288,7 +294,7 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
       "the 12-run fixture must retain a third provider wave in waiting state",
     ).toBe(true);
 
-    const reloadRun = startedRuns.find((run) => !run.isSubagent);
+    const reloadRun = startedRuns.find((run) => run.isReloadProbe);
     if (reloadRun === undefined) {
       throw new Error("Expected a normal stream for reload recovery.");
     }
@@ -312,6 +318,10 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
       reloadRun,
     );
     expect(beforeReloadIndex).toBeGreaterThanOrEqual(0);
+    expect(beforeReloadIndex).toBeLessThan(reloadRun.slowTokenCount - 1);
+    expect(await activeRunId(reloadRun.session.session_id)).toBe(
+      reloadRun.runId,
+    );
     const storedSelectionBeforeReload = await page.evaluate(() =>
       window.localStorage.getItem("agentTeams.selectedSessionId"),
     );
@@ -1022,7 +1032,7 @@ async function highestSlowStreamTokenIndex(
 ): Promise<number> {
   const text = await mainTimelineText(page);
   let highest = -1;
-  for (let index = 0; index < 72; index += 1) {
+  for (let index = 0; index < run.slowTokenCount; index += 1) {
     if (text.includes(slowStreamToken(run.tag, index))) {
       highest = index;
     }

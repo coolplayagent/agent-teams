@@ -59,9 +59,14 @@ describe("MarkdownMessage", () => {
     rerender(<MarkdownMessage streaming text="chunk 1 chunk 2" />);
     rerender(<MarkdownMessage streaming text="chunk 1 chunk 2 chunk 3" />);
 
-    expect(markdownContainer).toHaveTextContent("chunk 1");
+    expect(markdownContainer?.querySelector("p")).toHaveTextContent("chunk 1");
+    expect(container.querySelector(".at-message-streaming-tail")?.textContent).toBe(
+      " chunk 2 chunk 3",
+    );
+    expect(markdownContainer).toHaveTextContent("chunk 1 chunk 2 chunk 3");
     act(() => vi.advanceTimersByTime(streamingMarkdownInterval(21)));
     expect(markdownContainer).toHaveTextContent("chunk 1 chunk 2 chunk 3");
+    expect(container.querySelector(".at-message-streaming-tail")).toBeNull();
     expect(container.querySelector(".at-message-markdown")).toBe(markdownContainer);
   });
 

@@ -1,8 +1,9 @@
 import { ChevronDown, ChevronUp } from "lucide-react";
-import type { MouseEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, type MouseEvent } from "react";
 
 import type { SessionRound } from "../../api/contracts";
 import type { Translate, TranslationKey } from "../../i18n";
+import { useRuntimeStore } from "../../runtime/runtimeStore";
 import {
   formatRoundTokens,
   type RoundMicrocompactSummary,
@@ -10,6 +11,7 @@ import {
   roundStatusDisplayLabel,
   roundSummary,
 } from "./roundMetadata";
+import { recordTerminalDomSnapshot } from "./terminalDomSnapshot";
 import "./RoundMarker.css";
 
 interface RoundMarkerProps {
@@ -30,6 +32,65 @@ export function RoundMarker({
   t,
 }: RoundMarkerProps) {
   const summary = roundSummary(round, index);
+  const runtimeTerminalEventType = useRuntimeStore(
+    (state) => state.runtimeState.runs[round.run_id]?.terminalEventType ?? null,
+  );
+  const liveStatusLabel = terminalStatusLabel(runtimeTerminalEventType) ??
+    summary.statusLabel;
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const statusRef = useRef<HTMLSpanElement | null>(null);
+  const lastMarkedStatusRef = useRef("");
+  const applyTerminalStatus = (status: string, terminalEventType: string | null) => {
+    const normalizedStatus = status.trim().toLowerCase();
+    if (!roundMarkerStatusIsTerminal(normalizedStatus)) {
+      return;
+    }
+    const container = containerRef.current;
+    if (container !== null) {
+      container.dataset.roundStatus = normalizedStatus;
+      if (terminalEventType === null) {
+        delete container.dataset.runtimeTerminalEvent;
+      } else {
+        container.dataset.runtimeTerminalEvent = terminalEventType;
+      }
+      const markerRow = container.closest<HTMLElement>(".at-round-marker");
+      if (markerRow !== null) {
+        markerRow.dataset.runStatus = normalizedStatus;
+        if (terminalEventType !== null) {
+          markerRow.dataset.runtimeTerminalEvent = terminalEventType;
+        }
+      }
+    }
+    if (statusRef.current !== null) {
+      statusRef.current.textContent = roundStatusDisplayLabel(normalizedStatus, t);
+    }
+    if (lastMarkedStatusRef.current === normalizedStatus) {
+      return;
+    }
+    lastMarkedStatusRef.current = normalizedStatus;
+    try {
+      globalThis.performance?.mark(
+        `agent-teams:terminal:light-dom:${round.run_id}:${normalizedStatus}`,
+      );
+      globalThis.performance?.mark(
+        `agent-teams:terminal:dom:${round.run_id}:${normalizedStatus}`,
+      );
+      recordTerminalDomSnapshot(containerRef.current, round.run_id, "light");
+    } catch {
+      // Performance instrumentation must never affect marker rendering.
+    }
+  };
+  useEffect(() => useRuntimeStore.subscribe((state) => {
+    const terminalEventType = state.runtimeState.runs[round.run_id]?.terminalEventType ?? null;
+    const status = terminalStatusLabel(terminalEventType);
+    if (status !== null) {
+      applyTerminalStatus(status, terminalEventType);
+    }
+  }), [round.run_id, t]);
+  useLayoutEffect(() => {
+    const status = liveStatusLabel?.trim().toLowerCase() ?? "";
+    applyTerminalStatus(status, runtimeTerminalEventType);
+  }, [liveStatusLabel, round.run_id, runtimeTerminalEventType]);
   const metaItems = [
     summary.timeLabel,
     summary.inputTokens > 0
@@ -50,7 +111,6 @@ export function RoundMarker({
     summary.diagnosticLabel !== null
       ? `${t("timelineRoundDiagnostic")}: ${summary.diagnosticLabel}`
       : "",
-    roundStatusDisplayLabel(summary.statusLabel, t),
     summary.durationLabel !== null ? `${summary.durationLabel}` : "",
   ].filter(Boolean);
   const handlePromptSummaryClick = (event: MouseEvent<HTMLButtonElement>) => {
@@ -62,11 +122,17 @@ export function RoundMarker({
     : t("timelineRoundExpand");
 
   return (
-    <div className="at-round-marker-content">
+    <div
+      className="at-round-marker-content"
+      data-round-status={liveStatusLabel}
+      data-runtime-terminal-event={runtimeTerminalEventType ?? undefined}
+      ref={containerRef}
+    >
       <div className="at-round-marker-meta">
         {metaItems.map((item) => (
           <span key={item}>{item}</span>
         ))}
+        <span ref={statusRef}>{roundStatusDisplayLabel(liveStatusLabel, t)}</span>
       </div>
       {summary.promptCollapsible ? (
         <div
@@ -100,6 +166,32 @@ export function RoundMarker({
       )}
     </div>
   );
+}
+
+function roundMarkerStatusIsTerminal(status: string): boolean {
+  return [
+    "cancelled",
+    "canceled",
+    "completed",
+    "failed",
+    "paused",
+    "stopped",
+  ].includes(status);
+}
+
+function terminalStatusLabel(eventType: string | null): string | null {
+  switch (eventType) {
+    case "run_completed":
+      return "completed";
+    case "run_failed":
+      return "failed";
+    case "run_paused":
+      return "paused";
+    case "run_stopped":
+      return "stopped";
+    default:
+      return null;
+  }
 }
 
 function roundMicrocompactMeta(

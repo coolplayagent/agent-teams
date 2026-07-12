@@ -1,9 +1,10 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { rehypeCodeHighlight } from "./markdownHighlight";
 
 interface MarkdownMessageProps {
+  resizeTimelineRow?: (index: number, size: number) => void;
   streaming?: boolean;
   text: string;
 }
@@ -31,17 +32,42 @@ const markdownComponents: Components = {
 };
 
 export const MarkdownMessage = memo(function MarkdownMessage({
+  resizeTimelineRow,
   streaming = false,
   text,
 }: MarkdownMessageProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const bufferedText = useStreamingMarkdownBuffer(text, streaming);
   const markdownText = stripMarkdownFrontmatter(
     streaming ? bufferedText : text,
   );
+  const unbufferedTail = streaming && text.startsWith(bufferedText)
+    ? text.slice(bufferedText.length)
+    : "";
+  useLayoutEffect(() => {
+    if (resizeTimelineRow === undefined) {
+      return;
+    }
+    const timelineRow = containerRef.current?.closest<HTMLElement>(
+      ".at-timeline-row[data-index]",
+    ) ?? null;
+    const index = Number(timelineRow?.dataset.index);
+    if (timelineRow === null || !Number.isInteger(index) || index < 0) {
+      return;
+    }
+    const offsetHeight = timelineRow.offsetHeight;
+    const size = offsetHeight > 0
+      ? offsetHeight
+      : timelineRow.getBoundingClientRect().height;
+    if (Number.isFinite(size) && size > 0) {
+      resizeTimelineRow(index, size);
+    }
+  }, [markdownText, resizeTimelineRow]);
   return (
     <div
       className="at-message-markdown"
       data-stream-buffered={streaming ? "true" : undefined}
+      ref={containerRef}
     >
       <ReactMarkdown
         components={markdownComponents}
@@ -50,6 +76,14 @@ export const MarkdownMessage = memo(function MarkdownMessage({
       >
         {markdownText}
       </ReactMarkdown>
+      {unbufferedTail.length > 0 ? (
+        <span
+          className="at-message-streaming-tail"
+          style={{ whiteSpace: "pre-wrap" }}
+        >
+          {unbufferedTail}
+        </span>
+      ) : null}
     </div>
   );
 });

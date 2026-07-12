@@ -18,7 +18,6 @@ import type {
   SyntheticEvent,
   UIEvent,
 } from "react";
-import { useShallow } from "zustand/react/shallow";
 
 import {
   buildWorkspaceImagePreviewUrl,
@@ -66,6 +65,10 @@ import {
   immediateTimelineHydrationRowKeys,
   rememberHydratedTimelineRow,
 } from "./timelineRowHydration";
+import {
+  recordTerminalDomSnapshot,
+  stabilizeTerminalDomLayout,
+} from "./terminalDomSnapshot";
 import {
   TimelineRowHydrationPlaceholder,
   TimelineVirtualRow,
@@ -261,16 +264,23 @@ export function MessageTimeline({
       scopeKey: scrollScopeKey,
     };
   }
-  const runtimeRunList = useRuntimeStore(useShallow((state) =>
-    Object.values(state.runtimeState.runs).filter((runState) =>
-      runtimeRunStateMatchesScope(runState, {
+  const runtimeRowSelectionCacheRef = useRef<RuntimeRowSelectionCache>({
+    runs: [],
+    runsById: new Map(),
+  });
+  const runtimeRunList = useRuntimeStore(useCallback(
+    (state) => selectRuntimeRowsForTimeline(
+      state.runtimeState.runs,
+      {
         primaryRoleId,
         runtimeRunId,
         sessionId,
         subagentRoleId: subagentScopeRoleId,
         variant,
-      })
-    )
+      },
+      runtimeRowSelectionCacheRef.current,
+    ),
+    [primaryRoleId, runtimeRunId, sessionId, subagentScopeRoleId, variant],
   ));
   const optimisticPrompt = useOptimisticRunStore((state) =>
     sessionId === null ? null : state.prompts[sessionId] ?? null
@@ -278,6 +288,13 @@ export function MessageTimeline({
   const liveProcessedRunIdsRef = useRef(readLiveProcessedRunIds());
   const runtimeRuns = useMemo(
     () => Object.fromEntries(runtimeRunList.map((runState) => [runState.runId, runState])),
+    [runtimeRunList],
+  );
+  const runtimeTerminalEventsByRunId = useMemo(
+    () => new Map(runtimeRunList.map((runState) => [
+      runState.runId,
+      runState.terminalEventType,
+    ])),
     [runtimeRunList],
   );
   const visibleModelRequestPhase = latestModelRequestPhase(runtimeRunList);
@@ -307,20 +324,32 @@ export function MessageTimeline({
     () => roundsQuery.data ?? [],
     [roundsQuery.data],
   );
+  const runtimeRunsForRows = useMemo(() => Object.fromEntries(
+    Object.values(useRuntimeStore.getState().runtimeState.runs)
+      .filter((runState) => runtimeRunStateMatchesScope(runState, {
+        primaryRoleId,
+        runtimeRunId,
+        sessionId,
+        subagentRoleId: subagentScopeRoleId,
+        variant,
+      }))
+      .map((runState) => [runState.runId, runState]),
+  ), [
+    messagesQuery.dataUpdatedAt,
+    primaryRoleId,
+    roundsQuery.dataUpdatedAt,
+    runtimeRunId,
+    runtimeRuns,
+    sessionId,
+    subagentScopeRoleId,
+    variant,
+  ]);
   const roundChromeEnabled = variant === "session";
-  const displayRounds = useMemo(
+  const persistedRounds = useMemo(
     () =>
       roundChromeEnabled
         ? roundsWithSessionTerminalStatus(
-            roundsWithRuntimeRunState(
-              rounds,
-              runtimeRuns,
-              sessionId,
-              runtimeRunId,
-              primaryRoleId,
-              subagentScopeRoleId,
-              variant,
-            ),
+            rounds,
             latestTerminalRunId,
             latestTerminalRunStatus,
           )
@@ -328,11 +357,25 @@ export function MessageTimeline({
     [
       latestTerminalRunId,
       latestTerminalRunStatus,
-      primaryRoleId,
       roundChromeEnabled,
       rounds,
+    ],
+  );
+  const displayRounds = useMemo(
+    () => roundsWithRuntimeRunState(
+      persistedRounds,
+      runtimeRunsForRows,
+      sessionId,
       runtimeRunId,
-      runtimeRuns,
+      primaryRoleId,
+      subagentScopeRoleId,
+      variant,
+    ),
+    [
+      persistedRounds,
+      primaryRoleId,
+      runtimeRunId,
+      runtimeRunsForRows,
       sessionId,
       subagentScopeRoleId,
       variant,
@@ -352,23 +395,22 @@ export function MessageTimeline({
     () => visibleRoundRailRounds(displayRounds, expandedHistorySegmentIds),
     [displayRounds, expandedHistorySegmentIds],
   );
-  const terminalRuntimeSignature = useMemo(
-    () => terminalRuntimeDerivationSignature(runtimeRunList),
-    [runtimeRunList],
-  );
   const persistedRows = useMemo(
     () => timelineDerivedValue({
       cache: persistedRowsByScopeRef.current,
       derive: () => {
-        const messageRoundLookup = createMessageRoundLookup(displayRounds);
+        const messageRoundLookup = createMessageRoundLookup(persistedRounds);
         const scopedMessages = messagesVisibleInTimelineScope(
           messages,
-          displayRounds,
+          persistedRounds,
           runtimeRunId,
           fallbackRunId,
           primaryRoleId,
         );
-        const persistedMessages = mergeTimelineMessages(scopedMessages, displayRounds);
+        const persistedMessages = mergeTimelineMessages(
+          scopedMessages,
+          persistedRounds,
+        );
         return mergeToolRowsByCallId(
           dropRoundPromptDuplicateUserRows(
             persistedMessages
@@ -382,7 +424,7 @@ export function MessageTimeline({
                 ),
               )
               .filter(timelineRowHasRenderableContent),
-            displayRounds,
+            persistedRounds,
           ),
         );
       },
@@ -396,16 +438,10 @@ export function MessageTimeline({
         workspaceId,
       }),
       limit: TIMELINE_DERIVED_ROWS_CACHE_LIMIT,
-      signature: terminalRuntimeSignature === null
-        ? null
-        : [
-            terminalRuntimeSignature,
-            latestTerminalRunId ?? "",
-            latestTerminalRunStatus ?? "",
-          ].join("|"),
+      signature: "persisted",
     }),
     [
-      displayRounds,
+      persistedRounds,
       fallbackRunId,
       latestTerminalRunId,
       latestTerminalRunStatus,
@@ -414,22 +450,28 @@ export function MessageTimeline({
       rounds,
       runtimeRunId,
       sessionId,
-      terminalRuntimeSignature,
       variant,
       workspaceId,
     ],
   );
-  const roundStreamedPersistedRows = useMemo(
-    () => persistedRowsWithOpenRoundStreaming(persistedRows, displayRounds),
+  const promptDedupedPersistedRows = useMemo(
+    () => dropRoundPromptDuplicateUserRows(persistedRows, displayRounds),
     [displayRounds, persistedRows],
+  );
+  const roundStreamedPersistedRows = useMemo(
+    () => persistedRowsWithOpenRoundStreaming(
+      promptDedupedPersistedRows,
+      displayRounds,
+    ),
+    [displayRounds, promptDedupedPersistedRows],
   );
   const anchoredPersistedRows = useMemo(
     () =>
       persistedRowsWithRuntimeTextAnchors(
         roundStreamedPersistedRows,
-        runtimeRuns,
+        runtimeRunsForRows,
       ),
-    [roundStreamedPersistedRows, runtimeRuns],
+    [roundStreamedPersistedRows, runtimeRunsForRows],
   );
   const hydratedOutputTextByRunId = useMemo(
     () => timelineOutputTextByRunId(anchoredPersistedRows),
@@ -449,7 +491,7 @@ export function MessageTimeline({
   );
   const runtimeEntries = useMemo(
     () =>
-      Object.values(runtimeRuns)
+      Object.values(runtimeRunsForRows)
         .flatMap((runState) =>
           runtimeEntriesAfterHydration(
             runState,
@@ -471,7 +513,7 @@ export function MessageTimeline({
       hydratedToolStatesByRunId,
       primaryRoleId,
       runtimeRunId,
-      runtimeRuns,
+      runtimeRunsForRows,
       sessionId,
       subagentScopeRoleId,
       variant,
@@ -482,7 +524,7 @@ export function MessageTimeline({
       dropCoveredCursorOnlyRows(
         runtimeEntriesToRows(
           runtimeEntries,
-          runtimeRuns,
+          runtimeRunsForRows,
           variant,
           terminalRunIdOverrides,
           terminalScopeOverride,
@@ -490,7 +532,7 @@ export function MessageTimeline({
       ),
     [
       runtimeEntries,
-      runtimeRuns,
+      runtimeRunsForRows,
       terminalRunIdOverrides,
       terminalScopeOverride,
       variant,
@@ -501,9 +543,9 @@ export function MessageTimeline({
       dropPersistedRowsCoveredByTerminalRuntime(
         anchoredPersistedRows,
         runtimeRows,
-        runtimeRuns,
+        runtimeRunsForRows,
       ),
-    [anchoredPersistedRows, runtimeRows, runtimeRuns],
+    [anchoredPersistedRows, runtimeRows, runtimeRunsForRows],
   );
   const optimisticPromptConfirmed = visible &&
     optimisticPrompt?.runId !== undefined &&
@@ -564,7 +606,7 @@ export function MessageTimeline({
               roundChromeEnabled,
             ),
             displayRounds,
-            runtimeRuns,
+            runtimeRunsForRows,
             terminalRunIdOverrides,
             liveProcessedRunIdsRef.current,
           ),
@@ -574,7 +616,7 @@ export function MessageTimeline({
       displayRounds,
       expandedHistorySegmentIds,
       roundChromeEnabled,
-      runtimeRuns,
+      runtimeRunsForRows,
       terminalRunIdOverrides,
       timelineRowsBeforeGrouping,
     ],
@@ -838,6 +880,8 @@ export function MessageTimeline({
       handleDisclosureChange,
       handleDisclosureToggle,
       onSubagentOpen,
+      resizeTimelineRow,
+      runtimeTerminalEventsByRunId,
       sessionId ?? "",
       variant,
       contentReady,
@@ -852,6 +896,8 @@ export function MessageTimeline({
       handleToggleHistorySegment,
       lastAnswerKey,
       onSubagentOpen,
+      resizeTimelineRow,
+      runtimeTerminalEventsByRunId,
       sessionId,
       streamOpenForSession,
       t,
@@ -1203,6 +1249,12 @@ type TimelineRunIdSource = "fallback" | "round" | "run_id" | "trace_id";
 interface TimelineProcessedGroup {
   continuity: boolean;
   rows: TimelineRow[];
+}
+
+interface RuntimeRowSelectionCache {
+  runs: RuntimeRunState[];
+  runsById: Map<string, RuntimeRunState>;
+  scopeKey?: string;
 }
 
 interface TimelineHistoryDivider {
@@ -1704,6 +1756,8 @@ function timelineRowElement(
   onDisclosureChange: (disclosureId: string, expanded: boolean) => void,
   onDisclosureToggle: (event: SyntheticEvent<HTMLDetailsElement>) => void,
   onSubagentOpen: ((subagent: TimelineSubagentReference) => void) | undefined,
+  resizeTimelineRow: (index: number, size: number) => void,
+  runtimeTerminalEventsByRunId: ReadonlyMap<string, RunEventType | null>,
   sessionId: string,
   variant: "session" | "subagent-panel",
   contentReady: boolean,
@@ -1723,6 +1777,7 @@ function timelineRowElement(
         key={row.key}
         measureElement={measureElement}
         onSubagentOpen={onSubagentOpen}
+        resizeTimelineRow={resizeTimelineRow}
         onDisclosureChange={(changedDisclosureId, expanded) => {
           if (changedDisclosureId === disclosureId && row.processedGroup?.continuity) {
             onDisclosureChange(`collapsed:${changedDisclosureId}`, !expanded);
@@ -1764,6 +1819,16 @@ function timelineRowElement(
         data-index={index}
         data-row-key={row.key}
         data-run-id={row.runId ?? undefined}
+        data-run-status={
+          row.roundMarker.round.run_status ??
+          row.roundMarker.round.run_phase ??
+          undefined
+        }
+        data-runtime-terminal-event={
+          row.runId === null
+            ? undefined
+            : runtimeTerminalEventsByRunId.get(row.runId) ?? undefined
+        }
         key={row.key}
         ref={measureElement}
         style={style}
@@ -1825,6 +1890,7 @@ function timelineRowElement(
       ) : null}
       {contentReady ? <MessageRowContent
         expandedDisclosureIds={expandedDisclosureIds}
+        resizeTimelineRow={resizeTimelineRow}
         onDisclosureChange={onDisclosureChange}
         onDisclosureToggle={onDisclosureToggle}
         onSubagentOpen={onSubagentOpen}
@@ -1861,6 +1927,7 @@ function ProcessedGroupRow({
   onSubagentOpen,
   onDisclosureChange,
   onDisclosureToggle,
+  resizeTimelineRow,
   rowKey,
   runId,
   sessionId,
@@ -1876,6 +1943,7 @@ function ProcessedGroupRow({
   onSubagentOpen?: (subagent: TimelineSubagentReference) => void;
   onDisclosureChange: (disclosureId: string, expanded: boolean) => void;
   onDisclosureToggle: (event: SyntheticEvent<HTMLDetailsElement>) => void;
+  resizeTimelineRow: (index: number, size: number) => void;
   rowKey: string;
   runId: string | null;
   sessionId: string;
@@ -1934,6 +2002,7 @@ function ProcessedGroupRow({
             >
               <MessageRowContent
                 expandedDisclosureIds={expandedDisclosureIds}
+                resizeTimelineRow={resizeTimelineRow}
                 onDisclosureChange={onDisclosureChange}
                 onDisclosureToggle={onDisclosureToggle}
                 onSubagentOpen={onSubagentOpen}
@@ -3525,6 +3594,8 @@ function roundMarkerCanStandAlone(round: SessionRound | undefined): boolean {
   const status = round?.run_status?.trim().toLowerCase() ?? "";
   const phase = round?.run_phase?.trim().toLowerCase() ?? "";
   return (
+    isTerminalRoundStatus(status) ||
+    isTerminalRoundStatus(phase) ||
     status === "running" ||
     status === "queued" ||
     status === "pending" ||
@@ -5076,7 +5147,11 @@ function runtimeRoundFromRunState(
   const hasScopedEntries = runState.entries.some((entry) =>
     runtimeEntryMatchesScope(entry, runState, scope),
   );
-  if (promptText.length === 0 || (!hasScopedEntries && runState.entries.length > 0)) {
+  const hasTerminalEvent = runtimeRoundStatusLabel(runState) !== null;
+  if (
+    promptText.length === 0 ||
+    (!hasScopedEntries && runState.entries.length > 0 && !hasTerminalEvent)
+  ) {
     return null;
   }
   const createdAt = runtimeRunCreatedAt(runState);
@@ -5813,6 +5888,64 @@ interface RuntimeTimelineScope {
   sessionId: string | null;
   subagentRoleId: string | null;
   variant: "session" | "subagent-panel";
+}
+
+function selectRuntimeRowsForTimeline(
+  runtimeRuns: Record<string, RuntimeRunState>,
+  scope: RuntimeTimelineScope,
+  cache: RuntimeRowSelectionCache,
+): RuntimeRunState[] {
+  const scopeKey = [
+    scope.sessionId ?? "",
+    scope.runtimeRunId ?? "",
+    scope.primaryRoleId ?? "",
+    scope.subagentRoleId ?? "",
+    scope.variant,
+  ].join("|");
+  if (cache.scopeKey !== scopeKey) {
+    cache.scopeKey = scopeKey;
+    cache.runs = [];
+    cache.runsById = new Map();
+  }
+  const nextRuns = Object.values(runtimeRuns)
+    .filter((runState) => runtimeRunStateMatchesScope(runState, scope))
+    .map((runState) => stableRuntimeRowSnapshot(
+      runState,
+      cache.runsById.get(runState.runId),
+    ));
+  const unchanged = nextRuns.length === cache.runs.length && nextRuns.every(
+    (runState, index) => cache.runs[index] === runState,
+  );
+  if (unchanged) {
+    return cache.runs;
+  }
+  cache.runs = nextRuns;
+  cache.runsById = new Map(nextRuns.map((runState) => [runState.runId, runState]));
+  return nextRuns;
+}
+
+function stableRuntimeRowSnapshot(
+  runState: RuntimeRunState,
+  previous: RuntimeRunState | undefined,
+): RuntimeRunState {
+  if (
+    previous === undefined ||
+    runState.hadVisibleTextStream !== true ||
+    runState.status !== "closed" ||
+    runState.terminalEventType !== "run_completed" ||
+    runState.entries.length !== previous.entries.length + 1
+  ) {
+    return runState;
+  }
+  const terminalEntry = runState.entries[runState.entries.length - 1];
+  if (
+    terminalEntry === undefined ||
+    terminalRoundStatusLabel(terminalEntry.kind) === null ||
+    !previous.entries.every((entry, index) => runState.entries[index] === entry)
+  ) {
+    return runState;
+  }
+  return previous;
 }
 
 function runtimeEntryMatchesScope(
@@ -8036,6 +8169,7 @@ function outputDeltaMediaPart(
 
 function MessageRowContent({
   expandedDisclosureIds,
+  resizeTimelineRow,
   onDisclosureChange,
   onDisclosureToggle,
   onSubagentOpen,
@@ -8045,6 +8179,7 @@ function MessageRowContent({
   t,
 }: {
   expandedDisclosureIds: ReadonlySet<string>;
+  resizeTimelineRow?: (index: number, size: number) => void;
   onDisclosureChange: (disclosureId: string, expanded: boolean) => void;
   onDisclosureToggle: (event: SyntheticEvent<HTMLDetailsElement>) => void;
   onSubagentOpen?: (subagent: TimelineSubagentReference) => void;
@@ -8066,7 +8201,9 @@ function MessageRowContent({
           return (
             <MessageText
               key={partKey}
+              resizeTimelineRow={resizeTimelineRow}
               part={part}
+              runId={row.runId}
               streamIdentity={streamIdentityForTextPart(row, partKey)}
             />
           );
@@ -8098,6 +8235,7 @@ function MessageRowContent({
               disclosureId={disclosureId}
               expanded={expandedDisclosureIds.has(disclosureId)}
               key={partKey}
+              resizeTimelineRow={resizeTimelineRow}
               onDisclosureChange={onDisclosureChange}
               onDisclosureToggle={onDisclosureToggle}
               thinking={part}
@@ -8185,16 +8323,61 @@ function streamKeyWithoutTransientSuffix(rowKey: string): string {
 }
 
 function MessageText({
+  resizeTimelineRow,
   part,
+  runId,
   streamIdentity,
 }: {
+  resizeTimelineRow?: (index: number, size: number) => void;
   part: TimelineTextPart;
+  runId: string | null;
   streamIdentity: string;
 }) {
   void streamIdentity;
+  const terminalEntry = useRuntimeStore((state) => {
+    if (runId === null) {
+      return null;
+    }
+    const runState = state.runtimeState.runs[runId];
+    if (runState?.terminalEventType !== "run_completed") {
+      return null;
+    }
+    return runState.entries.at(-1) ?? null;
+  });
   const visuallyStreaming = part.streaming;
-  const cursorVisible = part.streaming;
+  const cursorVisible = part.streaming && terminalEntry === null;
   const text = part.text;
+  const completedOutputText = terminalEntry === null
+    ? ""
+    : runtimeCompletedOutputText(terminalEntry);
+  const completedOutputTail = completedOutputText.startsWith(text)
+    ? completedOutputText.slice(text.length)
+    : "";
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const wasStreamingRef = useRef(part.streaming);
+  useLayoutEffect(() => {
+    const wasStreaming = wasStreamingRef.current;
+    wasStreamingRef.current = part.streaming;
+    if (!wasStreaming || part.streaming || runId === null) {
+      return;
+    }
+    const terminalEventType = useRuntimeStore
+      .getState()
+      .runtimeState.runs[runId]?.terminalEventType ?? null;
+    const status = terminalRoundStatusLabel(terminalEventType);
+    if (status === null) {
+      return;
+    }
+    try {
+      globalThis.performance?.mark(
+        `agent-teams:terminal:settled-dom:${runId}:${status}`,
+      );
+      stabilizeTerminalDomLayout(containerRef.current, runId);
+      recordTerminalDomSnapshot(containerRef.current, runId, "settled");
+    } catch {
+      // Performance instrumentation must never affect message rendering.
+    }
+  }, [part.streaming, runId]);
   return (
     <div
       className={[
@@ -8202,8 +8385,21 @@ function MessageText({
         visuallyStreaming ? "at-message-streaming-text" : "",
       ].filter(Boolean).join(" ")}
       data-streaming={visuallyStreaming ? "true" : undefined}
+      ref={containerRef}
     >
-      <MarkdownMessage streaming={part.streaming} text={text} />
+      <MarkdownMessage
+        resizeTimelineRow={resizeTimelineRow}
+        streaming={part.streaming}
+        text={text}
+      />
+      {completedOutputTail.length > 0 ? (
+        <span
+          className="at-message-terminal-tail"
+          style={{ whiteSpace: "pre-wrap" }}
+        >
+          {completedOutputTail}
+        </span>
+      ) : null}
       {cursorVisible ? <StreamingCursor /> : null}
     </div>
   );
@@ -8261,6 +8457,7 @@ function MessageRowActions({
 function MessageThinkingBlock({
   disclosureId,
   expanded,
+  resizeTimelineRow,
   onDisclosureChange,
   onDisclosureToggle,
   thinking,
@@ -8268,6 +8465,7 @@ function MessageThinkingBlock({
 }: {
   disclosureId: string;
   expanded: boolean;
+  resizeTimelineRow?: (index: number, size: number) => void;
   onDisclosureChange: (disclosureId: string, expanded: boolean) => void;
   onDisclosureToggle: (event: SyntheticEvent<HTMLDetailsElement>) => void;
   thinking: TimelineThinkingPart;
@@ -8296,7 +8494,11 @@ function MessageThinkingBlock({
       </summary>
       {hasText ? (
         <div className="at-message-thinking-body">
-          <MarkdownMessage streaming={thinking.streaming} text={thinking.text} />
+          <MarkdownMessage
+            resizeTimelineRow={resizeTimelineRow}
+            streaming={thinking.streaming}
+            text={thinking.text}
+          />
         </div>
       ) : null}
     </TimelineDisclosure>

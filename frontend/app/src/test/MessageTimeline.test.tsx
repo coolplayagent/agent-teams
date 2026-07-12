@@ -14,6 +14,11 @@ import { useState } from "react";
 
 import { listSessionMessages, listSessionRounds } from "../api/client";
 import { MessageTimeline } from "../features/timeline/MessageTimeline";
+import {
+  recordTerminalDomSnapshot,
+  readTerminalDomSnapshots,
+  resetTerminalDomSnapshots,
+} from "../features/timeline/terminalDomSnapshot";
 import type { RelayRunEvent, StreamStatus } from "../runtime/events";
 import {
   initialRuntimeState,
@@ -37,6 +42,7 @@ const listSessionMessagesMock = vi.mocked(listSessionMessages);
 const listSessionRoundsMock = vi.mocked(listSessionRounds);
 
 beforeEach(() => {
+  resetTerminalDomSnapshots();
   window.sessionStorage.removeItem("agentTeams.liveProcessedRuns");
   listSessionRoundsMock.mockResolvedValue({
     has_more: false,
@@ -58,6 +64,37 @@ afterEach(() => {
 });
 
 describe("MessageTimeline", () => {
+  it("records comparable light and settled terminal DOM snapshots", () => {
+    const { container } = render(
+      <div className="at-timeline">
+        <article className="at-message" data-run-id="run-snapshot">
+          <div className="at-message-text">stable final text</div>
+        </article>
+        <div data-testid="snapshot-anchor" />
+      </div>,
+    );
+    const timeline = container.querySelector<HTMLElement>(".at-timeline");
+    const anchor = container.querySelector<HTMLElement>("[data-testid='snapshot-anchor']");
+    if (timeline === null || anchor === null) {
+      throw new Error("Terminal snapshot fixture did not render.");
+    }
+    Object.defineProperty(timeline, "scrollHeight", { configurable: true, value: 900 });
+    timeline.scrollTop = 240;
+
+    recordTerminalDomSnapshot(anchor, "run-snapshot", "light");
+    recordTerminalDomSnapshot(anchor, "run-snapshot", "settled");
+
+    const snapshots = readTerminalDomSnapshots();
+    expect(snapshots.map((snapshot) => snapshot.phase)).toEqual(["light", "settled"]);
+    expect(snapshots[1]).toMatchObject({
+      domIdentity: snapshots[0]?.domIdentity,
+      scrollHeight: 900,
+      scrollTop: 240,
+      textHash: snapshots[0]?.textHash,
+      textLength: snapshots[0]?.textLength,
+    });
+  });
+
   it("does not hydrate or poll a retained hidden timeline", async () => {
     renderTimeline("session-hidden", { visible: false });
 
@@ -123,6 +160,87 @@ describe("MessageTimeline", () => {
     });
     expect(document.querySelector(`[data-row-key="${promptId}"]`)).toBeNull();
     expect(screen.getAllByText("keep this prompt visible").length).toBeGreaterThan(0);
+  });
+
+  it("switches a confirmed optimistic marker from terminal SSE before hydration resolves", async () => {
+    listSessionMessagesMock.mockReturnValue(new Promise(() => {}));
+    listSessionRoundsMock.mockReturnValue(new Promise(() => {}));
+    let promptId = "";
+    act(() => {
+      promptId = useOptimisticRunStore
+        .getState()
+        .beginPrompt("session-1", "finish from the event stream");
+      useOptimisticRunStore
+        .getState()
+        .confirmPrompt("session-1", promptId, "run-terminal-sse");
+      const openRuntimeState = reduceRunEvent({
+          activeRunIds: ["run-terminal-sse"],
+          runs: {
+            "run-terminal-sse": {
+              entries: [],
+              lastEventId: 0,
+              promptText: "finish from the event stream",
+              runId: "run-terminal-sse",
+              seenEventKeys: [],
+              sessionId: "session-1",
+              status: "open",
+              terminalEventType: null,
+            },
+          },
+        }, {
+          event_id: 1,
+          event_type: "text_delta",
+          occurred_at: "2026-07-12T15:44:59Z",
+          payload_json: JSON.stringify({ text: "visible prefix" }),
+          run_id: "run-terminal-sse",
+          session_id: "session-1",
+          trace_id: "run-terminal-sse",
+        });
+      useRuntimeStore.setState({
+        runtimeState: openRuntimeState,
+      });
+    });
+    const { container } = renderTimeline();
+    expect(await screen.findAllByText("finish from the event stream"))
+      .not.toHaveLength(0);
+    expect(await screen.findByText("visible prefix")).toBeVisible();
+    expect(container.querySelector(".at-round-marker")).toHaveTextContent(/running/i);
+    act(() => {
+      const runtimeStateWithTail = reduceRunEvent(
+        useRuntimeStore.getState().runtimeState,
+        {
+          event_id: 2,
+          event_type: "text_delta",
+          occurred_at: "2026-07-12T15:45:00Z",
+          payload_json: JSON.stringify({ text: " final tail" }),
+          run_id: "run-terminal-sse",
+          session_id: "session-1",
+          trace_id: "run-terminal-sse",
+        },
+      );
+      useRuntimeStore.getState().setRuntimeState(reduceRunEvent(runtimeStateWithTail, {
+        event_id: 3,
+        event_type: "run_completed",
+        occurred_at: "2026-07-12T15:45:00Z",
+        payload_json: JSON.stringify({ status: "completed" }),
+        run_id: "run-terminal-sse",
+        session_id: "session-1",
+        trace_id: "run-terminal-sse",
+      }));
+    });
+
+    expect(useRuntimeStore.getState().runtimeState.runs["run-terminal-sse"])
+      .toMatchObject({ status: "closed", terminalEventType: "run_completed" });
+    const marker = container.querySelector(".at-round-marker");
+    expect(marker).toHaveTextContent(/completed/i);
+    expect(marker).not.toHaveTextContent(/running/i);
+    expect(marker).toHaveAttribute("data-run-status", "completed");
+    expect(marker).toHaveAttribute(
+      "data-runtime-terminal-event",
+      "run_completed",
+    );
+    expect(container).toHaveTextContent("visible prefix final tail");
+    expect(container.querySelector(".streaming-cursor")).toBeNull();
   });
 
   it("does not clear a confirmed prompt underneath a hidden switching timeline", async () => {
@@ -975,6 +1093,8 @@ describe("MessageTimeline", () => {
     );
     expect(groupBefore).not.toBeNull();
     expect(groupBefore?.querySelector("details.at-processed-group")).toHaveAttribute("open");
+    const thinkingBefore = groupBefore?.querySelector("details.at-message-thinking") ?? null;
+    expect(thinkingBefore).not.toBeNull();
     const answerBefore = container.querySelector<HTMLElement>(
       `[data-row-key="runtime-text:${runId}:MainAgent:0"]`,
     );
@@ -1055,6 +1175,8 @@ describe("MessageTimeline", () => {
       expect(container.querySelector(
         `[data-row-key="runtime-text:${runId}:MainAgent:0"]`,
       )).toBe(answerBefore);
+      expect(groupBefore?.querySelector("details.at-message-thinking"))
+        .toBe(thinkingBefore);
       expect(screen.getAllByText("Stable answer")).toHaveLength(1);
     });
     expect(groupBefore).not.toHaveTextContent("Stable answer");
@@ -1183,6 +1305,79 @@ describe("MessageTimeline", () => {
       expect(screen.getByText("Final answer").closest("article")).toBe(finalAnswer);
     });
     expect(screen.getAllByText("Final answer")).toHaveLength(1);
+  });
+
+  it("keeps multi-run answer rows equivalent when the latest terminal run hydrates", async () => {
+    const events = [
+      relayRunEvent({
+        event_id: 1,
+        event_type: "text_delta",
+        payload_json: JSON.stringify({ text: "FIRST_RUN_FINAL" }),
+        run_id: "run-first-hydrated",
+        trace_id: "run-first-hydrated",
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "run_completed",
+        payload_json: JSON.stringify({ output: "FIRST_RUN_FINAL" }),
+        run_id: "run-first-hydrated",
+        trace_id: "run-first-hydrated",
+      }),
+      relayRunEvent({
+        event_id: 1,
+        event_type: "text_delta",
+        payload_json: JSON.stringify({ text: "SECOND_RUN_FINAL" }),
+        run_id: "run-second-live",
+        trace_id: "run-second-live",
+      }),
+    ];
+    setRuntimeStateFromEvents(events);
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "FIRST_RUN_FINAL",
+        message_id: "message-first-hydrated",
+        role_id: "MainAgent",
+        run_id: "run-first-hydrated",
+      },
+    ]);
+    const { container, queryClient } = renderTimeline();
+    expect(await screen.findByText("FIRST_RUN_FINAL")).toBeVisible();
+    expect(await screen.findByText("SECOND_RUN_FINAL")).toBeVisible();
+    const before = answerRowSequence(container, ["FIRST_RUN_FINAL", "SECOND_RUN_FINAL"]);
+
+    act(() => setRuntimeStateFromEvents([
+      ...events,
+      relayRunEvent({
+        event_id: 2,
+        event_type: "run_completed",
+        payload_json: JSON.stringify({ output: "SECOND_RUN_FINAL" }),
+        run_id: "run-second-live",
+        trace_id: "run-second-live",
+      }),
+    ]));
+    act(() => {
+      queryClient.setQueryData(["sessions", "session-1", "messages"], [
+        {
+          content: "FIRST_RUN_FINAL",
+          message_id: "message-first-hydrated",
+          role_id: "MainAgent",
+          run_id: "run-first-hydrated",
+        },
+        {
+          content: "SECOND_RUN_FINAL",
+          message_id: "message-second-hydrated",
+          role_id: "MainAgent",
+          run_id: "run-second-live",
+        },
+      ]);
+    });
+
+    await waitFor(() => {
+      expect(answerRowSequence(
+        container,
+        ["FIRST_RUN_FINAL", "SECOND_RUN_FINAL"],
+      )).toEqual(before);
+    });
   });
 
   it("does not type the terminal hydrated answer a second time after stream close", async () => {
@@ -10391,6 +10586,63 @@ describe("MessageTimeline", () => {
     expect(thinkingBlocks[1]).toHaveAttribute("open");
   });
 
+  it("lets users collapse live thinking disclosures independently", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "thinking_started",
+        payload_json: JSON.stringify({ part_index: 0 }),
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "thinking_delta",
+        payload_json: JSON.stringify({ part_index: 0, text: "first live thought" }),
+      }),
+      relayRunEvent({
+        event_id: 3,
+        event_type: "thinking_finished",
+        payload_json: JSON.stringify({ part_index: 0 }),
+      }),
+      relayRunEvent({
+        event_id: 4,
+        event_type: "thinking_started",
+        payload_json: JSON.stringify({ part_index: 1 }),
+      }),
+      relayRunEvent({
+        event_id: 5,
+        event_type: "thinking_delta",
+        payload_json: JSON.stringify({ part_index: 1, text: "second live thought" }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("second live thought")).toBeVisible();
+    const thinkingBlocks = container.querySelectorAll<HTMLDetailsElement>(
+      "details.at-message-thinking",
+    );
+    expect(thinkingBlocks).toHaveLength(2);
+    expect(thinkingBlocks[0]).not.toHaveAttribute("open");
+    expect(thinkingBlocks[1]).toHaveAttribute("open");
+
+    const liveSummary = thinkingBlocks[1]?.querySelector("summary");
+    if (liveSummary === null || liveSummary === undefined) {
+      throw new Error("Expected the live thinking disclosure summary.");
+    }
+    fireEvent.click(liveSummary);
+
+    expect(thinkingBlocks[0]).not.toHaveAttribute("open");
+    expect(thinkingBlocks[1]).not.toHaveAttribute("open");
+    expect(screen.getByText("second live thought")).not.toBeVisible();
+
+    fireEvent.click(liveSummary);
+
+    expect(thinkingBlocks[0]).not.toHaveAttribute("open");
+    expect(thinkingBlocks[1]).toHaveAttribute("open");
+    expect(screen.getByText("second live thought")).toBeVisible();
+  });
+
   it("does not duplicate replayed runtime thinking and tool parts", async () => {
     const replayedEvents = [
       relayRunEvent({
@@ -12573,6 +12825,21 @@ async function waitForToolPreviews(
   expected: string[],
 ): Promise<void> {
   await waitFor(() => expect(toolPreviewTexts(container)).toEqual(expected));
+}
+
+function answerRowSequence(
+  container: HTMLElement,
+  expectedTexts: string[],
+): Array<{ key: string; text: string }> {
+  const expected = new Set(expectedTexts);
+  return Array.from(container.querySelectorAll<HTMLElement>(
+    "article.at-message[data-row-key]",
+  )).flatMap((row) => {
+    const text = row.querySelector<HTMLElement>(".at-message-text")?.textContent ?? "";
+    return expected.has(text)
+      ? [{ key: row.dataset.rowKey ?? "", text }]
+      : [];
+  });
 }
 
 function relayRunEvent(overrides: Partial<RelayRunEvent>): RelayRunEvent {

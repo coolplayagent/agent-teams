@@ -64,6 +64,7 @@ import type {
   WorkspaceSearchResponse,
 } from "../../api/contracts";
 import type { RunStreamController } from "../../runtime/useRunStreamController";
+import { useOptimisticRunStore } from "../../runtime/optimisticRunStore";
 import { useTranslations, type Translate } from "../../i18n";
 import {
   buildPromptInputParts,
@@ -573,6 +574,17 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
   }, [promptMentionOptions.length, quickMenuOpen]);
 
   const createRunMutation = useMutation({
+    onMutate: () => {
+      if (sessionId === null) {
+        return null;
+      }
+      const promptText =
+        effectivePromptText || summarizePromptAttachments(promptAttachments);
+      const promptId = useOptimisticRunStore
+        .getState()
+        .beginPrompt(sessionId, promptText);
+      return { promptId, sessionId };
+    },
     mutationFn: async () => {
       if (sessionId === null) {
         throw new Error(t("composerSelectSessionBeforeSending"));
@@ -611,7 +623,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       const result = await createRun(request);
       return { result, titlePreview };
     },
-    onSuccess: ({ result, titlePreview }) => {
+    onSuccess: ({ result, titlePreview }, _variables, optimisticPrompt) => {
       setDraft("");
       setPromptAttachments([]);
       setSelectedPromptSkill(null);
@@ -642,12 +654,26 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
         sessionId: result.session_id,
         ...(result.target_role_id?.trim() ? { targetRoleId: result.target_role_id } : {}),
       });
+      if (optimisticPrompt != null) {
+        useOptimisticRunStore
+          .getState()
+          .confirmPrompt(
+            optimisticPrompt.sessionId,
+            optimisticPrompt.promptId,
+            result.run_id,
+          );
+      }
       void queryClient.invalidateQueries({
         queryKey: ["sessions", result.session_id, "messages"],
       });
       void queryClient.invalidateQueries({ queryKey: sessionsSidebarQueryKey() });
     },
-    onError: (error) => {
+    onError: (error, _variables, optimisticPrompt) => {
+      if (optimisticPrompt != null) {
+        useOptimisticRunStore
+          .getState()
+          .finishPrompt(optimisticPrompt.sessionId, optimisticPrompt.promptId);
+      }
       void message.error(error instanceof Error ? error.message : t("composerRunCreationFailed"));
     },
   });

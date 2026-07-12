@@ -37,6 +37,10 @@ import {
 } from "../../api/contracts";
 import type { RunEventType } from "../../runtime/events";
 import type { RuntimeRunState, TimelineEntry } from "../../runtime/reducers";
+import {
+  useOptimisticRunStore,
+  type OptimisticRunPrompt,
+} from "../../runtime/optimisticRunStore";
 import { useRuntimeStore } from "../../runtime/runtimeStore";
 import { useTranslations, type Translate } from "../../i18n";
 import { MarkdownMessage } from "./MarkdownMessage";
@@ -267,6 +271,9 @@ export function MessageTimeline({
       })
     )
   ));
+  const optimisticPrompt = useOptimisticRunStore((state) =>
+    sessionId === null ? null : state.prompts[sessionId] ?? null
+  );
   const runtimeRuns = useMemo(
     () => Object.fromEntries(runtimeRunList.map((runState) => [runState.runId, runState])),
     [runtimeRunList],
@@ -495,9 +502,23 @@ export function MessageTimeline({
       ),
     [anchoredPersistedRows, runtimeRows, runtimeRuns],
   );
+  const optimisticPromptConfirmed = optimisticPrompt?.runId !== undefined &&
+    displayRounds.some((round) =>
+      round.run_id === optimisticPrompt.runId &&
+      normalizedTimelineText(roundPromptText(round)) ===
+        normalizedTimelineText(optimisticPrompt.text)
+    );
+  useLayoutEffect(() => {
+    if (!optimisticPromptConfirmed || optimisticPrompt === null) {
+      return;
+    }
+    useOptimisticRunStore
+      .getState()
+      .finishPrompt(optimisticPrompt.sessionId, optimisticPrompt.id);
+  }, [optimisticPrompt, optimisticPromptConfirmed]);
   const timelineRowsBeforeGrouping = useMemo(
-    () =>
-      dropExactTextRows(
+    () => {
+      const mergedRows = dropExactTextRows(
         dropStrictPrefixAnswerRows(
           mergeTerminalRuntimeTextRowsIntoPersistedAnswers(
             dropDuplicateFinalPartsFromWorkRows(
@@ -514,8 +535,18 @@ export function MessageTimeline({
           ),
         ),
         suppressExactText,
-      ),
-    [displayPersistedRows, runtimeRows, suppressExactText],
+      );
+      return optimisticPrompt === null || optimisticPromptConfirmed
+        ? mergedRows
+        : [...mergedRows, optimisticPromptRow(optimisticPrompt)];
+    },
+    [
+      displayPersistedRows,
+      optimisticPrompt,
+      optimisticPromptConfirmed,
+      runtimeRows,
+      suppressExactText,
+    ],
   );
   const rows = useMemo(
     () =>
@@ -1067,7 +1098,14 @@ export function MessageTimeline({
       </div>
       <ModelRequestStatus
         openingLabel={t("timelineOpeningModelStream")}
-        phase={visibleModelRequestPhase}
+        phase={visibleModelRequestPhase ?? (
+          (optimisticPrompt !== null && !optimisticPromptConfirmed) ||
+            (runtimeRows.length === 0 && runtimeRunList.some(
+              (runState) => runState.status !== "closed" && runState.status !== "failed",
+            ))
+            ? "opening_stream"
+            : null
+        )}
         waitingLabel={t("timelineWaitingForModelSlot")}
       />
       {newContentAvailable ? (
@@ -1220,6 +1258,25 @@ interface TimelineThinkingPart {
 interface FallbackVirtualItem {
   index: number;
   start: number;
+}
+
+function optimisticPromptRow(prompt: OptimisticRunPrompt): TimelineRow {
+  const part: TimelineTextPart = {
+    kind: "text",
+    streaming: false,
+    text: prompt.text,
+  };
+  return {
+    copyable: false,
+    key: prompt.id,
+    kind: "message",
+    parts: [part],
+    role: "user",
+    roundMarker: null,
+    runId: null,
+    source: "runtime",
+    text: prompt.text,
+  };
 }
 
 interface RuntimeThinkingAccumulator {

@@ -22,6 +22,7 @@ import {
   type TimelineEntry,
 } from "../runtime/reducers";
 import { useRuntimeStore } from "../runtime/runtimeStore";
+import { useOptimisticRunStore } from "../runtime/optimisticRunStore";
 
 vi.mock("../api/client", () => ({
   buildWorkspaceImagePreviewUrl: vi.fn((workspaceId: string, path: string) => {
@@ -47,6 +48,7 @@ afterEach(() => {
   cleanup();
   delete document.documentElement.dataset.diagnosticsVisible;
   useRuntimeStore.getState().resetRuntimeState();
+  useOptimisticRunStore.setState({ prompts: {} });
   vi.useRealTimers();
   vi.clearAllMocks();
   vi.unstubAllEnvs();
@@ -54,6 +56,60 @@ afterEach(() => {
 });
 
 describe("MessageTimeline", () => {
+  it("shows local prompt and connection feedback before run creation resolves", async () => {
+    listSessionMessagesMock.mockResolvedValue([]);
+    renderTimeline();
+
+    act(() => {
+      useOptimisticRunStore.getState().beginPrompt("session-1", "inspect the stream");
+    });
+
+    expect(await screen.findByText("inspect the stream")).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent("Connecting to the model");
+  });
+
+  it("reconciles a confirmed local prompt without a blank or duplicate frame", async () => {
+    listSessionMessagesMock.mockResolvedValue([]);
+    renderTimeline();
+    let promptId = "";
+    act(() => {
+      promptId = useOptimisticRunStore
+        .getState()
+        .beginPrompt("session-1", "keep this prompt visible");
+    });
+    expect(await screen.findAllByText("keep this prompt visible")).toHaveLength(1);
+    expect(document.querySelector(`[data-row-key="${promptId}"]`)).not.toBeNull();
+
+    act(() => {
+      useRuntimeStore.setState({
+        runtimeState: {
+          activeRunIds: ["run-optimistic"],
+          runs: {
+            "run-optimistic": {
+              entries: [],
+              lastEventId: 0,
+              promptText: "keep this prompt visible",
+              runId: "run-optimistic",
+              seenEventKeys: [],
+              sessionId: "session-1",
+              status: "connecting",
+              terminalEventType: null,
+            },
+          },
+        },
+      });
+      useOptimisticRunStore
+        .getState()
+        .confirmPrompt("session-1", promptId, "run-optimistic");
+    });
+
+    await waitFor(() => {
+      expect(useOptimisticRunStore.getState().prompts["session-1"]).toBeUndefined();
+    });
+    expect(document.querySelector(`[data-row-key="${promptId}"]`)).toBeNull();
+    expect(screen.getAllByText("keep this prompt visible").length).toBeGreaterThan(0);
+  });
+
   it("keeps the no-session state inside the timeline frame slot", () => {
     const { container } = renderTimeline(null);
 

@@ -39,6 +39,17 @@ interface RunCreateResponse {
   session_id?: string | null;
 }
 
+interface StreamVisibilityProbe {
+  eventSourceCount: number;
+  eventSourceUrls: string[];
+  connectingVisibleAt: number | null;
+  localPromptVisibleAt: number | null;
+  promptText: string;
+  sendAt: number | null;
+  firstSubagentEventAt: number | null;
+  firstSubagentVisibleAt: number | null;
+}
+
 test.skip(
   !MANAGED_LIVE_ENABLED,
   "Set AGENT_TEAMS_MANAGED_LIVE_STREAM=1 to run managed fake-backend streaming checks.",
@@ -905,6 +916,46 @@ test("managed backend subagent stream receives incremental chunks in the right p
   }
 });
 
+test("managed backend makes thinking and subagent activity visible within one second", async ({
+  page,
+}) => {
+  const title = `managed-live-visibility-sla-${Date.now()}`;
+  const session = await createSession(title);
+  let runId: string | null = null;
+  try {
+    await installStreamVisibilityProbe(page);
+    await openManagedSession(page, session, title);
+    await expectManagedShellReady(page);
+
+    const childTag = streamTagFromTitle(title);
+    const promptText = [
+      `${title}: [hook-subagent-lifecycle tag=${childTag} worker_repeat=24 worker_delay=120]`,
+      "请通过 spawn_subagent 启动 Explorer 子代理。",
+    ].join("\n");
+    const runResponse = waitForRunCreateResponse(page);
+    await armStreamVisibilityProbe(page, promptText);
+    await submitPrompt(page, promptText);
+    runId = await runIdFromResponse(await runResponse);
+
+    await expect.poll(() => streamVisibilityProbe(page), { timeout: 90_000 })
+      .toMatchObject({
+        connectingVisibleAt: expect.any(Number),
+        localPromptVisibleAt: expect.any(Number),
+        sendAt: expect.any(Number),
+        firstSubagentEventAt: expect.any(Number),
+        firstSubagentVisibleAt: expect.any(Number),
+      });
+    const probe = await streamVisibilityProbe(page);
+    expect(visibilityDelay(probe.sendAt, probe.localPromptVisibleAt)).toBeLessThan(100);
+    expect(visibilityDelay(probe.sendAt, probe.connectingVisibleAt)).toBeLessThan(1_000);
+    expect(visibilityDelay(probe.firstSubagentEventAt, probe.firstSubagentVisibleAt))
+      .toBeLessThan(1_000);
+  } finally {
+    await stopRunIfPresent(runId);
+    await deleteSession(session.session_id);
+  }
+});
+
 async function openManagedSession(
   page: Page,
   session: SessionRecord,
@@ -929,6 +980,107 @@ async function openManagedSession(
   await page.goto(`${apiBaseUrl()}/?codex_verify=${encodeURIComponent(title)}`, {
     waitUntil: "domcontentloaded",
   });
+}
+
+async function installStreamVisibilityProbe(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const probe: StreamVisibilityProbe = {
+      eventSourceCount: 0,
+      eventSourceUrls: [],
+      connectingVisibleAt: null,
+      localPromptVisibleAt: null,
+      promptText: "",
+      sendAt: null,
+      firstSubagentEventAt: null,
+      firstSubagentVisibleAt: null,
+    };
+    Object.defineProperty(window, "__agentTeamsStreamVisibilityProbe", {
+      configurable: true,
+      value: probe,
+    });
+    const NativeEventSource = window.EventSource;
+    class ProbedEventSource extends NativeEventSource {
+      constructor(url: string | URL, eventSourceInitDict?: EventSourceInit) {
+        super(url, eventSourceInitDict);
+        probe.eventSourceCount += 1;
+        probe.eventSourceUrls.push(String(url));
+        this.addEventListener("subagent_session.status_changed", () => {
+          probe.firstSubagentEventAt ??= performance.now();
+        });
+      }
+    }
+    Object.defineProperty(window, "EventSource", {
+      configurable: true,
+      value: ProbedEventSource,
+    });
+    const captureVisibleState = () => {
+      if (
+        probe.sendAt !== null &&
+        probe.localPromptVisibleAt === null &&
+        probe.promptText.length > 0 &&
+        Array.from(document.querySelectorAll(".at-chat-view .at-message")).some(
+          (element) => element.textContent?.includes(probe.promptText) === true,
+        )
+      ) {
+        probe.localPromptVisibleAt = performance.now();
+      }
+      if (
+        probe.sendAt !== null &&
+        probe.connectingVisibleAt === null &&
+        document.querySelector(".at-chat-view .at-model-request-status") !== null
+      ) {
+        probe.connectingVisibleAt = performance.now();
+      }
+      if (
+        probe.firstSubagentEventAt !== null &&
+        probe.firstSubagentVisibleAt === null &&
+        document.querySelector(
+          ".at-chat-view .at-message-tool.is-openable-subagent",
+        ) !== null
+      ) {
+        probe.firstSubagentVisibleAt = performance.now();
+      }
+    };
+    new MutationObserver(captureVisibleState).observe(document, {
+      childList: true,
+      subtree: true,
+    });
+  });
+}
+
+async function armStreamVisibilityProbe(page: Page, promptText: string): Promise<void> {
+  await page.evaluate((nextPromptText) => {
+    const probe = (window as Window & {
+      __agentTeamsStreamVisibilityProbe?: StreamVisibilityProbe;
+    }).__agentTeamsStreamVisibilityProbe;
+    if (probe === undefined) {
+      throw new Error("Stream visibility probe was not installed.");
+    }
+    probe.promptText = nextPromptText;
+    probe.sendAt = performance.now();
+  }, promptText);
+}
+
+async function streamVisibilityProbe(page: Page): Promise<StreamVisibilityProbe> {
+  return page.evaluate(() => {
+    const probe = (window as Window & {
+      __agentTeamsStreamVisibilityProbe?: StreamVisibilityProbe;
+    }).__agentTeamsStreamVisibilityProbe;
+    if (probe === undefined) {
+      throw new Error("Stream visibility probe was not installed.");
+    }
+    return { ...probe };
+  });
+}
+
+function visibilityDelay(
+  eventAt: number | null,
+  visibleAt: number | null,
+): number {
+  if (eventAt === null || visibleAt === null) {
+    return Number.POSITIVE_INFINITY;
+  }
+  return visibleAt - eventAt;
 }
 
 async function expectManagedShellReady(page: Page): Promise<void> {

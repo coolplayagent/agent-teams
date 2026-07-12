@@ -31,6 +31,7 @@ import type {
   SessionSidebarRecord,
 } from "../api/contracts";
 import { useUiStore } from "../runtime/uiStore";
+import { useOptimisticRunStore } from "../runtime/optimisticRunStore";
 import type { RunStreamController } from "../runtime/useRunStreamController";
 
 interface MockSenderProps {
@@ -104,6 +105,7 @@ const updateSessionNormalModelProfileMock = vi.mocked(
 
 beforeEach(() => {
   useUiStore.setState({ language: "en" });
+  useOptimisticRunStore.setState({ prompts: {} });
   createSpeechSttWebSocketUrlMock.mockReturnValue(
     "ws://localhost/api/speech/stt/stream",
   );
@@ -437,6 +439,10 @@ describe("Composer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
     await waitFor(() => expect(createRunMock).toHaveBeenCalledOnce());
+    expect(useOptimisticRunStore.getState().prompts["session-1"]).toMatchObject({
+      sessionId: "session-1",
+      text: "preview after run",
+    });
     expect(queryClient.getQueryData(["sessions", "sidebar"])).toEqual(sidebarRows);
 
     await act(async () => {
@@ -475,6 +481,10 @@ describe("Composer", () => {
       promptText: "preview after run",
       runId: "run-1",
       sessionId: "session-1",
+    });
+    expect(useOptimisticRunStore.getState().prompts["session-1"]).toMatchObject({
+      runId: "run-1",
+      text: "preview after run",
     });
   });
 

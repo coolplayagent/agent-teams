@@ -1012,6 +1012,125 @@ describe("MessageTimeline", () => {
     expect(timeline.scrollTop).toBe(120);
   });
 
+  it("preserves event order when narration separates two live tool calls", async () => {
+    const runId = "run-interleaved-live-work";
+    const liveEvents = [
+      relayRunEvent({
+        event_id: 1,
+        event_type: "thinking_delta",
+        payload_json: JSON.stringify({ text: "Plan first tool" }),
+        run_id: runId,
+        trace_id: runId,
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "tool_call",
+        payload_json: JSON.stringify({
+          args: { command: "echo first" },
+          tool_call_id: "call-first",
+          tool_name: "shell",
+        }),
+        run_id: runId,
+        trace_id: runId,
+      }),
+      relayRunEvent({
+        event_id: 3,
+        event_type: "tool_result",
+        payload_json: JSON.stringify({
+          result: { output: "first" },
+          tool_call_id: "call-first",
+          tool_name: "shell",
+        }),
+        run_id: runId,
+        trace_id: runId,
+      }),
+      relayRunEvent({
+        event_id: 4,
+        event_type: "text_delta",
+        payload_json: JSON.stringify({ text: "Intermediate narration" }),
+        run_id: runId,
+        trace_id: runId,
+      }),
+      relayRunEvent({
+        event_id: 5,
+        event_type: "tool_call",
+        payload_json: JSON.stringify({
+          args: { path: "frontend/app" },
+          tool_call_id: "call-second",
+          tool_name: "read",
+        }),
+        run_id: runId,
+        trace_id: runId,
+      }),
+      relayRunEvent({
+        event_id: 6,
+        event_type: "tool_result",
+        payload_json: JSON.stringify({
+          result: { output: "second" },
+          tool_call_id: "call-second",
+          tool_name: "read",
+        }),
+        run_id: runId,
+        trace_id: runId,
+      }),
+      relayRunEvent({
+        event_id: 7,
+        event_type: "text_delta",
+        payload_json: JSON.stringify({ text: "Final answer" }),
+        run_id: runId,
+        trace_id: runId,
+      }),
+    ];
+    setRuntimeStateFromEvents(liveEvents);
+    listSessionMessagesMock.mockResolvedValue([]);
+    const { container } = renderTimeline();
+
+    await screen.findByText("Final answer");
+    const group = container.querySelector<HTMLElement>(
+      `[data-row-key="processed:${runId}"]`,
+    );
+    const narration = screen.getByText("Intermediate narration").closest("article");
+    const secondTool = container.querySelector('[data-tool-call-id="call-second"]')
+      ?.closest("article");
+    const finalAnswer = screen.getByText("Final answer").closest("article");
+    expect(group).not.toBeNull();
+    expect(narration).not.toBeNull();
+    expect(secondTool).not.toBeNull();
+    expect(finalAnswer).not.toBeNull();
+    expect(group?.compareDocumentPosition(narration as Node) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBeTruthy();
+    expect(narration?.compareDocumentPosition(secondTool as Node) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBeTruthy();
+    expect(secondTool?.compareDocumentPosition(finalAnswer as Node) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBeTruthy();
+    const rowKeys = Array.from(container.querySelectorAll<HTMLElement>("[data-row-key]"))
+      .map((row) => row.dataset.rowKey ?? "");
+    expect(new Set(rowKeys).size).toBe(rowKeys.length);
+
+    act(() => {
+      setRuntimeStateFromEvents([
+        ...liveEvents,
+        relayRunEvent({
+          event_id: 8,
+          event_type: "run_completed",
+          payload_json: JSON.stringify({ output: "Final answer" }),
+          run_id: runId,
+          trace_id: runId,
+        }),
+      ]);
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector(`[data-row-key="processed:${runId}"]`)).toBe(group);
+      expect(screen.getByText("Intermediate narration").closest("article"))
+        .toBe(narration);
+      expect(container.querySelector('[data-tool-call-id="call-second"]')?.closest("article"))
+        .toBe(secondTool);
+      expect(screen.getByText("Final answer").closest("article")).toBe(finalAnswer);
+    });
+    expect(screen.getAllByText("Final answer")).toHaveLength(1);
+  });
+
   it("does not type the terminal hydrated answer a second time after stream close", async () => {
     vi.stubEnv("MODE", "production");
     vi.useFakeTimers();

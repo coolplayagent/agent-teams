@@ -2318,10 +2318,16 @@ function collapseProcessedSegmentCore(
   const groupedRows: TimelineRow[] = [];
   const trailingRows: TimelineRow[] = [];
   let workSeen = false;
+  let groupClosed = false;
   for (const row of segment) {
+    if (groupClosed) {
+      trailingRows.push(row);
+      continue;
+    }
     const firstWorkPartIndex = row.parts.findIndex(timelinePartIsWork);
     if (firstWorkPartIndex < 0) {
       (workSeen ? trailingRows : leadingRows).push(row);
+      groupClosed = workSeen;
       continue;
     }
     workSeen = true;
@@ -2347,6 +2353,7 @@ function collapseProcessedSegmentCore(
       if (timelineRowHasRenderableContent(trailingRow)) {
         trailingRows.push(trailingRow);
       }
+      groupClosed = true;
     }
   }
   return groupedRows.length === 0

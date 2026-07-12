@@ -79,8 +79,16 @@ interface SubagentScrollGrowthEvidence {
 }
 
 interface RunningSubagentVerification {
+  concurrencyOverlap: ConcurrencyOverlapEvidence;
   firstIncrementObservedAtMs: number;
   scrollGrowth: SubagentScrollGrowthEvidence;
+}
+
+interface ConcurrencyOverlapEvidence {
+  childBadgeStatus: "running";
+  childRunningObservedAtMs: number;
+  normalParentActiveCount: number;
+  normalParentRunIds: string[];
 }
 
 interface FailureCollection {
@@ -129,6 +137,7 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
   );
   const startedRuns: StartedRun[] = [];
   const queueStageObservations: QueueStageObservation[] = [];
+  let concurrencyOverlapEvidence: ConcurrencyOverlapEvidence | null = null;
   let subagentFirstIncrementObservedAtMs: number | null = null;
   let subagentScrollGrowthEvidence: SubagentScrollGrowthEvidence | null = null;
 
@@ -153,11 +162,11 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
       const title = session.metadata?.title ?? "";
       await selectSession(page, title, failures);
       const tag = title.replace(/[^A-Za-z0-9_-]/g, "_").replace(/-/g, "_");
-      const isSubagentRun = index === 0;
+      const isSubagentRun = index === sessions.length - 1;
       const repeat = 72;
       const promptText = isSubagentRun
         ? [
-            `${title}: [hook-subagent-lifecycle tag=${tag} worker_repeat=${SUBAGENT_TOKEN_COUNT} worker_delay=${SUBAGENT_CHUNK_DELAY_MS} worker_line_every=${SUBAGENT_LINE_EVERY}]`,
+            `${title}: [hook-subagent-lifecycle tag=${tag} worker_repeat=${SUBAGENT_TOKEN_COUNT} worker_delay=${SUBAGENT_CHUNK_DELAY_MS} worker_line_every=${SUBAGENT_LINE_EVERY} background=true]`,
             "通过 spawn_subagent 启动 Explorer，并让子代理流式输出确定性 token。",
             "主代理完成后只输出 fake LLM 的最终完成句。",
           ].join("\n")
@@ -186,20 +195,23 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
         tag,
         title,
       });
-      await expect
-        .poll(() => activeRunId(session.session_id), { timeout: 20_000 })
-        .toBe(runId);
+      if (!isSubagentRun) {
+        await expect
+          .poll(() => activeRunId(session.session_id), { timeout: 20_000 })
+          .toBe(runId);
+      }
     }
 
+    const normalRuns = startedRuns.filter((run) => !run.isSubagent);
     await expect
       .poll(
         () =>
           Promise.all(
-            startedRuns.map((run) => activeRunId(run.session.session_id)),
+            normalRuns.map((run) => activeRunId(run.session.session_id)),
           ),
         { timeout: 20_000 },
       )
-      .toEqual(startedRuns.map((run) => run.runId));
+      .toEqual(normalRuns.map((run) => run.runId));
     const subagentRun = startedRuns.find((run) => run.isSubagent);
     if (subagentRun === undefined) {
       throw new Error("Expected a subagent run.");
@@ -218,6 +230,7 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
     );
     subagentFirstIncrementObservedAtMs =
       subagentVerification.firstIncrementObservedAtMs;
+    concurrencyOverlapEvidence = subagentVerification.concurrencyOverlap;
     subagentScrollGrowthEvidence = subagentVerification.scrollGrowth;
 
     for (const [index, run] of startedRuns.entries()) {
@@ -444,6 +457,7 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
       ),
     };
     const evidence = {
+      concurrencyOverlapEvidence,
       edgeExecutable: EDGE_EXECUTABLE,
       elapsedMs: Date.now() - gateStartedAt,
       failures,
@@ -682,6 +696,7 @@ async function verifyRunningSubagent(
   const cardObservedAtMs = Date.now() - gateStartedAt;
   await expandProcessedGroupsUntilCardIsVisible(page, card);
   await expect(card).toBeVisible({ timeout: 10_000 });
+  await expect(card).toHaveAttribute("data-status", "completed");
   await recordInteraction(page, () => card.click());
   const panel = page.locator(".at-subagent-session-view");
   await expect(panel).toBeVisible({ timeout: 20_000 });
@@ -692,6 +707,24 @@ async function verifyRunningSubagent(
       { timeout: 20_000 },
     )
     .toBe("running");
+  const normalRuns = startedRuns.filter((candidate) => !candidate.isSubagent);
+  await expect
+    .poll(
+      () =>
+        Promise.all(
+          normalRuns.map((candidate) =>
+            activeRunId(candidate.session.session_id),
+          ),
+        ),
+      { timeout: 10_000 },
+    )
+    .toEqual(normalRuns.map((candidate) => candidate.runId));
+  const concurrencyOverlap: ConcurrencyOverlapEvidence = {
+    childBadgeStatus: "running",
+    childRunningObservedAtMs: Date.now() - gateStartedAt,
+    normalParentActiveCount: normalRuns.length,
+    normalParentRunIds: normalRuns.map((candidate) => candidate.runId),
+  };
   await expect(panel.locator(".at-subagent-session-prompt")).toContainText(
     run.tag,
   );
@@ -796,7 +829,7 @@ async function verifyRunningSubagent(
       page.getByRole("button", { name: /主会话|Main session/ }).click(),
     ),
   );
-  return { firstIncrementObservedAtMs, scrollGrowth };
+  return { concurrencyOverlap, firstIncrementObservedAtMs, scrollGrowth };
 }
 
 async function selectSession(

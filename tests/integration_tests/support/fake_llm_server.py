@@ -1039,6 +1039,11 @@ def _plan_hook_subagent_lifecycle_response(
             r"\[hook-subagent-lifecycle[^\]]*\bworker_line_every=(\d+)",
             user_text,
         )
+        background_match = re.search(
+            r"\[hook-subagent-lifecycle[^\]]*\bbackground=(true|false)",
+            user_text,
+            re.IGNORECASE,
+        )
         worker_repeat = (
             int(worker_repeat_match.group(1)) if worker_repeat_match is not None else 14
         )
@@ -1049,6 +1054,11 @@ def _plan_hook_subagent_lifecycle_response(
             int(worker_line_every_match.group(1))
             if worker_line_every_match is not None
             else 0
+        )
+        background = (
+            background_match.group(1).lower() == "true"
+            if background_match is not None
+            else False
         )
         worker_prompt = "[hook-subagent-worker] return one short status line"
         if tag:
@@ -1066,7 +1076,7 @@ def _plan_hook_subagent_lifecycle_response(
                 "role_id": "Explorer",
                 "description": "Run a short hook lifecycle verification task",
                 "prompt": worker_prompt,
-                "background": False,
+                "background": background,
             },
         }
     return {

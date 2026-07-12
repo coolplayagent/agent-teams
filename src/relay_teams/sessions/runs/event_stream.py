@@ -45,24 +45,28 @@ class RunEventHub:
         self._subscribers: dict[str, list[asyncio.Queue[RunEvent]]] = {}
         self._session_subscribers: dict[str, list[asyncio.Queue[RunEvent]]] = {}
         self._subscriber_loops: dict[int, asyncio.AbstractEventLoop] = {}
+        self._subscriber_lock = Lock()
         self._event_log = event_log
         self._run_state_repo = run_state_repo
         self._publish_lock = Lock()
         self._publish_listeners: list[Callable[[RunEvent], None]] = []
 
     def add_publish_listener(self, listener: Callable[[RunEvent], None]) -> None:
-        self._publish_listeners.append(listener)
+        with self._subscriber_lock:
+            self._publish_listeners.append(listener)
 
     def subscribe(self, run_id: str) -> asyncio.Queue[RunEvent]:
         queue: asyncio.Queue[RunEvent] = asyncio.Queue()
-        self._subscribers.setdefault(run_id, []).append(queue)
-        self._bind_queue_loop(queue)
+        with self._subscriber_lock:
+            self._subscribers.setdefault(run_id, []).append(queue)
+            self._bind_queue_loop(queue)
         return queue
 
     def subscribe_session(self, session_id: str) -> asyncio.Queue[RunEvent]:
         queue: asyncio.Queue[RunEvent] = asyncio.Queue()
-        self._session_subscribers.setdefault(session_id, []).append(queue)
-        self._bind_queue_loop(queue)
+        with self._subscriber_lock:
+            self._session_subscribers.setdefault(session_id, []).append(queue)
+            self._bind_queue_loop(queue)
         return queue
 
     def _bind_queue_loop(self, queue: asyncio.Queue[RunEvent]) -> None:
@@ -73,32 +77,37 @@ class RunEventHub:
             pass
 
     def loop_for_run(self, run_id: str) -> asyncio.AbstractEventLoop | None:
-        listeners = self._subscribers.get(run_id, [])
-        if not listeners:
-            return None
-        return self._subscriber_loops.get(id(listeners[0]))
+        with self._subscriber_lock:
+            listeners = self._subscribers.get(run_id, [])
+            if not listeners:
+                return None
+            return self._subscriber_loops.get(id(listeners[0]))
 
     def unsubscribe(self, run_id: str, queue: asyncio.Queue[RunEvent]) -> None:
-        listeners = self._subscribers.get(run_id)
-        if not listeners:
-            return
-        self._subscribers[run_id] = [item for item in listeners if item is not queue]
-        self._subscriber_loops.pop(id(queue), None)
-        if not self._subscribers[run_id]:
-            self._subscribers.pop(run_id, None)
+        with self._subscriber_lock:
+            listeners = self._subscribers.get(run_id)
+            if not listeners:
+                return
+            self._subscribers[run_id] = [
+                item for item in listeners if item is not queue
+            ]
+            self._subscriber_loops.pop(id(queue), None)
+            if not self._subscribers[run_id]:
+                self._subscribers.pop(run_id, None)
 
     def unsubscribe_session(
         self, session_id: str, queue: asyncio.Queue[RunEvent]
     ) -> None:
-        listeners = self._session_subscribers.get(session_id)
-        if not listeners:
-            return
-        self._session_subscribers[session_id] = [
-            item for item in listeners if item is not queue
-        ]
-        self._subscriber_loops.pop(id(queue), None)
-        if not self._session_subscribers[session_id]:
-            self._session_subscribers.pop(session_id, None)
+        with self._subscriber_lock:
+            listeners = self._session_subscribers.get(session_id)
+            if not listeners:
+                return
+            self._session_subscribers[session_id] = [
+                item for item in listeners if item is not queue
+            ]
+            self._subscriber_loops.pop(id(queue), None)
+            if not self._session_subscribers[session_id]:
+                self._session_subscribers.pop(session_id, None)
 
     def publish(self, event: RunEvent) -> int:
         if self._publish_from_running_loop(event):
@@ -135,12 +144,7 @@ class RunEventHub:
             event = event.model_copy(update={"event_id": event_id})
 
         self._notify_publish_listeners(event)
-        listeners = self._subscribers.get(event.run_id, [])
-        for queue in listeners:
-            queue.put_nowait(event)
-        session_listeners = self._session_subscribers.get(event.session_id, [])
-        for queue in session_listeners:
-            queue.put_nowait(event)
+        self._deliver_event(event)
         return event_id
 
     async def publish_async(self, event: RunEvent) -> int:
@@ -178,12 +182,7 @@ class RunEventHub:
                 event = event.model_copy(update={"event_id": event_id})
 
             self._notify_publish_listeners(event)
-            listeners = self._subscribers.get(event.run_id, [])
-            for queue in listeners:
-                queue.put_nowait(event)
-            session_listeners = self._session_subscribers.get(event.session_id, [])
-            for queue in session_listeners:
-                queue.put_nowait(event)
+            self._deliver_event(event)
             return event_id
         finally:
             self._publish_lock.release()
@@ -211,32 +210,52 @@ class RunEventHub:
             )
             for event in published_events:
                 self._notify_publish_listeners(event)
-                listeners = self._subscribers.get(event.run_id, [])
-                for queue in listeners:
-                    queue.put_nowait(event)
-                session_listeners = self._session_subscribers.get(event.session_id, [])
-                for queue in session_listeners:
-                    queue.put_nowait(event)
+                self._deliver_event(event)
             return event_ids
         finally:
             self._publish_lock.release()
 
     def _notify_publish_listeners(self, event: RunEvent) -> None:
-        for listener in self._publish_listeners:
+        with self._subscriber_lock:
+            listeners = tuple(self._publish_listeners)
+        for listener in listeners:
             with contextlib.suppress(Exception):
                 listener(event)
+
+    def _deliver_event(self, event: RunEvent) -> None:
+        with self._subscriber_lock:
+            queues = tuple(self._subscribers.get(event.run_id, ())) + tuple(
+                self._session_subscribers.get(event.session_id, ())
+            )
+            deliveries = tuple(
+                (queue, self._subscriber_loops.get(id(queue))) for queue in queues
+            )
+        try:
+            publishing_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            publishing_loop = None
+        for queue, subscriber_loop in deliveries:
+            if subscriber_loop is None or subscriber_loop is publishing_loop:
+                queue.put_nowait(event)
+                continue
+            if subscriber_loop.is_closed():
+                continue
+            subscriber_loop.call_soon_threadsafe(queue.put_nowait, event)
 
     async def _acquire_publish_lock_async(self) -> None:
         while not self._publish_lock.acquire(blocking=False):
             await asyncio.sleep(0.001)
 
     def unsubscribe_all(self, run_id: str) -> None:
-        listeners = self._subscribers.pop(run_id, [])
-        for queue in listeners:
-            self._subscriber_loops.pop(id(queue), None)
+        with self._subscriber_lock:
+            listeners = self._subscribers.pop(run_id, [])
+            for queue in listeners:
+                self._subscriber_loops.pop(id(queue), None)
 
     def has_subscribers(self, run_id: str) -> bool:
-        return bool(self._subscribers.get(run_id))
+        with self._subscriber_lock:
+            return bool(self._subscribers.get(run_id))
 
     def has_session_subscribers(self, session_id: str) -> bool:
-        return bool(self._session_subscribers.get(session_id))
+        with self._subscriber_lock:
+            return bool(self._session_subscribers.get(session_id))

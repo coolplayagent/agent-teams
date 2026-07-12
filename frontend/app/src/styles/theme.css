@@ -4489,7 +4489,9 @@ body {
 
 .at-session-search-modal .ant-modal-body {
   flex: 1 1 auto;
+  display: flex;
   min-height: 0;
+  overflow: hidden;
 }
 
 .at-session-search-toolbar {

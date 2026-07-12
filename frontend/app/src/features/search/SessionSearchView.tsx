@@ -1,7 +1,7 @@
 import { Empty, Input, Skeleton, Typography } from "antd";
 import type { InputRef } from "antd";
 import { MessageSquare, Search } from "lucide-react";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 
 import type { SessionSidebarRecord, WorkspaceRecord } from "../../api/contracts";
@@ -45,6 +45,7 @@ export function SessionSearchView({
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<InputRef>(null);
   const activeOptionRef = useRef<HTMLButtonElement | null>(null);
+  const resultsId = useId();
   const rows = useMemo(
     () =>
       buildSessionSearchRows(
@@ -86,6 +87,13 @@ export function SessionSearchView({
       <div className="at-session-search-toolbar">
         <Input
           allowClear
+          aria-activedescendant={
+            rows[activeIndex] === undefined
+              ? undefined
+              : `${resultsId}-option-${activeIndex}`
+          }
+          aria-controls={resultsId}
+          aria-expanded="true"
           aria-label={t("searchViewInputLabel")}
           autoFocus
           className="at-session-search-input"
@@ -97,7 +105,7 @@ export function SessionSearchView({
           placeholder={t("searchViewPlaceholder")}
           prefix={<Search aria-hidden="true" size={15} />}
           ref={inputRef}
-          type="search"
+          role="searchbox"
           value={query}
         />
         <span aria-live="polite" className="at-session-search-count" role="status">
@@ -106,13 +114,9 @@ export function SessionSearchView({
       </div>
 
       <div
-        aria-activedescendant={
-          rows[activeIndex] === undefined
-            ? undefined
-            : `session-search-option-${activeIndex}`
-        }
         aria-label={hasQuery ? t("searchViewResults") : t("searchRecentSessions")}
         className="at-session-search-results at-scroll-region"
+        id={resultsId}
         role="listbox"
       >
         {loading && rows.length === 0 ? (
@@ -147,7 +151,7 @@ export function SessionSearchView({
                   ]
                     .filter(Boolean)
                     .join(" ")}
-                  id={`session-search-option-${index}`}
+                  id={`${resultsId}-option-${index}`}
                   key={row.session.session_id}
                   onClick={() => onSessionSelected(row.session)}
                   onMouseEnter={() => setActiveIndex(index)}

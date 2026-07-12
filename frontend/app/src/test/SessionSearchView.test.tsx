@@ -75,21 +75,55 @@ describe("SessionSearchView", () => {
     const searchbox = screen.getByRole("searchbox", { name: "Search sessions" });
     const listbox = screen.getByRole("listbox");
     await waitFor(() => expect(searchbox).toHaveFocus());
-    expect(listbox).toHaveAttribute("aria-activedescendant", "session-search-option-0");
+    expect(searchbox).toHaveAttribute("aria-controls", listbox.id);
+    expect(searchbox).toHaveAttribute(
+      "aria-activedescendant",
+      `${listbox.id}-option-0`,
+    );
     fireEvent.keyDown(searchbox, { key: "ArrowDown" });
-    expect(listbox).toHaveAttribute("aria-activedescendant", "session-search-option-1");
+    expect(searchbox).toHaveAttribute(
+      "aria-activedescendant",
+      `${listbox.id}-option-1`,
+    );
     fireEvent.keyDown(searchbox, { key: "Home" });
-    expect(listbox).toHaveAttribute("aria-activedescendant", "session-search-option-0");
+    expect(searchbox).toHaveAttribute(
+      "aria-activedescendant",
+      `${listbox.id}-option-0`,
+    );
     fireEvent.keyDown(searchbox, { key: "End" });
-    expect(listbox).toHaveAttribute("aria-activedescendant", "session-search-option-1");
+    expect(searchbox).toHaveAttribute(
+      "aria-activedescendant",
+      `${listbox.id}-option-1`,
+    );
     fireEvent.change(searchbox, { target: { value: "alpha" } });
-    expect(listbox).toHaveAttribute("aria-activedescendant", "session-search-option-0");
+    expect(searchbox).toHaveAttribute(
+      "aria-activedescendant",
+      `${listbox.id}-option-0`,
+    );
     fireEvent.keyDown(searchbox, { key: "Enter" });
 
     expect(selectSession).toHaveBeenCalledWith(sessions[0]);
     fireEvent.keyDown(searchbox, { key: "Escape" });
     expect(closeSearch).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("status")).toHaveTextContent("1 result");
+  });
+
+  it("keeps the active keyboard result visible inside the results scroller", async () => {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    renderSearch();
+
+    const searchbox = screen.getByRole("searchbox", { name: "Search sessions" });
+    await waitFor(() => expect(searchbox).toHaveFocus());
+    scrollIntoView.mockClear();
+    fireEvent.keyDown(searchbox, { key: "ArrowDown" });
+
+    await waitFor(() => {
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
+    });
   });
 
   it("shows an empty search state when nothing matches", () => {

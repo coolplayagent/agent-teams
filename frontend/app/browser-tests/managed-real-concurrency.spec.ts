@@ -836,7 +836,9 @@ async function verifyRunningSubagent(
     ),
   );
   await expect(panel).toBeHidden();
-  await recordInteraction(page, () => card.click());
+  await expandProcessedGroupsUntilCardIsVisible(page, card);
+  await expect(card).toBeVisible({ timeout: 20_000 });
+  await recordInteraction(page, () => card.click({ timeout: 20_000 }));
   await expect(panel).toBeVisible({ timeout: 20_000 });
   await expect(panel.locator(".at-subagent-session-prompt")).toContainText(
     run.tag,

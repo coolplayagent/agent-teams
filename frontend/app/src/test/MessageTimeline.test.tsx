@@ -37,6 +37,7 @@ const listSessionMessagesMock = vi.mocked(listSessionMessages);
 const listSessionRoundsMock = vi.mocked(listSessionRounds);
 
 beforeEach(() => {
+  window.sessionStorage.removeItem("agentTeams.liveProcessedRuns");
   listSessionRoundsMock.mockResolvedValue({
     has_more: false,
     items: [],
@@ -49,6 +50,7 @@ afterEach(() => {
   delete document.documentElement.dataset.diagnosticsVisible;
   useRuntimeStore.getState().resetRuntimeState();
   useOptimisticRunStore.setState({ prompts: {} });
+  window.sessionStorage.removeItem("agentTeams.liveProcessedRuns");
   vi.useRealTimers();
   vi.clearAllMocks();
   vi.unstubAllEnvs();
@@ -880,6 +882,95 @@ describe("MessageTimeline", () => {
     );
     expect(streamingText).not.toBeNull();
     expect(streamingText?.closest("details.at-processed-group")).toBeNull();
+  });
+
+  it("keeps the live processed tree and scroll anchor stable at terminal", async () => {
+    const runId = "run-stable-processed-terminal";
+    const storageWrite = vi.spyOn(Storage.prototype, "setItem");
+    const liveEvents: RelayRunEvent[] = [
+      relayRunEvent({
+        event_id: 1,
+        event_type: "thinking_started",
+        payload_json: JSON.stringify({ part_index: 0 }),
+        run_id: runId,
+        trace_id: runId,
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "thinking_delta",
+        payload_json: JSON.stringify({ part_index: 0, text: "Stable thought" }),
+        run_id: runId,
+        trace_id: runId,
+      }),
+      relayRunEvent({
+        event_id: 3,
+        event_type: "text_delta",
+        payload_json: JSON.stringify({ text: "Stable answer" }),
+        run_id: runId,
+        trace_id: runId,
+      }),
+    ];
+    setRuntimeStateFromEvents(liveEvents);
+    listSessionMessagesMock.mockResolvedValue([]);
+    const { container } = renderTimeline();
+
+    const rowsBefore = await waitFor(() => {
+      const elements = Array.from(container.querySelectorAll<HTMLElement>(
+        `article.at-message[data-run-id="${runId}"][data-row-key]`,
+      ));
+      expect(elements.length).toBeGreaterThan(0);
+      return elements;
+    });
+    expect(container.querySelector(`[data-row-key="processed:${runId}"]`)).toBeNull();
+    const rowKeysBefore = rowsBefore.map((element) => element.dataset.rowKey ?? "");
+    expect(new Set(rowKeysBefore).size).toBe(rowKeysBefore.length);
+    storageWrite.mockClear();
+    const pressureEvents = [...liveEvents];
+    for (let eventId = 4; eventId < 104; eventId += 1) {
+      pressureEvents.push(relayRunEvent({
+        event_id: eventId,
+        event_type: "thinking_delta",
+        payload_json: JSON.stringify({ part_index: 0, text: ` ${eventId}` }),
+        run_id: runId,
+        trace_id: runId,
+      }));
+      act(() => setRuntimeStateFromEvents(pressureEvents));
+    }
+    expect(storageWrite.mock.calls.filter(
+      ([key]) => key === "agentTeams.liveProcessedRuns",
+    ).length).toBeLessThanOrEqual(1);
+    const timeline = container.querySelector<HTMLElement>(".at-timeline");
+    if (timeline === null) {
+      throw new Error("Timeline scroll owner was not rendered.");
+    }
+    Object.defineProperty(timeline, "clientHeight", { configurable: true, value: 200 });
+    Object.defineProperty(timeline, "scrollHeight", { configurable: true, value: 1000 });
+    timeline.scrollTop = 120;
+    fireEvent.scroll(timeline);
+
+    act(() => {
+      setRuntimeStateFromEvents([
+        ...pressureEvents,
+        relayRunEvent({
+          event_id: 104,
+          event_type: "run_completed",
+          payload_json: JSON.stringify({ output: "Stable answer" }),
+          run_id: runId,
+          trace_id: runId,
+        }),
+      ]);
+    });
+
+    await waitFor(() => {
+      const rowsAfter = Array.from(container.querySelectorAll<HTMLElement>(
+        `article.at-message[data-run-id="${runId}"][data-row-key]`,
+      ));
+      expect(rowsAfter.map((element) => element.dataset.rowKey ?? ""))
+        .toEqual(rowKeysBefore);
+      expect(rowsAfter).toEqual(rowsBefore);
+    });
+    expect(container.querySelector(`[data-row-key="processed:${runId}"]`)).toBeNull();
+    expect(timeline.scrollTop).toBe(120);
   });
 
   it("does not type the terminal hydrated answer a second time after stream close", async () => {
@@ -12239,7 +12330,9 @@ function openProcessedGroup(container: HTMLElement): HTMLDetailsElement {
   if (!(summary instanceof HTMLElement)) {
     throw new Error("Processed group summary was not rendered.");
   }
-  fireEvent.click(summary);
+  if (!group.open) {
+    fireEvent.click(summary);
+  }
   expect(group).toHaveAttribute("open");
   return group;
 }

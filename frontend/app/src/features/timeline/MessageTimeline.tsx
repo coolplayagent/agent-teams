@@ -76,6 +76,7 @@ import "./ToolCallDetails.css";
 const TIMELINE_BOTTOM_FOLLOW_THRESHOLD_PX = 96;
 const TIMELINE_SCROLL_SCOPE_CACHE_LIMIT = 100;
 const TIMELINE_DERIVED_ROWS_CACHE_LIMIT = 8;
+const LIVE_PROCESSED_RUNS_STORAGE_KEY = "agentTeams.liveProcessedRuns";
 const TIMELINE_FALLBACK_RENDER_LIMIT = 8;
 const TIMELINE_HYDRATED_OVERSCAN_CACHE_LIMIT = 512;
 const TOOL_PREVIEW_CACHE_LIMIT = 256;
@@ -274,6 +275,7 @@ export function MessageTimeline({
   const optimisticPrompt = useOptimisticRunStore((state) =>
     sessionId === null ? null : state.prompts[sessionId] ?? null
   );
+  const liveProcessedRunIdsRef = useRef(readLiveProcessedRunIds());
   const runtimeRuns = useMemo(
     () => Object.fromEntries(runtimeRunList.map((runState) => [runState.runId, runState])),
     [runtimeRunList],
@@ -562,6 +564,7 @@ export function MessageTimeline({
             displayRounds,
             runtimeRuns,
             terminalRunIdOverrides,
+            liveProcessedRunIdsRef.current,
           ),
         ),
       ),
@@ -853,6 +856,10 @@ export function MessageTimeline({
       variant,
     ],
   );
+  const liveProcessedRunCount = liveProcessedRunIdsRef.current.size;
+  useEffect(() => {
+    persistLiveProcessedRunIds(liveProcessedRunIdsRef.current);
+  }, [liveProcessedRunCount]);
 
   useEffect(() => {
     pendingRoundRunIdRef.current = null;
@@ -1279,6 +1286,34 @@ function optimisticPromptRow(prompt: OptimisticRunPrompt): TimelineRow {
   };
 }
 
+function readLiveProcessedRunIds(): Set<string> {
+  try {
+    const value = window.sessionStorage.getItem(LIVE_PROCESSED_RUNS_STORAGE_KEY);
+    if (value === null) {
+      return new Set();
+    }
+    const parsed = JSON.parse(value) as unknown;
+    return new Set(
+      Array.isArray(parsed)
+        ? parsed.filter((item): item is string => typeof item === "string")
+        : [],
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+function persistLiveProcessedRunIds(runIds: ReadonlySet<string>): void {
+  try {
+    window.sessionStorage.setItem(
+      LIVE_PROCESSED_RUNS_STORAGE_KEY,
+      JSON.stringify(Array.from(runIds).slice(-100)),
+    );
+  } catch {
+    // Streaming remains functional when storage is unavailable.
+  }
+}
+
 interface RuntimeThinkingAccumulator {
   inserted: boolean;
   part: TimelineThinkingPart;
@@ -1664,10 +1699,11 @@ function timelineRowElement(
 ) {
   const style = { transform: `translateY(${start}px)` };
   if (row.processedGroup !== undefined) {
+    const disclosureId = `processed:${row.runId ?? row.key}`;
     return (
       <ProcessedGroupRow
         group={row.processedGroup}
-        expanded={expandedDisclosureIds.has(`processed:${row.runId ?? row.key}`)}
+        expanded={expandedDisclosureIds.has(disclosureId)}
         expandedDisclosureIds={expandedDisclosureIds}
         index={index}
         key={row.key}
@@ -2094,6 +2130,7 @@ function collapseProcessedRows(
   rounds: SessionRound[],
   runStates: Record<string, RuntimeRunState>,
   terminalRunIdOverrides: ReadonlySet<string>,
+  liveProcessedRunIds: Set<string>,
 ): TimelineRow[] {
   const roundByRunId = new Map(
     rounds.flatMap((round) => {
@@ -2113,14 +2150,17 @@ function collapseProcessedRows(
       continue;
     }
     const runId = row.runId?.trim() ?? "";
-    if (
-      runId.length === 0 ||
-      !runIsTerminal(runId, roundByRunId, runStates, terminalRunIdOverrides)
-    ) {
+    if (runId.length === 0) {
       collapsedRows.push(row);
       index += 1;
       continue;
     }
+    const terminal = runIsTerminal(
+      runId,
+      roundByRunId,
+      runStates,
+      terminalRunIdOverrides,
+    );
     const segment: TimelineRow[] = [];
     while (index < rows.length) {
       const next = rows[index];
@@ -2134,6 +2174,23 @@ function collapseProcessedRows(
       }
       segment.push(next);
       index += 1;
+    }
+    const hasWork = segment.some(timelineRowHasWorkPart);
+    if (!terminal) {
+      const runtimeRun = runStates[runId];
+      if (
+        hasWork &&
+        runtimeRun !== undefined &&
+        !runtimeRunStateClosesText(runtimeRun)
+      ) {
+        liveProcessedRunIds.add(runId);
+      }
+      collapsedRows.push(...segment);
+      continue;
+    }
+    if (liveProcessedRunIds.has(runId)) {
+      collapsedRows.push(...closeTerminalSegmentToolCalls(segment));
+      continue;
     }
     collapsedRows.push(...collapseProcessedSegment(segment, runId));
   }
@@ -2286,7 +2343,6 @@ function collapseProcessedSegmentCore(
   if (!groupedRows.some(timelineRowHasWorkPart)) {
     return segment;
   }
-
   const collapsedRows = [
     ...leadingRows,
     processedGroupRow(groupedRows, runId),
@@ -3320,11 +3376,12 @@ function joinHydratedThinkingText(hydratedText: string, runtimeText: string): st
   return `${base} ${continuation}`;
 }
 
-function processedGroupRow(rows: TimelineRow[], runId: string): TimelineRow {
-  const firstKey = rows[0]?.key ?? "start";
-  const lastKey = rows.at(-1)?.key ?? "end";
+function processedGroupRow(
+  rows: TimelineRow[],
+  runId: string,
+): TimelineRow {
   return {
-    key: `processed:${runId}:${firstKey}:${lastKey}`,
+    key: `processed:${runId}`,
     role: "processed",
     text: "",
     kind: "processed",

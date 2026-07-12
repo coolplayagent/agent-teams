@@ -143,10 +143,10 @@ export function SettingsCenter({
   });
 
   useEffect(() => {
-    if (generalQuery.data !== undefined) {
+    if (activeSection === "general" && generalQuery.data !== undefined) {
       form.setFieldsValue(generalQuery.data);
     }
-  }, [generalQuery.data, form]);
+  }, [activeSection, generalQuery.data, form]);
   useEffect(() => {
     if (open && initialSystemPage !== null) {
       setActiveSection("system");

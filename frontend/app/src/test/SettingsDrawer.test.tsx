@@ -4482,6 +4482,35 @@ describe("SettingsDrawer", () => {
     );
   });
 
+  it("hydrates general settings only after their form is mounted", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    try {
+      renderDrawer();
+
+      await waitFor(() => expect(getGeneralConfigMock).toHaveBeenCalled());
+      await new Promise((resolve) => window.setTimeout(resolve, 20));
+      expect(
+        consoleError.mock.calls.some((call) =>
+          call.some((value) =>
+            String(value).includes("Instance created by `useForm` is not connected"),
+          ),
+        ),
+      ).toBe(false);
+
+      const sections = screen.getByRole("navigation", {
+        name: "Settings sections",
+      });
+      fireEvent.click(within(sections).getByRole("button", { name: "General" }));
+
+      expect(
+        await screen.findByRole("switch", { name: "Shell safety policy" }),
+      ).toBeChecked();
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
   it("keeps V1 general items discoverable without flattening their pages", async () => {
     renderDrawer();
 

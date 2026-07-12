@@ -740,7 +740,10 @@ describe("AppShell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Back to chat" }));
 
     expect(await screen.findByTestId("timeline")).toBeVisible();
-    expect(screen.queryByTestId("subagent-session-view")).not.toBeInTheDocument();
+    expect(screen.getByTestId("subagent-session-view")).not.toBeVisible();
+    expect(
+      screen.getByTestId("subagent-session-view").closest(".at-subagent-side-panel"),
+    ).toHaveClass("is-hidden");
     await waitFor(() =>
       expect(markSessionTerminalRunViewedMock).toHaveBeenCalledWith("session-1"),
     );
@@ -1649,7 +1652,7 @@ describe("AppShell", () => {
     fireEvent.click(screen.getByTestId("open-subagent-from-timeline"));
     expect(await screen.findByTestId("subagent-session-view")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Back to chat" }));
-    expect(screen.queryByTestId("subagent-session-view")).not.toBeInTheDocument();
+    expect(screen.getByTestId("subagent-session-view")).not.toBeVisible();
 
     if (resolveSubagents === undefined) {
       throw new Error("Subagent discovery query did not start.");
@@ -1677,7 +1680,7 @@ describe("AppShell", () => {
       await Promise.resolve();
     });
 
-    expect(screen.queryByTestId("subagent-session-view")).not.toBeInTheDocument();
+    expect(screen.getByTestId("subagent-session-view")).not.toBeVisible();
     expect(window.localStorage.getItem("agentTeams.activeSubagentPanel")).toBeNull();
   });
 
@@ -1711,9 +1714,8 @@ describe("AppShell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Back to chat" }));
     expect(subagentSurface).not.toBeVisible();
-    expect(subagentSurface.closest(".at-subagent-side-panel")).toHaveAttribute(
-      "hidden",
-    );
+    expect(subagentSurface.closest(".at-subagent-side-panel"))
+      .toHaveClass("is-hidden");
 
     fireEvent.click(screen.getByTestId("open-subagent-from-timeline"));
     expect(await screen.findByTestId("subagent-session-view")).toBe(subagentSurface);
@@ -1829,7 +1831,10 @@ describe("AppShell", () => {
 
     expect(await screen.findByTestId("timeline")).toBeVisible();
     fireEvent.click(screen.getByTestId("open-subagent-from-timeline"));
-    expect(await screen.findByTestId("subagent-session-view")).toBeVisible();
+    const runningSubagentSurface = await screen.findByTestId(
+      "subagent-session-view",
+    );
+    expect(runningSubagentSurface).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Back to chat" }));
 
@@ -1838,10 +1843,15 @@ describe("AppShell", () => {
       "data-session-id",
       "session-1",
     );
-    expect(screen.queryByTestId("subagent-session-view")).not.toBeInTheDocument();
+    expect(screen.getByTestId("subagent-session-view")).not.toBeVisible();
     expect(window.localStorage.getItem("agentTeams.activeSubagentPanel")).toBeNull();
     expect(useUiStore.getState().selectedSessionId).toBe("session-1");
     expect(useUiStore.getState().selectedWorkspaceId).toBe("workspace-1");
+
+    fireEvent.click(screen.getByTestId("open-subagent-from-timeline"));
+    expect(await screen.findByTestId("subagent-session-view"))
+      .toBe(runningSubagentSurface);
+    expect(runningSubagentSurface).toBeVisible();
   });
 
   it("hides the active subagent panel across session switches until reopened from the current timeline", async () => {
@@ -1901,7 +1911,7 @@ describe("AppShell", () => {
         "session-2",
       ),
     );
-    expect(screen.queryByTestId("subagent-session-view")).not.toBeInTheDocument();
+    expect(screen.getByTestId("subagent-session-view")).not.toBeVisible();
     expect(window.localStorage.getItem("agentTeams.activeSubagentPanel")).toContain(
       "subagent-instance-1",
     );
@@ -1917,7 +1927,7 @@ describe("AppShell", () => {
         "session-1",
       ),
     );
-    expect(screen.queryByTestId("subagent-session-view")).not.toBeInTheDocument();
+    expect(screen.getByTestId("subagent-session-view")).not.toBeVisible();
     expect(window.localStorage.getItem("agentTeams.activeSubagentPanel")).toContain(
       "subagent-instance-1",
     );
@@ -1946,6 +1956,11 @@ describe("AppShell", () => {
 
       expect(await screen.findByTestId("timeline")).toBeVisible();
       fireEvent.click(screen.getByTestId("open-subagent-from-timeline"));
+      expect(screen.getByText("Starting subagent...")).toBeVisible();
+      await act(async () => {
+        animationFrame.flushAll();
+        await Promise.resolve();
+      });
       expect(await screen.findByTestId("subagent-session-view")).toBeVisible();
       expect(screen.getByText("Subagent Explorer")).toBeVisible();
 
@@ -2124,6 +2139,7 @@ function testDomRect(
 }
 
 interface CapturedAnimationFrames {
+  readonly flushAll: () => void;
   readonly pendingCount: () => number;
   readonly restore: () => void;
 }
@@ -2144,6 +2160,13 @@ function captureAnimationFrames(): CapturedAnimationFrames {
   });
 
   return {
+    flushAll: () => {
+      const pendingCallbacks = [...callbacks.values()];
+      callbacks.clear();
+      for (const callback of pendingCallbacks) {
+        callback(performance.now());
+      }
+    },
     pendingCount: () => callbacks.size,
     restore: () => {
       window.requestAnimationFrame = originalRequestAnimationFrame;

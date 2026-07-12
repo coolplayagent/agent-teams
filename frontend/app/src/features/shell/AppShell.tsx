@@ -8,6 +8,7 @@ import {
 } from "antd";
 import {
   Activity,
+  ArrowLeft,
   CalendarClock,
   Database,
   Menu,
@@ -19,7 +20,14 @@ import {
   Wrench,
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  startTransition,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { CSSProperties, KeyboardEvent, PointerEvent } from "react";
 
 import {
@@ -125,6 +133,9 @@ export function AppShell() {
   );
   const [retainedSubagent, setRetainedSubagent] =
     useState<ActiveSubagentSession | null>(activeSubagent);
+  const [subagentPanelVisible, setSubagentPanelVisible] = useState(
+    activeSubagent !== null,
+  );
   const [
     activeSubagentAutoRestoreBlocked,
     setActiveSubagentAutoRestoreBlocked,
@@ -216,7 +227,13 @@ export function AppShell() {
       const provisionalSubagent = activeSubagentFromTimelineReference(reference);
       setActiveSubagentAutoRestoreBlocked(false);
       if (provisionalSubagent !== null) {
-        setActiveSubagent(provisionalSubagent);
+        setActiveSubagent((current) =>
+          current !== null &&
+          subagentPanelIdentityMatches(current, provisionalSubagent)
+            ? current
+            : provisionalSubagent
+        );
+        setSubagentPanelVisible(true);
       }
       const resolveAuthoritativeSubagent = (attempt: number) => {
         if (subagentOpenGenerationRef.current !== openGeneration) {
@@ -268,8 +285,7 @@ export function AppShell() {
     [queryClient],
   );
   const closeActiveSubagent = useCallback(() => {
-    subagentOpenGenerationRef.current += 1;
-    setActiveSubagent(null);
+    setSubagentPanelVisible(false);
   }, []);
   const updateSubagentPanelLayoutMax = useCallback((containerWidth: number) => {
     setSubagentPanelLayoutMax(subagentPanelMaxForContainerWidth(containerWidth));
@@ -350,34 +366,32 @@ export function AppShell() {
     selectedSession?.latest_terminal_run_status ??
     null;
   const visibleActiveSubagent =
-    activeSubagentAutoRestoreBlocked
+    activeSubagentAutoRestoreBlocked || !subagentPanelVisible
       ? null
       : activeSubagentForSelectedSession;
   const canReuseRetainedSubagent =
     visibleActiveSubagent !== null &&
     retainedSubagent !== null &&
     subagentPanelIdentityMatches(visibleActiveSubagent, retainedSubagent);
-  const renderedSubagent = canReuseRetainedSubagent
-    ? retainedSubagent
-    : visibleActiveSubagent ?? retainedSubagent;
+  const renderedSubagent = retainedSubagent;
 
   useEffect(() => {
+    if (visibleActiveSubagent === null) {
+      return undefined;
+    }
     if (
-      visibleActiveSubagent !== null &&
-      subagentIsTerminal(visibleActiveSubagent)
+      retainedSubagent !== null &&
+      retainedSubagent === visibleActiveSubagent
     ) {
-      setRetainedSubagent(visibleActiveSubagent);
-      return;
+      return undefined;
     }
-    if (visibleActiveSubagent !== null) {
-      setRetainedSubagent((current) =>
-        current !== null &&
-        subagentPanelIdentityMatches(current, visibleActiveSubagent)
-          ? current
-          : null
-      );
-    }
-  }, [visibleActiveSubagent]);
+    const frameId = window.requestAnimationFrame(() => {
+      startTransition(() => {
+        setRetainedSubagent(visibleActiveSubagent);
+      });
+    });
+    return () => window.cancelAnimationFrame(frameId);
+  }, [retainedSubagent, visibleActiveSubagent]);
 
   useEffect(() => {
     const savedLanguage = uiLanguageQuery.data?.language;
@@ -551,8 +565,10 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
-    writeActiveSubagentPanel(activeSubagent);
-  }, [activeSubagent]);
+    writeActiveSubagentPanel(
+      subagentPanelVisible ? activeSubagent : null,
+    );
+  }, [activeSubagent, subagentPanelVisible]);
 
   function isRetryableTerminalViewMarkError(error: unknown): boolean {
     if (!(error instanceof ApiError)) {
@@ -912,17 +928,9 @@ export function AppShell() {
           <div
             aria-hidden={activeView === "chat" ? undefined : "true"}
             hidden={activeView !== "chat"}
-            className={
-              visibleActiveSubagent === null
-                ? "at-workspace-chat-shell"
-                : "at-workspace-chat-shell has-subagent-panel"
-            }
+            className="at-workspace-chat-shell"
             ref={chatShellRef}
-            style={
-              visibleActiveSubagent === null
-                ? undefined
-                : subagentPanelStyle(subagentPanelWidth)
-            }
+            style={subagentPanelStyle(subagentPanelWidth)}
           >
             <ChatWorkspace
               contentLoadingKey={chatContentLoadingKey}
@@ -957,16 +965,35 @@ export function AppShell() {
                 tabIndex={0}
               />
             ) : null}
-            {renderedSubagent !== null ? (
+            {renderedSubagent !== null || visibleActiveSubagent !== null ? (
               <aside
                 aria-hidden={visibleActiveSubagent === null ? "true" : undefined}
-                className="at-subagent-side-panel"
-                hidden={visibleActiveSubagent === null}
+                className={
+                  visibleActiveSubagent === null
+                    ? "at-subagent-side-panel is-hidden"
+                    : "at-subagent-side-panel"
+                }
                 >
-                <SubagentSessionView
-                  onBack={closeActiveSubagent}
-                  subagent={renderedSubagent}
-                />
+                {renderedSubagent !== null ? (
+                  <div
+                    className="at-subagent-heavy-surface"
+                    hidden={
+                      visibleActiveSubagent === null ||
+                      !canReuseRetainedSubagent
+                    }
+                  >
+                    <SubagentSessionView
+                      onBack={closeActiveSubagent}
+                      subagent={renderedSubagent}
+                    />
+                  </div>
+                ) : null}
+                {visibleActiveSubagent !== null && !canReuseRetainedSubagent ? (
+                  <SubagentPanelLoading
+                    onBack={closeActiveSubagent}
+                    subagent={visibleActiveSubagent}
+                  />
+                ) : null}
               </aside>
             ) : null}
           </div>
@@ -1300,6 +1327,54 @@ function subagentPanelStyle(width: number): CSSProperties {
   } as CSSProperties;
 }
 
+function SubagentPanelLoading({
+  onBack,
+  subagent,
+}: {
+  onBack: () => void;
+  subagent: ActiveSubagentSession;
+}) {
+  const t = useTranslations();
+  const title = firstNonBlank(
+    subagent.title,
+    subagent.roleId,
+    subagent.instanceId,
+  );
+  const status = firstNonBlank(subagent.runStatus, subagent.status);
+  return (
+    <div
+      aria-busy="true"
+      className="at-subagent-session-view at-subagent-session-loading"
+    >
+      <header className="at-subagent-session-header">
+        <div className="at-subagent-session-title-row">
+          <Button icon={<ArrowLeft size={15} />} onClick={onBack} size="small">
+            {t("subagentSessionBack")}
+          </Button>
+          <span className="at-subagent-session-title ant-typography">
+            {title}
+          </span>
+          {status.length > 0 ? (
+            <span className="at-subagent-session-badge">{status}</span>
+          ) : null}
+        </div>
+        <div className="at-subagent-session-meta">
+          <span>{t("subagentSessionReadOnly")}</span>
+          {subagent.roleId.trim().length > 0 ? (
+            <span>{subagent.roleId}</span>
+          ) : null}
+        </div>
+      </header>
+      <div className="at-subagent-session-body">
+        <div className="at-subagent-session-pending" role="status">
+          <span aria-hidden="true" className="at-subagent-session-pending-dot" />
+          <span>{t("subagentSessionStarting")}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function activeSubagentFromTimelineReference(
   reference: TimelineSubagentReference,
 ): ActiveSubagentSession | null {
@@ -1501,13 +1576,6 @@ function firstNonBlank(...values: Array<string | null | undefined>): string {
 function subagentIsRunning(subagent: ActiveSubagentSession): boolean {
   const status = `${subagent.runStatus} ${subagent.status}`.toLowerCase();
   return status.includes("running") || status.includes("starting");
-}
-
-function subagentIsTerminal(subagent: ActiveSubagentSession): boolean {
-  return (
-    isTerminalRunStatus(subagent.runStatus) ||
-    isTerminalRunStatus(subagent.status)
-  );
 }
 
 function subagentPanelIdentityMatches(

@@ -9,6 +9,7 @@ import { applyDocumentThemeMode, resolveThemeMode } from "./runtime/themeMode";
 import { useUiStore } from "./runtime/uiStore";
 import "./styles/feedback.css";
 import "./styles/theme.css";
+import "./styles/subagentPanel.css";
 import "./styles/componentTheme.css";
 import "./features/connectors/ConnectorsLayout.css";
 import "./styles/scrollbars.css";

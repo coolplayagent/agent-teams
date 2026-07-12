@@ -767,8 +767,8 @@ async function verifyRunningSubagent(
   const firstSampleTokenIndex = await highestSubagentTokenIndex(panel, run);
   expect(
     firstSampleTokenIndex,
-    "the first height sample must occur within the first quarter of the stream",
-  ).toBeLessThanOrEqual(SUBAGENT_TOKEN_COUNT / 4 - 1);
+    "the first sample must leave 24 growth tokens plus half the stream",
+  ).toBeLessThanOrEqual(SUBAGENT_TOKEN_COUNT / 2 - 25);
   const firstSampleHeight = await timeline.evaluate(
     (element) => element.scrollHeight,
   );

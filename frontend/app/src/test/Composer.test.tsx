@@ -495,7 +495,8 @@ describe("Composer", () => {
       runId: "run-1",
       sessionId: "session-1",
     });
-    expect(controller.startRunStream.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(vi.mocked(controller.startRunStream).mock.invocationCallOrder[0])
+      .toBeLessThan(
       setQueryDataSpy.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
     );
     expect(useOptimisticRunStore.getState().prompts["session-1"]).toMatchObject({

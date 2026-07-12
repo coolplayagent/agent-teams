@@ -665,7 +665,9 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       return { result, titlePreview };
     },
     onSuccess: ({ result, titlePreview }, _variables, optimisticPrompt) => {
+      markComposerRunStart("success-callback", result.run_id);
       const foreground = sessionIdRef.current === result.session_id;
+      markComposerRunStart("before-controller", result.run_id);
       runStreamController.startRunStream({
         ...(foreground ? {} : { foreground: false }),
         ...(titlePreview.trim().length > 0 ? { promptText: titlePreview } : {}),
@@ -1501,6 +1503,16 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       normalRootRoleId,
       orchestrationPresetId,
     });
+  }
+}
+
+function markComposerRunStart(phase: string, runId: string): void {
+  try {
+    globalThis.performance?.mark(
+      `agent-teams:run-start:composer-${phase}:${runId}`,
+    );
+  } catch {
+    // Performance instrumentation must never affect run submission.
   }
 }
 

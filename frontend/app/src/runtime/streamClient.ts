@@ -120,6 +120,9 @@ interface RunEventSourceOptions {
 }
 
 function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
+  for (const runId of options.trackedRunIds) {
+    markStreamStartTiming("event-source-construct", runId);
+  }
   const source = new EventSource(apiUrl(options.url));
   let runtimeState = options.initialState;
   let didNotifyClosed = false;
@@ -372,6 +375,14 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
   return {
     close: closeWithStateFlush,
   };
+}
+
+function markStreamStartTiming(phase: string, runId: string): void {
+  try {
+    globalThis.performance?.mark(`agent-teams:run-start:${phase}:${runId}`);
+  } catch {
+    // Performance instrumentation must never affect stream startup.
+  }
 }
 
 function markStreamTerminalTiming(

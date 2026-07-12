@@ -20,8 +20,7 @@ const RUN_STREAM_RECONNECT_MAX_ATTEMPTS = 3;
 const TERMINAL_ROUND_SETTLE_DELAY_MS = 900;
 const TERMINAL_ROUND_SETTLE_MAX_ATTEMPTS = 24;
 const TERMINAL_ROUND_SETTLE_PAGE_LIMIT = 100;
-const TERMINAL_SESSION_SETTLE_DELAY_MS = 1500;
-const TERMINAL_SESSION_SETTLE_MAX_ATTEMPTS = 60;
+const TERMINAL_SETTLEMENT_GUARD_LIMIT = 4096;
 
 export interface StartRunStreamOptions {
   runId: string;
@@ -93,6 +92,8 @@ export function useRunStreamController(): RunStreamController {
   const subagentDiscoveryEventKeysRef = useRef(new Set<string>());
   const recoveryInteractionEventKeysRef = useRef(new Set<string>());
   const terminalStoreMarkKeysRef = useRef(new Set<string>());
+  const terminalSettlementKeysRef = useRef(new Map<string, number>());
+  const terminalSettlementSequenceRef = useRef(0);
   const controllerOperationsRef = useRef<RunStreamControllerOperations | null>(null);
   const [activeRunIds, setActiveRunIds] = useState<string[]>([]);
   const [suppressedRunIds, setSuppressedRunIds] = useState<string[]>([]);
@@ -303,6 +304,22 @@ export function useRunStreamController(): RunStreamController {
     sessionId: string,
     terminalTargets: StartRunStreamTarget[],
   ) => {
+    const unsettledTargets = normalizeRunTargets(terminalTargets).filter((target) => {
+      const key = `${sessionId}:${target.runId}`;
+      if (terminalSettlementKeysRef.current.has(key)) {
+        return false;
+      }
+      rememberTerminalSettlementKey(
+        terminalSettlementKeysRef.current,
+        key,
+        terminalSettlementSequenceRef.current,
+      );
+      terminalSettlementSequenceRef.current += 1;
+      return true;
+    });
+    if (unsettledTargets.length === 0) {
+      return;
+    }
     const streamGeneration = streamGenerationRef.current;
     clearReconnectTimer();
     reconnectAttemptRef.current = 0;
@@ -311,18 +328,18 @@ export function useRunStreamController(): RunStreamController {
     streamHandleRef.current = null;
 
     const roundSettleTargets = terminalRoundSettleTargets(
-      terminalTargets,
+      unsettledTargets,
       runtimeStateRef.current,
     );
     const closedRuntimeState = runtimeStateWithClosedTargets(
       runtimeStateRef.current,
-      terminalTargets,
+      unsettledTargets,
     );
     if (closedRuntimeState !== runtimeStateRef.current) {
       runtimeStateRef.current = closedRuntimeState;
       setRuntimeState(closedRuntimeState);
     }
-    const terminalRunIds = new Set(normalizedRunIds(terminalTargets));
+    const terminalRunIds = new Set(normalizedRunIds(unsettledTargets));
     const remainingRunTargets = trackedRunIds
       .filter(
         (runId) =>
@@ -337,7 +354,7 @@ export function useRunStreamController(): RunStreamController {
     foregroundRunIdsRef.current = foregroundRunIdsRef.current.filter(
       (runId) => !terminalRunIds.has(runId),
     );
-    suppressRunTargets(terminalTargets);
+    suppressRunTargets(unsettledTargets);
     setActiveRunIdsIfChanged(
       activeTrackedRunIdsForSession(
         foregroundRunIdsRef.current,
@@ -358,7 +375,6 @@ export function useRunStreamController(): RunStreamController {
       );
     }
     scheduleTerminalBackgroundWork(() => {
-      refreshSidebarSessions();
       const refreshHydratedSession = () => {
         void queryClient.invalidateQueries({
           queryKey: ["sessions", "detail", sessionId],
@@ -369,17 +385,20 @@ export function useRunStreamController(): RunStreamController {
         void queryClient.invalidateQueries({
           queryKey: ["sessions", sessionId, "rounds"],
         });
-        void queryClient.invalidateQueries({
-          queryKey: ["sessions", "sidebar"],
-        });
       };
       const refreshSidebarSessionsFromServer = async () => {
         const sessions = await listSidebarSessions(true);
-        queryClient.setQueryData(["sessions", "sidebar"], sessions);
-        return sessions;
+        const terminalSessions = sidebarSessionsWithLocalTerminalRuns(
+          sessions,
+          sessionId,
+          unsettledTargets,
+          closedRuntimeState,
+        );
+        queryClient.setQueryData(["sessions", "sidebar"], terminalSessions);
+        return terminalSessions;
       };
       let roundHistoryReady = roundSettleTargets.length === 0;
-      let terminalSessionReady = true;
+      let terminalSessionReady = unsettledTargets.length === 0;
       let hydrationRefreshed = false;
       const refreshHydratedSessionWhenReady = () => {
         if (hydrationRefreshed || !roundHistoryReady || !terminalSessionReady) {
@@ -411,7 +430,7 @@ export function useRunStreamController(): RunStreamController {
         refreshSidebarSessions: refreshSidebarSessionsFromServer,
         sessionId,
         streamGeneration,
-        targets: terminalTargets,
+        targets: unsettledTargets,
       });
       refreshRecoverySnapshot(sessionId);
       void queryClient.invalidateQueries({
@@ -505,6 +524,9 @@ export function useRunStreamController(): RunStreamController {
         void message.error(errorMessage);
       },
     };
+    for (const run of runs) {
+      markRunStartTiming("controller-before-event-source", run.runId);
+    }
     streamHandleRef.current =
       runs.length === 1
         ? openRunStream({
@@ -546,6 +568,7 @@ export function useRunStreamController(): RunStreamController {
   };
 
   const startRunStream = (options: StartRunStreamOptions) => {
+    markRunStartTiming("controller-start", options.runId);
     startRunStreams({
       sessionId: options.sessionId,
       runs: [startRunStreamTargetFromOptions(options)],
@@ -554,6 +577,9 @@ export function useRunStreamController(): RunStreamController {
   };
 
   const startRunStreams = (options: StartRunStreamsOptions) => {
+    for (const run of options.runs) {
+      markRunStartTiming("controller-start-streams", run.runId);
+    }
     const runs = normalizeRunTargets(options.runs);
     const foregroundRunIds = normalizeForegroundRunIds(options.foregroundRunIds, runs);
     foregroundRunIdsRef.current = foregroundRunIds;
@@ -676,6 +702,14 @@ function markNewRuntimeTerminals(
     } catch {
       // Performance instrumentation must never affect runtime state delivery.
     }
+  }
+}
+
+function markRunStartTiming(phase: string, runId: string): void {
+  try {
+    globalThis.performance?.mark(`agent-teams:run-start:${phase}:${runId}`);
+  } catch {
+    // Performance instrumentation must never affect stream startup.
   }
 }
 
@@ -1051,6 +1085,64 @@ function activeTrackedRunIdsForSession(
   });
 }
 
+function rememberTerminalSettlementKey(
+  keys: Map<string, number>,
+  key: string,
+  sequence: number,
+): void {
+  if (keys.size >= TERMINAL_SETTLEMENT_GUARD_LIMIT) {
+    const oldestKey = keys.keys().next().value;
+    if (oldestKey !== undefined) {
+      keys.delete(oldestKey);
+    }
+  }
+  keys.set(key, sequence);
+}
+
+function sidebarSessionsWithLocalTerminalRuns(
+  sessions: SessionSidebarRecord[],
+  sessionId: string,
+  targets: StartRunStreamTarget[],
+  runtimeState: RuntimeState,
+): SessionSidebarRecord[] {
+  const latestTarget = targets.at(-1);
+  if (latestTarget === undefined) {
+    return sessions;
+  }
+  const runState = runtimeState.runs[latestTarget.runId];
+  const status = localTerminalStatus(runState?.terminalEventType ?? null);
+  if (status === null) {
+    return sessions;
+  }
+  return sessions.map((session) => session.session_id === sessionId
+    ? {
+        ...session,
+        active_run_id: null,
+        active_run_status: status,
+        has_unread_terminal_run: true,
+        latest_terminal_run_id: latestTarget.runId,
+        latest_terminal_run_status: status,
+      }
+    : session);
+}
+
+function localTerminalStatus(
+  eventType: string | null,
+): NonNullable<SessionSidebarRecord["active_run_status"]> | null {
+  switch (eventType) {
+    case "run_completed":
+      return "completed";
+    case "run_failed":
+      return "failed";
+    case "run_paused":
+      return "paused";
+    case "run_stopped":
+      return "stopped";
+    default:
+      return null;
+  }
+}
+
 function stringArraysEqual(left: string[], right: string[]): boolean {
   return (
     left.length === right.length &&
@@ -1134,7 +1226,6 @@ async function settleTerminalSessionFromSidebar({
   currentStreamGeneration,
   onReady,
   refreshSidebarSessions,
-  sessionId,
   streamGeneration,
   targets,
 }: TerminalSessionSettleOptions): Promise<void> {
@@ -1143,51 +1234,17 @@ async function settleTerminalSessionFromSidebar({
     return;
   }
   const isCurrentGeneration = () => currentStreamGeneration() === streamGeneration;
-  for (let attempt = 0; attempt < TERMINAL_SESSION_SETTLE_MAX_ATTEMPTS; attempt += 1) {
-    if (!isCurrentGeneration()) {
-      return;
-    }
-    try {
-      const sessions = await refreshSidebarSessions();
-      if (!isCurrentGeneration()) {
-        return;
-      }
-      if (terminalSessionHasTargetRun(sessions, sessionId, targetRunIds)) {
-        onReady();
-        return;
-      }
-    } catch {
-      if (!isCurrentGeneration()) {
-        return;
-      }
-    }
-    if (attempt + 1 < TERMINAL_SESSION_SETTLE_MAX_ATTEMPTS) {
-      await terminalSessionSettleDelay();
-    }
+  if (!isCurrentGeneration()) {
+    return;
+  }
+  try {
+    await refreshSidebarSessions();
+  } catch {
+    // The session activity stream will deliver a later authoritative refresh.
   }
   if (isCurrentGeneration()) {
     onReady();
   }
-}
-
-function terminalSessionSettleDelay(): Promise<void> {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, TERMINAL_SESSION_SETTLE_DELAY_MS);
-  });
-}
-
-function terminalSessionHasTargetRun(
-  sessions: SessionSidebarRecord[],
-  sessionId: string,
-  targetRunIds: string[],
-): boolean {
-  const session = sessions.find((item) => item.session_id === sessionId);
-  if (session === undefined) {
-    return false;
-  }
-  const latestRunId = session.latest_terminal_run_id?.trim() ?? "";
-  const latestStatus = session.latest_terminal_run_status?.trim().toLowerCase() ?? "";
-  return targetRunIds.includes(latestRunId) && isTerminalStatus(latestStatus);
 }
 
 function terminalRoundSettleDelay(): Promise<void> {

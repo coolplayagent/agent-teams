@@ -65,6 +65,7 @@ describe("useRunStreamController", () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
     const controllers: ReturnType<typeof useRunStreamController>[] = [];
     const renderHarness = (renderToken: number) => (
       <QueryClientProvider client={queryClient}>
@@ -400,6 +401,12 @@ describe("useRunStreamController", () => {
   });
 
   it("refreshes timeline, sidebar, and session token usage when a run stream closes", async () => {
+    listSidebarSessionsMock.mockResolvedValue([
+      sidebarSession({
+        latest_terminal_run_id: "run-1",
+        latest_terminal_run_status: "completed",
+      }),
+    ]);
     listSessionRoundsMock.mockResolvedValue({
       has_more: false,
       items: [roundWithToolCalls("run-1", [])],
@@ -441,9 +448,7 @@ describe("useRunStreamController", () => {
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["sessions", "session-1", "rounds"],
     });
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: ["sessions", "sidebar"],
-    });
+    expect(listSidebarSessionsMock).toHaveBeenCalledTimes(1);
   });
 
   it("publishes terminal event state before delayed persistence refresh work", async () => {
@@ -455,6 +460,7 @@ describe("useRunStreamController", () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
     render(
       <QueryClientProvider client={queryClient}>
@@ -469,8 +475,10 @@ describe("useRunStreamController", () => {
     fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
     const options = streamMocks.latestOptions as RunStreamOptions;
     const closedState = runtimeStateWithClosedRun(19);
+    fireEvent.click(screen.getByRole("button", { name: "Settle terminal stream" }));
     act(() => {
       options.onState(closedState);
+      options.onClosed?.(closedState);
       options.onClosed?.(closedState);
     });
 
@@ -484,6 +492,10 @@ describe("useRunStreamController", () => {
     });
 
     expect(listSidebarSessionsMock).toHaveBeenCalledWith(true);
+    expect(listSidebarSessionsMock).toHaveBeenCalledTimes(1);
+    expect(invalidateSpy.mock.calls.filter(
+      ([options]) => options?.queryKey?.join("/") === "sessions/session-1/token-usage",
+    )).toHaveLength(1);
     expect(screen.getByTestId("runtime-run-status")).toHaveTextContent("closed");
   });
 

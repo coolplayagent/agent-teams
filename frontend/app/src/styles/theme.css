@@ -17,7 +17,9 @@
   --at-warning: #a16207;
   --at-danger: #b42318;
   --at-status-disabled: #73766e;
-  --at-font-ui: "Aptos", "Helvetica Neue", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --at-font-ui:
+    "Aptos", "Helvetica Neue", ui-sans-serif, system-ui, -apple-system,
+    sans-serif;
   --at-font-mono: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
   --at-font: var(--at-font-ui);
   --at-ui-font-size: 14px;
@@ -404,8 +406,12 @@ body {
   color: var(--at-text);
 }
 
-.at-sidebar-new-session.ant-btn.ant-btn-primary:not(:disabled):not(.ant-btn-disabled):hover,
-.at-sidebar-new-session.ant-btn.ant-btn-primary:not(:disabled):not(.ant-btn-disabled):focus-visible {
+.at-sidebar-new-session.ant-btn.ant-btn-primary:not(:disabled):not(
+    .ant-btn-disabled
+  ):hover,
+.at-sidebar-new-session.ant-btn.ant-btn-primary:not(:disabled):not(
+    .ant-btn-disabled
+  ):focus-visible {
   border-color: var(--at-border-strong);
   background: color-mix(in srgb, var(--at-surface-muted) 82%, var(--at-border));
   color: var(--at-text);
@@ -558,7 +564,8 @@ body {
 .at-sidebar-backend-status.is-checking .at-sidebar-backend-dot {
   border: 1px solid color-mix(in srgb, var(--at-primary) 45%, var(--at-border));
   background: var(--at-surface);
-  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--at-primary) 35%, transparent);
+  box-shadow: inset 0 0 0 2px
+    color-mix(in srgb, var(--at-primary) 35%, transparent);
   opacity: 1;
 }
 
@@ -753,7 +760,11 @@ body {
 
 .at-session-item.is-selected:hover,
 .at-session-item.is-selected:focus-within {
-  background: color-mix(in srgb, var(--at-surface-muted) 72%, var(--at-border-strong));
+  background: color-mix(
+    in srgb,
+    var(--at-surface-muted) 72%,
+    var(--at-border-strong)
+  );
 }
 
 .at-session-select {
@@ -802,6 +813,10 @@ body {
 .at-session-meta-slot > .at-session-meta {
   opacity: 1;
   visibility: visible;
+}
+
+.at-workspace-group-disclosure > .at-disclosure-motion-inner {
+  display: grid;
 }
 
 .at-session-actions {
@@ -965,7 +980,8 @@ body {
 
 .at-session-item.is-selected.has-run-indicator-unread .at-session-run-indicator,
 .at-session-item.is-selected.has-run-indicator-failed .at-session-run-indicator,
-.at-session-item.is-selected.has-run-indicator-stopped .at-session-run-indicator {
+.at-session-item.is-selected.has-run-indicator-stopped
+  .at-session-run-indicator {
   display: none;
 }
 
@@ -4545,7 +4561,9 @@ body {
   color: var(--at-text);
   text-align: left;
   cursor: pointer;
-  transition: background-color 0.14s ease, border-color 0.14s ease;
+  transition:
+    background-color 0.14s ease,
+    border-color 0.14s ease;
 }
 
 .at-session-search-result:hover,
@@ -4676,16 +4694,40 @@ body {
   padding: 10px 0;
 }
 
-.at-new-session-advanced summary {
+.at-new-session-advanced-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   width: fit-content;
+  padding: 3px 4px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
   cursor: pointer;
   color: var(--at-text-secondary);
+  font: inherit;
   font-size: 13px;
   font-weight: 600;
 }
 
+.at-new-session-advanced-trigger:hover,
+.at-new-session-advanced-trigger:focus-visible {
+  background: var(--at-surface-muted);
+  color: var(--at-text);
+  outline: none;
+}
+
+.at-new-session-advanced-trigger svg {
+  transition: transform var(--at-motion-fast) var(--at-motion-ease);
+}
+
+.at-new-session-advanced-trigger[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
 .at-new-session-advanced-grid {
   margin-top: 14px;
+  padding-bottom: 2px;
 }
 
 .at-new-session-toggle {
@@ -5244,7 +5286,11 @@ body {
 }
 
 .at-timeline-frame.has-round-rail .at-timeline-virtual {
-  width: min(var(--at-timeline-column-width), 100%, max(320px, calc(100% - 288px)));
+  width: min(
+    var(--at-timeline-column-width),
+    100%,
+    max(320px, calc(100% - 288px))
+  );
   margin: 0 auto;
 }
 
@@ -5604,7 +5650,8 @@ body {
   transition: transform 120ms ease;
 }
 
-.at-round-marker-intent[data-open="true"] .at-round-marker-intent-summary::before {
+.at-round-marker-intent[data-open="true"]
+  .at-round-marker-intent-summary::before {
   transform: rotate(90deg);
 }
 
@@ -5760,7 +5807,9 @@ body {
   transition: transform 0.16s ease;
 }
 
-.at-processed-group[open] > .at-processed-group-summary .at-processed-group-toggle {
+.at-processed-group[open]
+  > .at-processed-group-summary
+  .at-processed-group-toggle {
   transform: rotate(90deg);
 }
 
@@ -6117,7 +6166,8 @@ body {
 
 .at-message-tool:not([open])[data-status="running"] .at-message-tool-summary,
 .at-message-tool:not([open])[data-status="error"] .at-message-tool-summary,
-.at-message-tool:not([open])[data-status="validation_failed"] .at-message-tool-summary {
+.at-message-tool:not([open])[data-status="validation_failed"]
+  .at-message-tool-summary {
   color: var(--at-text);
 }
 
@@ -6977,7 +7027,9 @@ body {
   background: var(--at-appearance-diff-added-bg);
 }
 
-.at-appearance-diff-side.is-deleted .at-appearance-code-line > span:nth-child(2) {
+.at-appearance-diff-side.is-deleted
+  .at-appearance-code-line
+  > span:nth-child(2) {
   color: var(--at-danger);
 }
 
@@ -7051,7 +7103,11 @@ body {
   padding: 3px 10px 3px 8px;
   border: 1px solid var(--at-border);
   border-radius: 8px;
-  background: color-mix(in srgb, var(--at-surface-muted) 72%, var(--at-surface));
+  background: color-mix(
+    in srgb,
+    var(--at-surface-muted) 72%,
+    var(--at-surface)
+  );
   color: var(--at-text);
   cursor: pointer;
   font: inherit;
@@ -7312,7 +7368,10 @@ body {
 
   .at-board-columns,
   .at-board-columns.is-archived-visible {
-    grid-auto-columns: minmax(248px, calc(100vw - var(--at-sidebar-width, 280px) - 54px));
+    grid-auto-columns: minmax(
+      248px,
+      calc(100vw - var(--at-sidebar-width, 280px) - 54px)
+    );
     grid-auto-flow: column;
     grid-template-columns: none;
     overflow-x: auto;
@@ -7618,7 +7677,10 @@ body {
 }
 
 .at-orchestration-list-row {
-  grid-template-columns: minmax(0, 1fr) minmax(86px, 132px) max-content max-content;
+  grid-template-columns: minmax(0, 1fr) minmax(
+      86px,
+      132px
+    ) max-content max-content;
 }
 
 .at-plugin-list-row {

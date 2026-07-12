@@ -1466,7 +1466,12 @@ describe("SessionsSidebar", () => {
     expect(screen.queryByText("C:/work/agent-teams")).not.toBeInTheDocument();
     fireEvent.click(workspaceRow);
 
-    expect(screen.queryByText("Alpha")).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Alpha").closest(".at-workspace-group-disclosure"),
+    ).toHaveAttribute("data-open", "false");
+    expect(
+      screen.getByText("Alpha").closest(".at-workspace-group-disclosure"),
+    ).toHaveAttribute("inert");
     expect(screen.getByRole("button", { name: "Expand Agent Teams" })).toHaveAttribute(
       "aria-expanded",
       "false",

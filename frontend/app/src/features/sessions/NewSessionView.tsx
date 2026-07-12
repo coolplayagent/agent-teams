@@ -1,7 +1,7 @@
 import { App, Button, Checkbox, Input, Select, Switch, Typography } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, ChevronDown } from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import {
   createRun,
@@ -19,6 +19,7 @@ import type {
 } from "../../api/contracts";
 import { useTranslations } from "../../i18n";
 import { useOptimisticRunStore } from "../../runtime/optimisticRunStore";
+import { DisclosureMotion } from "../../components/AsyncFeedback";
 import { ModelRequestStatus } from "../timeline/ModelRequestStatus";
 import { workspaceDisplayLabel } from "../workspaces/workspaceLabels";
 
@@ -60,19 +61,26 @@ export function NewSessionView({
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const t = useTranslations();
+  const advancedSectionId = useId();
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [workspaceId, setWorkspaceId] = useState(initialWorkspaceId ?? "");
   const [modelProfile, setModelProfile] = useState<string | null>(null);
   const [sessionMode, setSessionMode] = useState<SessionMode>("normal");
   const [roleId, setRoleId] = useState<string | null>(null);
-  const [orchestrationPresetId, setOrchestrationPresetId] = useState<string | null>(null);
+  const [orchestrationPresetId, setOrchestrationPresetId] = useState<
+    string | null
+  >(null);
   const [targetRoleId, setTargetRoleId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [promptText, setPromptText] = useState("");
   const [thinkingEnabled, setThinkingEnabled] = useState(false);
-  const [thinkingEffort, setThinkingEffort] = useState<ThinkingEffort>("medium");
-  const [shellSafetyPolicyEnabled, setShellSafetyPolicyEnabled] = useState(true);
+  const [thinkingEffort, setThinkingEffort] =
+    useState<ThinkingEffort>("medium");
+  const [shellSafetyPolicyEnabled, setShellSafetyPolicyEnabled] =
+    useState(true);
   const [yolo, setYolo] = useState(true);
-  const [pendingSession, setPendingSession] = useState<PendingNewSession | null>(null);
+  const [pendingSession, setPendingSession] =
+    useState<PendingNewSession | null>(null);
   const sessionProgressRef = useRef<NewSessionProgress | null>(null);
   const rolesQuery = useQuery({
     queryKey: ["roles", "options"],
@@ -87,24 +95,27 @@ export function NewSessionView({
     queryFn: getOrchestrationConfig,
   });
   const workspaceOptions = useMemo(
-    () => workspaces.map((workspace) => ({
-      label: workspaceDisplayLabel(workspace, workspace.workspace_id),
-      value: workspace.workspace_id,
-    })),
+    () =>
+      workspaces.map((workspace) => ({
+        label: workspaceDisplayLabel(workspace, workspace.workspace_id),
+        value: workspace.workspace_id,
+      })),
     [workspaces],
   );
   const profileOptions = useMemo(
-    () => Object.entries(profilesQuery.data ?? {}).map(([id, profile]) => ({
-      label: profile.model?.trim() ? `${id} · ${profile.model}` : id,
-      value: id,
-    })),
+    () =>
+      Object.entries(profilesQuery.data ?? {}).map(([id, profile]) => ({
+        label: profile.model?.trim() ? `${id} · ${profile.model}` : id,
+        value: id,
+      })),
     [profilesQuery.data],
   );
   const roleOptions = useMemo(
-    () => (rolesQuery.data?.normal_mode_roles ?? []).map((role) => ({
-      label: role.name || role.role_id,
-      value: role.role_id,
-    })),
+    () =>
+      (rolesQuery.data?.normal_mode_roles ?? []).map((role) => ({
+        label: role.name || role.role_id,
+        value: role.role_id,
+      })),
     [rolesQuery.data],
   );
   const targetRoleOptions = useMemo(() => {
@@ -112,15 +123,19 @@ export function NewSessionView({
       ...(rolesQuery.data?.normal_mode_roles ?? []),
       ...(rolesQuery.data?.subagent_roles ?? []),
     ];
-    return Array.from(new Map(roles.map((role) => [role.role_id, role])).values()).map(
-      (role) => ({ label: role.name || role.role_id, value: role.role_id }),
-    );
+    return Array.from(
+      new Map(roles.map((role) => [role.role_id, role])).values(),
+    ).map((role) => ({
+      label: role.name || role.role_id,
+      value: role.role_id,
+    }));
   }, [rolesQuery.data]);
   const orchestrationOptions = useMemo(
-    () => (orchestrationQuery.data?.presets ?? []).map((preset) => ({
-      label: preset.name?.trim() || preset.preset_id,
-      value: preset.preset_id,
-    })),
+    () =>
+      (orchestrationQuery.data?.presets ?? []).map((preset) => ({
+        label: preset.name?.trim() || preset.preset_id,
+        value: preset.preset_id,
+      })),
     [orchestrationQuery.data],
   );
 
@@ -131,8 +146,10 @@ export function NewSessionView({
   }, [workspaceId, workspaceOptions]);
 
   useEffect(() => {
-    const defaultProfile = Object.entries(profilesQuery.data ?? {})
-      .find(([, profile]) => profile.is_default)?.[0] ?? null;
+    const defaultProfile =
+      Object.entries(profilesQuery.data ?? {}).find(
+        ([, profile]) => profile.is_default,
+      )?.[0] ?? null;
     if (modelProfile === null && defaultProfile !== null) {
       setModelProfile(defaultProfile);
     }
@@ -165,17 +182,18 @@ export function NewSessionView({
         sessionProgressRef.current = progress;
       }
       if (!progress.topologyReady) {
-        const session = sessionMode === "orchestration"
-          ? await updateSessionTopology(progress.session.session_id, {
-            session_mode: "orchestration",
-            orchestration_preset_id: orchestrationPresetId,
-          })
-          : roleId !== null && roleId !== progress.session.normal_root_role_id
+        const session =
+          sessionMode === "orchestration"
             ? await updateSessionTopology(progress.session.session_id, {
-              session_mode: "normal",
-              normal_root_role_id: roleId,
-            })
-            : progress.session;
+                session_mode: "orchestration",
+                orchestration_preset_id: orchestrationPresetId,
+              })
+            : roleId !== null && roleId !== progress.session.normal_root_role_id
+              ? await updateSessionTopology(progress.session.session_id, {
+                  session_mode: "normal",
+                  normal_root_role_id: roleId,
+                })
+              : progress.session;
         progress = { session, topologyReady: true };
         sessionProgressRef.current = progress;
       }
@@ -219,15 +237,19 @@ export function NewSessionView({
       onCreated(session, run, createdPrompt);
     },
     onError: (error) => {
-      const errorText = error instanceof Error ? error.message : t("sidebarCreateFailed");
-      setPendingSession((current) => current === null
-        ? { error: errorText, promptText: promptText.trim() }
-        : { ...current, error: errorText });
+      const errorText =
+        error instanceof Error ? error.message : t("sidebarCreateFailed");
+      setPendingSession((current) =>
+        current === null
+          ? { error: errorText, promptText: promptText.trim() }
+          : { ...current, error: errorText },
+      );
       void message.error(errorText);
     },
   });
 
-  const queryError = rolesQuery.error ?? profilesQuery.error ?? orchestrationQuery.error;
+  const queryError =
+    rolesQuery.error ?? profilesQuery.error ?? orchestrationQuery.error;
   const submit = () => {
     if (workspaceId && !createMutation.isPending) {
       setPendingSession({ error: null, promptText: promptText.trim() });
@@ -249,7 +271,9 @@ export function NewSessionView({
             data-role-id="user"
           >
             <div className="at-message-content">
-              {pendingSession.promptText || title.trim() || t("sidebarNewSession")}
+              {pendingSession.promptText ||
+                title.trim() ||
+                t("sidebarNewSession")}
             </div>
           </article>
           {pendingSession.error === null ? (
@@ -260,10 +284,16 @@ export function NewSessionView({
             />
           ) : (
             <div className="at-new-session-pending-error" role="alert">
-              <Typography.Text type="danger">{pendingSession.error}</Typography.Text>
+              <Typography.Text type="danger">
+                {pendingSession.error}
+              </Typography.Text>
               <div className="at-new-session-actions">
-                <Button onClick={() => setPendingSession(null)}>{t("sidebarRenameCancel")}</Button>
-                <Button onClick={submit} type="primary">{t("settingsRetry")}</Button>
+                <Button onClick={() => setPendingSession(null)}>
+                  {t("sidebarRenameCancel")}
+                </Button>
+                <Button onClick={submit} type="primary">
+                  {t("settingsRetry")}
+                </Button>
               </div>
             </div>
           )}
@@ -297,14 +327,24 @@ export function NewSessionView({
             type="text"
           />
           <div>
-            <Typography.Title level={2}>{t("sidebarNewSession")}</Typography.Title>
-            <Typography.Text type="secondary">{t("composerPromptPlaceholder")}</Typography.Text>
+            <Typography.Title level={2}>
+              {t("sidebarNewSession")}
+            </Typography.Title>
+            <Typography.Text type="secondary">
+              {t("composerPromptPlaceholder")}
+            </Typography.Text>
           </div>
         </header>
 
         {queryError !== null && queryError !== undefined ? (
-          <Typography.Text className="at-new-session-error" role="alert" type="danger">
-            {queryError instanceof Error ? queryError.message : t("sidebarCreateFailed")}
+          <Typography.Text
+            className="at-new-session-error"
+            role="alert"
+            type="danger"
+          >
+            {queryError instanceof Error
+              ? queryError.message
+              : t("sidebarCreateFailed")}
           </Typography.Text>
         ) : null}
 
@@ -393,49 +433,73 @@ export function NewSessionView({
           />
         </label>
 
-        <details className="at-new-session-advanced">
-          <summary>{t("newSessionAdvanced")}</summary>
-          <div className="at-new-session-advanced-grid">
-            <label>
-              <span>{t("composerTargetRole")}</span>
-              <Select
-                allowClear
-                aria-label={t("composerTargetRole")}
-                loading={rolesQuery.isLoading}
-                onChange={(value) => setTargetRoleId(value ?? null)}
-                options={targetRoleOptions}
-                value={targetRoleId ?? undefined}
-              />
-            </label>
-            <label className="at-new-session-toggle">
-              <span>{t("composerThinking")}</span>
-              <Switch checked={thinkingEnabled} onChange={setThinkingEnabled} />
-            </label>
-            {thinkingEnabled ? (
+        <section className="at-new-session-advanced">
+          <button
+            aria-controls={advancedSectionId}
+            aria-expanded={advancedOpen}
+            className="at-new-session-advanced-trigger"
+            onClick={() => setAdvancedOpen((current) => !current)}
+            type="button"
+          >
+            <ChevronDown aria-hidden="true" size={15} />
+            <span>{t("newSessionAdvanced")}</span>
+          </button>
+          <DisclosureMotion open={advancedOpen}>
+            <div
+              className="at-new-session-advanced-grid"
+              id={advancedSectionId}
+            >
               <label>
-                <span>{t("composerThinkingEffort")}</span>
+                <span>{t("composerTargetRole")}</span>
                 <Select
-                  aria-label={t("composerThinkingEffort")}
-                  onChange={setThinkingEffort}
-                  options={["minimal", "low", "medium", "high"].map((value) => ({
-                    label: value,
-                    value,
-                  }))}
-                  value={thinkingEffort}
+                  allowClear
+                  aria-label={t("composerTargetRole")}
+                  loading={rolesQuery.isLoading}
+                  onChange={(value) => setTargetRoleId(value ?? null)}
+                  options={targetRoleOptions}
+                  value={targetRoleId ?? undefined}
                 />
               </label>
-            ) : null}
-            <Checkbox
-              checked={shellSafetyPolicyEnabled}
-              onChange={(event) => setShellSafetyPolicyEnabled(event.target.checked)}
-            >
-              {t("composerShellSafety")}
-            </Checkbox>
-            <Checkbox checked={yolo} onChange={(event) => setYolo(event.target.checked)}>
-              {t("composerYolo")}
-            </Checkbox>
-          </div>
-        </details>
+              <label className="at-new-session-toggle">
+                <span>{t("composerThinking")}</span>
+                <Switch
+                  checked={thinkingEnabled}
+                  onChange={setThinkingEnabled}
+                />
+              </label>
+              {thinkingEnabled ? (
+                <label>
+                  <span>{t("composerThinkingEffort")}</span>
+                  <Select
+                    aria-label={t("composerThinkingEffort")}
+                    onChange={setThinkingEffort}
+                    options={["minimal", "low", "medium", "high"].map(
+                      (value) => ({
+                        label: value,
+                        value,
+                      }),
+                    )}
+                    value={thinkingEffort}
+                  />
+                </label>
+              ) : null}
+              <Checkbox
+                checked={shellSafetyPolicyEnabled}
+                onChange={(event) =>
+                  setShellSafetyPolicyEnabled(event.target.checked)
+                }
+              >
+                {t("composerShellSafety")}
+              </Checkbox>
+              <Checkbox
+                checked={yolo}
+                onChange={(event) => setYolo(event.target.checked)}
+              >
+                {t("composerYolo")}
+              </Checkbox>
+            </div>
+          </DisclosureMotion>
+        </section>
 
         <footer className="at-new-session-actions">
           <Button disabled={createMutation.isPending} onClick={onCancel}>
@@ -447,7 +511,9 @@ export function NewSessionView({
             loading={createMutation.isPending}
             type="primary"
           >
-            {promptText.trim() ? t("newSessionCreateAndRun") : t("sidebarNewSession")}
+            {promptText.trim()
+              ? t("newSessionCreateAndRun")
+              : t("sidebarNewSession")}
           </Button>
         </footer>
       </form>

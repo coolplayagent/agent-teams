@@ -2578,7 +2578,8 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 14px 20px 12px;
+  min-height: 54px;
+  padding: 10px 18px;
   border-bottom: 1px solid var(--at-border);
   background: var(--at-bg);
 }
@@ -2624,42 +2625,40 @@ body {
   flex-direction: column;
   gap: 12px;
   min-height: 0;
-  overflow: auto;
-  padding: 16px 20px 22px;
+  overflow: hidden;
+  padding: 12px 18px 18px;
 }
 
 .at-connectors-summary {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(112px, 1fr));
-  gap: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  overflow: visible;
 }
 
 .at-connectors-summary-cell {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 9px 11px;
+  gap: 5px;
+  min-height: 26px;
+  padding: 3px 8px;
   border: 1px solid var(--at-border);
-  border-left-width: 3px;
-  border-radius: 6px;
+  border-radius: 999px;
   background: var(--at-surface);
 }
 
 .at-connectors-summary-cell span {
-  min-width: 0;
-  overflow: hidden;
   color: var(--at-text-muted);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 11px;
+  line-height: 1;
 }
 
 .at-connectors-summary-cell strong {
   color: var(--at-text);
-  font-size: 18px;
+  font-family: var(--at-font-mono);
+  font-size: 11px;
   font-weight: 650;
+  line-height: 1;
 }
 
 .at-connectors-summary-cell.is-neutral {
@@ -2683,15 +2682,15 @@ body {
 }
 
 .at-connectors-controls {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) max-content;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
 }
 
 .at-connectors-search {
-  width: min(360px, 100%);
+  width: 100%;
 }
 
 .at-connectors-test-result {
@@ -2700,27 +2699,31 @@ body {
 
 .at-connectors-workbench {
   flex: 1 1 auto;
-  display: grid;
-  grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
-  gap: 12px;
-  min-height: 0;
-}
-
-.at-connectors-card-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
+  display: block;
   min-height: 0;
   overflow: auto;
 }
 
+.at-connectors-card-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+  max-height: none;
+  overflow: visible;
+}
+
 .at-connectors-card {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
   width: 100%;
-  padding: 11px;
+  min-width: 0;
+  min-height: 112px;
+  padding: 0;
+  overflow: hidden;
   border: 1px solid var(--at-border);
   border-radius: 8px;
   background: var(--at-surface);
@@ -2742,12 +2745,12 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   border: 1px solid var(--at-border);
-  border-radius: 7px;
+  border-radius: 6px;
   background: var(--at-bg);
-  color: var(--at-text);
+  color: var(--at-text-muted);
   font-size: 12px;
   font-weight: 700;
   line-height: 1;
@@ -2769,6 +2772,7 @@ body {
 }
 
 .at-connectors-card-body strong {
+  font-size: 13px;
   font-weight: 650;
 }
 
@@ -2784,22 +2788,24 @@ body {
 }
 
 .at-connectors-card-footer {
-  grid-column: 1 / -1;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, auto) auto minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  justify-content: stretch;
+  gap: 8px;
   min-width: 0;
-  padding-top: 2px;
+  min-height: 42px;
+  padding: 7px 8px 7px 12px;
+  border-top: 1px solid var(--at-border);
 }
 
 .at-connectors-card-select {
   display: grid;
-  grid-column: 1 / -1;
-  grid-template-columns: 34px minmax(0, 1fr);
+  grid-template-columns: 30px minmax(0, 1fr);
   gap: 10px;
   width: 100%;
-  padding: 0;
+  min-width: 0;
+  padding: 11px 12px 9px;
   border: 0;
   background: transparent;
   color: inherit;

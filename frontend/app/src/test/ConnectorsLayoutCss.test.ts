@@ -8,8 +8,16 @@ const source = readFileSync(
   "src/features/connectors/ConnectorsView.tsx",
   "utf8",
 );
+const mainSource = readFileSync("src/main.tsx", "utf8");
 
 describe("connectors workbench layout", () => {
+  it("loads the focused connector layout after the shared theme cascade", () => {
+    expect(mainSource).toContain('import "./features/connectors/ConnectorsLayout.css"');
+    expect(mainSource.indexOf('import "./features/connectors/ConnectorsLayout.css"'))
+      .toBeGreaterThan(mainSource.indexOf('import "./styles/theme.css"'));
+    expect(source).not.toContain('import "./ConnectorsLayout.css"');
+  });
+
   it("uses compact status chips and a dense three-column scrolling card grid", () => {
     expect(css).toMatch(
       /\.at-connectors-summary\s*{[\s\S]*?display:\s*flex;[\s\S]*?flex-wrap:\s*wrap;/,

@@ -10,6 +10,7 @@ import { useUiStore } from "./runtime/uiStore";
 import "./styles/feedback.css";
 import "./styles/theme.css";
 import "./styles/componentTheme.css";
+import "./features/connectors/ConnectorsLayout.css";
 import "./styles/scrollbars.css";
 
 const root = document.getElementById("root");

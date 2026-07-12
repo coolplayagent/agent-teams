@@ -51,7 +51,6 @@ import {
   type GatewayConnectorProvider,
 } from "./GatewayConnectorEditor";
 import type { SystemSettingsPage } from "../settings/settingsNavigation";
-import "./ConnectorsLayout.css";
 
 type ConnectorFilter = "all" | ConnectorStatus;
 type ConnectorSection = "connectors" | "tools";

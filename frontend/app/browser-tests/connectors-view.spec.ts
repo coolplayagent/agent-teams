@@ -238,6 +238,19 @@ test("uses a dense responsive connector grid without a vacant detail column", as
     const grid = connectorsView.locator(".at-connectors-card-list");
     await expect(page.getByTestId("connector-card-wechat")).toBeVisible();
     await expectGridColumns(grid, 3);
+    const wideLayout = await connectorsView.evaluate((view) => {
+      const workbench = view.querySelector<HTMLElement>(".at-connectors-workbench");
+      const cardList = view.querySelector<HTMLElement>(".at-connectors-card-list");
+      if (workbench === null || cardList === null) {
+        throw new Error("Connector workbench did not render");
+      }
+      return {
+        cardListWidth: cardList.getBoundingClientRect().width,
+        workbenchWidth: workbench.getBoundingClientRect().width,
+      };
+    });
+    expect(wideLayout.workbenchWidth).toBeGreaterThan(1000);
+    expect(wideLayout.cardListWidth / wideLayout.workbenchWidth).toBeGreaterThan(0.97);
     const wideCards = await grid.locator(".at-connectors-card").evaluateAll(
       (cards) => cards.map((card) => card.getBoundingClientRect()),
     );

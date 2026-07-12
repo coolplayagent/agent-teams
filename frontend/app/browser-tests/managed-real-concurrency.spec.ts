@@ -6,6 +6,7 @@ import {
   type ManagedRealBackend,
   startManagedRealBackend,
 } from "./support/managed-real-backend";
+import { ExpectedRequestAbortLedger } from "./support/expected-request-aborts";
 
 const ENABLED = process.env.AGENT_TEAMS_MANAGED_REAL_CONCURRENCY === "1";
 const SESSION_COUNT = boundedSessionCount(
@@ -556,18 +557,17 @@ declare global {
 }
 
 function installFailureCollection(page: Page): FailureCollection {
-  let expectedEventAbortWindowDepth = 0;
+  const expectedAbortLedger = new ExpectedRequestAbortLedger();
   const failures = {
     beginExpectedEventAbortWindow: () => {
-      expectedEventAbortWindowDepth += 1;
+      expectedAbortLedger.captureLifecycleRequests();
     },
     consoleErrors: [] as string[],
     crashes: [] as string[],
     endExpectedEventAbortWindow: () => {
-      expectedEventAbortWindowDepth = Math.max(
-        0,
-        expectedEventAbortWindowDepth - 1,
-      );
+      // Expected aborts are tied to the exact requests that were already in
+      // flight when the lifecycle action began. Keep them until those
+      // asynchronous requestfailed events arrive.
     },
     httpFailures: [] as string[],
     networkFailures: [] as string[],
@@ -583,13 +583,15 @@ function installFailureCollection(page: Page): FailureCollection {
   });
   page.on("crash", () => failures.crashes.push("page crashed"));
   page.on("pageerror", (error) => failures.pageErrors.push(error.message));
+  page.on("request", (request) => {
+    expectedAbortLedger.requestStarted(request);
+  });
+  page.on("requestfinished", (request) => {
+    expectedAbortLedger.requestSettled(request);
+  });
   page.on("requestfailed", (request) => {
     const errorText = request.failure()?.errorText ?? "unknown";
-    if (
-      expectedEventAbortWindowDepth > 0 &&
-      request.url().includes("/events") &&
-      errorText.includes("ERR_ABORTED")
-    ) {
+    if (expectedAbortLedger.consumeExpectedAbort(request, errorText)) {
       return;
     }
     failures.networkFailures.push(

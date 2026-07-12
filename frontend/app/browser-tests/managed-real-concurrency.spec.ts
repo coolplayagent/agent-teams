@@ -682,10 +682,16 @@ async function verifyRunningSubagent(
   const cardObservedAtMs = Date.now() - gateStartedAt;
   await expandProcessedGroupsUntilCardIsVisible(page, card);
   await expect(card).toBeVisible({ timeout: 10_000 });
-  await expect(card).toHaveAttribute("data-status", "running");
   await recordInteraction(page, () => card.click());
   const panel = page.locator(".at-subagent-session-view");
   await expect(panel).toBeVisible({ timeout: 20_000 });
+  await expect
+    .poll(
+      () =>
+        panel.locator(".at-subagent-session-badge").getAttribute("data-status"),
+      { timeout: 20_000 },
+    )
+    .toBe("running");
   await expect(panel.locator(".at-subagent-session-prompt")).toContainText(
     run.tag,
   );

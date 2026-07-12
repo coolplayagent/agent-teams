@@ -66,6 +66,58 @@ def test_resolve_known_ignores_unknown_skills_when_strict_is_false(
     assert resolved == ("time",)
 
 
+def test_get_skill_definitions_discovers_once_for_many_names(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name in ("alpha", "beta", "gamma"):
+        _write_skill(
+            tmp_path / "skills" / name,
+            name=name,
+            description=f"{name} helper",
+            instructions=f"Use {name}.",
+        )
+    registry = SkillRegistry(directory=_skills_directory(tmp_path / "skills"))
+    original_discover = SkillsDirectory.discover
+    discover_calls = 0
+
+    def counted_discover(directory: SkillsDirectory) -> None:
+        nonlocal discover_calls
+        discover_calls += 1
+        original_discover(directory)
+
+    monkeypatch.setattr(SkillsDirectory, "discover", counted_discover)
+
+    skills = registry.get_skill_definitions(
+        ("gamma", "missing", "alpha", "gamma"),
+        strict=False,
+        consumer="tests.skill_registry.bulk_resolution",
+    )
+
+    assert tuple(skill.metadata.name for skill in skills) == (
+        "gamma",
+        "alpha",
+        "gamma",
+    )
+    assert discover_calls == 1
+
+
+def test_empty_skill_resolution_does_not_scan_directories(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = SkillRegistry(directory=_skills_directory(tmp_path / "skills"))
+
+    def unexpected_discover(directory: SkillsDirectory) -> None:
+        _ = directory
+        pytest.fail("empty skill resolution must not scan skill directories")
+
+    monkeypatch.setattr(SkillsDirectory, "discover", unexpected_discover)
+
+    assert registry.get_skill_definitions(()) == ()
+    assert registry.resolve_known(()) == ()
+
+
 def test_resolve_known_trims_blank_entries_and_preserves_requested_order(
     tmp_path: Path,
 ) -> None:

@@ -408,23 +408,20 @@ class SkillRuntimeService:
         skill_names: tuple[str, ...],
         consumer: str,
     ) -> tuple[Skill, ...]:
-        resolved_names = self._skill_registry.resolve_known(
+        resolved_skills = self._skill_registry.get_skill_definitions(
             skill_names,
             strict=False,
             consumer=consumer,
         )
-        resolved_skills: list[Skill] = []
+        unique_skills: list[Skill] = []
         seen_names: set[str] = set()
-        for name in resolved_names:
-            skill = self._skill_registry.get_skill_definition(name)
-            if skill is None:
-                continue
+        for skill in resolved_skills:
             normalized_name = skill.metadata.name
             if normalized_name in seen_names:
                 continue
             seen_names.add(normalized_name)
-            resolved_skills.append(skill)
-        return tuple(resolved_skills)
+            unique_skills.append(skill)
+        return tuple(unique_skills)
 
     def _instruction_entries_for_names(
         self,

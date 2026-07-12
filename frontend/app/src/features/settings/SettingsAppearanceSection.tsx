@@ -1,7 +1,8 @@
-import { App, Button, Input, Segmented, Switch, Typography } from "antd";
+import { App, Button, Input, Segmented, Typography } from "antd";
 import type { ChangeEvent, CSSProperties, FocusEvent, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 
+import { ChoiceControl } from "../../components/ChoiceControl";
 import { useTranslations } from "../../i18n";
 import type { AppearanceSettings } from "../../runtime/appearance";
 import {
@@ -424,13 +425,13 @@ export function SettingsAppearanceSection({
               value={appearance.codeFont}
             />
           </SettingsTableRow>
-          <SettingsTableRow label={t("settingsAppearanceTranslucentSidebar")}>
-            <Switch
-              aria-label={t("settingsAppearanceTranslucentSidebar")}
-              checked={appearance.translucentSidebar}
-              onChange={(checked) => updateAppearance("translucentSidebar", checked)}
-            />
-          </SettingsTableRow>
+          <ChoiceControl
+            checked={appearance.translucentSidebar}
+            kind="switch"
+            label={t("settingsAppearanceTranslucentSidebar")}
+            onChange={(checked) => updateAppearance("translucentSidebar", checked)}
+            variant="row"
+          />
           <SettingsTableRow label={t("settingsAppearanceContrast")}>
             <RangePill
               label={t("settingsAppearanceContrast")}
@@ -444,16 +445,14 @@ export function SettingsAppearanceSection({
         </div>
 
         <div className="at-appearance-panel">
-          <SettingsTableRow
+          <ChoiceControl
+            checked={appearance.pointerCursor}
             description={t("settingsAppearancePointerCursorHelp")}
+            kind="switch"
             label={t("settingsAppearancePointerCursor")}
-          >
-            <Switch
-              aria-label={t("settingsAppearancePointerCursor")}
-              checked={appearance.pointerCursor}
-              onChange={(checked) => updateAppearance("pointerCursor", checked)}
-            />
-          </SettingsTableRow>
+            onChange={(checked) => updateAppearance("pointerCursor", checked)}
+            variant="row"
+          />
           <SettingsTableRow
             description={t("settingsAppearanceReduceMotionHelp")}
             label={t("settingsAppearanceReduceMotion")}
@@ -533,16 +532,14 @@ export function SettingsAppearanceSection({
               value={appearance.diffMarker}
             />
           </SettingsTableRow>
-          <SettingsTableRow
+          <ChoiceControl
+            checked={appearance.showDiagnostics}
             description={t("settingsAppearanceShowDiagnosticsHelp")}
+            kind="switch"
             label={t("settingsAppearanceShowDiagnostics")}
-          >
-            <Switch
-              aria-label={t("settingsAppearanceShowDiagnostics")}
-              checked={appearance.showDiagnostics}
-              onChange={(checked) => updateAppearance("showDiagnostics", checked)}
-            />
-          </SettingsTableRow>
+            onChange={(checked) => updateAppearance("showDiagnostics", checked)}
+            variant="row"
+          />
         </div>
 
         <div className="at-appearance-footer">

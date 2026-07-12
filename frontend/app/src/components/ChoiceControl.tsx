@@ -9,10 +9,10 @@ import {
 
 import "./ChoiceControl.css";
 
-export type ChoiceControlKind = "checkbox" | "switch";
-export type ChoiceControlVariant = "plain" | "chip";
+export type ChoiceControlKind = "checkbox" | "radio" | "switch";
+export type ChoiceControlVariant = "plain" | "chip" | "row";
 
-interface ChoiceControlProps {
+export interface ChoiceControlProps {
   ariaLabel?: string;
   checked: boolean;
   className?: string;
@@ -27,6 +27,28 @@ interface ChoiceControlProps {
   onChange: (checked: boolean, event: ChangeEvent<HTMLInputElement>) => void;
   value?: string;
   variant?: ChoiceControlVariant;
+}
+
+export type FormChoiceControlProps = Omit<
+  ChoiceControlProps,
+  "checked" | "onChange"
+> & {
+  checked?: boolean;
+  onChange?: ChoiceControlProps["onChange"];
+};
+
+export interface ChoiceControlGroupOption {
+  description?: ReactNode;
+  disabled?: boolean;
+  label: ReactNode;
+  value: string;
+}
+
+export interface ChoiceControlGroupProps {
+  disabled?: boolean;
+  onChange?: (values: string[]) => void;
+  options: ChoiceControlGroupOption[];
+  value?: string[];
 }
 
 export function ChoiceControl({
@@ -82,9 +104,16 @@ export function ChoiceControl({
         disabled={isDisabled}
         name={name}
         onChange={(event) => onChange(event.target.checked, event)}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" || isDisabled) {
+            return;
+          }
+          event.preventDefault();
+          inputRef.current?.click();
+        }}
         ref={inputRef}
         role={kind === "switch" ? "switch" : undefined}
-        type="checkbox"
+        type={kind === "radio" ? "radio" : "checkbox"}
         value={value}
       />
       <span className="at-choice-control-indicator" aria-hidden="true">
@@ -101,5 +130,46 @@ export function ChoiceControl({
         )}
       </span>
     </label>
+  );
+}
+
+export function FormChoiceControl({
+  checked = false,
+  onChange = () => undefined,
+  ...props
+}: FormChoiceControlProps) {
+  return <ChoiceControl checked={checked} onChange={onChange} {...props} />;
+}
+
+export function ChoiceControlGroup({
+  disabled = false,
+  onChange = () => undefined,
+  options,
+  value = [],
+}: ChoiceControlGroupProps) {
+  return (
+    <div className="at-choice-control-group" role="group">
+      {options.map((option) => {
+        const checked = value.includes(option.value);
+        return (
+          <ChoiceControl
+            checked={checked}
+            description={option.description}
+            disabled={disabled || option.disabled}
+            key={option.value}
+            label={option.label}
+            onChange={(nextChecked) => {
+              onChange(
+                nextChecked
+                  ? Array.from(new Set([...value, option.value]))
+                  : value.filter((entry) => entry !== option.value),
+              );
+            }}
+            value={option.value}
+            variant="chip"
+          />
+        );
+      })}
+    </div>
   );
 }

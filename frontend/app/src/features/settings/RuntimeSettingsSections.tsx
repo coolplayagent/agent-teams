@@ -1,6 +1,6 @@
 import { Play, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { App, Button, Form, Input, Popconfirm, Progress, Select, Switch, Typography } from "antd";
+import { App, Button, Form, Input, Popconfirm, Progress, Select, Typography } from "antd";
 import { useEffect, useState, type ReactNode } from "react";
 
 import {
@@ -48,6 +48,7 @@ import type {
   PluginRuntimeRecord,
   PluginUserConfigField,
 } from "../../api/contracts";
+import { FormChoiceControl } from "../../components/ChoiceControl";
 import { useTranslations, type Translate } from "../../i18n";
 import { SettingsQueryState, SettingsSection } from "./SettingsShared";
 
@@ -509,32 +510,40 @@ function PluginInstallView({
               </div>
             ) : null}
             <Form.Item
-              label={t("settingsPluginsAllowCommunity")}
               name="allow_community_plugins"
               valuePropName="checked"
             >
-              <Switch />
+              <FormChoiceControl
+                kind="switch"
+                label={t("settingsPluginsAllowCommunity")}
+              />
             </Form.Item>
             <Form.Item
-              label={t("settingsPluginsAllowExecutesCode")}
               name="allow_executes_code"
               valuePropName="checked"
             >
-              <Switch />
+              <FormChoiceControl
+                kind="switch"
+                label={t("settingsPluginsAllowExecutesCode")}
+              />
             </Form.Item>
             <Form.Item
-              label={t("settingsPluginsAllowMissingDigest")}
               name="allow_missing_digest"
               valuePropName="checked"
             >
-              <Switch />
+              <FormChoiceControl
+                kind="switch"
+                label={t("settingsPluginsAllowMissingDigest")}
+              />
             </Form.Item>
             <Form.Item
-              label={t("settingsPluginsAllowUncleanScan")}
               name="allow_unclean_scan"
               valuePropName="checked"
             >
-              <Switch />
+              <FormChoiceControl
+                kind="switch"
+                label={t("settingsPluginsAllowUncleanScan")}
+              />
             </Form.Item>
           </>
         ) : null}
@@ -751,12 +760,15 @@ function PluginConfigFormItem({
   if (fieldType === "boolean") {
     return (
       <Form.Item
-        extra={description}
-        label={label}
         name={name}
         valuePropName="checked"
       >
-        <Switch />
+        <FormChoiceControl
+          description={description}
+          kind="switch"
+          label={label}
+          variant="row"
+        />
       </Form.Item>
     );
   }
@@ -1198,11 +1210,13 @@ function AgentRuntimeEditor({
             <div className="at-settings-form-card-layout">
               <div className="at-agent-runtime-form-grid">
                 <Form.Item
-                  label={t("settingsAgentRuntimeNativeConfig")}
                   name="native_config_enabled"
                   valuePropName="checked"
                 >
-                  <Switch />
+                  <FormChoiceControl
+                    kind="switch"
+                    label={t("settingsAgentRuntimeNativeConfig")}
+                  />
                 </Form.Item>
                 <Form.Item
                   label={t("settingsAgentRuntimeNativeProvider")}
@@ -1211,11 +1225,13 @@ function AgentRuntimeEditor({
                   <Input autoComplete="off" />
                 </Form.Item>
                 <Form.Item
-                  label={t("settingsAgentRuntimeSkillBridge")}
                   name="skill_bridge_enabled"
                   valuePropName="checked"
                 >
-                  <Switch />
+                  <FormChoiceControl
+                    kind="switch"
+                    label={t("settingsAgentRuntimeSkillBridge")}
+                  />
                 </Form.Item>
                 <Form.Item
                   label={t("settingsAgentRuntimeSkillBridgeMode")}
@@ -1417,11 +1433,13 @@ function BindingFields({
                             />
                           </Form.Item>
                           <Form.Item
-                            label={t("settingsAgentRuntimeBindingSecret")}
                             name={[field.name, "secret"]}
                             valuePropName="checked"
                           >
-                            <Switch />
+                            <FormChoiceControl
+                              kind="switch"
+                              label={t("settingsAgentRuntimeBindingSecret")}
+                            />
                           </Form.Item>
                         </>
                       )}

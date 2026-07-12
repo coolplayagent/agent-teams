@@ -4,7 +4,6 @@ import {
   Form,
   Input,
   Select,
-  Switch,
   Tag,
   Typography,
 } from "antd";
@@ -41,6 +40,7 @@ import type {
   McpServerSummary,
   McpServerToolsSummary,
 } from "../../api/contracts";
+import { FormChoiceControl } from "../../components/ChoiceControl";
 import { useTranslations, type Translate } from "../../i18n";
 import { SettingsQueryState, SettingsSection } from "./SettingsShared";
 
@@ -688,11 +688,13 @@ function McpEditor({
           {editor.mode === "create" ? (
             <Form.Item
               className="at-mcp-overwrite"
-              label={t("settingsMcpOverwrite")}
               name="overwrite"
               valuePropName="checked"
             >
-              <Switch />
+              <FormChoiceControl
+                kind="switch"
+                label={t("settingsMcpOverwrite")}
+              />
             </Form.Item>
           ) : null}
         </div>

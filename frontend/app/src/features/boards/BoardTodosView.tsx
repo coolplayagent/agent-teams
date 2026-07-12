@@ -8,7 +8,6 @@ import {
   Popconfirm,
   Select,
   Skeleton,
-  Switch,
   Tag,
   Tooltip,
   Typography,
@@ -62,6 +61,7 @@ import type {
   BoardTodoStatusCounts,
   WorkspaceRecord,
 } from "../../api/contracts";
+import { ChoiceControl } from "../../components/ChoiceControl";
 import { useTranslations } from "../../i18n";
 import { useUiStore, type Language } from "../../runtime/uiStore";
 
@@ -549,11 +549,17 @@ export function BoardTodosView({
           >
             {t("boardShowing")} <strong>{filteredRows.length}</strong>
           </Typography.Text>
-          <label className="at-board-archive-toggle">
-            <Switch checked={includeArchived} onChange={setIncludeArchived} />
-            <span>{t("boardIncludeArchived")}</span>
-            <Archive aria-hidden="true" size={14} />
-          </label>
+          <ChoiceControl
+            checked={includeArchived}
+            kind="switch"
+            label={
+              <>
+                {t("boardIncludeArchived")}
+                <Archive aria-hidden="true" size={14} />
+              </>
+            }
+            onChange={setIncludeArchived}
+          />
         </div>
 
         {activeWorkspaceId === null && !loadingWorkspaces ? (
@@ -1041,14 +1047,13 @@ function BoardSourceSettingsModal({
                 value={editor.repositoryFullName}
               />
             </label>
-            <label className="at-board-source-switch">
-              <Switch
-                checked={editor.enabled}
-                disabled={busy}
-                onChange={(enabled) => onEditorChange({ enabled })}
-              />
-              <span>{t("boardSourceEnabled")}</span>
-            </label>
+            <ChoiceControl
+              checked={editor.enabled}
+              disabled={busy}
+              kind="switch"
+              label={t("boardSourceEnabled")}
+              onChange={(enabled) => onEditorChange({ enabled })}
+            />
             <div className="at-board-source-editor-actions">
               <Button disabled={busy} onClick={onStopEdit}>
                 {t("boardHandoffCancel")}

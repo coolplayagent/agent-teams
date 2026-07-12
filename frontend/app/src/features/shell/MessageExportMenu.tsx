@@ -1,4 +1,4 @@
-import { Button, Checkbox, Dropdown, Modal, Space, Tooltip, Typography } from "antd";
+import { Button, Dropdown, Modal, Space, Tooltip, Typography } from "antd";
 import type { MenuProps } from "antd";
 import { Download } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 
 import { listSessionRounds } from "../../api/client";
 import { contentPartText, type SessionRound } from "../../api/contracts";
+import { ChoiceControl } from "../../components/ChoiceControl";
 import {
   exportSessionMessages,
   type MessageExportFormat,
@@ -229,23 +230,25 @@ function useRoundSelectionDialog(): {
             {state.rounds.map((round, index) => {
               const key = roundKey(round, index);
               return (
-                <label className="at-message-export-selection-row" key={key}>
-                  <Checkbox
-                    checked={state.selectedKeys.includes(key)}
-                    onChange={(event) => {
-                      const nextSelected = event.target.checked
-                        ? [...state.selectedKeys, key]
-                        : state.selectedKeys.filter((value) => value !== key);
-                      setSelectedKeys(Array.from(new Set(nextSelected)));
-                    }}
-                  />
-                  <span className="at-message-export-selection-copy">
-                    <strong>
-                      {t("exportRoundSelectionRound", { index: index + 1 })}
-                    </strong>
-                    <span>{roundPreview(round)}</span>
-                  </span>
-                </label>
+                <ChoiceControl
+                  checked={state.selectedKeys.includes(key)}
+                  className="at-message-export-selection-row"
+                  key={key}
+                  label={
+                    <span className="at-message-export-selection-copy">
+                      <strong>
+                        {t("exportRoundSelectionRound", { index: index + 1 })}
+                      </strong>
+                      <span>{roundPreview(round)}</span>
+                    </span>
+                  }
+                  onChange={(checked) => {
+                    const nextSelected = checked
+                      ? [...state.selectedKeys, key]
+                      : state.selectedKeys.filter((value) => value !== key);
+                    setSelectedKeys(Array.from(new Set(nextSelected)));
+                  }}
+                />
               );
             })}
           </div>

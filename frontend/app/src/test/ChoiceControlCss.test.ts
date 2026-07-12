@@ -11,5 +11,8 @@ describe("choice control styling", () => {
     expect(css).toContain("--at-control-bg");
     expect(css).toContain("--at-focus-ring");
     expect(css).toContain("prefers-reduced-motion: reduce");
+    expect(css).toContain(".at-choice-control.is-row");
+    expect(css).toContain(".at-choice-control.is-switch.is-row");
+    expect(css).toContain("grid-template-columns: minmax(0, 1fr) var(--at-choice-size)");
   });
 });

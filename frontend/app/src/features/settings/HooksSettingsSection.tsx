@@ -1,6 +1,6 @@
 import { Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { App, Button, Input, Popconfirm, Select, Switch, Typography } from "antd";
+import { App, Button, Input, Popconfirm, Select, Typography } from "antd";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -19,6 +19,7 @@ import type {
   RoleOption,
 } from "../../api/contracts";
 import { ApiError } from "../../api/http";
+import { ChoiceControl } from "../../components/ChoiceControl";
 import { useTranslations, type Translate } from "../../i18n";
 import { SettingsQueryState, SettingsSection } from "./SettingsShared";
 
@@ -745,13 +746,14 @@ function HookHandlerEditor({
             value={handler.onError}
           />
         </label>
-        <label className="at-settings-field at-settings-switch-field">
-          <span>{t("settingsHooksRunAsync")}</span>
-          <Switch
-            checked={handler.runAsync}
-            onChange={(runAsync) => onUpdate((current) => ({ ...current, runAsync }))}
-          />
-        </label>
+        <ChoiceControl
+          checked={handler.runAsync}
+          className="at-settings-switch-field"
+          kind="switch"
+          label={t("settingsHooksRunAsync")}
+          onChange={(runAsync) => onUpdate((current) => ({ ...current, runAsync }))}
+          variant="row"
+        />
         <label className="at-settings-field at-settings-field-wide">
           <span>{t("settingsHooksStatusMessage")}</span>
           <Input

@@ -5,7 +5,6 @@ import {
   Form,
   Input,
   Select,
-  Switch,
   Typography,
 } from "antd";
 import type { FormInstance } from "antd";
@@ -50,6 +49,7 @@ import type {
   WeChatLoginStartResponse,
   WorkspaceRecord,
 } from "../../api/contracts";
+import { FormChoiceControl } from "../../components/ChoiceControl";
 import { useTranslations, type Translate } from "../../i18n";
 import { SettingsQueryState, SettingsSection } from "./SettingsShared";
 
@@ -1095,25 +1095,28 @@ function FeishuTriggerForm({
             </Form.Item>
           ) : null}
           <Form.Item
-            label={t("settingsTriggersYolo")}
             name="yolo"
             valuePropName="checked"
           >
-            <Switch />
+            <FormChoiceControl kind="switch" label={t("settingsTriggersYolo")} />
           </Form.Item>
           <Form.Item
-            label={t("settingsTriggersShellSafetyPolicy")}
             name="shell_safety_policy_enabled"
             valuePropName="checked"
           >
-            <Switch />
+            <FormChoiceControl
+              kind="switch"
+              label={t("settingsTriggersShellSafetyPolicy")}
+            />
           </Form.Item>
           <Form.Item
-            label={t("settingsTriggersThinking")}
             name="thinking_enabled"
             valuePropName="checked"
           >
-            <Switch />
+            <FormChoiceControl
+              kind="switch"
+              label={t("settingsTriggersThinking")}
+            />
           </Form.Item>
           {thinkingEnabled ? (
             <Form.Item label={t("settingsTriggersThinkingEffort")} name="thinking_effort">
@@ -1222,18 +1225,19 @@ function WeChatGatewayForm({
             </Form.Item>
           ) : null}
           <Form.Item
-            label={t("settingsTriggersYolo")}
             name="yolo"
             valuePropName="checked"
           >
-            <Switch />
+            <FormChoiceControl kind="switch" label={t("settingsTriggersYolo")} />
           </Form.Item>
           <Form.Item
-            label={t("settingsTriggersThinking")}
             name="thinking_enabled"
             valuePropName="checked"
           >
-            <Switch />
+            <FormChoiceControl
+              kind="switch"
+              label={t("settingsTriggersThinking")}
+            />
           </Form.Item>
           {thinkingEnabled ? (
             <Form.Item label={t("settingsTriggersThinkingEffort")} name="thinking_effort">

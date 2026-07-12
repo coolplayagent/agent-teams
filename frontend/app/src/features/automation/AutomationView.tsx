@@ -2,7 +2,6 @@ import {
   Alert,
   App,
   Button,
-  Checkbox,
   Empty,
   Form,
   Input,
@@ -53,6 +52,7 @@ import type {
   AutomationProjectSessionRecord,
   WorkspaceRecord,
 } from "../../api/contracts";
+import { ChoiceControlGroup } from "../../components/ChoiceControl";
 import { useTranslations, type Translate } from "../../i18n";
 import { GitHubSettingsSection } from "../settings/GitHubSettingsSection";
 
@@ -1185,7 +1185,7 @@ function AutomationCreateModal({
             label={t("automationDeliveryEvents")}
             name="deliveryEvents"
           >
-            <Checkbox.Group
+            <ChoiceControlGroup
               options={[
                 { label: t("automationDeliveryStarted"), value: "started" },
                 { label: t("automationDeliveryCompleted"), value: "completed" },

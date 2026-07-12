@@ -37,6 +37,31 @@
   background: color-mix(in srgb, var(--at-primary) 8%, var(--at-control-bg));
 }
 
+.at-choice-control.is-row {
+  width: 100%;
+  min-height: 44px;
+  grid-template-columns: minmax(0, 1fr) var(--at-choice-size);
+  padding: 8px 10px;
+  border-color: var(--at-divider);
+  background: var(--at-surface);
+}
+
+.at-choice-control.is-row .at-choice-control-indicator {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.at-choice-control.is-row .at-choice-control-copy {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.at-choice-control.is-row:hover,
+.at-choice-control.is-row.is-checked {
+  border-color: color-mix(in srgb, var(--at-primary) 35%, var(--at-divider));
+  background: color-mix(in srgb, var(--at-primary) 5%, var(--at-surface));
+}
+
 .at-choice-control-input {
   position: absolute;
   width: 1px;
@@ -84,9 +109,25 @@
   content: "";
 }
 
+.at-choice-control.is-radio .at-choice-control-indicator {
+  border-radius: 50%;
+}
+
+.at-choice-control.is-radio.is-checked:not(.is-loading) .at-choice-control-indicator::after {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentcolor;
+  content: "";
+}
+
 .at-choice-control.is-switch {
   --at-choice-size: 30px;
   grid-template-columns: var(--at-choice-size) minmax(0, auto);
+}
+
+.at-choice-control.is-switch.is-row {
+  grid-template-columns: minmax(0, 1fr) var(--at-choice-size);
 }
 
 .at-choice-control.is-switch .at-choice-control-indicator {
@@ -146,6 +187,13 @@
 
 .at-choice-control-spinner {
   animation: at-choice-spin 700ms linear infinite;
+}
+
+.at-choice-control-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
 }
 
 @keyframes at-choice-spin {

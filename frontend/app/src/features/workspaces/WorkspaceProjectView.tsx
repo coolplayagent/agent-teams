@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import {
   App,
   Button,
-  Checkbox,
   Empty,
   Form,
   Input,
@@ -59,6 +58,7 @@ import type {
   WorkspaceTreeNode,
   WorkspaceUpdateRequest,
 } from "../../api/contracts";
+import { FormChoiceControl } from "../../components/ChoiceControl";
 import { useTranslations, type Translate } from "../../i18n";
 import "./WorkspaceProjectView.css";
 
@@ -800,7 +800,7 @@ function WorkspaceMountDialog({
               <Input placeholder={t("workspaceMountLocalRootPlaceholder")} />
             </Form.Item>
             <Form.Item name="set_default" valuePropName="checked">
-              <Checkbox>{t("workspaceMountSetDefault")}</Checkbox>
+              <FormChoiceControl label={t("workspaceMountSetDefault")} />
             </Form.Item>
           </>
         )}

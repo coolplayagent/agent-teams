@@ -1,4 +1,4 @@
-import { App, Button, Checkbox, Empty, Form, Input, Select, Skeleton, Typography } from "antd";
+import { App, Button, Empty, Form, Input, Select, Skeleton, Typography } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -23,6 +23,7 @@ import type {
   WorkspaceRecord,
   XiaolubanGatewayAccountRecord,
 } from "../../api/contracts";
+import { FormChoiceControl } from "../../components/ChoiceControl";
 import { useTranslations } from "../../i18n";
 
 export type GatewayConnectorProvider = "discord" | "xiaoluban";
@@ -230,7 +231,9 @@ export function GatewayConnectorEditor({
                   <Input placeholder="123, 456" />
                 </Form.Item>
                 <Form.Item name="allowChannelMessages" valuePropName="checked">
-                  <Checkbox>{t("connectorsGatewayAllowChannelMessages")}</Checkbox>
+                  <FormChoiceControl
+                    label={t("connectorsGatewayAllowChannelMessages")}
+                  />
                 </Form.Item>
               </>
             ) : (
@@ -247,7 +250,7 @@ export function GatewayConnectorEditor({
               />
             </Form.Item>
             <Form.Item name="enabled" valuePropName="checked">
-              <Checkbox>{t("settingsEnabled")}</Checkbox>
+              <FormChoiceControl kind="switch" label={t("settingsEnabled")} />
             </Form.Item>
             <div className="at-gateway-account-actions">
               {selectedAccount !== null ? (

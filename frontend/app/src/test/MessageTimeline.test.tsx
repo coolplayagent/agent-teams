@@ -2468,6 +2468,104 @@ describe("MessageTimeline", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("Final answer ready"));
   });
 
+  it("controls repeated thinking disclosures independently around a subagent card", async () => {
+    const onSubagentOpen = vi.fn();
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message: {
+          parts: [
+            {
+              content: "First independent thought",
+              part_kind: "thinking",
+            },
+            {
+              content: {
+                subagent_instance_id: "subagent-instance-independent",
+                subagent_role_id: "Explorer",
+                subagent_run_id: "subagent-run-independent",
+                title: "Independent disclosure review",
+              },
+              part_kind: "tool-return",
+              tool_call_id: "call-independent-subagent",
+              tool_name: "spawn_subagent",
+            },
+            {
+              content: "Second independent thought",
+              part_kind: "thinking",
+            },
+            {
+              content: "Independent disclosures are ready",
+              part_kind: "text",
+            },
+          ],
+        },
+        message_id: "assistant-independent-disclosures",
+        role_id: "MainAgent",
+        run_id: "run-independent-disclosures",
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          created_at: "2026-07-12T09:05:39Z",
+          run_id: "run-independent-disclosures",
+          run_status: "completed",
+          run_user_message: "Check independent thinking disclosures",
+        },
+      ],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline("session-1", { onSubagentOpen });
+
+    expect(await screen.findByText("Processed")).toBeVisible();
+    openProcessedGroup(container);
+
+    const thinkingBlocks = Array.from(
+      container.querySelectorAll<HTMLDetailsElement>("details.at-message-thinking"),
+    );
+    expect(thinkingBlocks).toHaveLength(2);
+    const [firstThinking, secondThinking] = thinkingBlocks;
+    if (firstThinking === undefined || secondThinking === undefined) {
+      throw new Error("Expected two thinking disclosures.");
+    }
+    const subagentCard = container.querySelector<HTMLDetailsElement>(
+      'details.at-message-tool[data-tool-name="spawn_subagent"]',
+    );
+    expect(subagentCard).not.toBeNull();
+    expect(firstThinking).not.toHaveAttribute("open");
+    expect(secondThinking).not.toHaveAttribute("open");
+    expect(subagentCard).not.toHaveAttribute("open");
+
+    const timeline = container.querySelector<HTMLElement>(".at-timeline");
+    if (timeline === null) {
+      throw new Error("Timeline scroll owner was not rendered.");
+    }
+    timeline.scrollTop = 120;
+
+    fireEvent.click(firstThinking.querySelector("summary") as HTMLElement);
+
+    expect(firstThinking).toHaveAttribute("open");
+    expect(secondThinking).not.toHaveAttribute("open");
+    expect(subagentCard).not.toHaveAttribute("open");
+    expect(timeline.scrollTop).toBe(120);
+
+    fireEvent.click(secondThinking.querySelector("summary") as HTMLElement);
+
+    expect(firstThinking).toHaveAttribute("open");
+    expect(secondThinking).toHaveAttribute("open");
+    expect(subagentCard).not.toHaveAttribute("open");
+    expect(timeline.scrollTop).toBe(120);
+
+    fireEvent.click(firstThinking.querySelector("summary") as HTMLElement);
+
+    expect(firstThinking).not.toHaveAttribute("open");
+    expect(secondThinking).toHaveAttribute("open");
+    expect(subagentCard).not.toHaveAttribute("open");
+    expect(timeline.scrollTop).toBe(120);
+  });
+
   it("collapses terminal work-only runs without requiring final answer text", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {
@@ -9895,7 +9993,9 @@ describe("MessageTimeline", () => {
     for (const label of thinkingLabels) {
       expect(label).toBeVisible();
     }
-    const thinkingBlocks = container.querySelectorAll(".at-message-thinking");
+    const thinkingBlocks = container.querySelectorAll<HTMLDetailsElement>(
+      "details.at-message-thinking",
+    );
     expect(thinkingBlocks).toHaveLength(2);
     expect(thinkingBlocks[0]).toHaveAttribute("data-part-index", "0");
     expect(thinkingBlocks[0]).not.toHaveAttribute("open");
@@ -9905,6 +10005,29 @@ describe("MessageTimeline", () => {
     expect(thinkingBlocks[1]).not.toHaveAttribute("open");
     expect(thinkingBlocks[1]).toHaveTextContent("second thought");
     expect(thinkingBlocks[1]).not.toHaveTextContent("first thought");
+
+    const firstSummary = thinkingBlocks[0]?.querySelector("summary");
+    const secondSummary = thinkingBlocks[1]?.querySelector("summary");
+    if (
+      firstSummary === null ||
+      firstSummary === undefined ||
+      secondSummary === null ||
+      secondSummary === undefined
+    ) {
+      throw new Error("Expected both runtime thinking disclosure summaries.");
+    }
+
+    fireEvent.click(firstSummary);
+    expect(thinkingBlocks[0]).toHaveAttribute("open");
+    expect(thinkingBlocks[1]).not.toHaveAttribute("open");
+
+    fireEvent.click(secondSummary);
+    expect(thinkingBlocks[0]).toHaveAttribute("open");
+    expect(thinkingBlocks[1]).toHaveAttribute("open");
+
+    fireEvent.click(firstSummary);
+    expect(thinkingBlocks[0]).not.toHaveAttribute("open");
+    expect(thinkingBlocks[1]).toHaveAttribute("open");
   });
 
   it("does not duplicate replayed runtime thinking and tool parts", async () => {

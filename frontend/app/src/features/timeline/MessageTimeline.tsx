@@ -7914,7 +7914,7 @@ function toolDisclosureId(
   partKey: string,
 ): string {
   const toolIdentity = tool.callId.trim() || tool.toolName.trim() || partKey;
-  return `tool:${row.runId ?? stableStreamRowKey(row)}:${toolIdentity}`;
+  return timelinePartDisclosureId("tool", row, partKey, toolIdentity);
 }
 
 function thinkingDisclosureId(
@@ -7922,12 +7922,22 @@ function thinkingDisclosureId(
   thinking: TimelineThinkingPart,
   partKey: string,
 ): string {
-  return [
-    "thinking",
-    row.runId ?? stableStreamRowKey(row),
+  return timelinePartDisclosureId("thinking", row, partKey, thinking.partIndex);
+}
+
+function timelinePartDisclosureId(
+  kind: "thinking" | "tool",
+  row: TimelineRow,
+  partKey: string,
+  semanticIdentity: string,
+): string {
+  return JSON.stringify([
+    kind,
+    stableStreamRowKey(row),
     row.instanceId?.trim() || stableTimelineRole(row.role),
-    thinking.partIndex || partKey,
-  ].join(":");
+    semanticIdentity,
+    partKey,
+  ]);
 }
 
 function streamIdentityForTextPart(row: TimelineRow, partKey: string): string {

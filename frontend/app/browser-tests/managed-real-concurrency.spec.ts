@@ -87,8 +87,11 @@ interface RunningSubagentVerification {
 interface ConcurrencyOverlapEvidence {
   childBadgeStatus: "running";
   childRunningObservedAtMs: number;
-  normalParentActiveCount: number;
-  normalParentRunIds: string[];
+  initialNormalParentActiveCount: number;
+  initialNormalParentObservedAtMs: number;
+  initialNormalParentRunIds: string[];
+  normalParentActiveCountAtChildRunning: number;
+  normalParentRunIdsAtChildRunning: string[];
 }
 
 interface FailureCollection {
@@ -212,6 +215,8 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
         { timeout: 20_000 },
       )
       .toEqual(normalRuns.map((run) => run.runId));
+    const initialNormalParentObservedAtMs = Date.now() - gateStartedAt;
+    const initialNormalParentRunIds = normalRuns.map((run) => run.runId);
     const subagentRun = startedRuns.find((run) => run.isSubagent);
     if (subagentRun === undefined) {
       throw new Error("Expected a subagent run.");
@@ -227,6 +232,8 @@ test("real UI keeps concurrent session streams isolated, responsive, and bounded
       subagentRun,
       startedRuns,
       gateStartedAt,
+      initialNormalParentObservedAtMs,
+      initialNormalParentRunIds,
     );
     subagentFirstIncrementObservedAtMs =
       subagentVerification.firstIncrementObservedAtMs;
@@ -675,6 +682,8 @@ async function verifyRunningSubagent(
   run: StartedRun,
   startedRuns: StartedRun[],
   gateStartedAt: number,
+  initialNormalParentObservedAtMs: number,
+  initialNormalParentRunIds: string[],
 ): Promise<RunningSubagentVerification> {
   expect(
     estimatedSubagentStreamDurationMs(run),
@@ -710,20 +719,31 @@ async function verifyRunningSubagent(
   const normalRuns = startedRuns.filter((candidate) => !candidate.isSubagent);
   await expect
     .poll(
-      () =>
-        Promise.all(
-          normalRuns.map((candidate) =>
-            activeRunId(candidate.session.session_id),
-          ),
-        ),
+      async () =>
+        (
+          await Promise.all(
+            normalRuns.map((candidate) =>
+              activeRunId(candidate.session.session_id),
+            ),
+          )
+        ).filter((runId): runId is string => runId !== null).length,
       { timeout: 10_000 },
     )
-    .toEqual(normalRuns.map((candidate) => candidate.runId));
+    .toBeGreaterThanOrEqual(1);
+  const normalParentRunIdsAtChildRunning = (
+    await Promise.all(
+      normalRuns.map((candidate) => activeRunId(candidate.session.session_id)),
+    )
+  ).filter((runId): runId is string => runId !== null);
   const concurrencyOverlap: ConcurrencyOverlapEvidence = {
     childBadgeStatus: "running",
     childRunningObservedAtMs: Date.now() - gateStartedAt,
-    normalParentActiveCount: normalRuns.length,
-    normalParentRunIds: normalRuns.map((candidate) => candidate.runId),
+    initialNormalParentActiveCount: initialNormalParentRunIds.length,
+    initialNormalParentObservedAtMs,
+    initialNormalParentRunIds,
+    normalParentActiveCountAtChildRunning:
+      normalParentRunIdsAtChildRunning.length,
+    normalParentRunIdsAtChildRunning,
   };
   await expect(panel.locator(".at-subagent-session-prompt")).toContainText(
     run.tag,

@@ -183,41 +183,48 @@ export function ConnectorsView({ onOpenSettings }: ConnectorsViewProps) {
       </div>
 
       <div className="at-connectors-content">
-        <Segmented
-          className="at-connectors-section-tabs"
-          onChange={(value) => setActiveSection(value as ConnectorSection)}
-          options={[
-            { label: t("connectorsTitle"), value: "connectors" },
-            { label: t("connectorsRuntimeToolsTitle"), value: "tools" },
-          ]}
-          value={activeSection}
-        />
+        <div className="at-connectors-overview">
+          <Segmented
+            className="at-connectors-section-tabs"
+            onChange={(value) => setActiveSection(value as ConnectorSection)}
+            options={[
+              { label: t("connectorsTitle"), value: "connectors" },
+              { label: t("connectorsRuntimeToolsTitle"), value: "tools" },
+            ]}
+            value={activeSection}
+          />
+          {activeSection === "connectors" ? (
+            <div className="at-connectors-summary" aria-label={t("connectorsSummary")}>
+              <SummaryCell
+                label={t("connectorsTotal")}
+                tone="neutral"
+                value={summary.total}
+              />
+              <SummaryCell
+                label={t("connectorsConnected")}
+                tone="connected"
+                value={summary.connected}
+              />
+              <SummaryCell
+                label={t("connectorsNeedsConfig")}
+                tone="needs_config"
+                value={summary.needs_config}
+              />
+              <SummaryCell
+                label={t("connectorsDisabled")}
+                tone="disabled"
+                value={summary.disabled}
+              />
+              <SummaryCell
+                label={t("connectorsError")}
+                tone="error"
+                value={summary.error}
+              />
+            </div>
+          ) : null}
+        </div>
         {activeSection === "connectors" ? (
           <>
-        <div className="at-connectors-summary" aria-label={t("connectorsSummary")}> 
-          <SummaryCell
-            label={t("connectorsTotal")}
-            tone="neutral"
-            value={summary.total}
-          />
-          <SummaryCell
-            label={t("connectorsConnected")}
-            tone="connected"
-            value={summary.connected}
-          />
-          <SummaryCell
-            label={t("connectorsNeedsConfig")}
-            tone="needs_config"
-            value={summary.needs_config}
-          />
-          <SummaryCell
-            label={t("connectorsDisabled")}
-            tone="disabled"
-            value={summary.disabled}
-          />
-          <SummaryCell label={t("connectorsError")} tone="error" value={summary.error} />
-        </div>
-
         <div className="at-connectors-controls">
           <Input
             allowClear
@@ -456,40 +463,44 @@ function ConnectorCard({
         </span>
       </button>
       <div className="at-connectors-card-footer">
-        <span className={`at-connectors-status is-${item.status}`}>
-          <span aria-hidden="true" />
-          {connectorStatusLabel(item.status, t)}
-        </span>
-        <span className="at-connectors-account-count">
-          {t("connectorsAccountsValue", {
-            enabled: item.enabled_count,
-            total: item.account_count,
-          })}
-        </span>
-        {action !== null ? (
-          <Button
-            className="at-connectors-card-action"
-            data-testid={`connector-action-${item.connector_id}`}
-            icon={action === "configure" ? <Settings2 size={14} /> : undefined}
-            onClick={onAction}
-            size="small"
-            type="link"
-          >
-            {t(action === "configure" ? "connectorsConfigure" : "connectorsOpen")}
-          </Button>
-        ) : null}
-        <Tooltip title={t("connectorsTestTooltip")}>
-          <Button
-            aria-label={t("connectorsTestAria", { connector: item.display_name })}
-            icon={<TestTube2 size={14} />}
-            loading={testing}
-            onClick={onTest}
-            size="small"
-            type="link"
-          >
-            {t("connectorsTest")}
-          </Button>
-        </Tooltip>
+        <div className="at-connectors-card-meta">
+          <span className={`at-connectors-status is-${item.status}`}>
+            <span aria-hidden="true" />
+            {connectorStatusLabel(item.status, t)}
+          </span>
+          <span className="at-connectors-account-count">
+            {t("connectorsAccountsValue", {
+              enabled: item.enabled_count,
+              total: item.account_count,
+            })}
+          </span>
+        </div>
+        <div className="at-connectors-card-actions">
+          {action !== null ? (
+            <Button
+              className="at-connectors-card-action"
+              data-testid={`connector-action-${item.connector_id}`}
+              icon={action === "configure" ? <Settings2 size={14} /> : undefined}
+              onClick={onAction}
+              size="small"
+              type="link"
+            >
+              {t(action === "configure" ? "connectorsConfigure" : "connectorsOpen")}
+            </Button>
+          ) : null}
+          <Tooltip title={t("connectorsTestTooltip")}>
+            <Button
+              aria-label={t("connectorsTestAria", { connector: item.display_name })}
+              icon={<TestTube2 size={14} />}
+              loading={testing}
+              onClick={onTest}
+              size="small"
+              type="link"
+            >
+              {t("connectorsTest")}
+            </Button>
+          </Tooltip>
+        </div>
       </div>
       {testError !== null ? (
         <div className="at-connectors-card-result is-error" role="alert">

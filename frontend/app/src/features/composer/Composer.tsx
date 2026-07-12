@@ -705,9 +705,6 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
             result.run_id,
           );
       }
-      void queryClient.invalidateQueries({
-        queryKey: ["sessions", result.session_id, "messages"],
-      });
     },
     onError: (error, _variables, optimisticPrompt) => {
       if (optimisticPrompt != null) {

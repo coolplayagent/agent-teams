@@ -396,8 +396,17 @@ describe("Composer", () => {
     expect(invalidateQueriesSpy).not.toHaveBeenCalledWith({
       queryKey: ["sessions", "sidebar"],
     });
-    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+    expect(invalidateQueriesSpy).not.toHaveBeenCalledWith({
       queryKey: ["sessions", "session-1", "messages"],
+    });
+    expect(invalidateQueriesSpy).not.toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-1", "recovery"],
+    });
+    expect(invalidateQueriesSpy).not.toHaveBeenCalledWith({
+      queryKey: ["sessions", "detail", "session-1"],
+    });
+    expect(invalidateQueriesSpy).not.toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-1", "rounds"],
     });
   });
 

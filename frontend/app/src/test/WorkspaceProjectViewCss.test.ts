@@ -11,10 +11,19 @@ const css = readFileSync(
 describe("workspace project view CSS", () => {
   it("gives the changes workbench a two-pane layout", () => {
     expect(css).toMatch(
-      /\.at-workspace-workbench-content\.is-changes\s*{[\s\S]*?grid-template-columns:\s*minmax\(220px, 24%\) minmax\(0, 1fr\);/,
+      /\.at-workspace-workbench-content\.is-changes\s*{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*clamp\(220px, 24%, 360px\) minmax\(0, 1fr\);/,
     );
     expect(css).not.toMatch(
       /grid-template-columns:[^;]*minmax\([^;]*\)[^;]*minmax\([^;]*\)[^;]*minmax\(/,
+    );
+  });
+
+  it("caps change navigation width and stacks before the diff becomes cramped", () => {
+    expect(css).toMatch(
+      /@media \(max-width: 960px\)[\s\S]*?\.at-workspace-workbench-content\.is-changes\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);[\s\S]*?grid-template-rows:\s*minmax\(140px, 0\.3fr\) minmax\(220px, 0\.7fr\);/,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 960px\)[\s\S]*?\.at-workspace-diff-list\s*{[\s\S]*?border-right:\s*0;[\s\S]*?border-bottom:\s*1px solid var\(--at-border\);/,
     );
   });
 

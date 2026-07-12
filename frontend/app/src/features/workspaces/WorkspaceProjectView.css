@@ -1,5 +1,6 @@
 .at-workspace-workbench-content.is-changes {
-  grid-template-columns: minmax(220px, 24%) minmax(0, 1fr);
+  display: grid;
+  grid-template-columns: clamp(220px, 24%, 360px) minmax(0, 1fr);
 }
 
 .at-workspace-workbench-content.is-changes .at-workspace-diff-preview {
@@ -138,6 +139,18 @@
 
   .at-workspace-diff-line {
     grid-template-columns: 3.4rem max-content;
+  }
+}
+
+@media (max-width: 960px) {
+  .at-workspace-workbench-content.is-changes {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(140px, 0.3fr) minmax(220px, 0.7fr);
+  }
+
+  .at-workspace-diff-list {
+    border-right: 0;
+    border-bottom: 1px solid var(--at-border);
   }
 }
 

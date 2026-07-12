@@ -4,6 +4,10 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const themeCss = readFileSync("src/styles/theme.css", "utf8");
+const workspaceProjectCss = readFileSync(
+  "src/features/workspaces/WorkspaceProjectView.css",
+  "utf8",
+);
 const messageTimelineSource = readFileSync(
   "src/features/timeline/MessageTimeline.tsx",
   "utf8",
@@ -155,17 +159,18 @@ describe("shell layout CSS", () => {
     expect(themeCss).toMatch(
       /\.at-workspace-workbench-content\.is-files\s*{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) minmax\(260px, 28%\);/,
     );
-    expect(themeCss).toMatch(
-      /\.at-workspace-workbench-content\.is-changes\s*{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*minmax\(220px, 24%\) minmax\(0, 1fr\);/,
+    expect(workspaceProjectCss).toMatch(
+      /\.at-workspace-workbench-content\.is-changes\s*{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*clamp\(220px, 24%, 360px\) minmax\(0, 1fr\);/,
     );
+    expect(themeCss).not.toContain(".at-workspace-workbench-content.is-changes");
     expect(themeCss).toMatch(
       /\.at-workspace-tree-list,\s*[\s\S]*?\.at-workspace-file-pane-list\s*{[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*auto;/,
     );
     expect(themeCss).toMatch(
       /@media \(max-width: 640px\)[\s\S]*?\.at-workspace-workbench-content\.is-files\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);[\s\S]*?grid-template-rows:\s*minmax\(220px, 0\.64fr\) minmax\(150px, 0\.36fr\);/,
     );
-    expect(themeCss).toMatch(
-      /@media \(max-width: 640px\)[\s\S]*?\.at-workspace-workbench-content\.is-changes\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);[\s\S]*?grid-template-rows:\s*minmax\(140px, 0\.3fr\) minmax\(220px, 0\.7fr\);/,
+    expect(workspaceProjectCss).toMatch(
+      /@media \(max-width: 960px\)[\s\S]*?\.at-workspace-workbench-content\.is-changes\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);[\s\S]*?grid-template-rows:\s*minmax\(140px, 0\.3fr\) minmax\(220px, 0\.7fr\);/,
     );
   });
 

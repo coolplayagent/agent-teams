@@ -50,6 +50,7 @@ from relay_teams.workspace import (
     SshProfileService,
     SshProfileStoredConfig,
     WorkspaceHandle,
+    WorkspaceLocalMountConfig,
     WorkspaceLocations,
     WorkspaceMountProvider,
     WorkspaceMountRecord,
@@ -801,6 +802,32 @@ def test_workspace_ssh_profile_prompt_metadata_excludes_secret_fields(
     assert "private_key" not in prompt.casefold()
     assert "private key" not in prompt.casefold()
     assert "has_private_key" not in prompt.casefold()
+
+
+def test_workspace_prompt_does_not_resolve_configured_mount_paths_again(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = _mixed_workspace_handle(tmp_path)
+    local_config = workspace.mounts[0].provider_config
+    assert isinstance(local_config, WorkspaceLocalMountConfig)
+    expected_local_root = str(local_config.root_path)
+    expected_tmp_root = str(workspace.tmp_root)
+    expected_remote_mount_root = str(
+        workspace.locations.remote_mount_roots[0].local_root
+    )
+
+    def unexpected_resolve(path: Path, strict: bool = False) -> Path:
+        _ = path, strict
+        pytest.fail("prompt formatting must not probe configured mount paths")
+
+    monkeypatch.setattr(Path, "resolve", unexpected_resolve)
+
+    prompt = system_prompts.build_workspace_environments_prompt(workspace=workspace)
+
+    assert f"- Root: {expected_local_root}" in prompt
+    assert f"- Workspace Temp Root: {expected_tmp_root}" in prompt
+    assert f"- Materialized Local Root: {expected_remote_mount_root}" in prompt
 
 
 def test_workspace_ssh_profile_prompt_metadata_skips_profiles_without_username(

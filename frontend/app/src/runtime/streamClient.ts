@@ -1,4 +1,5 @@
 import { apiUrl } from "../api/http";
+import type { JsonValue } from "../api/contracts";
 import {
   reduceRunEvents,
   type RuntimeRunState,
@@ -8,11 +9,12 @@ import {
   AG_UI_EVENT_NAMES,
   isTerminalRunEvent,
   parseRunEvent,
+  type ParsedRunEvent,
   type RunEventEnvelope,
 } from "./events";
 
-const STREAM_STATE_NOTIFICATION_INTERVAL_MS = 33;
-const STREAM_EVENT_BATCH_SIZE = 128;
+const STREAM_STATE_NOTIFICATION_INTERVAL_MS = 100;
+const STREAM_EVENT_BATCH_SIZE = 512;
 
 export interface RunStreamHandle {
   close: () => void;
@@ -141,6 +143,7 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
     if (pendingEvents.length === 0) {
       return false;
     }
+    pendingEvents = coalesceStreamDeltaEvents(pendingEvents);
     const events = pendingEvents.slice(0, limit);
     pendingEvents = pendingEvents.slice(events.length);
     const nextRuntimeState = reduceRunEvents(runtimeState, events);
@@ -176,7 +179,10 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
     if (pendingEvents.length === 0) {
       return;
     }
-    const nextRuntimeState = reduceRunEvents(runtimeState, pendingEvents);
+    const nextRuntimeState = reduceRunEvents(
+      runtimeState,
+      coalesceStreamDeltaEvents(pendingEvents),
+    );
     pendingEvents = [];
     if (nextRuntimeState !== runtimeState) {
       runtimeState = nextRuntimeState;
@@ -309,6 +315,115 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
   return {
     close: closeWithStateFlush,
   };
+}
+
+export function coalesceStreamDeltaEvents(
+  events: readonly RunEventEnvelope[],
+): RunEventEnvelope[] {
+  const coalesced: RunEventEnvelope[] = [];
+  let previousParsed: ParsedRunEvent | null = null;
+  for (const rawEvent of events) {
+    const nextParsed = parseRunEvent(rawEvent);
+    const merged: ParsedRunEvent | null = previousParsed === null
+      ? null
+      : mergeAdjacentParsedDeltaEvents(previousParsed, nextParsed);
+    if (merged === null) {
+      coalesced.push(rawEvent);
+      previousParsed = nextParsed;
+      continue;
+    }
+    coalesced[coalesced.length - 1] = parsedRunEventEnvelope(merged);
+    previousParsed = merged;
+  }
+  return coalesced;
+}
+
+function mergeAdjacentParsedDeltaEvents(
+  previous: ParsedRunEvent,
+  next: ParsedRunEvent,
+): ParsedRunEvent | null {
+  if (
+    previous.event_type !== next.event_type ||
+    !isCoalescibleStreamDelta(next.event_type) ||
+    previous.run_id !== next.run_id ||
+    previous.session_id !== next.session_id ||
+    previous.instance_id !== next.instance_id ||
+    previous.role_id !== next.role_id ||
+    typeof previous.event_id !== "number" ||
+    typeof next.event_id !== "number" ||
+    previous.event_id <= 0 ||
+    next.event_id !== previous.event_id + 1
+  ) {
+    return null;
+  }
+  const previousPayload = jsonObject(previous.payload);
+  const nextPayload = jsonObject(next.payload);
+  if (
+    previousPayload === null ||
+    nextPayload === null ||
+    payloadPartIndex(previousPayload) !== payloadPartIndex(nextPayload)
+  ) {
+    return null;
+  }
+  const previousText = rawDeltaText(previousPayload);
+  const nextText = rawDeltaText(nextPayload);
+  if (previousText === null || nextText === null) {
+    return null;
+  }
+  return {
+    ...next,
+    payload: {
+      ...previousPayload,
+      [previousText.key]: previousText.value + nextText.value,
+    },
+  };
+}
+
+function parsedRunEventEnvelope(
+  event: ParsedRunEvent,
+): RunEventEnvelope {
+  return {
+    event_id: event.event_id,
+    instance_id: event.instance_id,
+    occurred_at: event.occurred_at,
+    payload: event.payload,
+    relay_event_type: event.event_type,
+    role_id: event.role_id,
+    run_id: event.run_id,
+    session_id: event.session_id,
+    task_id: event.task_id,
+    trace_id: event.trace_id,
+    type: event.event_type,
+  };
+}
+
+function isCoalescibleStreamDelta(eventType: string): boolean {
+  return eventType === "text_delta" ||
+    eventType === "output_delta" ||
+    eventType === "thinking_delta";
+}
+
+function jsonObject(value: JsonValue): Record<string, JsonValue> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value
+    : null;
+}
+
+function payloadPartIndex(payload: Record<string, JsonValue>): string {
+  const value = payload.part_index;
+  return typeof value === "string" || typeof value === "number" ? String(value) : "";
+}
+
+function rawDeltaText(
+  payload: Record<string, JsonValue>,
+): { key: string; value: string } | null {
+  for (const key of ["text", "delta", "content", "message"] as const) {
+    const value = payload[key];
+    if (typeof value === "string") {
+      return { key, value };
+    }
+  }
+  return null;
 }
 
 function runStreamUrl(runId: string, afterEventId: number): string {

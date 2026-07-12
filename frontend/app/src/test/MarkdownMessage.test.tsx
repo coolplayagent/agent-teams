@@ -1,7 +1,14 @@
-import { render } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { act, render } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { MarkdownMessage } from "../features/timeline/MarkdownMessage";
+import {
+  MarkdownMessage,
+  streamingMarkdownInterval,
+} from "../features/timeline/MarkdownMessage";
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe("MarkdownMessage", () => {
   it("keeps the markdown tree and container mounted when a stream settles", () => {
@@ -40,5 +47,43 @@ describe("MarkdownMessage", () => {
 
     expect(container.querySelector(".at-message-markdown > p")).toBe(liveParagraph);
     expect(container.querySelectorAll(".at-message-markdown > p")).toHaveLength(1);
+  });
+
+  it("coalesces rapid streaming text without starving the latest update", () => {
+    vi.useFakeTimers();
+    const { container, rerender } = render(
+      <MarkdownMessage streaming text="chunk 1" />,
+    );
+    const markdownContainer = container.querySelector(".at-message-markdown");
+
+    rerender(<MarkdownMessage streaming text="chunk 1 chunk 2" />);
+    rerender(<MarkdownMessage streaming text="chunk 1 chunk 2 chunk 3" />);
+
+    expect(markdownContainer).toHaveTextContent("chunk 1");
+    act(() => vi.advanceTimersByTime(streamingMarkdownInterval(21)));
+    expect(markdownContainer).toHaveTextContent("chunk 1 chunk 2 chunk 3");
+    expect(container.querySelector(".at-message-markdown")).toBe(markdownContainer);
+  });
+
+  it("renders exact terminal markdown immediately without waiting for a live buffer", () => {
+    vi.useFakeTimers();
+    const { container, rerender } = render(
+      <MarkdownMessage streaming text="partial" />,
+    );
+    rerender(<MarkdownMessage streaming text="partial **queued**" />);
+    expect(container.querySelector("strong")).toBeNull();
+
+    rerender(<MarkdownMessage text="complete **answer**" />);
+
+    expect(container.querySelector("strong")).toHaveTextContent("answer");
+    expect(container.querySelector(".at-message-markdown")).not.toHaveAttribute(
+      "data-stream-buffered",
+    );
+  });
+
+  it("keeps even very large streams below the one-second feedback budget", () => {
+    expect(streamingMarkdownInterval(2_000)).toBe(80);
+    expect(streamingMarkdownInterval(8_000)).toBe(180);
+    expect(streamingMarkdownInterval(80_000)).toBe(400);
   });
 });

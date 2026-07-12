@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgUiRunEvent, RelayRunEvent } from "../runtime/events";
 import { initialRuntimeState, type RuntimeState } from "../runtime/reducers";
 import {
+  coalesceStreamDeltaEvents,
   openMultiplexedRunStream,
   openRunStream,
   openSessionSubagentRunStream,
@@ -77,6 +78,34 @@ afterEach(() => {
 });
 
 describe("openRunStream", () => {
+  it("reduces a large consecutive delta burst before runtime state work", () => {
+    const chunks = Array.from({ length: 3_000 }, (_, index) => `${index}\n`);
+    const compacted = coalesceStreamDeltaEvents(
+      chunks.map((text, index) => relayEvent({
+        event_id: index + 1,
+        payload_json: JSON.stringify({ part_index: 0, text }),
+      })),
+    );
+
+    expect(compacted).toHaveLength(1);
+    expect(compacted[0]).toMatchObject({ event_id: chunks.length });
+    expect(compacted[0]).toHaveProperty(
+      "payload.text",
+      chunks.join(""),
+    );
+  });
+
+  it("does not coalesce deltas across part or lifecycle boundaries", () => {
+    const compacted = coalesceStreamDeltaEvents([
+      relayEvent({ event_id: 1, payload_json: JSON.stringify({ part_index: 0, text: "A" }) }),
+      relayEvent({ event_id: 2, payload_json: JSON.stringify({ part_index: 1, text: "B" }) }),
+      relayEvent({ event_id: 3, event_type: "thinking_finished" }),
+      relayEvent({ event_id: 4, payload_json: JSON.stringify({ part_index: 1, text: "C" }) }),
+    ]);
+
+    expect(compacted).toHaveLength(4);
+  });
+
   it("opens from the replay cursor and reduces named AG-UI events", () => {
     const stream = openTestStream({ afterEventId: 42 });
 

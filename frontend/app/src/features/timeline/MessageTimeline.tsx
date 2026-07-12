@@ -8202,7 +8202,7 @@ function MessageText({
       ].filter(Boolean).join(" ")}
       data-streaming={visuallyStreaming ? "true" : undefined}
     >
-      <MarkdownMessage text={text} />
+      <MarkdownMessage streaming={part.streaming} text={text} />
       {cursorVisible ? <StreamingCursor /> : null}
     </div>
   );
@@ -8295,7 +8295,7 @@ function MessageThinkingBlock({
       </summary>
       {hasText ? (
         <div className="at-message-thinking-body">
-          <MarkdownMessage text={thinking.text} />
+          <MarkdownMessage streaming={thinking.streaming} text={thinking.text} />
         </div>
       ) : null}
     </TimelineDisclosure>

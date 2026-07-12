@@ -7110,9 +7110,9 @@ describe("MessageTimeline", () => {
     ]);
   });
 
-  it("updates one running subagent card to completed when replay reaches its result", async () => {
+  it("preserves one openable card across the synchronous subagent event sequence", async () => {
     const onSubagentOpen = vi.fn();
-    const runningEvent = relayRunEvent({
+    const toolCallEvent = relayRunEvent({
       event_id: 1,
       event_type: "tool_call",
       instance_id: "main-instance",
@@ -7129,22 +7129,68 @@ describe("MessageTimeline", () => {
         tool_name: "spawn_subagent",
       }),
     });
-    setRuntimeStateFromEvents([runningEvent]);
+    const runningStatusEvent = relayRunEvent({
+      event_id: 1,
+      event_type: "subagent_session_status_changed",
+      instance_id: "subagent-instance-1",
+      role_id: "Explorer",
+      run_id: "subagent-run-1",
+      trace_id: "subagent-run-1",
+      payload_json: JSON.stringify({
+        parent_run_id: "run-main-tool",
+        parent_session_id: "session-1",
+        run_phase: "subagent_running",
+        run_status: "running",
+        status: "running",
+        subagent_instance_id: "subagent-instance-1",
+        subagent_role_id: "Explorer",
+        subagent_run_id: "subagent-run-1",
+        title: "Inspect the active session",
+      }),
+    });
+    setRuntimeStateFromEvents([toolCallEvent, runningStatusEvent]);
     listSessionMessagesMock.mockResolvedValue([]);
 
     const { container } = renderTimeline("session-1", {
       onSubagentOpen,
-      runtimeRunId: "run-main-tool",
     });
 
     const runningTitle = await screen.findByText("Starting subagent");
     const runningCard = runningTitle.closest(".at-message-tool");
+    expect(runningCard).toHaveClass("is-openable-subagent");
     expect(runningCard).toHaveAttribute("data-status", "running");
     expect(container.querySelectorAll(".at-message-tool")).toHaveLength(1);
+    fireEvent.click(runningTitle);
+    expect(onSubagentOpen).toHaveBeenLastCalledWith(expect.objectContaining({
+      description: "Inspect the active session",
+      roleId: "Explorer",
+      status: "running",
+    }));
+    onSubagentOpen.mockClear();
 
     act(() => {
       setRuntimeStateFromEvents([
-        runningEvent,
+        toolCallEvent,
+        runningStatusEvent,
+        relayRunEvent({
+          event_id: 2,
+          event_type: "subagent_session_status_changed",
+          instance_id: "subagent-instance-1",
+          role_id: "Explorer",
+          run_id: "subagent-run-1",
+          trace_id: "subagent-run-1",
+          payload_json: JSON.stringify({
+            parent_run_id: "run-main-tool",
+            parent_session_id: "session-1",
+            run_phase: "terminal",
+            run_status: "completed",
+            status: "completed",
+            subagent_instance_id: "subagent-instance-1",
+            subagent_role_id: "Explorer",
+            subagent_run_id: "subagent-run-1",
+            title: "Inspect the active session",
+          }),
+        }),
         relayRunEvent({
           event_id: 2,
           event_type: "tool_result",
@@ -7154,11 +7200,12 @@ describe("MessageTimeline", () => {
           trace_id: "run-main-tool",
           payload_json: JSON.stringify({
             result: {
-              output: "Subagent completed successfully.",
-              subagent_instance_id: "subagent-instance-1",
-              subagent_role_id: "Explorer",
-              subagent_run_id: "subagent-run-1",
-              title: "Inspect the active session",
+              data: {
+                completed: true,
+                output: "Subagent completed successfully.",
+              },
+              meta: { tool_result_event_published: true },
+              ok: true,
             },
             tool_call_id: "call-running-subagent",
             tool_name: "spawn_subagent",
@@ -7172,16 +7219,13 @@ describe("MessageTimeline", () => {
     expect(container.querySelectorAll(".at-message-tool")).toHaveLength(1);
     expect(completedCard).toBe(runningCard);
     expect(completedCard).toHaveAttribute("data-status", "completed");
-    expect(completedCard).toHaveAttribute(
-      "data-subagent-instance-id",
-      "subagent-instance-1",
-    );
-    expect(completedCard).toHaveAttribute("data-subagent-run-id", "subagent-run-1");
+    expect(completedCard).toHaveAttribute("data-subagent-instance-id", "");
+    expect(completedCard).toHaveAttribute("data-subagent-run-id", "");
 
     fireEvent.click(completedTitle);
     expect(onSubagentOpen).toHaveBeenLastCalledWith(expect.objectContaining({
-      instanceId: "subagent-instance-1",
-      runId: "subagent-run-1",
+      description: "Inspect the active session",
+      roleId: "Explorer",
       status: "completed",
     }));
   });

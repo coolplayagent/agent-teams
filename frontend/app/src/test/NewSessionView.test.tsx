@@ -54,6 +54,25 @@ afterEach(() => {
 });
 
 describe("NewSessionView", () => {
+  it("shows an in-context prompt and running state before session creation resolves", async () => {
+    api.createSession.mockReturnValue(new Promise<SessionRecord>(() => undefined));
+    renderView();
+
+    await screen.findByText("Main agent");
+    fireEvent.change(screen.getByRole("textbox", { name: "Initial task (optional)" }), {
+      target: { value: "Start immediately" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create and run" }));
+
+    const promptRow = document.querySelector(
+      '[data-row-key="optimistic-new-session-prompt"]',
+    );
+    expect(promptRow).not.toBeNull();
+    expect(promptRow).toHaveTextContent("Start immediately");
+    expect(screen.getByRole("status")).toHaveTextContent("Connecting to the model");
+    await waitFor(() => expect(api.createSession).toHaveBeenCalledOnce());
+  });
+
   it("creates the session with defaults and submits the initial task as the first run", async () => {
     const onCreated = vi.fn();
     renderView(onCreated);

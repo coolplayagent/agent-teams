@@ -18,6 +18,7 @@ import type {
   WorkspaceRecord,
 } from "../../api/contracts";
 import { useTranslations } from "../../i18n";
+import { ModelRequestStatus } from "../timeline/ModelRequestStatus";
 import { workspaceDisplayLabel } from "../workspaces/workspaceLabels";
 
 type SessionMode = "normal" | "orchestration";
@@ -26,6 +27,11 @@ interface NewSessionResult {
   promptText: string;
   run: RunCreateResponse | null;
   session: SessionRecord;
+}
+
+interface PendingNewSession {
+  error: string | null;
+  promptText: string;
 }
 
 interface NewSessionViewProps {
@@ -60,6 +66,7 @@ export function NewSessionView({
   const [thinkingEffort, setThinkingEffort] = useState<ThinkingEffort>("medium");
   const [shellSafetyPolicyEnabled, setShellSafetyPolicyEnabled] = useState(true);
   const [yolo, setYolo] = useState(true);
+  const [pendingSession, setPendingSession] = useState<PendingNewSession | null>(null);
   const rolesQuery = useQuery({
     queryKey: ["roles", "options"],
     queryFn: getRoleConfigOptions,
@@ -180,16 +187,58 @@ export function NewSessionView({
       onCreated(session, run, createdPrompt);
     },
     onError: (error) => {
-      void message.error(error instanceof Error ? error.message : t("sidebarCreateFailed"));
+      const errorText = error instanceof Error ? error.message : t("sidebarCreateFailed");
+      setPendingSession((current) => current === null
+        ? { error: errorText, promptText: promptText.trim() }
+        : { ...current, error: errorText });
+      void message.error(errorText);
     },
   });
 
   const queryError = rolesQuery.error ?? profilesQuery.error ?? orchestrationQuery.error;
   const submit = () => {
     if (workspaceId && !createMutation.isPending) {
+      setPendingSession({ error: null, promptText: promptText.trim() });
       createMutation.mutate();
     }
   };
+
+  if (pendingSession !== null) {
+    return (
+      <section
+        aria-busy={pendingSession.error === null ? "true" : undefined}
+        aria-label={t("sidebarNewSession")}
+        className="at-new-session-view at-new-session-pending"
+      >
+        <div className="at-new-session-pending-content">
+          <article
+            className="at-message at-timeline-row"
+            data-row-key="optimistic-new-session-prompt"
+            data-role-id="user"
+          >
+            <div className="at-message-content">
+              {pendingSession.promptText || title.trim() || t("sidebarNewSession")}
+            </div>
+          </article>
+          {pendingSession.error === null ? (
+            <ModelRequestStatus
+              openingLabel={t("timelineOpeningModelStream")}
+              phase="opening_stream"
+              waitingLabel={t("timelineWaitingForModelSlot")}
+            />
+          ) : (
+            <div className="at-new-session-pending-error" role="alert">
+              <Typography.Text type="danger">{pendingSession.error}</Typography.Text>
+              <div className="at-new-session-actions">
+                <Button onClick={() => setPendingSession(null)}>{t("sidebarRenameCancel")}</Button>
+                <Button onClick={submit} type="primary">{t("settingsRetry")}</Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section

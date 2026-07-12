@@ -4643,6 +4643,25 @@ body {
   display: block;
 }
 
+.at-new-session-pending-content {
+  position: relative;
+  display: grid;
+  gap: 16px;
+  width: min(780px, 100%);
+  margin: 0 auto;
+}
+
+.at-new-session-pending .at-model-request-status {
+  position: static;
+  justify-self: center;
+  transform: none;
+}
+
+.at-new-session-pending-error {
+  display: grid;
+  gap: 12px;
+}
+
 @media (max-width: 640px) {
   .at-new-session-view {
     padding: 14px 12px;

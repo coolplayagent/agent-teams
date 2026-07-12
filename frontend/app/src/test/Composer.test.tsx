@@ -410,6 +410,44 @@ describe("Composer", () => {
     });
   });
 
+  it.each(["button", "enter"] as const)(
+    "records the user submission time for %s run submission",
+    async (submissionMethod) => {
+      getRoleConfigOptionsMock.mockResolvedValue({
+        normal_mode_roles: [],
+      });
+      createRunMock.mockResolvedValue({
+        run_id: `run-${submissionMethod}`,
+        session_id: "session-1",
+      });
+      const nowSpy = vi.spyOn(globalThis.performance, "now").mockReturnValue(321.5);
+      const markSpy = vi.spyOn(globalThis.performance, "mark");
+
+      renderComposer();
+
+      const prompt = await screen.findByLabelText("Prompt");
+      fireEvent.change(prompt, {
+        target: { value: `${submissionMethod} submission` },
+      });
+      if (submissionMethod === "button") {
+        fireEvent.click(screen.getByRole("button", { name: "Send" }));
+      } else {
+        fireEvent.keyDown(prompt, { key: "Enter" });
+      }
+
+      await waitFor(() => expect(createRunMock).toHaveBeenCalledOnce());
+      await waitFor(() =>
+        expect(markSpy).toHaveBeenCalledWith(
+          `agent-teams:run-start:submit:run-${submissionMethod}`,
+          { startTime: 321.5 },
+        ),
+      );
+
+      nowSpy.mockRestore();
+      markSpy.mockRestore();
+    },
+  );
+
   it("previews the submitted prompt title only after run creation succeeds", async () => {
     getRoleConfigOptionsMock.mockResolvedValue({
       normal_mode_roles: [],

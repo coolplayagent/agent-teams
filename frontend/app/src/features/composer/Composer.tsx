@@ -616,15 +616,16 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
 
   const createRunMutation = useMutation({
     onMutate: () => {
+      const submittedAt = globalThis.performance?.now();
       if (sessionId === null) {
-        return null;
+        return { promptId: null, sessionId: null, submittedAt };
       }
       const promptText =
         effectivePromptText || summarizePromptAttachments(promptAttachments);
       const promptId = useOptimisticRunStore
         .getState()
         .beginPrompt(sessionId, promptText);
-      return { promptId, sessionId };
+      return { promptId, sessionId, submittedAt };
     },
     mutationFn: async () => {
       if (sessionId === null) {
@@ -665,6 +666,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       return { result, titlePreview };
     },
     onSuccess: ({ result, titlePreview }, _variables, optimisticPrompt) => {
+      markComposerRunSubmission(result.run_id, optimisticPrompt?.submittedAt);
       markComposerRunStart("success-callback", result.run_id);
       const foreground = sessionIdRef.current === result.session_id;
       markComposerRunStart("before-controller", result.run_id);
@@ -698,7 +700,10 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
         titlePreview,
         sessionQuery.data,
       );
-      if (optimisticPrompt != null) {
+      if (
+        optimisticPrompt?.sessionId != null &&
+        optimisticPrompt.promptId != null
+      ) {
         useOptimisticRunStore
           .getState()
           .confirmPrompt(
@@ -709,7 +714,10 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       }
     },
     onError: (error, _variables, optimisticPrompt) => {
-      if (optimisticPrompt != null) {
+      if (
+        optimisticPrompt?.sessionId != null &&
+        optimisticPrompt.promptId != null
+      ) {
         useOptimisticRunStore
           .getState()
           .finishPrompt(optimisticPrompt.sessionId, optimisticPrompt.promptId);
@@ -1511,6 +1519,22 @@ function markComposerRunStart(phase: string, runId: string): void {
     globalThis.performance?.mark(
       `agent-teams:run-start:composer-${phase}:${runId}`,
     );
+  } catch {
+    // Performance instrumentation must never affect run submission.
+  }
+}
+
+function markComposerRunSubmission(
+  runId: string,
+  submittedAt: number | undefined,
+): void {
+  if (submittedAt === undefined) {
+    return;
+  }
+  try {
+    globalThis.performance?.mark(`agent-teams:run-start:submit:${runId}`, {
+      startTime: submittedAt,
+    });
   } catch {
     // Performance instrumentation must never affect run submission.
   }

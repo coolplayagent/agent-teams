@@ -43,6 +43,11 @@ interface BurstNewSessionState {
   runCreateRequests: CapturedRunCreateRequest[];
 }
 
+interface EnterStreamProbe {
+  promptDelayMs: number | null;
+  statusDelayMs: number | null;
+}
+
 test("creates a run from the V2 composer and renders live stream output", async ({
   page,
 }) => {
@@ -69,7 +74,16 @@ test("creates a run from the V2 composer and renders live stream output", async 
     await prompt.fill(promptText);
     const sendButton = page.getByRole("button", { name: "Send" });
     await expect(sendButton).toBeEnabled();
+    await installSubmissionProbe(page, promptText, "click");
     await sendButton.click();
+
+    await expect.poll(() => enterStreamProbe(page)).toMatchObject({
+      promptDelayMs: expect.any(Number),
+      statusDelayMs: expect.any(Number),
+    });
+    const clickFeedback = await enterStreamProbe(page);
+    expect(clickFeedback.promptDelayMs ?? Number.POSITIVE_INFINITY).toBeLessThan(100);
+    expect(clickFeedback.statusDelayMs ?? Number.POSITIVE_INFINITY).toBeLessThan(100);
 
     await expect.poll(() => runCreateRequests.length).toBe(1);
     expect(runCreateRequests[0]).toMatchObject({
@@ -237,6 +251,187 @@ test("renders received stream text incrementally and does not replay after termi
     await appServer.close();
   }
 });
+
+test("keeps an Enter-started stream open across an initially idle recovery snapshot", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const runCreateRequests: CapturedRunCreateRequest[] = [];
+  const unhandledApiRoutes: string[] = [];
+  const promptText = "Enter stream continuity check";
+  try {
+    await installShellState(page);
+    await installMockEventSource(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleStreamApi(context, runCreateRequests),
+      sessionTitle: "TS Enter stream continuity",
+    });
+    await page.goto(`${appServer.url}/`);
+    await waitForAppShell(page);
+
+    const prompt = page.getByRole("textbox", { name: "Prompt" });
+    await prompt.fill(promptText);
+    await installSubmissionProbe(page, promptText, "enter");
+    await prompt.press("Enter");
+
+    await expect.poll(() => enterStreamProbe(page)).toMatchObject({
+      promptDelayMs: expect.any(Number),
+      statusDelayMs: expect.any(Number),
+    });
+    const feedback = await enterStreamProbe(page);
+    expect(feedback.promptDelayMs).not.toBeNull();
+    expect(feedback.statusDelayMs).not.toBeNull();
+    expect(feedback.promptDelayMs ?? Number.POSITIVE_INFINITY).toBeLessThan(100);
+    expect(feedback.statusDelayMs ?? Number.POSITIVE_INFINITY).toBeLessThan(100);
+    await waitForEventSourceUrl(
+      page,
+      /\/api\/ag-ui\/runs\/run-ts-stream\/events\?after_event_id=0$/,
+    );
+    await waitForEventSourceOpenCount(page, 1);
+
+    await page.waitForTimeout(2_000);
+    await expect(page.getByText(promptText)).toBeVisible();
+    await expect(page.locator(".at-model-request-status")).toBeVisible();
+    await waitForEventSourceOpenCount(page, 1);
+    await dispatchRunEvent(page, {
+      eventId: 1,
+      payload: { status: "running" },
+      relayEventType: "run_started",
+      type: "run.started",
+    });
+    const firstDeltaStartedAt = Date.now();
+    await dispatchRunEvent(page, {
+      eventId: 2,
+      payload: { text: "ENTER_DELTA_ONE" },
+      relayEventType: "text_delta",
+      type: "message.text.delta",
+    });
+    await expect(page.getByText("ENTER_DELTA_ONE")).toBeVisible({ timeout: 1_000 });
+    expect(Date.now() - firstDeltaStartedAt).toBeLessThan(1_000);
+    const liveText = page.locator(".at-message-streaming-text");
+    await liveText.evaluate((element) => {
+      element.setAttribute("data-enter-stream-node", "stable");
+    });
+
+    const secondDeltaStartedAt = Date.now();
+    await dispatchRunEvent(page, {
+      eventId: 3,
+      payload: { text: " ENTER_DELTA_TWO" },
+      relayEventType: "text_delta",
+      type: "message.text.delta",
+    });
+    await expect(liveText).toHaveText(
+      "ENTER_DELTA_ONE ENTER_DELTA_TWO",
+      { timeout: 1_000 },
+    );
+    expect(Date.now() - secondDeltaStartedAt).toBeLessThan(1_000);
+    await waitForEventSourceOpenCount(page, 1);
+    const liveGeometry = await liveText.evaluate((element) => {
+      const row = element.closest<HTMLElement>(".at-timeline-row");
+      const timeline = element.closest<HTMLElement>(".at-timeline");
+      return {
+        rowHeight: row?.getBoundingClientRect().height ?? 0,
+        scrollHeight: timeline?.scrollHeight ?? 0,
+        scrollTop: timeline?.scrollTop ?? 0,
+      };
+    });
+
+    await dispatchRunEvent(page, {
+      eventId: 4,
+      payload: {
+        output: [{ kind: "text", text: "ENTER_DELTA_ONE ENTER_DELTA_TWO" }],
+        status: "completed",
+      },
+      relayEventType: "run_completed",
+      type: "run.completed",
+    });
+    await waitForEventSourceOpenCount(page, 0);
+    await expect(
+      page.locator('[data-enter-stream-node="stable"]'),
+    ).toHaveCount(1);
+    await expect(page.getByText("ENTER_DELTA_ONE ENTER_DELTA_TWO")).toHaveCount(1);
+    const settledGeometry = await page.locator('[data-enter-stream-node="stable"]')
+      .evaluate((element) => {
+        const row = element.closest<HTMLElement>(".at-timeline-row");
+        const timeline = element.closest<HTMLElement>(".at-timeline");
+        return {
+          rowHeight: row?.getBoundingClientRect().height ?? 0,
+          scrollHeight: timeline?.scrollHeight ?? 0,
+          scrollTop: timeline?.scrollTop ?? 0,
+        };
+      });
+    expect(Math.abs(settledGeometry.rowHeight - liveGeometry.rowHeight)).toBeLessThan(2);
+    expect(Math.abs(settledGeometry.scrollHeight - liveGeometry.scrollHeight)).toBeLessThan(2);
+    expect(Math.abs(settledGeometry.scrollTop - liveGeometry.scrollTop)).toBeLessThan(2);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+  } finally {
+    await appServer.close();
+  }
+});
+
+async function installSubmissionProbe(
+  page: Page,
+  promptText: string,
+  trigger: "click" | "enter",
+): Promise<void> {
+  await page.evaluate(({ expectedPrompt, submissionTrigger }) => {
+    const probe = {
+      promptAt: null as number | null,
+      statusAt: null as number | null,
+      t0: null as number | null,
+    };
+    Reflect.set(window, "__enterStreamProbe", probe);
+    const eventName = submissionTrigger === "enter" ? "keydown" : "click";
+    document.addEventListener(eventName, (event) => {
+      if (
+        (submissionTrigger === "enter" &&
+          (!(event instanceof KeyboardEvent) || event.key !== "Enter")) ||
+        probe.t0 !== null
+      ) {
+        return;
+      }
+      probe.t0 = performance.now();
+      const sample = () => {
+        if (probe.t0 === null) {
+          return;
+        }
+        if (
+          probe.promptAt === null &&
+          Array.from(document.querySelectorAll<HTMLElement>(".at-timeline-row"))
+            .some((element) => element.textContent?.includes(expectedPrompt))
+        ) {
+          probe.promptAt = performance.now();
+        }
+        if (
+          probe.statusAt === null &&
+          document.querySelector(".at-model-request-status") !== null
+        ) {
+          probe.statusAt = performance.now();
+        }
+        if (probe.promptAt === null || probe.statusAt === null) {
+          requestAnimationFrame(sample);
+        }
+      };
+      requestAnimationFrame(sample);
+    }, { capture: true, once: true });
+  }, { expectedPrompt: promptText, submissionTrigger: trigger });
+}
+
+async function enterStreamProbe(page: Page): Promise<EnterStreamProbe> {
+  return page.evaluate(() => {
+    const probe = Reflect.get(window, "__enterStreamProbe") as {
+      promptAt: number | null;
+      statusAt: number | null;
+      t0: number | null;
+    };
+    return {
+      promptDelayMs:
+        probe.promptAt === null || probe.t0 === null ? null : probe.promptAt - probe.t0,
+      statusDelayMs:
+        probe.statusAt === null || probe.t0 === null ? null : probe.statusAt - probe.t0,
+    };
+  });
+}
 
 test("starts burst new sessions with fast feedback and bounded requests", async ({
   page,

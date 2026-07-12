@@ -819,50 +819,20 @@ describe("RecoveryBar", () => {
     expect(controller.clearRunStream).not.toHaveBeenCalled();
   });
 
-  it("force-confirms an unobserved tracked run before settling an idle snapshot", async () => {
-    getRecoverySnapshotMock
-      .mockResolvedValueOnce(recoverySnapshot({ active_run: null }))
-      .mockResolvedValueOnce(recoverySnapshot({ active_run: null }));
+  it("keeps a newly tracked run open while recovery has not observed it", async () => {
+    getRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({ active_run: null }),
+    );
     const controller = runStreamController();
     controller.trackedRunIds = ["run-1"];
 
     renderRecoveryBar(controller);
 
     await waitFor(() =>
-      expect(getRecoverySnapshotMock).toHaveBeenCalledWith("session-1", true),
-    );
-    await waitFor(() =>
-      expect(controller.settleTerminalRunStream).toHaveBeenCalledWith({
-        runIds: ["run-1"],
-        sessionId: "session-1",
-      }),
-    );
-  });
-
-  it("keeps an unobserved tracked run when the forced snapshot is active", async () => {
-    getRecoverySnapshotMock
-      .mockResolvedValueOnce(recoverySnapshot({ active_run: null }))
-      .mockResolvedValueOnce(
-        recoverySnapshot({
-          active_run: {
-            run_id: "run-1",
-            session_id: "session-1",
-            status: "running",
-            phase: "running",
-            last_event_id: 15,
-            should_show_recover: false,
-          },
-        }),
-      );
-    const controller = runStreamController();
-    controller.trackedRunIds = ["run-1"];
-
-    renderRecoveryBar(controller);
-
-    await waitFor(() =>
-      expect(getRecoverySnapshotMock).toHaveBeenCalledWith("session-1", true),
+      expect(getRecoverySnapshotMock).toHaveBeenCalledWith("session-1"),
     );
     await act(async () => Promise.resolve());
+    expect(getRecoverySnapshotMock).not.toHaveBeenCalledWith("session-1", true);
     expect(controller.settleTerminalRunStream).not.toHaveBeenCalled();
   });
 
@@ -882,45 +852,6 @@ describe("RecoveryBar", () => {
     await act(async () => Promise.resolve());
     expect(getRecoverySnapshotMock).not.toHaveBeenCalledWith("session-1", true);
     expect(controller.settleTerminalRunStream).not.toHaveBeenCalled();
-  });
-
-  it("ignores a forced idle confirmation that resolves after the session changes", async () => {
-    const forcedSessionA = deferredResponse<RecoverySnapshot>();
-    getRecoverySnapshotMock.mockImplementation((sessionId, forceRefresh) => {
-      if (sessionId === "session-a" && forceRefresh === true) {
-        return forcedSessionA.promise;
-      }
-      return Promise.resolve(recoverySnapshot({ active_run: null }));
-    });
-    const controller = runStreamController();
-    controller.trackedRunIds = ["run-a"];
-    controller.trackedSessionId = "session-a";
-    const view = render(
-      <TestProviders>
-        <RecoveryBar runStreamController={controller} sessionId="session-a" />
-      </TestProviders>,
-    );
-
-    await waitFor(() =>
-      expect(getRecoverySnapshotMock).toHaveBeenCalledWith("session-a", true),
-    );
-    controller.trackedRunIds = ["run-b"];
-    controller.trackedSessionId = "session-b";
-    view.rerender(
-      <TestProviders>
-        <RecoveryBar runStreamController={controller} sessionId="session-b" />
-      </TestProviders>,
-    );
-
-    await waitFor(() =>
-      expect(getRecoverySnapshotMock).toHaveBeenCalledWith("session-b"),
-    );
-    forcedSessionA.resolve(recoverySnapshot({ active_run: null }));
-    await act(async () => Promise.resolve());
-    expect(controller.settleTerminalRunStream).not.toHaveBeenCalledWith({
-      runIds: ["run-a"],
-      sessionId: "session-a",
-    });
   });
 
   it("clears question form state when the selected session changes", async () => {

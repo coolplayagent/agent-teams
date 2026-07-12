@@ -67,6 +67,11 @@ describe("MessageTimeline", () => {
     });
 
     expect(await screen.findByText("inspect the stream")).toBeVisible();
+    const optimisticMarker = document.querySelector<HTMLElement>(
+      '.at-round-marker[data-row-key^="optimistic-run-"]',
+    );
+    expect(optimisticMarker).not.toBeNull();
+    expect(optimisticMarker).toHaveTextContent("Running");
     expect(screen.getByRole("status")).toHaveTextContent("Connecting to the model");
   });
 

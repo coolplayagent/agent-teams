@@ -1,6 +1,7 @@
 import { create } from "zustand";
 
 export interface OptimisticRunPrompt {
+  createdAt: string;
   id: string;
   runId?: string;
   sessionId: string;
@@ -24,7 +25,12 @@ export const useOptimisticRunStore = create<OptimisticRunState>((set) => ({
     set((state) => ({
       prompts: {
         ...state.prompts,
-        [sessionId]: { id, sessionId, text },
+        [sessionId]: {
+          createdAt: new Date().toISOString(),
+          id,
+          sessionId,
+          text,
+        },
       },
     }));
     return id;

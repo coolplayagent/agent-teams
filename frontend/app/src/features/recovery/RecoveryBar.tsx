@@ -66,7 +66,6 @@ export function RecoveryBar({
     Record<string, boolean>
   >({});
   const observedActiveRunKeysRef = useRef(new Set<string>());
-  const pendingIdleConfirmationRunKeysRef = useRef(new Set<string>());
   const pendingRunResumePromisesRef = useRef(
     new Map<string, ReturnType<typeof resumeRun>>(),
   );
@@ -187,7 +186,6 @@ export function RecoveryBar({
     if (sessionId === null || recoveryQuery.data === undefined) {
       return;
     }
-    let disposed = false;
     const authoritativeActiveRunIds = new Set(
       recoveryRunStreamTargets.map((target) => target.runId),
     );
@@ -208,57 +206,10 @@ export function RecoveryBar({
         sessionId,
       });
     }
-
-    const unconfirmedRunIds = trackedRunIdsForSession.filter((runId) => {
-      const observationKey = recoveryRunObservationKey(sessionId, runId);
-      return (
-        !authoritativeActiveRunIds.has(runId) &&
-        !observedActiveRunKeysRef.current.has(observationKey) &&
-        !pendingIdleConfirmationRunKeysRef.current.has(observationKey)
-      );
-    });
-    if (unconfirmedRunIds.length === 0) {
-      return;
-    }
-    const confirmationKeys = unconfirmedRunIds.map((runId) =>
-      recoveryRunObservationKey(sessionId, runId),
-    );
-    for (const confirmationKey of confirmationKeys) {
-      pendingIdleConfirmationRunKeysRef.current.add(confirmationKey);
-    }
-    void getRecoverySnapshot(sessionId, true)
-      .then((snapshot) => {
-        if (disposed) {
-          return;
-        }
-        queryClient.setQueryData(["sessions", sessionId, "recovery"], snapshot);
-        const confirmedActiveRunIds = new Set(
-          buildRecoveryRunStreamTargets(
-            snapshot.active_run,
-            snapshot.background_tasks.filter(isActiveBackgroundTask),
-          ).map((target) => target.runId),
-        );
-        const confirmedTerminalRunIds = unconfirmedRunIds.filter(
-          (runId) => !confirmedActiveRunIds.has(runId),
-        );
-        if (confirmedTerminalRunIds.length > 0) {
-          runStreamController.settleTerminalRunStream({
-            runIds: confirmedTerminalRunIds,
-            sessionId,
-          });
-        }
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        for (const confirmationKey of confirmationKeys) {
-          pendingIdleConfirmationRunKeysRef.current.delete(confirmationKey);
-        }
-      });
-    return () => {
-      disposed = true;
-    };
+    // Run creation and recovery persistence are not atomic. An idle snapshot
+    // cannot terminate a locally tracked run until recovery has observed it;
+    // before then the run stream remains the terminal-state authority.
   }, [
-    queryClient,
     recoveryQuery.data,
     recoveryRunStreamTargets.length,
     runStreamController,

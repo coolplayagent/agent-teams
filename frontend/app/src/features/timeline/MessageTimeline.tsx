@@ -1273,19 +1273,24 @@ interface FallbackVirtualItem {
 }
 
 function optimisticPromptRow(prompt: OptimisticRunPrompt): TimelineRow {
-  const part: TimelineTextPart = {
-    kind: "text",
-    streaming: false,
-    text: prompt.text,
-  };
+  const runId = prompt.runId?.trim() || prompt.id;
   return {
     copyable: false,
     key: prompt.id,
-    kind: "message",
-    parts: [part],
-    role: "user",
-    roundMarker: null,
-    runId: null,
+    kind: "round",
+    parts: [],
+    role: "round",
+    roundMarker: {
+      index: 0,
+      round: {
+        created_at: prompt.createdAt,
+        run_id: runId,
+        run_phase: "connecting",
+        run_status: "running",
+        run_user_message: prompt.text,
+      },
+    },
+    runId,
     source: "runtime",
     text: prompt.text,
   };

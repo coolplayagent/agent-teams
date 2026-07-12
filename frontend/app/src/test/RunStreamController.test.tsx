@@ -631,25 +631,18 @@ describe("useRunStreamController", () => {
     expect(screen.getByTestId("tracked-run-ids")).toHaveTextContent("run-2");
   });
 
-  it("keeps refreshing after close until sidebar reports the terminal run", async () => {
+  it("refreshes the sidebar once after close and leaves later convergence to events", async () => {
     listSessionRoundsMock.mockResolvedValue({
       has_more: false,
       items: [roundWithToolCalls("run-1", [])],
       next_cursor: null,
     });
-    listSidebarSessionsMock
-      .mockResolvedValueOnce([
-        sidebarSession({
-          latest_terminal_run_id: null,
-          latest_terminal_run_status: null,
-        }),
-      ])
-      .mockResolvedValue([
-        sidebarSession({
-          latest_terminal_run_id: "run-1",
-          latest_terminal_run_status: "completed",
-        }),
-      ]);
+    listSidebarSessionsMock.mockResolvedValue([
+      sidebarSession({
+        latest_terminal_run_id: null,
+        latest_terminal_run_status: null,
+      }),
+    ]);
     const queryClient = new QueryClient({
       defaultOptions: {
         queries: {
@@ -678,16 +671,13 @@ describe("useRunStreamController", () => {
     await waitFor(() =>
       expect(listSidebarSessionsMock).toHaveBeenCalledWith(true),
     );
-    await waitFor(() =>
-      expect(queryClient.getQueryData(["sessions", "sidebar"]))
-        .toEqual([
-          expect.objectContaining({
-            latest_terminal_run_id: "run-1",
-            latest_terminal_run_status: "completed",
-          }),
-        ]),
-      { timeout: 3000 },
-    );
+    await waitFor(() => expect(listSidebarSessionsMock).toHaveBeenCalledTimes(1));
+    expect(queryClient.getQueryData(["sessions", "sidebar"])).toEqual([
+      expect.objectContaining({
+        latest_terminal_run_id: null,
+        latest_terminal_run_status: null,
+      }),
+    ]);
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["sessions", "session-1", "rounds"],
     });
@@ -746,9 +736,7 @@ describe("useRunStreamController", () => {
       forceRefresh: true,
       limit: 100,
     });
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: ["sessions", "sidebar"],
-    });
+    expect(listSidebarSessionsMock).toHaveBeenCalledTimes(1);
     expect(invalidateSpy).not.toHaveBeenCalledWith({
       queryKey: ["sessions", "session-1", "rounds"],
     });
@@ -1050,19 +1038,16 @@ describe("useRunStreamController", () => {
       options.onClosed?.(runtimeStateWithPausedRun(12));
     });
 
-    await act(async () => {
-      await Promise.resolve();
-    });
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: ["sessions", "session-1", "messages"],
-    });
+    await waitFor(() =>
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: ["sessions", "session-1", "messages"],
+      }),
+    );
     expect(screen.getByTestId("suppressed-run-ids")).toHaveTextContent("run-1");
     expect(screen.getByTestId("tracked-run-ids")).toBeEmptyDOMElement();
     expect(screen.getByTestId("active-run-ids")).toBeEmptyDOMElement();
     expect(streamMocks.handles[0]?.close).toHaveBeenCalledTimes(1);
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: ["sessions", "sidebar"],
-    });
+    expect(listSidebarSessionsMock).toHaveBeenCalledTimes(1);
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["sessions", "session-1", "recovery"],
     });
@@ -1466,9 +1451,7 @@ describe("useRunStreamController", () => {
     expect(screen.getByTestId("suppressed-run-ids")).toHaveTextContent(
       "background-run-1",
     );
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: ["sessions", "sidebar"],
-    });
+    expect(listSidebarSessionsMock).toHaveBeenCalledTimes(1);
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["sessions", "session-1", "recovery"],
     });
@@ -1843,9 +1826,7 @@ describe("useRunStreamController", () => {
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["sessions", "session-1", "messages"],
     });
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: ["sessions", "sidebar"],
-    });
+    expect(listSidebarSessionsMock).toHaveBeenCalledTimes(1);
 
     act(() => {
       vi.advanceTimersByTime(10000);

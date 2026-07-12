@@ -6,6 +6,7 @@ import { getRecoverySnapshot } from "../api/client";
 import { openSessionActivityStream } from "../runtime/sessionActivityClient";
 import { useSessionActivityMonitor } from "../runtime/useSessionActivityMonitor";
 import { useOptimisticRunStore } from "../runtime/optimisticRunStore";
+import { useRuntimeStore } from "../runtime/runtimeStore";
 
 vi.mock("../api/client", () => ({
   getRecoverySnapshot: vi.fn(),
@@ -33,6 +34,7 @@ afterEach(() => {
   vi.clearAllMocks();
   vi.useRealTimers();
   useOptimisticRunStore.setState({ prompts: {} });
+  useRuntimeStore.getState().resetRuntimeState();
 });
 
 describe("useSessionActivityMonitor", () => {
@@ -101,6 +103,75 @@ describe("useSessionActivityMonitor", () => {
     });
     await act(async () => vi.advanceTimersByTime(250));
     expect(getRecoverySnapshotMock).not.toHaveBeenCalled();
+  });
+
+  it("does not invalidate a known local run after it reaches terminal state", async () => {
+    vi.useFakeTimers();
+    openSessionActivityStreamMock.mockReturnValue({ close: vi.fn() });
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: [],
+        runs: {
+          "local-terminal-run": {
+            entries: [],
+            lastEventId: 4,
+            runId: "local-terminal-run",
+            seenEventKeys: [],
+            sessionId: "session-1",
+            status: "closed",
+            terminalEventType: "run_completed",
+          },
+        },
+      },
+    });
+    const queryClient = testQueryClient();
+    const invalidateQueriesSpy = vi.spyOn(queryClient, "invalidateQueries");
+    render(<MonitorHarness queryClient={queryClient} sessionId="session-1" />);
+    const options = openSessionActivityStreamMock.mock.calls[0]?.[0];
+    if (options === undefined) {
+      throw new Error("Expected session activity stream options.");
+    }
+
+    act(() => {
+      options.onActivity({
+        event_type: "run_completed",
+        run_id: "local-terminal-run",
+      });
+    });
+    await act(async () => vi.advanceTimersByTime(250));
+
+    expect(getRecoverySnapshotMock).not.toHaveBeenCalled();
+    expect(invalidateQueriesSpy).not.toHaveBeenCalled();
+  });
+
+  it("still invalidates session views for a genuinely external run", async () => {
+    vi.useFakeTimers();
+    openSessionActivityStreamMock.mockReturnValue({ close: vi.fn() });
+    const queryClient = testQueryClient();
+    const invalidateQueriesSpy = vi.spyOn(queryClient, "invalidateQueries");
+    render(<MonitorHarness queryClient={queryClient} sessionId="session-1" />);
+    const options = openSessionActivityStreamMock.mock.calls[0]?.[0];
+    if (options === undefined) {
+      throw new Error("Expected session activity stream options.");
+    }
+
+    act(() => {
+      options.onActivity({
+        event_type: "run_completed",
+        run_id: "external-terminal-run",
+      });
+    });
+    await act(async () => vi.advanceTimersByTime(250));
+
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "detail", "session-1"],
+    });
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-1", "rounds"],
+    });
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-1", "messages"],
+    });
   });
 
   it("does not force recovery while a local create request is still pending", async () => {

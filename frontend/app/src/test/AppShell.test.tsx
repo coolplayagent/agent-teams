@@ -717,12 +717,7 @@ describe("AppShell", () => {
       expect(markSessionTerminalRunViewedMock).toHaveBeenCalledTimes(2),
     );
     expect(markSessionTerminalRunViewedMock).toHaveBeenLastCalledWith("session-1");
-    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
-      queryKey: ["sessions", "sidebar"],
-    });
-    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
-      queryKey: ["sessions", "detail", "session-1"],
-    });
+    expect(invalidateQueriesSpy).not.toHaveBeenCalled();
   });
 
   it("marks the selected terminal run when returning from a subagent view", async () => {
@@ -858,6 +853,27 @@ describe("AppShell", () => {
       2,
       "session-1",
     );
+    expect(invalidateQueriesSpy).not.toHaveBeenCalled();
+  });
+
+  it("refreshes authoritative session data when terminal view deferral is exhausted", async () => {
+    listSidebarSessionsMock.mockResolvedValue([{
+      has_unread_terminal_run: true,
+      latest_terminal_run_id: "run-deferred-exhausted",
+      latest_terminal_run_status: "completed",
+      latest_terminal_run_updated_at: "2026-06-23T10:00:00Z",
+      session_id: "session-1",
+      title: "Session 1",
+      workspace_id: "workspace-1",
+    }]);
+    markSessionTerminalRunViewedMock.mockResolvedValue({ status: "deferred" });
+    const queryClient = renderShell();
+    const invalidateQueriesSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    await waitFor(() =>
+      expect(markSessionTerminalRunViewedMock).toHaveBeenCalledTimes(3),
+    );
+
     expect(invalidateQueriesSpy).toHaveBeenCalledWith({
       queryKey: ["sessions", "sidebar"],
     });
@@ -895,12 +911,7 @@ describe("AppShell", () => {
       2,
       "session-1",
     );
-    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
-      queryKey: ["sessions", "sidebar"],
-    });
-    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
-      queryKey: ["sessions", "detail", "session-1"],
-    });
+    expect(invalidateQueriesSpy).not.toHaveBeenCalled();
   });
 
   it("keeps only primary feature destinations in the sidebar navigation", async () => {

@@ -542,7 +542,7 @@ export function AppShell() {
             invalidateSessionTerminalView();
             return;
           }
-          invalidateSessionTerminalView();
+          releaseTerminalViewMark();
         })
         .catch((error: unknown) => {
           if (

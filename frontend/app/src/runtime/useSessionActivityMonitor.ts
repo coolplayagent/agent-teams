@@ -64,13 +64,16 @@ export function useSessionActivityMonitor({
         invalidationTimer = null;
         const events = pendingEvents;
         pendingEvents = [];
-        const locallyTracked = new Set(locallyTrackedRunIdsRef.current);
+        const locallyKnown = localRunIdsForSession(
+          sessionId,
+          locallyTrackedRunIdsRef.current,
+        );
         const localSubmissionActive =
           useOptimisticRunStore.getState().prompts[sessionId] !== undefined;
         const scopes = new Set(events.map((item) =>
           activityEventRefreshScope(
             item,
-            locallyTracked,
+            locallyKnown,
             localSubmissionActive,
           )
         ));
@@ -131,6 +134,25 @@ export function useSessionActivityMonitor({
   }, [queryClient, sessionId]);
 }
 
+function localRunIdsForSession(
+  sessionId: string,
+  locallyTrackedRunIds: readonly string[],
+): ReadonlySet<string> {
+  const runIds = new Set(
+    locallyTrackedRunIds
+      .map((runId) => runId.trim())
+      .filter((runId) => runId.length > 0),
+  );
+  for (const runState of Object.values(
+    useRuntimeStore.getState().runtimeState.runs,
+  )) {
+    if (runState.sessionId === sessionId) {
+      runIds.add(runState.runId);
+    }
+  }
+  return runIds;
+}
+
 function sessionHasLocalActivity(
   sessionId: string,
   locallyTrackedRunIds: readonly string[],
@@ -151,7 +173,7 @@ type SessionActivityRefreshScope = "external" | "none" | "recovery" | "subagent"
 
 function activityEventRefreshScope(
   event: SessionActivityEvent,
-  locallyTrackedRunIds: ReadonlySet<string>,
+  locallyKnownRunIds: ReadonlySet<string>,
   localSubmissionActive: boolean,
 ): SessionActivityRefreshScope {
   if (event.event_type === "run_started" && localSubmissionActive) {
@@ -171,7 +193,7 @@ function activityEventRefreshScope(
   ) {
     return "subagent";
   }
-  if (locallyTrackedRunIds.has(event.run_id.trim())) {
+  if (locallyKnownRunIds.has(event.run_id.trim())) {
     return "none";
   }
   return "external";

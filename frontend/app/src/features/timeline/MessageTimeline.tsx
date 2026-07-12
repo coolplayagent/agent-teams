@@ -147,7 +147,6 @@ const IMAGE_CODE_SPAN_PATTERN = /`([^`\n]+)`/g;
 const IMAGE_BARE_PATH_PATTERN =
   /((?:\/|\.{1,2}\/|[A-Za-z]:[\\/])[^"'`\s<>]+?\.(?:avif|bmp|gif|jpe?g|png|webp))/gi;
 const TRAILING_PATH_PUNCTUATION_PATTERN = /[),.:;!?\\\]}>，。！？；：）】》]+$/u;
-const LIVE_ROUND_REFETCH_MS = 1500;
 interface MessageTimelineProps {
   emptyDescription?: string;
   emptyFallback?: ReactNode;
@@ -312,10 +311,6 @@ export function MessageTimeline({
       sessionId !== null &&
       !messagesQuery.isLoading &&
       !messagesQuery.isError,
-    refetchInterval: (query) =>
-      roundsNeedLiveRefetch(query.state.data as SessionRound[] | undefined)
-        ? LIVE_ROUND_REFETCH_MS
-        : false,
     staleTime: 0,
   });
 
@@ -5079,20 +5074,6 @@ function timelineRoundLooksDetachedSubagent(
 
 function roundHasTerminalStatus(round: SessionRound): boolean {
   return isTerminalRoundStatus(round.run_status) || isTerminalRoundStatus(round.run_phase);
-}
-
-function roundsNeedLiveRefetch(rounds: SessionRound[] | undefined): boolean {
-  return rounds?.some(roundNeedsLiveRefetch) ?? false;
-}
-
-function roundNeedsLiveRefetch(round: SessionRound): boolean {
-  if (roundHasTerminalStatus(round)) {
-    return false;
-  }
-  return (
-    isLiveRoundStatus(round.run_status) ||
-    isLiveRoundStatus(round.run_phase)
-  );
 }
 
 function isLiveRoundStatus(status: string | null | undefined): boolean {

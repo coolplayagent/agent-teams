@@ -103,6 +103,69 @@ describe("MessageTimeline", () => {
     expect(listSessionRoundsMock).not.toHaveBeenCalled();
   });
 
+  it("renders runtime events without polling round history and hydrates once on terminal invalidation", async () => {
+    vi.useFakeTimers();
+    listSessionMessagesMock.mockResolvedValue([]);
+    listSessionRoundsMock
+      .mockResolvedValueOnce({
+        has_more: false,
+        items: [{
+          created_at: "2026-07-12T09:00:00Z",
+          run_id: "run-event-driven",
+          run_status: "running",
+          run_user_message: "event driven prompt",
+        }],
+        next_cursor: null,
+      })
+      .mockResolvedValueOnce({
+        has_more: false,
+        items: [{
+          coordinator_messages: [],
+          created_at: "2026-07-12T09:00:00Z",
+          run_id: "run-event-driven",
+          run_status: "completed",
+          run_user_message: "event driven prompt",
+        }],
+        next_cursor: null,
+      });
+
+    const { queryClient } = renderTimeline();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(listSessionRoundsMock).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      setRuntimeStateFromEvents([
+        relayRunEvent({
+          event_id: 1,
+          event_type: "text_delta",
+          payload_json: JSON.stringify({ text: "EVENT_DRIVEN_DELTA" }),
+          run_id: "run-event-driven",
+          trace_id: "run-event-driven",
+        }),
+      ]);
+    });
+    expect(screen.getByText("EVENT_DRIVEN_DELTA")).toBeVisible();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6_000);
+    });
+    expect(listSessionRoundsMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["sessions", "session-1", "rounds"],
+      });
+    });
+    expect(listSessionRoundsMock).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6_000);
+    });
+    expect(listSessionRoundsMock).toHaveBeenCalledTimes(2);
+  });
+
   it("shows local prompt and connection feedback before run creation resolves", async () => {
     listSessionMessagesMock.mockResolvedValue([]);
     renderTimeline();
@@ -4593,7 +4656,7 @@ describe("MessageTimeline", () => {
     expect(marker).not.toHaveTextContent(/running/i);
   });
 
-  it("polls live rounds until the refreshed history returns a terminal status", async () => {
+  it("refreshes live rounds only after terminal activity invalidates history", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {
         content: "Finished after refresh.",
@@ -4630,16 +4693,19 @@ describe("MessageTimeline", () => {
         next_cursor: null,
       });
 
-    const { container } = renderTimeline();
+    const { container, queryClient } = renderTimeline();
 
     await waitFor(() =>
       expect(container).toHaveTextContent("Finished after refresh."),
     );
     expect(container.querySelector(".at-round-marker-meta")).toHaveTextContent(/running/i);
-    await waitFor(() =>
-      expect(listSessionRoundsMock).toHaveBeenCalledTimes(2),
-      { timeout: 3000 },
-    );
+    expect(listSessionRoundsMock).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["sessions", "session-1", "rounds"],
+      });
+    });
+    expect(listSessionRoundsMock).toHaveBeenCalledTimes(2);
     await waitFor(() => {
       const markerMeta = container.querySelector(".at-round-marker-meta");
       expect(markerMeta).toHaveTextContent(/completed/i);

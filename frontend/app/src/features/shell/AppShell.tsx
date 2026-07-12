@@ -169,7 +169,6 @@ export function AppShell() {
     sessionId: selectedSessionId,
   });
   const previousSelectedSessionIdRef = useRef(selectedSessionId);
-  const hasActiveRunStreams = runStreamController.activeRunIds.length > 0;
   const selectedWorkspaceId = useUiStore((state) => state.selectedWorkspaceId);
   const setSidebarCollapsed = useUiStore((state) => state.setSidebarCollapsed);
   const setSidebarWidth = useUiStore((state) => state.setSidebarWidth);
@@ -325,7 +324,6 @@ export function AppShell() {
       return getSession(selectedSessionId);
     },
     enabled: selectedSessionId !== null,
-    refetchInterval: hasActiveRunStreams ? 1000 : false,
     staleTime: 10000,
   });
 

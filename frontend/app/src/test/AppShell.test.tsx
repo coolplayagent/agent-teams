@@ -1272,6 +1272,43 @@ describe("AppShell", () => {
     expect(runStreamControllerMock.clearRunStream).not.toHaveBeenCalled();
   });
 
+  it("does not poll session detail while a foreground run is active", async () => {
+    vi.useFakeTimers();
+    try {
+      runStreamControllerMock = createRunStreamController({
+        activeRunId: "run-active",
+        activeRunIds: ["run-active"],
+        trackedRunIds: ["run-active"],
+      });
+      useRunStreamControllerMock.mockReturnValue(runStreamControllerMock);
+
+      const queryClient = renderShell();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(getSessionMock).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+      expect(getSessionMock).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        await queryClient.invalidateQueries({
+          queryKey: ["sessions", "detail", "session-1"],
+        });
+      });
+      expect(getSessionMock).toHaveBeenCalledTimes(2);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5_000);
+      });
+      expect(getSessionMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("settles a foreground stream when the selected session reaches terminal state", async () => {
     runStreamControllerMock = createRunStreamController({
       activeRunId: "run-active",

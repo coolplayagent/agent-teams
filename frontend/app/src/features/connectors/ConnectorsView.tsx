@@ -11,7 +11,20 @@ import {
   Typography,
 } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { PlugZap, RefreshCcw, Search, Settings2, TestTube2 } from "lucide-react";
+import {
+  Bot,
+  Github,
+  KeyRound,
+  MessageCircle,
+  MessagesSquare,
+  PlugZap,
+  RefreshCcw,
+  Search,
+  Settings2,
+  TestTube2,
+  Webhook,
+} from "lucide-react";
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 
 import {
@@ -435,7 +448,7 @@ function ConnectorCard({
         type="button"
       >
         <span aria-hidden="true" className="at-connectors-card-icon">
-          {connectorInitial(item)}
+          {connectorIcon(item)}
         </span>
         <span className="at-connectors-card-body">
           <strong>{item.display_name}</strong>
@@ -473,8 +486,10 @@ function ConnectorCard({
             loading={testing}
             onClick={onTest}
             size="small"
-            type="text"
-          />
+            type="link"
+          >
+            {t("connectorsTest")}
+          </Button>
         </Tooltip>
       </div>
       {testError !== null ? (
@@ -551,7 +566,7 @@ function ConnectorDetail({
       <div className="at-connectors-detail-header">
         <div className="at-connectors-detail-title">
           <span aria-hidden="true" className="at-connectors-card-icon">
-            {connectorInitial(item)}
+            {connectorIcon(item)}
           </span>
           <div>
             <Typography.Title level={4}>{item.display_name}</Typography.Title>
@@ -904,9 +919,26 @@ function connectorCategoryLabel(
   return t("connectorsCategoryIm");
 }
 
-function connectorInitial(item: ConnectorItem): string {
-  const source = item.display_name.trim() || item.connector_id.trim();
-  return source.slice(0, 2).toUpperCase();
+function connectorIcon(item: ConnectorItem): ReactNode {
+  if (item.provider === "github") {
+    return <Github size={17} />;
+  }
+  if (item.provider === "discord") {
+    return <MessageCircle size={17} />;
+  }
+  if (item.provider === "feishu" || item.provider === "wechat") {
+    return <MessagesSquare size={17} />;
+  }
+  if (item.provider === "w3") {
+    return <KeyRound size={17} />;
+  }
+  if (item.auth_type === "webhook") {
+    return <Webhook size={17} />;
+  }
+  if (item.category === "im") {
+    return <MessageCircle size={17} />;
+  }
+  return <Bot size={17} />;
 }
 
 function formatDateTime(

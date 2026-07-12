@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 
 import {
   ensureScreenshotDir,
@@ -41,14 +41,21 @@ test("filters connector statuses and probes the selected connector", async ({
     await expect(page.getByTestId("connector-card-w3")).toBeVisible();
     await expect(page.getByTestId("connector-card-slack")).toBeVisible();
     await expect(page.getByTestId("connector-card-relay-knowledge")).toHaveCount(0);
+    await page
+      .getByTestId("connector-card-github")
+      .getByRole("button", { name: "Open GitHub details" })
+      .click();
     await expect(page.getByTestId("connector-detail-github")).toBeVisible();
     await expect(page.getByTestId("connector-detail-github"))
       .toContainText("repositories");
     await expect(page.getByTestId("connector-detail-github"))
       .toContainText("pull requests");
+    await page.getByRole("dialog").getByRole("button", { name: "Close" }).click();
+    await page.getByText("CLI tools", { exact: true }).click();
     await expect(page.getByTestId("runtime-tools-section")).toBeVisible();
     await expect(page.getByTestId("runtime-tool-card-rg")).toContainText("Ready");
     await expect(page.getByTestId("runtime-tool-card-gh")).toContainText("Missing");
+    await page.getByText("Connectors", { exact: true }).click();
 
     const summary = connectorsView.locator(".at-connectors-summary");
     await expect(summary.locator(".at-connectors-summary-cell").nth(0))
@@ -64,12 +71,10 @@ test("filters connector statuses and probes the selected connector", async ({
       .getByRole("searchbox", { name: "Search connectors" })
       .fill("w3");
     await expect(page.getByTestId("connector-card-w3")).toBeVisible();
-    await expect(page.getByTestId("connector-detail-w3")).toBeVisible();
-    await expect(page.getByTestId("connector-detail-w3"))
-      .toContainText("Missing credentials");
     await expect(page.getByTestId("connector-card-github")).toHaveCount(0);
     await page.getByTestId("connector-action-w3").click();
     const w3Detail = page.getByTestId("connector-detail-w3");
+    await expect(w3Detail).toContainText("Missing credentials");
     await expect(w3Detail.getByLabel("Username")).toHaveValue("w3-user");
     await w3Detail.getByLabel("Username").fill("w3-next");
     await w3Detail.getByLabel("Password").fill("secret-next");
@@ -80,6 +85,7 @@ test("filters connector statuses and probes the selected connector", async ({
     await page.screenshot({
       path: screenshotPath("v2-connectors-search-w3.png", SCREENSHOT_FOLDER),
     });
+    await page.getByRole("dialog").getByRole("button", { name: "Close" }).click();
 
     await connectorsView
       .getByRole("searchbox", { name: "Search connectors" })
@@ -89,6 +95,10 @@ test("filters connector statuses and probes the selected connector", async ({
       { exact: true },
     ).click();
     await expect(page.getByTestId("connector-card-slack")).toBeVisible();
+    await page
+      .getByTestId("connector-card-slack")
+      .getByRole("button", { name: "Open Slack details" })
+      .click();
     await expect(page.getByTestId("connector-detail-slack")).toBeVisible();
     await expect(page.getByTestId("connector-detail-slack"))
       .toContainText("Webhook expired");
@@ -96,13 +106,18 @@ test("filters connector statuses and probes the selected connector", async ({
     await page.screenshot({
       path: screenshotPath("v2-connectors-error-filter.png", SCREENSHOT_FOLDER),
     });
+    await page.getByRole("dialog").getByRole("button", { name: "Close" }).click();
 
     await connectorsView.locator(".at-connectors-controls").getByText(
       "All",
       { exact: true },
     ).click();
-    await page.getByTestId("connector-card-github").click();
     await page
+      .getByTestId("connector-card-github")
+      .getByRole("button", { name: "Open GitHub details" })
+      .click();
+    const githubDialog = page.getByRole("dialog");
+    await githubDialog
       .getByRole("button", { name: "Test GitHub connection" })
       .click();
     await expect(page.getByText("github is healthy")).toBeVisible();
@@ -190,6 +205,79 @@ test("keeps connector loading and retryable error states framed at 720px", async
     await appServer.close();
   }
 });
+
+test("uses a dense responsive connector grid without a vacant detail column", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const state = connectorsViewState();
+  try {
+    await page.setViewportSize({ height: 820, width: 1440 });
+    await installShellState(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: async (context) => {
+        if (context.method === "GET" && context.path === "/connectors") {
+          await context.fulfillJson(denseConnectorsResponse());
+          return true;
+        }
+        return handleConnectorsApi(context, state);
+      },
+      sessionTitle: "TS dense connectors grid",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+
+    await page.goto(`${appServer.url}/`);
+    await waitForAppShell(page);
+    await page
+      .getByRole("navigation", { name: "Primary navigation" })
+      .getByRole("button", { name: "Connectors" })
+      .click();
+
+    const connectorsView = page.getByTestId("connectors-view");
+    const grid = connectorsView.locator(".at-connectors-card-list");
+    await expect(page.getByTestId("connector-card-wechat")).toBeVisible();
+    await expectGridColumns(grid, 3);
+    const wideCards = await grid.locator(".at-connectors-card").evaluateAll(
+      (cards) => cards.map((card) => card.getBoundingClientRect()),
+    );
+    expect(new Set(wideCards.map((card) => Math.round(card.x))).size).toBe(3);
+    expect(new Set(wideCards.map((card) => Math.round(card.y))).size).toBe(2);
+    expect(Math.max(...wideCards.map((card) => card.height))).toBeLessThanOrEqual(130);
+    await page.screenshot({
+      path: screenshotPath("v2-connectors-dense-wide.png", SCREENSHOT_FOLDER),
+    });
+
+    await page.setViewportSize({ height: 820, width: 1000 });
+    await expectGridColumns(grid, 2);
+
+    await page.setViewportSize({ height: 820, width: 720 });
+    await expectGridColumns(grid, 1);
+    await expectNoDocumentScroll(
+      page,
+      "responsive connector cards should scroll inside the fixed shell",
+    );
+    await page.screenshot({
+      path: screenshotPath("v2-connectors-dense-narrow.png", SCREENSHOT_FOLDER),
+    });
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+  } finally {
+    await appServer.close();
+  }
+});
+
+async function expectGridColumns(
+  grid: Locator,
+  expected: number,
+): Promise<void> {
+  await expect
+    .poll(async () =>
+      grid.evaluate((element) =>
+        window.getComputedStyle(element).gridTemplateColumns.split(" ").length,
+      ),
+    )
+    .toBe(expected);
+}
 
 interface ConnectorsViewState {
   connectorTestRequests: string[];
@@ -337,6 +425,66 @@ function connectorsResponse(): Record<string, unknown> {
       error: 1,
       needs_config: 1,
       total: 4,
+    },
+  };
+}
+
+function denseConnectorsResponse(): Record<string, unknown> {
+  const items = [
+    ...((connectorsResponse().items as Array<Record<string, unknown>>).filter(
+      (item) => item.connector_id !== "relay-knowledge",
+    )),
+    {
+      account_count: 0,
+      auth_type: "api_token",
+      capabilities: ["messages"],
+      category: "im",
+      connector_id: "discord",
+      description: "Connect Discord direct messages and mentions.",
+      display_name: "Discord",
+      enabled_count: 0,
+      last_activity_at: null,
+      last_error: null,
+      provider: "discord",
+      status: "needs_config",
+    },
+    {
+      account_count: 1,
+      auth_type: "webhook",
+      capabilities: ["messages", "notifications"],
+      category: "im",
+      connector_id: "feishu",
+      description: "Connect Feishu chats and bot events.",
+      display_name: "Feishu",
+      enabled_count: 1,
+      last_activity_at: "2026-06-25T07:30:00Z",
+      last_error: null,
+      provider: "feishu",
+      status: "connected",
+    },
+    {
+      account_count: 0,
+      auth_type: "qr_login",
+      capabilities: ["messages"],
+      category: "im",
+      connector_id: "wechat",
+      description: "Connect WeChat conversations.",
+      display_name: "WeChat",
+      enabled_count: 0,
+      last_activity_at: null,
+      last_error: null,
+      provider: "wechat",
+      status: "disabled",
+    },
+  ];
+  return {
+    items,
+    summary: {
+      connected: 2,
+      disabled: 1,
+      error: 1,
+      needs_config: 2,
+      total: 6,
     },
   };
 }

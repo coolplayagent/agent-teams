@@ -10,12 +10,12 @@ const source = readFileSync(
 );
 
 describe("connectors workbench layout", () => {
-  it("uses compact status chips and a single scrolling card grid", () => {
+  it("uses compact status chips and a dense three-column scrolling card grid", () => {
     expect(css).toMatch(
       /\.at-connectors-summary\s*{[\s\S]*?display:\s*flex;[\s\S]*?flex-wrap:\s*wrap;/,
     );
     expect(css).toMatch(
-      /\.at-connectors-card-list\s*{[\s\S]*?grid-template-columns:\s*repeat\(auto-fill, minmax\(280px, 1fr\)\);[\s\S]*?overflow:\s*visible;/,
+      /\.at-connectors-card-list\s*{[\s\S]*?grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\);[\s\S]*?overflow:\s*visible;/,
     );
     expect(css).toMatch(
       /\.at-connectors-workbench\s*{[\s\S]*?overflow:\s*auto;/,
@@ -25,12 +25,21 @@ describe("connectors workbench layout", () => {
     );
   });
 
+  it("steps the connector grid down to two and one columns", () => {
+    expect(css).toMatch(
+      /@media \(max-width: 1180px\)[\s\S]*?\.at-connectors-card-list\s*{[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 760px\)[\s\S]*?\.at-connectors-card-list\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/,
+    );
+  });
+
   it("opens detail and gateway work in responsive centered modals", () => {
     expect(source.match(/<Modal/g)).toHaveLength(2);
     expect(source).toContain("className=\"at-connectors-modal\"");
     expect(source).toContain("at-gateway-connector-modal");
     expect(css).toMatch(
-      /@media \(max-width: 640px\)[\s\S]*?\.at-connectors-modal\s*{[\s\S]*?width:\s*calc\(100vw - 16px\) !important;/,
+      /@media \(max-width: 760px\)[\s\S]*?\.at-connectors-modal\s*{[\s\S]*?width:\s*calc\(100vw - 16px\) !important;/,
     );
   });
 });

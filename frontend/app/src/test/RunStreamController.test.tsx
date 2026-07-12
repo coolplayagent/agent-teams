@@ -136,12 +136,12 @@ describe("useRunStreamController", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
-    expect(recoveryRefreshCallCount(invalidateSpy)).toBe(1);
+    expect(recoveryRefreshCallCount(invalidateSpy)).toBe(0);
 
     act(() => {
       vi.advanceTimersByTime(10000);
     });
-    expect(recoveryRefreshCallCount(invalidateSpy)).toBe(2);
+    expect(recoveryRefreshCallCount(invalidateSpy)).toBe(1);
 
     const options = streamMocks.latestOptions as {
       onClosed: () => void;
@@ -154,6 +154,9 @@ describe("useRunStreamController", () => {
     });
     act(() => {
       options.onClosed();
+    });
+    act(() => {
+      vi.advanceTimersByTime(0);
     });
     const refreshCountAfterClose = recoveryRefreshCallCount(invalidateSpy);
 
@@ -443,6 +446,47 @@ describe("useRunStreamController", () => {
     });
   });
 
+  it("publishes terminal event state before delayed persistence refresh work", async () => {
+    vi.useFakeTimers();
+    const terminalRounds = createDeferred<SessionRoundPage>();
+    const terminalSidebar = createDeferred<SessionSidebarRecord[]>();
+    listSessionRoundsMock.mockReturnValue(terminalRounds.promise);
+    listSidebarSessionsMock.mockReturnValue(terminalSidebar.promise);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+    const options = streamMocks.latestOptions as RunStreamOptions;
+    const closedState = runtimeStateWithClosedRun(19);
+    act(() => {
+      options.onState(closedState);
+      options.onClosed?.(closedState);
+    });
+
+    expect(screen.getByTestId("runtime-run-status")).toHaveTextContent("closed");
+    expect(screen.getByTestId("active-run-ids")).toBeEmptyDOMElement();
+    expect(listSessionRoundsMock).not.toHaveBeenCalled();
+    expect(listSidebarSessionsMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(listSidebarSessionsMock).toHaveBeenCalledWith(true);
+    expect(screen.getByTestId("runtime-run-status")).toHaveTextContent("closed");
+  });
+
   it("marks a tracked run closed when the stream ends without a terminal event", () => {
     const queryClient = new QueryClient({
       defaultOptions: {
@@ -682,6 +726,7 @@ describe("useRunStreamController", () => {
     });
 
     await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
       await Promise.resolve();
     });
     expect(listSessionRoundsMock).toHaveBeenCalledTimes(1);
@@ -756,6 +801,7 @@ describe("useRunStreamController", () => {
     });
 
     await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
       await Promise.resolve();
     });
     expect(listSessionRoundsMock).toHaveBeenCalledTimes(1);
@@ -811,6 +857,7 @@ describe("useRunStreamController", () => {
     });
 
     await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
       await Promise.resolve();
     });
     expect(listSessionRoundsMock).toHaveBeenCalledTimes(1);
@@ -918,6 +965,7 @@ describe("useRunStreamController", () => {
     });
 
     await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
       await Promise.resolve();
     });
     expect(listSessionRoundsMock).toHaveBeenCalledTimes(1);
@@ -1619,14 +1667,14 @@ describe("useRunStreamController", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
-    expect(recoveryRefreshCallCount(invalidateSpy)).toBe(1);
+    expect(recoveryRefreshCallCount(invalidateSpy)).toBe(0);
 
     const options = streamMocks.latestOptions as RunStreamOptions;
     act(() => {
       options.onError("Run stream disconnected.", "server");
     });
 
-    expect(recoveryRefreshCallCount(invalidateSpy)).toBe(2);
+    expect(recoveryRefreshCallCount(invalidateSpy)).toBe(1);
   });
 
   it("reconnects transport interruptions from the latest local event id", () => {
@@ -1659,7 +1707,7 @@ describe("useRunStreamController", () => {
       firstOptions.onError("Run stream disconnected.", "transport");
     });
 
-    expect(recoveryRefreshCallCount(invalidateSpy)).toBe(2);
+    expect(recoveryRefreshCallCount(invalidateSpy)).toBe(1);
     expect(streamMocks.openRunStream).toHaveBeenCalledTimes(1);
     expect(streamMocks.handles[0].close).not.toHaveBeenCalled();
 
@@ -1777,7 +1825,9 @@ describe("useRunStreamController", () => {
 
     expect(streamMocks.handles[0].close).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId("active-run-ids")).toHaveTextContent("");
-    await Promise.resolve();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["sessions", "session-1", "messages"],
     });
@@ -1884,7 +1934,7 @@ describe("useRunStreamController", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
-    expect(recoveryRefreshCallCount(invalidateSpy)).toBe(1);
+    expect(recoveryRefreshCallCount(invalidateSpy)).toBe(0);
 
     const options = streamMocks.latestOptions as RunStreamOptions;
     act(() => {
@@ -1892,7 +1942,7 @@ describe("useRunStreamController", () => {
     });
     const refreshCountAfterError = recoveryRefreshCallCount(invalidateSpy);
 
-    expect(refreshCountAfterError).toBe(2);
+    expect(refreshCountAfterError).toBe(1);
     expect(streamMocks.handles[0].close).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId("active-run-ids")).toHaveTextContent("");
 
@@ -2096,6 +2146,9 @@ describe("useRunStreamController", () => {
 
 function RunStreamHarness({ afterEventId }: { afterEventId?: number }) {
   const controller = useRunStreamController();
+  const runtimeRunStatus = useRuntimeStore((state) =>
+    state.runtimeState.runs["run-1"]?.status ?? "missing"
+  );
   return (
     <>
       <button
@@ -2227,6 +2280,7 @@ function RunStreamHarness({ afterEventId }: { afterEventId?: number }) {
         {controller.suppressedRunIds.join(",")}
       </span>
       <span data-testid="tracked-run-ids">{controller.trackedRunIds.join(",")}</span>
+      <span data-testid="runtime-run-status">{runtimeRunStatus}</span>
     </>
   );
 }

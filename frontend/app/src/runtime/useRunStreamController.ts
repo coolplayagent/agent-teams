@@ -84,6 +84,7 @@ export function useRunStreamController(): RunStreamController {
   const runtimeStateRef = useRef(useRuntimeStore.getState().runtimeState);
   const streamHandleRef = useRef<RunStreamHandle | null>(null);
   const continuityRefreshTimerRef = useRef<number | null>(null);
+  const terminalBackgroundTimersRef = useRef(new Set<number>());
   const foregroundRunIdsRef = useRef<string[]>([]);
   const foregroundSessionIdRef = useRef<string | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
@@ -91,6 +92,7 @@ export function useRunStreamController(): RunStreamController {
   const streamGenerationRef = useRef(0);
   const subagentDiscoveryEventKeysRef = useRef(new Set<string>());
   const recoveryInteractionEventKeysRef = useRef(new Set<string>());
+  const terminalStoreMarkKeysRef = useRef(new Set<string>());
   const controllerOperationsRef = useRef<RunStreamControllerOperations | null>(null);
   const [activeRunIds, setActiveRunIds] = useState<string[]>([]);
   const [suppressedRunIds, setSuppressedRunIds] = useState<string[]>([]);
@@ -109,6 +111,10 @@ export function useRunStreamController(): RunStreamController {
     () => () => {
       stopContinuityRefresh();
       clearReconnectTimer();
+      for (const timerId of terminalBackgroundTimersRef.current) {
+        window.clearTimeout(timerId);
+      }
+      terminalBackgroundTimersRef.current.clear();
       streamHandleRef.current?.close();
     },
     [],
@@ -205,9 +211,16 @@ export function useRunStreamController(): RunStreamController {
     );
   };
 
+  const scheduleTerminalBackgroundWork = (work: () => void) => {
+    const timerId = window.setTimeout(() => {
+      terminalBackgroundTimersRef.current.delete(timerId);
+      work();
+    }, 0);
+    terminalBackgroundTimersRef.current.add(timerId);
+  };
+
   const startContinuityRefresh = (sessionId: string) => {
     stopContinuityRefresh();
-    refreshRecoverySnapshot(sessionId);
     continuityRefreshTimerRef.current = window.setInterval(() => {
       refreshRecoverySnapshot(sessionId);
       refreshSubagentDiscovery(sessionId);
@@ -344,64 +357,66 @@ export function useRunStreamController(): RunStreamController {
         streamGeneration,
       );
     }
-    refreshSidebarSessions();
-    const refreshHydratedSession = () => {
-      void queryClient.invalidateQueries({
-        queryKey: ["sessions", "detail", sessionId],
-      });
-      void queryClient.invalidateQueries({
-        queryKey: ["sessions", sessionId, "messages"],
-      });
-      void queryClient.invalidateQueries({
-        queryKey: ["sessions", sessionId, "rounds"],
-      });
-      void queryClient.invalidateQueries({
-        queryKey: ["sessions", "sidebar"],
-      });
-    };
-    const refreshSidebarSessionsFromServer = async () => {
-      const sessions = await listSidebarSessions(true);
-      queryClient.setQueryData(["sessions", "sidebar"], sessions);
-      return sessions;
-    };
-    let roundHistoryReady = roundSettleTargets.length === 0;
-    let terminalSessionReady = true;
-    let hydrationRefreshed = false;
-    const refreshHydratedSessionWhenReady = () => {
-      if (hydrationRefreshed || !roundHistoryReady || !terminalSessionReady) {
-        return;
+    scheduleTerminalBackgroundWork(() => {
+      refreshSidebarSessions();
+      const refreshHydratedSession = () => {
+        void queryClient.invalidateQueries({
+          queryKey: ["sessions", "detail", sessionId],
+        });
+        void queryClient.invalidateQueries({
+          queryKey: ["sessions", sessionId, "messages"],
+        });
+        void queryClient.invalidateQueries({
+          queryKey: ["sessions", sessionId, "rounds"],
+        });
+        void queryClient.invalidateQueries({
+          queryKey: ["sessions", "sidebar"],
+        });
+      };
+      const refreshSidebarSessionsFromServer = async () => {
+        const sessions = await listSidebarSessions(true);
+        queryClient.setQueryData(["sessions", "sidebar"], sessions);
+        return sessions;
+      };
+      let roundHistoryReady = roundSettleTargets.length === 0;
+      let terminalSessionReady = true;
+      let hydrationRefreshed = false;
+      const refreshHydratedSessionWhenReady = () => {
+        if (hydrationRefreshed || !roundHistoryReady || !terminalSessionReady) {
+          return;
+        }
+        hydrationRefreshed = true;
+        refreshHydratedSession();
+      };
+      if (roundSettleTargets.length > 0) {
+        void settleTerminalRoundsFromHistory({
+          currentStreamGeneration: () => streamGenerationRef.current,
+          onReady: () => {
+            roundHistoryReady = true;
+            refreshHydratedSessionWhenReady();
+          },
+          sessionId,
+          streamGeneration,
+          targets: roundSettleTargets,
+        });
+      } else {
+        refreshHydratedSessionWhenReady();
       }
-      hydrationRefreshed = true;
-      refreshHydratedSession();
-    };
-    if (roundSettleTargets.length > 0) {
-      void settleTerminalRoundsFromHistory({
+      void settleTerminalSessionFromSidebar({
         currentStreamGeneration: () => streamGenerationRef.current,
         onReady: () => {
-          roundHistoryReady = true;
+          terminalSessionReady = true;
           refreshHydratedSessionWhenReady();
         },
+        refreshSidebarSessions: refreshSidebarSessionsFromServer,
         sessionId,
         streamGeneration,
-        targets: roundSettleTargets,
+        targets: terminalTargets,
       });
-    } else {
-      refreshHydratedSessionWhenReady();
-    }
-    void settleTerminalSessionFromSidebar({
-      currentStreamGeneration: () => streamGenerationRef.current,
-      onReady: () => {
-        terminalSessionReady = true;
-        refreshHydratedSessionWhenReady();
-      },
-      refreshSidebarSessions: refreshSidebarSessionsFromServer,
-      sessionId,
-      streamGeneration,
-      targets: terminalTargets,
-    });
-    refreshRecoverySnapshot(sessionId);
-    void queryClient.invalidateQueries({
-      queryKey: ["sessions", sessionId, "token-usage"],
+      refreshRecoverySnapshot(sessionId);
+      void queryClient.invalidateQueries({
+        queryKey: ["sessions", sessionId, "token-usage"],
+      });
     });
   };
 
@@ -434,7 +449,18 @@ export function useRunStreamController(): RunStreamController {
         clearReconnectTimer();
         reconnectAttemptRef.current = 0;
         runtimeStateRef.current = nextRuntimeState;
+        markNewRuntimeTerminals(
+          nextRuntimeState,
+          terminalStoreMarkKeysRef.current,
+          "on-state",
+        );
         setRuntimeState(nextRuntimeState);
+        markNewRuntimeTerminals(
+          nextRuntimeState,
+          terminalStoreMarkKeysRef.current,
+          "store",
+          true,
+        );
         setActiveRunIdsIfChanged(
           activeTrackedRunIdsForSession(
             foregroundRunIdsRef.current,
@@ -621,6 +647,36 @@ export function useRunStreamController(): RunStreamController {
     trackedRunIds,
     trackedSessionId,
   ]);
+}
+
+function markNewRuntimeTerminals(
+  runtimeState: RuntimeState,
+  markedKeys: Set<string>,
+  phase: "on-state" | "store",
+  allowExisting = false,
+): void {
+  for (const runState of Object.values(runtimeState.runs)) {
+    const eventType = runState.terminalEventType?.trim() ?? "";
+    if (eventType.length === 0) {
+      continue;
+    }
+    const terminalKey = `${runState.runId}:${eventType}`;
+    const phaseKey = `${phase}:${terminalKey}`;
+    if (markedKeys.has(phaseKey)) {
+      continue;
+    }
+    if (!allowExisting && markedKeys.has(`store:${terminalKey}`)) {
+      continue;
+    }
+    markedKeys.add(phaseKey);
+    try {
+      globalThis.performance?.mark(
+        `agent-teams:terminal:${phase}:${runState.runId}:${eventType}`,
+      );
+    } catch {
+      // Performance instrumentation must never affect runtime state delivery.
+    }
+  }
 }
 
 type RunStreamControllerOperations = Pick<

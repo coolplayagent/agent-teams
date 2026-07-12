@@ -281,6 +281,9 @@ export function MessageTimeline({
     ),
     [primaryRoleId, runtimeRunId, sessionId, subagentScopeRoleId, variant],
   ));
+  const activeRunIds = useRuntimeStore(
+    (state) => state.runtimeState.activeRunIds,
+  );
   const optimisticPrompt = useOptimisticRunStore((state) =>
     sessionId === null ? null : state.prompts[sessionId] ?? null
   );
@@ -618,17 +621,19 @@ export function MessageTimeline({
   );
   const streamOpenForSession = useMemo(
     () =>
-      Object.values(runtimeRuns).some(
-        (runState) => runState.status !== "closed" &&
+      activeRunIds.some((activeRunId) => {
+        const runState = runtimeRuns[activeRunId];
+        return runState !== undefined &&
           runtimeRunStateMatchesScope(runState, {
             primaryRoleId,
             runtimeRunId,
             sessionId,
             subagentRoleId: subagentScopeRoleId,
             variant,
-          }),
-      ),
+          });
+      }),
     [
+      activeRunIds,
       primaryRoleId,
       runtimeRunId,
       runtimeRuns,

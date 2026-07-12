@@ -2909,6 +2909,82 @@ describe("MessageTimeline", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("Latest answer"));
   });
 
+  it("keeps final answer actions enabled for a stale open run outside activeRunIds", async () => {
+    setRuntimeEntries([
+      runtimeTextDeltaEntry({
+        eventId: 1,
+        id: "run-output:1:0",
+        text: "Stale open answer",
+      }),
+    ], "open", {
+      scope: "session",
+      sessionId: "session-1",
+    });
+    useRuntimeStore.setState((state) => ({
+      runtimeState: {
+        ...state.runtimeState,
+        activeRunIds: [],
+      },
+    }));
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    renderTimeline();
+
+    expect(await screen.findByRole("button", { name: "Copy last answer" }))
+      .toBeEnabled();
+  });
+
+  it("disables final answer actions while the scoped run is truly active", async () => {
+    setRuntimeEntries([
+      runtimeTextDeltaEntry({
+        eventId: 1,
+        id: "run-output:1:0",
+        text: "Active streaming answer",
+      }),
+    ], "open", {
+      scope: "session",
+      sessionId: "session-1",
+    });
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    renderTimeline();
+
+    expect(await screen.findByRole("button", { name: "Copy last answer" }))
+      .toBeDisabled();
+  });
+
+  it("enables final answer actions as soon as the terminal run leaves activeRunIds", async () => {
+    setRuntimeEntries([
+      runtimeTextDeltaEntry({
+        eventId: 1,
+        id: "run-output:1:0",
+        text: "Terminal answer",
+      }),
+    ], "open", {
+      scope: "session",
+      sessionId: "session-1",
+    });
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    renderTimeline();
+
+    const copyButton = await screen.findByRole("button", {
+      name: "Copy last answer",
+    });
+    expect(copyButton).toBeDisabled();
+
+    act(() => {
+      useRuntimeStore.setState((state) => ({
+        runtimeState: {
+          ...state.runtimeState,
+          activeRunIds: [],
+        },
+      }));
+    });
+
+    await waitFor(() => expect(copyButton).toBeEnabled());
+  });
+
   it("reads the latest answer aloud from the same final answer actions", async () => {
     class FakeSpeechSynthesisUtterance {
       lang = "";

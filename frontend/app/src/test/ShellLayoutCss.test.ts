@@ -284,7 +284,17 @@ describe("shell layout CSS", () => {
       /\.streaming-cursor\s*{[\s\S]*?width:\s*6px;[\s\S]*?height:\s*6px;[\s\S]*?border-radius:\s*50%;[\s\S]*?animation:\s*at-streaming-cursor-pulse 0\.9s ease-in-out infinite alternate;/,
     );
     expect(themeCss).toMatch(
-      /\.at-message-streaming-text \.at-message-markdown,[\s\S]*?\.at-message-streaming-text \.at-message-markdown > p:only-child\s*{[\s\S]*?display:\s*inline;/,
+      /\.at-message-streaming-text\s*{[\s\S]*?position:\s*relative;/,
+    );
+    expect(themeCss).not.toContain(".at-message-streaming-plain");
+    expect(themeCss).not.toMatch(
+      /\.at-message-streaming-text \.at-message-markdown[\s\S]*?display:\s*inline;/,
+    );
+  });
+
+  it("keeps processed continuity items in their virtual row flow", () => {
+    expect(themeCss).toMatch(
+      /\.at-processed-group-item\.at-message\s*{[\s\S]*?position:\s*relative;[\s\S]*?left:\s*auto;[\s\S]*?right:\s*auto;/,
     );
   });
 

@@ -5771,6 +5771,13 @@ body {
   min-width: 0;
 }
 
+/* A continuity item reuses message spacing without becoming a second virtual row. */
+.at-processed-group-item.at-message {
+  position: relative;
+  left: auto;
+  right: auto;
+}
+
 .at-processed-group-item.is-tool-only {
   gap: 2px;
 }
@@ -5790,10 +5797,6 @@ body {
   max-width: 100%;
   overflow-wrap: anywhere;
   line-height: var(--at-message-line-height);
-}
-
-.at-message-streaming-plain {
-  white-space: pre-wrap;
 }
 
 .at-message-markdown > :first-child {
@@ -5929,25 +5932,17 @@ body {
 }
 
 .at-message-streaming-text {
+  position: relative;
   max-width: 100%;
 }
 
-.at-message-streaming-text .at-message-markdown,
-.at-message-streaming-text .at-message-markdown > p:only-child {
-  display: inline;
-}
-
-.at-message-streaming-text .at-message-markdown > p:only-child {
-  margin: 0;
-}
-
 .streaming-cursor {
-  display: inline-block;
+  position: absolute;
+  right: 0;
+  bottom: 0.55em;
   width: 6px;
   height: 6px;
-  margin-left: 4px;
   border-radius: 50%;
-  vertical-align: 0.08em;
   background: color-mix(in srgb, var(--at-primary) 72%, var(--at-text) 28%);
   animation: at-streaming-cursor-pulse 0.9s ease-in-out infinite alternate;
 }

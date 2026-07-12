@@ -250,8 +250,10 @@ test("does not rebuild a fully displayed live answer when persisted history catc
     );
     await waitForEventSourceOpenCount(page, 1);
 
-    const finalText =
-      "LIVE_STREAM_ALPHA LIVE_STREAM_BETA LIVE_STREAM_GAMMA LIVE_STREAM_DELTA";
+    const finalText = Array.from(
+      { length: 50 },
+      (_, index) => `LIVE_STREAM_${String(index + 1).padStart(3, "0")}`,
+    ).join("\n");
     await dispatchRunEvent(page, {
       eventId: 1,
       payload: { phase: "streaming" },
@@ -287,6 +289,7 @@ test("does not rebuild a fully displayed live answer when persisted history catc
     await expect(liveAnswerRow.locator(".streaming-cursor")).toHaveCount(1);
     const liveRowKey = await liveAnswerRow.first().getAttribute("data-row-key");
     expect(liveRowKey).toContain("runtime-text:");
+    const liveGeometry = await terminalGeometry(liveAnswerRow);
     await page.screenshot({
       path: screenshotPath(
         "v2-stream-terminal-catchup-before-history.png",
@@ -316,6 +319,10 @@ test("does not rebuild a fully displayed live answer when persisted history catc
         ".at-message-markdown[data-stability-probe='live-markdown']",
       ),
     ).toHaveCount(1);
+    const settledGeometry = await terminalGeometry(liveAnswerRow);
+    expect(Math.abs(settledGeometry.rowHeight - liveGeometry.rowHeight)).toBeLessThan(2);
+    expect(Math.abs(settledGeometry.scrollHeight - liveGeometry.scrollHeight)).toBeLessThan(2);
+    expect(Math.abs(settledGeometry.scrollTop - liveGeometry.scrollTop)).toBeLessThan(2);
     await expect.poll(() => liveAnswerRow.first().getAttribute("data-row-key"))
       .toBe(liveRowKey);
     await expect.poll(() => recoveryState.messageRequestCount)
@@ -348,6 +355,19 @@ test("does not rebuild a fully displayed live answer when persisted history catc
     await appServer.close();
   }
 });
+
+async function terminalGeometry(
+  row: Locator,
+): Promise<{ rowHeight: number; scrollHeight: number; scrollTop: number }> {
+  return row.evaluate((element) => {
+    const timeline = element.closest<HTMLElement>(".at-timeline");
+    return {
+      rowHeight: element.getBoundingClientRect().height,
+      scrollHeight: timeline?.scrollHeight ?? 0,
+      scrollTop: timeline?.scrollTop ?? 0,
+    };
+  });
+}
 
 test("does not replay when persisted history renders before live replay arrives", async ({
   page,

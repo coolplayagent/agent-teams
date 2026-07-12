@@ -1410,7 +1410,9 @@ describe("MessageTimeline", () => {
       .toBe(textNodeBefore);
     const markdownAfter = container.querySelector<HTMLElement>(".at-message-markdown");
     expect(markdownAfter).toBe(markdownBefore);
-    expect(markdownAfter).not.toHaveClass("at-message-streaming-plain");
+    expect(markdownAfter?.querySelector("p")).toBe(
+      markdownBefore?.querySelector("p"),
+    );
     expect(markdownAfter?.querySelector("p")).toHaveTextContent(finalAnswer);
     expect(textNodeBefore).not.toHaveClass("at-message-streaming-text");
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);

@@ -208,6 +208,128 @@ test("streams thinking once, resumes after refresh, and folds terminal replay", 
   }
 });
 
+test("keeps processed work and the final answer geometrically stable at terminal", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const runCreateRequests: CapturedRunCreateRequest[] = [];
+  const state: ThinkingLifecycleState = {
+    completed: false,
+    lastEventId: 0,
+    persistedFinalText: "",
+    persistedThinkingText: "",
+    runCreated: false,
+  };
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await installMockEventSource(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) =>
+        handleThinkingLifecycleApi(context, runCreateRequests, state),
+      sessionTitle: "TS terminal geometry",
+    });
+    await page.goto(`${appServer.url}/`);
+    await waitForAppShell(page);
+
+    await page.getByRole("textbox", { name: "Prompt" }).fill(THINKING_PROMPT);
+    await page.getByRole("button", { name: "Send" }).click();
+    await waitForEventSourceUrl(
+      page,
+      /\/api\/ag-ui\/runs\/run-ts-thinking-lifecycle\/events\?after_event_id=0$/,
+    );
+    await dispatchThinkingRunEvent(page, {
+      eventId: 1,
+      payload: { phase: "streaming" },
+      relayEventType: "run_started",
+      type: "run.started",
+    });
+    await dispatchThinkingRunEvent(page, {
+      eventId: 2,
+      payload: { part_index: 0, text: THINKING_PREFIX },
+      relayEventType: "thinking_delta",
+      type: "thinking.delta",
+    });
+    await dispatchThinkingRunEvent(page, {
+      eventId: 3,
+      payload: { part_index: 0 },
+      relayEventType: "thinking_finished",
+      type: "thinking.finished",
+    });
+    await dispatchThinkingRunEvent(page, {
+      eventId: 4,
+      payload: { text: FINAL_TEXT },
+      relayEventType: "text_delta",
+      type: "message.text.delta",
+    });
+    await expect(page.getByText(FINAL_TEXT)).toBeVisible();
+    const liveGeometry = await processedAnswerGeometry(page, FINAL_TEXT);
+    expect(liveGeometry.answerTop + 1).toBeGreaterThanOrEqual(liveGeometry.processedBottom);
+    expect(liveGeometry.processedHeight)
+      .toBeGreaterThanOrEqual(liveGeometry.processedScrollHeight - 1);
+
+    state.completed = true;
+    state.lastEventId = 5;
+    state.persistedFinalText = FINAL_TEXT;
+    state.persistedThinkingText = THINKING_PREFIX;
+    await dispatchThinkingRunEvent(page, {
+      eventId: 5,
+      payload: {
+        output: [{ kind: "text", text: FINAL_TEXT }],
+        status: "completed",
+      },
+      relayEventType: "run_completed",
+      type: "run.completed",
+    });
+    await waitForEventSourceOpenCount(page, 0);
+    const settledGeometry = await processedAnswerGeometry(page, FINAL_TEXT);
+    expect(settledGeometry.answerTop + 1)
+      .toBeGreaterThanOrEqual(settledGeometry.processedBottom);
+    expect(settledGeometry.processedHeight)
+      .toBeGreaterThanOrEqual(settledGeometry.processedScrollHeight - 1);
+    expect(Math.abs(
+      settledGeometry.timelineScrollHeight - liveGeometry.timelineScrollHeight,
+    )).toBeLessThan(2);
+    expect(Math.abs(
+      settledGeometry.timelineScrollTop - liveGeometry.timelineScrollTop,
+    )).toBeLessThan(2);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+  } finally {
+    await appServer.close();
+  }
+});
+
+async function processedAnswerGeometry(page: Page, answerText: string): Promise<{
+  answerTop: number;
+  processedBottom: number;
+  processedHeight: number;
+  processedScrollHeight: number;
+  timelineScrollHeight: number;
+  timelineScrollTop: number;
+}> {
+  return page.evaluate((text) => {
+    const processed = document.querySelector<HTMLElement>(
+      ".at-timeline-virtual > .at-processed-group-row",
+    );
+    const answer = Array.from(document.querySelectorAll<HTMLElement>(
+      ".at-timeline-virtual > article.at-message",
+    )).find((element) => element.textContent?.includes(text));
+    const timeline = document.querySelector<HTMLElement>(".at-timeline");
+    if (processed === null || answer === undefined || timeline === null) {
+      throw new Error("Expected processed group, final answer, and timeline geometry");
+    }
+    const processedRect = processed.getBoundingClientRect();
+    return {
+      answerTop: answer.getBoundingClientRect().top,
+      processedBottom: processedRect.bottom,
+      processedHeight: processedRect.height,
+      processedScrollHeight: processed.scrollHeight,
+      timelineScrollHeight: timeline.scrollHeight,
+      timelineScrollTop: timeline.scrollTop,
+    };
+  }, answerText);
+}
+
 async function handleThinkingLifecycleApi(
   context: MockApiRouteContext,
   runCreateRequests: CapturedRunCreateRequest[],

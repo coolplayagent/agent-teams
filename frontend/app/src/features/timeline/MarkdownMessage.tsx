@@ -3,7 +3,6 @@ import remarkGfm from "remark-gfm";
 import { rehypeCodeHighlight } from "./markdownHighlight";
 
 interface MarkdownMessageProps {
-  streamingPlain?: boolean;
   text: string;
 }
 
@@ -25,24 +24,17 @@ const markdownComponents: Components = {
   },
 };
 
-export function MarkdownMessage({ streamingPlain = false, text }: MarkdownMessageProps) {
+export function MarkdownMessage({ text }: MarkdownMessageProps) {
   const markdownText = stripMarkdownFrontmatter(text);
   return (
-    <div
-      className={[
-        "at-message-markdown",
-        streamingPlain ? "at-message-streaming-plain" : "",
-      ].filter(Boolean).join(" ")}
-    >
-      {streamingPlain ? markdownText : (
-        <ReactMarkdown
-          components={markdownComponents}
-          rehypePlugins={[rehypeCodeHighlight]}
-          remarkPlugins={[remarkGfm]}
-        >
-          {markdownText}
-        </ReactMarkdown>
-      )}
+    <div className="at-message-markdown">
+      <ReactMarkdown
+        components={markdownComponents}
+        rehypePlugins={[rehypeCodeHighlight]}
+        remarkPlugins={[remarkGfm]}
+      >
+        {markdownText}
+      </ReactMarkdown>
     </div>
   );
 }

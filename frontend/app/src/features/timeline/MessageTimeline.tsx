@@ -1003,7 +1003,10 @@ export function MessageTimeline({
         return;
       }
       for (const row of container.querySelectorAll<HTMLElement>(
-        '.at-timeline-row.is-runtime[data-index][data-row-key]',
+        [
+          '.at-timeline-row.is-runtime[data-index][data-row-key]',
+          '.at-processed-group-row[data-index][data-row-key][data-run-id]',
+        ].join(","),
       )) {
         const index = Number(row.dataset.index);
         if (Number.isInteger(index) && index >= 0) {
@@ -8194,7 +8197,7 @@ function MessageText({
       ].filter(Boolean).join(" ")}
       data-streaming={visuallyStreaming ? "true" : undefined}
     >
-      <MarkdownMessage streamingPlain={visuallyStreaming} text={text} />
+      <MarkdownMessage text={text} />
       {cursorVisible ? <StreamingCursor /> : null}
     </div>
   );
@@ -8287,13 +8290,7 @@ function MessageThinkingBlock({
       </summary>
       {hasText ? (
         <div className="at-message-thinking-body">
-          {thinking.streaming ? (
-            <div className="at-message-markdown at-message-streaming-plain">
-              {thinking.text}
-            </div>
-          ) : (
-            <MarkdownMessage text={thinking.text} />
-          )}
+          <MarkdownMessage text={thinking.text} />
         </div>
       ) : null}
     </TimelineDisclosure>

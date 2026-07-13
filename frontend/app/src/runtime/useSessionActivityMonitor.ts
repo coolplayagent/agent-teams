@@ -147,12 +147,9 @@ function localRunIdsForSession(
       .map((runId) => runId.trim())
       .filter((runId) => runId.length > 0),
   );
-  for (const runState of Object.values(
-    useRuntimeStore.getState().runtimeState.runs,
-  )) {
-    if (runState.sessionId === sessionId) {
-      runIds.add(runState.runId);
-    }
+  const runtimeRuns = useRuntimeStore.getState().runtimeRunsBySession[sessionId] ?? [];
+  for (const runState of runtimeRuns) {
+    runIds.add(runState.runId);
   }
   return runIds;
 }

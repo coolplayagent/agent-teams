@@ -17,6 +17,7 @@ import type { RuntimeRunState, RuntimeState, TimelineEntry } from "./reducers";
 const RUN_STREAM_MANUAL_RECONNECT_GRACE_MS = 3500;
 const RUN_STREAM_RECONNECT_MAX_ATTEMPTS = 3;
 const TERMINAL_SETTLEMENT_GUARD_LIMIT = 4096;
+const STREAM_EVENT_GUARD_LIMIT = 4096;
 
 export interface StartRunStreamOptions {
   runId: string;
@@ -144,7 +145,11 @@ export function useRunStreamController(): RunStreamController {
         if (isSubagentDiscoveryEvent(entry)) {
           const eventKey = subagentDiscoveryEventKey(entry);
           if (!subagentDiscoveryEventKeysRef.current.has(eventKey)) {
-            subagentDiscoveryEventKeysRef.current.add(eventKey);
+            rememberBoundedSetKey(
+              subagentDiscoveryEventKeysRef.current,
+              eventKey,
+              STREAM_EVENT_GUARD_LIMIT,
+            );
             hasNewSubagentDiscoveryEvent = true;
           }
         }
@@ -156,7 +161,11 @@ export function useRunStreamController(): RunStreamController {
         }
         const eventKey = `${entry.runId}:${entry.id}`;
         if (!recoveryInteractionEventKeysRef.current.has(eventKey)) {
-          recoveryInteractionEventKeysRef.current.add(eventKey);
+          rememberBoundedSetKey(
+            recoveryInteractionEventKeysRef.current,
+            eventKey,
+            STREAM_EVENT_GUARD_LIMIT,
+          );
           hasNewInteractionEvent = true;
         }
       },
@@ -221,7 +230,7 @@ export function useRunStreamController(): RunStreamController {
       for (const runId of runIds) {
         merged.add(runId);
       }
-      return Array.from(merged);
+      return Array.from(merged).slice(-STREAM_EVENT_GUARD_LIMIT);
     });
   };
 
@@ -638,7 +647,7 @@ function markNewRuntimeTerminals(
     if (!allowExisting && markedKeys.has(`store:${terminalKey}`)) {
       continue;
     }
-    markedKeys.add(phaseKey);
+    rememberBoundedSetKey(markedKeys, phaseKey, STREAM_EVENT_GUARD_LIMIT);
     try {
       globalThis.performance?.mark(
         `agent-teams:terminal:${phase}:${runState.runId}:${eventType}`,
@@ -1100,6 +1109,24 @@ function rememberTerminalSettlementKey(
     }
   }
   keys.set(key, sequence);
+}
+
+function rememberBoundedSetKey(
+  keys: Set<string>,
+  key: string,
+  limit: number,
+): void {
+  if (keys.has(key)) {
+    return;
+  }
+  while (keys.size >= limit) {
+    const oldestKey = keys.values().next().value;
+    if (oldestKey === undefined) {
+      break;
+    }
+    keys.delete(oldestKey);
+  }
+  keys.add(key);
 }
 
 function sidebarSessionsWithLocalTerminalRuns(

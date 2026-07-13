@@ -316,6 +316,7 @@ export function MessageTimeline({
   useEffect(() => {
     const store = useRuntimeStore.getState();
     let nextRuns: Record<string, RuntimeRunState> | null = null;
+    const changedRunIds: string[] = [];
     for (const [runId, primaryInstanceId] of primaryInstancesByRunId) {
       if (primaryInstanceId.length === 0) {
         continue;
@@ -326,9 +327,14 @@ export function MessageTimeline({
       }
       nextRuns ??= { ...store.runtimeState.runs };
       nextRuns[runId] = { ...runState, targetInstanceId: primaryInstanceId };
+      changedRunIds.push(runId);
     }
     if (nextRuns !== null) {
-      store.setRuntimeState({ ...store.runtimeState, runs: nextRuns });
+      store.setRuntimeState({
+        ...store.runtimeState,
+        changedRunIds,
+        runs: nextRuns,
+      });
     }
   }, [primaryInstancesByRunId]);
   const runtimeRowSelectionCacheRef = useRef<RuntimeRowSelectionCache>({
@@ -338,7 +344,12 @@ export function MessageTimeline({
   });
   const runtimeRunList = useRuntimeStore(useCallback(
     (state) => selectRuntimeRowsForTimeline(
-      state.runtimeState.runs,
+      runtimeRunCandidates(
+        state.runtimeState.runs,
+        state.runtimeRunsBySession,
+        runtimeRunId,
+        sessionId,
+      ),
       {
         primaryInstancesByRunId,
         primaryRoleId,
@@ -6103,7 +6114,7 @@ interface RuntimeTimelineScope {
 }
 
 function selectRuntimeRowsForTimeline(
-  runtimeRuns: Record<string, RuntimeRunState>,
+  candidateRuns: readonly RuntimeRunState[],
   scope: RuntimeTimelineScope,
   cache: RuntimeRowSelectionCache,
 ): RuntimeRunState[] {
@@ -6125,12 +6136,6 @@ function selectRuntimeRowsForTimeline(
     cache.runs = [];
     cache.runsById = new Map();
   }
-  const scopedRunId = scope.runtimeRunId?.trim() ?? "";
-  const candidateRuns = scopedRunId.length > 0
-    ? [runtimeRuns[scopedRunId]].filter(
-        (runState): runState is RuntimeRunState => runState !== undefined,
-      )
-    : Object.values(runtimeRuns);
   const nextRuns = candidateRuns
     .filter((runState) => runtimeRunStateCanProjectScope(runState, scope))
     .map((runState) => scopedRuntimeRunSnapshot(
@@ -6155,6 +6160,40 @@ function selectRuntimeRowsForTimeline(
   cache.runs = nextRuns;
   cache.runsById = new Map(nextRuns.map((runState) => [runState.runId, runState]));
   return nextRuns;
+}
+
+function runtimeRunCandidates(
+  runtimeRuns: Record<string, RuntimeRunState>,
+  runtimeRunsBySession: Record<string, readonly RuntimeRunState[]>,
+  runtimeRunId: string | null | undefined,
+  sessionId: string | null,
+): readonly RuntimeRunState[] {
+  const scopedRunId = runtimeRunId?.trim() ?? "";
+  if (scopedRunId.length > 0) {
+    const runState = runtimeRuns[scopedRunId];
+    return runState === undefined ? [] : [runState];
+  }
+  if (sessionId === null) {
+    return [];
+  }
+  const indexedRuns = runtimeRunsBySession[sessionId];
+  if (indexedRuns !== undefined) {
+    return indexedRuns;
+  }
+  return Object.values(runtimeRuns).filter((runState) =>
+    runtimeRunStateCanProjectSession(runState, sessionId)
+  );
+}
+
+function runtimeRunStateCanProjectSession(
+  runState: RuntimeRunState,
+  sessionId: string,
+): boolean {
+  const explicitSessionId = runState.sessionId?.trim() ?? "";
+  if (explicitSessionId.length > 0) {
+    return explicitSessionId === sessionId;
+  }
+  return runState.entries.some((entry) => entry.sessionId === sessionId);
 }
 
 function runtimeRunStateCanProjectScope(

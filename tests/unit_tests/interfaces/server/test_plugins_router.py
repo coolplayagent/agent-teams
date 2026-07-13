@@ -380,6 +380,30 @@ def test_plugin_validate_and_marketplace_api(tmp_path: Path) -> None:
     assert marketplace_response.json()["plugins"] == []
 
 
+def test_plugin_marketplace_provider_catalog_is_backend_owned(tmp_path: Path) -> None:
+    container = _FakeContainer(tmp_path / "quality")
+    client = _create_client(container)
+
+    response = client.get("/api/system/configs/plugins/marketplace/providers")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["default_provider"] == "local_json"
+    assert [provider["provider"] for provider in payload["providers"]] == [
+        "local_json",
+        "claude",
+        "clawhub",
+    ]
+    clawhub = payload["providers"][2]
+    assert clawhub["defaults"] == {
+        "marketplace": "clawhub",
+        "marketplace_source": "https://clawhub.ai",
+        "marketplace_ref": "",
+        "allow_missing_digest": True,
+    }
+    assert clawhub["include_details"] is True
+
+
 def test_plugin_marketplace_api_accepts_claude_ref_and_refresh(tmp_path: Path) -> None:
     container = _FakeContainer(tmp_path / "quality")
     client = _create_client(container)

@@ -196,6 +196,7 @@ from relay_teams.hooks import (
 from relay_teams.plugins import PluginInstallSourceKind, PluginRegistry, PluginScope
 from relay_teams.plugins.marketplace_models import (
     PluginMarketplaceIndex,
+    PluginMarketplaceProviderCatalog,
     PluginMarketplaceProviderKind,
     PluginMarketplaceSource,
 )
@@ -445,6 +446,11 @@ async def load_plugin_marketplace(
         )
     except Exception as exc:
         _raise_system_http_error(exc, value_error_status=400, os_error_status=400)
+
+
+@router.get("/configs/plugins/marketplace/providers")
+async def get_plugin_marketplace_providers() -> PluginMarketplaceProviderCatalog:
+    return PluginMarketplaceService.provider_catalog()
 
 
 @router.post("/configs/plugins/marketplace:search")

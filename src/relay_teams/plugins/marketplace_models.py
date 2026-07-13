@@ -20,6 +20,35 @@ class PluginMarketplaceProviderKind(str, Enum):
     CLAWHUB = "clawhub"
 
 
+class PluginMarketplaceProviderDefaults(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    marketplace: str = ""
+    marketplace_source: str = ""
+    marketplace_ref: str = ""
+    allow_missing_digest: bool = False
+
+
+class PluginMarketplaceProviderDescriptor(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider: PluginMarketplaceProviderKind
+    display_name: str
+    defaults: PluginMarketplaceProviderDefaults = Field(
+        default_factory=PluginMarketplaceProviderDefaults
+    )
+    include_details: bool = False
+
+
+class PluginMarketplaceProviderCatalog(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    default_provider: PluginMarketplaceProviderKind
+    providers: tuple[PluginMarketplaceProviderDescriptor, ...] = Field(
+        default_factory=tuple
+    )
+
+
 class PluginMarketplaceSource(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

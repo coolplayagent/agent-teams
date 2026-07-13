@@ -506,6 +506,16 @@ The response is a plugin registry containing the validated plugin record and
 diagnostics. Explicit validation is strict for manifest shape, component paths,
 settings schema, and JSON-compatible plugin component configs.
 
+### `GET /system/configs/plugins/marketplace/providers`
+
+Returns the backend-owned marketplace provider catalog. Clients build provider
+choices and provider-specific defaults from this response instead of embedding
+provider names, source locations, detail-loading behavior, or policy override
+defaults in the UI.
+
+The response contains `default_provider` and a `providers` array. Each provider
+entry exposes `provider`, `display_name`, `defaults`, and `include_details`.
+
 ### `POST /system/configs/plugins/marketplace`
 
 Loads a marketplace index so clients can browse available plugins and versions

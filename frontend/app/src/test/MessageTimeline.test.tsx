@@ -1189,6 +1189,12 @@ describe("MessageTimeline", () => {
     expect(groupBefore?.querySelector("details.at-processed-group")).toHaveAttribute("open");
     const thinkingBefore = groupBefore?.querySelector("details.at-message-thinking") ?? null;
     expect(thinkingBefore).not.toBeNull();
+    const thinkingTextBefore = thinkingBefore?.querySelector(
+      ".at-message-streaming-plain",
+    ) ?? null;
+    expect(thinkingTextBefore).not.toBeNull();
+    const thinkingTextNodeBefore = thinkingTextBefore?.firstChild ?? null;
+    expect(thinkingTextNodeBefore).not.toBeNull();
     const answerBefore = container.querySelector<HTMLElement>(
       `[data-row-key="runtime-text:${runId}:MainAgent:0"]`,
     );
@@ -1199,6 +1205,14 @@ describe("MessageTimeline", () => {
     const rowKeysBefore = rowsBefore.map((element) => element.dataset.rowKey ?? "");
     expect(new Set(rowKeysBefore).size).toBe(rowKeysBefore.length);
     storageWrite.mockClear();
+    const timeline = container.querySelector<HTMLElement>(".at-timeline");
+    if (timeline === null) {
+      throw new Error("Timeline scroll owner was not rendered.");
+    }
+    Object.defineProperty(timeline, "clientHeight", { configurable: true, value: 200 });
+    Object.defineProperty(timeline, "scrollHeight", { configurable: true, value: 1000 });
+    timeline.scrollTop = 120;
+    fireEvent.scroll(timeline);
     const pressureEvents = [...liveEvents];
     for (let eventId = 4; eventId < 104; eventId += 1) {
       pressureEvents.push(relayRunEvent({
@@ -1209,19 +1223,17 @@ describe("MessageTimeline", () => {
         trace_id: runId,
       }));
       act(() => setRuntimeStateFromEvents(pressureEvents));
+      expect(groupBefore?.querySelector("details.at-message-thinking"))
+        .toBe(thinkingBefore);
+      expect(thinkingBefore?.querySelector(".at-message-streaming-plain"))
+        .toBe(thinkingTextBefore);
+      expect(thinkingTextBefore?.firstChild).toBe(thinkingTextNodeBefore);
+      expect(thinkingBefore).toHaveAttribute("open");
+      expect(timeline.scrollTop).toBe(120);
     }
     expect(storageWrite.mock.calls.filter(
       ([key]) => key === "agentTeams.liveProcessedRuns",
     ).length).toBeLessThanOrEqual(1);
-    const timeline = container.querySelector<HTMLElement>(".at-timeline");
-    if (timeline === null) {
-      throw new Error("Timeline scroll owner was not rendered.");
-    }
-    Object.defineProperty(timeline, "clientHeight", { configurable: true, value: 200 });
-    Object.defineProperty(timeline, "scrollHeight", { configurable: true, value: 1000 });
-    timeline.scrollTop = 120;
-    fireEvent.scroll(timeline);
-
     act(() => {
       setRuntimeStateFromEvents([
         ...pressureEvents,
@@ -1248,6 +1260,11 @@ describe("MessageTimeline", () => {
     expect(container.querySelector(
       `[data-row-key="runtime-text:${runId}:MainAgent:0"]`,
     )).toBe(answerBefore);
+    expect(groupBefore?.querySelector("details.at-message-thinking"))
+      .toBe(thinkingBefore);
+    expect(thinkingBefore).toHaveAttribute("data-streaming", "false");
+    expect(thinkingBefore).not.toHaveAttribute("open");
+    expect(thinkingBefore).toHaveTextContent("Stable thought 4 5 6");
     expect(groupBefore).not.toHaveTextContent("Stable answer");
     expect(screen.getAllByText("Stable answer")).toHaveLength(1);
     expect(timeline.scrollTop).toBe(120);
@@ -12207,7 +12224,7 @@ describe("MessageTimeline", () => {
   });
 
   it("lets users collapse live thinking disclosures independently", async () => {
-    setRuntimeStateFromEvents([
+    const liveThinkingEvents = [
       relayRunEvent({
         event_id: 1,
         event_type: "thinking_started",
@@ -12233,7 +12250,8 @@ describe("MessageTimeline", () => {
         event_type: "thinking_delta",
         payload_json: JSON.stringify({ part_index: 1, text: "second live thought" }),
       }),
-    ]);
+    ];
+    setRuntimeStateFromEvents(liveThinkingEvents);
     listSessionMessagesMock.mockResolvedValue([]);
 
     const { container } = renderTimeline("session-1", {
@@ -12258,11 +12276,28 @@ describe("MessageTimeline", () => {
     expect(thinkingBlocks[1]).not.toHaveAttribute("open");
     expect(screen.getByText("second live thought")).not.toBeVisible();
 
+    act(() => {
+      setRuntimeStateFromEvents([
+        ...liveThinkingEvents,
+        relayRunEvent({
+          event_id: 6,
+          event_type: "thinking_delta",
+          payload_json: JSON.stringify({ part_index: 1, text: " stays collapsed" }),
+        }),
+      ]);
+    });
+
+    expect(thinkingBlocks[0]).not.toHaveAttribute("open");
+    expect(thinkingBlocks[1]).not.toHaveAttribute("open");
+    expect(thinkingBlocks[1]).toHaveTextContent(
+      "second live thought stays collapsed",
+    );
+
     fireEvent.click(liveSummary);
 
     expect(thinkingBlocks[0]).not.toHaveAttribute("open");
     expect(thinkingBlocks[1]).toHaveAttribute("open");
-    expect(screen.getByText("second live thought")).toBeVisible();
+    expect(screen.getByText("second live thought stays collapsed")).toBeVisible();
   });
 
   it("does not duplicate replayed runtime thinking and tool parts", async () => {

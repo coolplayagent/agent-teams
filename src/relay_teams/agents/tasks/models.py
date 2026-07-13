@@ -407,7 +407,7 @@ class TaskEnvelope(BaseModel):
     session_id: RequiredIdentifierStr
     parent_task_id: OptionalIdentifierStr = None
     trace_id: RequiredIdentifierStr
-    role_id: OptionalIdentifierStr = "Coordinator"
+    role_id: OptionalIdentifierStr = None
     title: str | None = None
     objective: str = Field(min_length=1)
     skills: tuple[str, ...] | None = None

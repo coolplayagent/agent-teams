@@ -49,6 +49,18 @@ def test_task_envelope_requires_fields() -> None:
         )
 
 
+def test_task_envelope_does_not_infer_a_coordinator_role() -> None:
+    envelope = TaskEnvelope(
+        task_id="task-1",
+        session_id="session-1",
+        trace_id="run-1",
+        objective="Wait for an explicit assignment",
+        verification=VerificationPlan(),
+    )
+
+    assert envelope.role_id is None
+
+
 def test_task_envelope_accepts_spec_lifecycle_and_handoff() -> None:
     envelope = TaskEnvelope(
         task_id="task-1",

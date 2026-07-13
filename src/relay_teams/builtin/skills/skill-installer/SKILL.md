@@ -59,7 +59,8 @@ Install from a SkillsMP page when the user provides a skillsmp.com/zh skill page
 
 After a skill is installed, bind it to one or more roles with the separate binding script.
 
-- Bind to the current running role, or `MainAgent` if no role context is available:
+- Bind to the current running role. Outside a running role context, pass an
+  explicit `--role <role-id>` target:
   `python "<bind-skill-to-role.py>" --skill <skill-name>`
 - Bind to specific roles:
   `python "<bind-skill-to-role.py>" --skill <skill-name> --role MainAgent --role Crafter`
@@ -88,7 +89,8 @@ Behavior:
 - ClawHub installs must use the Agent Teams app config dir as `--workdir`, so runtime-visible skills land under the correct app `skills/` directory.
 - Treat the runtime `name` from `SKILL.md` as the source of truth. The ClawHub slug may differ.
 - Binding defaults to the current running role.
-- If no runtime role context is available during binding, fall back to `MainAgent`.
+- If no runtime role context is available during binding, require an explicit
+  `--role <role-id>` target instead of guessing a role.
 - Listing annotates already-installed skills from the current effective Agent Teams skill registry.
 - Public repos default to direct download.
 - If direct download fails with auth or permission errors, fall back to git sparse checkout.

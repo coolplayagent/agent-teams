@@ -489,6 +489,32 @@ def test_bind_skill_script_defaults_to_current_role_env(tmp_path: Path) -> None:
     assert "Updated roles: <none>" in result.stdout
 
 
+def test_bind_skill_script_requires_a_role_without_runtime_context(
+    tmp_path: Path,
+) -> None:
+    skill_dir = tmp_path / ".relay-teams" / "skills" / "demo-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: demo-skill\ndescription: demo installer\n---\nUse demo.\n",
+        encoding="utf-8",
+    )
+
+    result = _run_script(
+        script_name="bind-skill-to-role.py",
+        args=("--skill", "demo-skill"),
+        repo_root=Path(__file__).resolve().parents[3],
+        home_dir=tmp_path,
+        extra_env={"AGENT_TEAMS_CURRENT_ROLE_ID": ""},
+    )
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert (
+        "No role target is available; provide at least one --role value"
+        in result.stderr
+    )
+
+
 def test_mount_skills_to_roles_creates_main_agent_override(tmp_path: Path) -> None:
     skill_dir = tmp_path / ".relay-teams" / "skills" / "demo-skill"
     skill_dir.mkdir(parents=True)
@@ -597,6 +623,19 @@ def test_resolve_role_mount_targets_defaults_to_current_role_env(
     targets = installer_support._resolve_role_mount_targets(())
 
     assert targets == ("Crafter",)
+
+
+def test_resolve_role_mount_targets_requires_an_explicit_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("AGENT_TEAMS_CURRENT_ROLE_ID", raising=False)
+
+    with pytest.raises(installer_support.SkillInstallerError) as exc_info:
+        installer_support._resolve_role_mount_targets(())
+
+    assert str(exc_info.value) == (
+        "No role target is available; provide at least one --role value"
+    )
 
 
 def test_request_bytes_reports_timeout_details(

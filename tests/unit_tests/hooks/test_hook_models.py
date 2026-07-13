@@ -72,20 +72,20 @@ def test_hook_handler_config_accepts_alias_fields() -> None:
             {
                 "type": "http",
             },
-            "http hook requires url",
+            r"URL is required for an HTTP hook\.",
         ),
         (
             {
                 "type": "prompt",
             },
-            "prompt hook requires prompt",
+            r"Prompt is required for a prompt hook\.",
         ),
         (
             {
                 "type": "agent",
                 "role_id": "Reviewer",
             },
-            "agent hook requires prompt",
+            r"Prompt is required for an agent hook\.",
         ),
     ],
 )

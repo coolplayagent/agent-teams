@@ -826,7 +826,10 @@ def test_hook_loader_validate_payload_formats_model_validation_errors(
 
     with pytest.raises(
         ValueError,
-        match=r"hooks\.PreToolUse\.0\.hooks\.0: Value error, command hook requires command",
+        match=(
+            r"hooks\.PreToolUse\.0\.hooks\.0\s+"
+            r"Command is required for a command hook\."
+        ),
     ):
         loader.validate_payload(
             {

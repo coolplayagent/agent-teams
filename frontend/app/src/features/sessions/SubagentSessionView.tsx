@@ -22,7 +22,6 @@ import {
   type RunStreamHandle,
 } from "../../runtime/streamClient";
 import { useTranslations, type Translate } from "../../i18n";
-import { MarkdownMessage } from "../timeline/MarkdownMessage";
 import { MessageTimeline } from "../timeline/MessageTimeline";
 import { SubagentQuestionBar } from "../recovery/RecoveryBar";
 import {
@@ -44,6 +43,16 @@ export const SubagentSessionView = memo(function SubagentSessionView({
   subagent,
   visible = true,
 }: SubagentSessionViewProps) {
+  if (!visible) {
+    return null;
+  }
+  return <ActiveSubagentSessionView onBack={onBack} subagent={subagent} />;
+});
+
+function ActiveSubagentSessionView({
+  onBack,
+  subagent,
+}: Omit<SubagentSessionViewProps, "visible">) {
   const queryClient = useQueryClient();
   const t = useTranslations();
   const setRuntimeState = useRuntimeStore((state) => state.setRuntimeState);
@@ -56,7 +65,7 @@ export const SubagentSessionView = memo(function SubagentSessionView({
   const subagentRecordsQuery = useQuery({
     queryKey: ["sessions", subagent.sessionId, "subagents"],
     queryFn: () => listSessionSubagents(subagent.sessionId, true),
-    enabled: visible && subagent.sessionId.trim().length > 0,
+    enabled: subagent.sessionId.trim().length > 0,
     staleTime: 1000,
   });
   const latestSubagentRecord = useMemo(
@@ -91,7 +100,6 @@ export const SubagentSessionView = memo(function SubagentSessionView({
   );
   const subagentWaitingForOutput = subagentHasStreamingStatus(displayedSubagent);
   const subagentPromptText = displayedSubagent.promptText.trim();
-  const shouldShowSubagentPrompt = subagentPromptText.length > 0;
   const streamStatusKey = [
     displayedSubagent.status,
     displayedSubagent.runStatus,
@@ -115,22 +123,27 @@ export const SubagentSessionView = memo(function SubagentSessionView({
   const loadSubagentMessages = useCallback(
     async () => {
       if (!hasMessageHistoryTarget) {
-        return [];
+        return subagentTaskMessages({
+          messages: [],
+          promptText: subagentPromptText,
+          scopeToTask: recordAwareSubagent.subagentKind === "orchestration",
+          taskId: displayedSubagent.taskId ?? "",
+        });
       }
       const messages = await listAgentMessages(sessionId, instanceId);
-      return subagentTaskMessages(
+      return subagentTaskMessages({
         messages,
-        displayedSubagent.taskId ?? "",
-        shouldShowSubagentPrompt,
-        recordAwareSubagent.subagentKind === "orchestration",
-      );
+        promptText: subagentPromptText,
+        scopeToTask: recordAwareSubagent.subagentKind === "orchestration",
+        taskId: displayedSubagent.taskId ?? "",
+      });
     },
     [
       displayedSubagent.taskId,
       hasMessageHistoryTarget,
       instanceId,
       sessionId,
-      shouldShowSubagentPrompt,
+      subagentPromptText,
       recordAwareSubagent.subagentKind,
     ],
   );
@@ -172,15 +185,6 @@ export const SubagentSessionView = memo(function SubagentSessionView({
   }, []);
 
   useEffect(() => {
-    if (!visible) {
-      resetSubagentReconnect();
-      if (streamedRunIdRef.current === dedicatedRunId) {
-        subagentStreamRef.current?.close();
-        subagentStreamRef.current = null;
-        streamedRunIdRef.current = null;
-      }
-      return;
-    }
     if (!shouldStreamSubagentRun(dedicatedRunId, streamStatusKey)) {
       return;
     }
@@ -276,7 +280,6 @@ export const SubagentSessionView = memo(function SubagentSessionView({
     setRuntimeState,
     streamReconnectGeneration,
     streamStatusKey,
-    visible,
   ]);
 
   useEffect(() => {
@@ -324,14 +327,9 @@ export const SubagentSessionView = memo(function SubagentSessionView({
         </div>
       </header>
       <div className="at-subagent-session-body">
-        {shouldShowSubagentPrompt ? (
-          <div className="at-subagent-session-prompt">
-            <MarkdownMessage text={subagentPromptText} />
-          </div>
-        ) : null}
         {runId ? (
           <SubagentQuestionBar
-            enabled={visible}
+            enabled
             instanceId={instanceId}
             runId={runId}
             sessionId={sessionId}
@@ -370,7 +368,7 @@ export const SubagentSessionView = memo(function SubagentSessionView({
                 : null
             }
             variant="subagent-panel"
-            visible={visible}
+            visible
           />
         ) : (
           <SubagentPendingState label={t("subagentSessionStarting")} />
@@ -378,7 +376,7 @@ export const SubagentSessionView = memo(function SubagentSessionView({
       </div>
     </div>
   );
-});
+}
 
 function SubagentPendingState({ label }: { label: string }) {
   return (
@@ -652,24 +650,55 @@ function agentMessagesHaveExpectedToolCalls(
   );
 }
 
-function subagentTaskMessages(
-  messages: TimelineMessage[],
-  taskId: string,
-  omitPrompt: boolean,
-  scopeToTask: boolean,
-): TimelineMessage[] {
+function subagentTaskMessages({
+  messages,
+  promptText,
+  scopeToTask,
+  taskId,
+}: {
+  messages: TimelineMessage[];
+  promptText: string;
+  scopeToTask: boolean;
+  taskId: string;
+}): TimelineMessage[] {
   const normalizedTaskId = taskId.trim() || latestMessageTaskId(messages);
-  if (normalizedTaskId.length === 0) {
-    return messages;
+  const scopedMessages = normalizedTaskId.length === 0 || !scopeToTask
+    ? messages
+    : messages.filter(
+        (message) => message.task_id?.trim() === normalizedTaskId,
+      );
+  const normalizedPrompt = promptText.trim();
+  if (
+    normalizedPrompt.length === 0 ||
+    scopedMessages.some(
+      (message) =>
+        message.role?.trim().toLowerCase() === "user" &&
+        timelineMessageText(message) === normalizedPrompt,
+    )
+  ) {
+    return scopedMessages;
   }
-  return messages.filter((message) => {
-    if (scopeToTask && message.task_id?.trim() !== normalizedTaskId) {
-      return false;
-    }
-    const role = message.role?.trim().toLowerCase() ?? "";
-    return !omitPrompt || role !== "user" ||
-      (!scopeToTask && message.task_id?.trim() !== normalizedTaskId);
-  });
+  return [
+    {
+      content: normalizedPrompt,
+      role: "user",
+      task_id: normalizedTaskId || undefined,
+    },
+    ...scopedMessages,
+  ];
+}
+
+function timelineMessageText(message: TimelineMessage): string {
+  const directText = message.content?.trim() || message.message?.content?.trim();
+  if (directText !== undefined && directText.length > 0) {
+    return directText;
+  }
+  return timelineMessageParts(message)
+    .map((part) =>
+      "text" in part && typeof part.text === "string" ? part.text : ""
+    )
+    .join("")
+    .trim();
 }
 
 function latestMessageTaskId(messages: TimelineMessage[]): string {

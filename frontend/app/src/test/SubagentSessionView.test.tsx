@@ -60,7 +60,7 @@ afterEach(() => {
 });
 
 describe("SubagentSessionView", () => {
-  it("lets the shared runtime update a hidden active panel without duplicate requests", async () => {
+  it("releases runtime and query work while the retained panel is hidden", async () => {
     renderSubagentSessionView({
       subagent: createSubagent({
         runId: "subagent_run_hidden",
@@ -80,7 +80,9 @@ describe("SubagentSessionView", () => {
       ]);
     });
 
-    expect(await screen.findByText("Hidden output from the shared stream")).toBeInTheDocument();
+    expect(screen.queryByText("Hidden output from the shared stream"))
+      .not.toBeInTheDocument();
+    expect(screen.queryByText("Explorer review")).not.toBeInTheDocument();
     expect(listSessionSubagentsMock).not.toHaveBeenCalled();
     expect(listAgentMessagesMock).not.toHaveBeenCalled();
     expect(listSessionRoundsMock).not.toHaveBeenCalled();
@@ -101,6 +103,53 @@ describe("SubagentSessionView", () => {
     expect(listAgentMessagesMock).not.toHaveBeenCalled();
     expect(listSessionRoundsMock).not.toHaveBeenCalled();
     expect(openSessionSubagentRunStreamMock).not.toHaveBeenCalled();
+  });
+
+  it("virtualizes hundreds of records inside one panel-owned scroll container", async () => {
+    const startedAt = performance.now();
+    listAgentMessagesMock.mockResolvedValue(
+      Array.from({ length: 600 }, (_, index) => ({
+        content: `Subagent history item ${index + 1}`,
+        created_at: new Date(
+          Date.parse("2026-06-23T10:00:00Z") + index * 1000,
+        ).toISOString(),
+        message_id: `subagent-history-${index + 1}`,
+        role: "assistant",
+        run_id: "subagent_run_1",
+      })),
+    );
+    const mainTimeline = document.createElement("div");
+    mainTimeline.dataset.testid = "main-timeline-scroll-owner";
+    mainTimeline.scrollTop = 240;
+    document.body.append(mainTimeline);
+
+    const { container } = renderSubagentSessionView({
+      subagent: createSubagent({
+        runPhase: "completed",
+        runStatus: "completed",
+        status: "completed",
+      }),
+    });
+
+    const panelTimeline = await waitFor(() => {
+      const element = container.querySelector<HTMLElement>(
+        '.at-timeline[data-scroll-owner="subagent-panel"]',
+      );
+      expect(element).not.toBeNull();
+      expect(Number(element?.dataset.totalRowCount)).toBeGreaterThanOrEqual(500);
+      return element as HTMLElement;
+    });
+    expect(container.querySelector(".at-subagent-session-prompt")).toBeNull();
+    expect(container.querySelectorAll(".at-timeline-row").length).toBeLessThan(
+      100,
+    );
+
+    panelTimeline.scrollTop = 320;
+    fireEvent.scroll(panelTimeline);
+    expect(panelTimeline.scrollTop).toBe(320);
+    expect(mainTimeline.scrollTop).toBe(240);
+    expect(performance.now() - startedAt).toBeLessThan(3000);
+    mainTimeline.remove();
   });
 
   it("shows a startup state before a running subagent id is known", async () => {

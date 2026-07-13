@@ -925,34 +925,18 @@ export function AppShell() {
                 tabIndex={0}
               />
             ) : null}
-            {renderedSubagent !== null || visibleActiveSubagent !== null ? (
-              <aside
-                aria-hidden={visibleActiveSubagent === null ? "true" : undefined}
-                className={
-                  visibleActiveSubagent === null
-                    ? "at-subagent-side-panel is-hidden"
-                    : "at-subagent-side-panel"
-                }
-                >
-                {renderedSubagent !== null ? (
-                  <div
-                    className="at-subagent-heavy-surface"
-                    hidden={
-                      visibleActiveSubagent === null ||
-                      !canReuseRetainedSubagent
-                    }
-                  >
+            {visibleActiveSubagent !== null ? (
+              <aside className="at-subagent-side-panel">
+                {renderedSubagent !== null && canReuseRetainedSubagent ? (
+                  <div className="at-subagent-heavy-surface">
                     <SubagentSessionView
                       onBack={closeActiveSubagent}
                       subagent={renderedSubagent}
-                      visible={
-                        visibleActiveSubagent !== null &&
-                        canReuseRetainedSubagent
-                      }
+                      visible
                     />
                   </div>
                 ) : null}
-                {visibleActiveSubagent !== null && !canReuseRetainedSubagent ? (
+                {!canReuseRetainedSubagent ? (
                   <SubagentPanelLoading
                     onBack={closeActiveSubagent}
                     subagent={visibleActiveSubagent}

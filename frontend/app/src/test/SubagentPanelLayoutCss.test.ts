@@ -18,17 +18,22 @@ describe("subagent panel layout CSS", () => {
     expect(panelCss).toMatch(
       /\.at-subagent-panel-resizer\s*{[\s\S]*?position:\s*absolute;[\s\S]*?right:\s*var\(--at-subagent-panel-width, 620px\);/,
     );
-    expect(panelCss).toMatch(
-      /\.at-subagent-side-panel\.is-hidden\s*{[\s\S]*?visibility:\s*hidden;[\s\S]*?pointer-events:\s*none;/,
-    );
+    expect(shell).not.toContain("at-subagent-side-panel is-hidden");
   });
 
-  it("keeps the panel itself height-constrained and scrollable", () => {
+  it("keeps a definite panel height and one internal scroll owner", () => {
+    expect(panelCss).toMatch(
+      /\.at-subagent-side-panel\s*{[\s\S]*?inset:\s*0 0 0 auto;/,
+    );
+    expect(panelCss).toMatch(
+      /\.at-subagent-heavy-surface\s*{[\s\S]*?height:\s*100%;[\s\S]*?min-height:\s*0;/,
+    );
     expect(css).toMatch(
       /\.at-subagent-session-view\s*{[\s\S]*?height:\s*100%;[\s\S]*?overflow:\s*hidden;/,
     );
     expect(css).toMatch(
       /\.at-subagent-session-body\s*>\s*\.at-timeline-frame\s*>\s*\.at-timeline\s*{[\s\S]*?height:\s*100%;[\s\S]*?overflow-y:\s*auto;/,
     );
+    expect(css).not.toContain(".at-subagent-session-prompt");
   });
 });

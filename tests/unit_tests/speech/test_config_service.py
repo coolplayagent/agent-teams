@@ -22,8 +22,8 @@ def test_speech_config_defaults_to_unconfigured(tmp_path: Path) -> None:
 
     payload = service.get_config_payload()
 
-    assert payload["configured"] is False
-    assert payload["stt_profile_name"] is None
+    assert payload.configured is False
+    assert payload.stt_profile_name is None
 
 
 def test_speech_config_ignores_non_object_config_file(tmp_path: Path) -> None:
@@ -143,8 +143,8 @@ def test_speech_config_payload_marks_missing_profile_unconfigured(
 
     payload = service.get_config_payload()
 
-    assert payload["stt_profile_name"] == "missing"
-    assert payload["configured"] is False
+    assert payload.stt_profile_name == "missing"
+    assert payload.configured is False
 
 
 def test_speech_config_rejects_diarize_model(tmp_path: Path) -> None:
@@ -226,7 +226,7 @@ def test_speech_config_accepts_profile_with_realtime_model_override(
     saved = service.save_config(SpeechConfigUpdate(stt_profile_name="ali"))
 
     assert saved.stt_profile_name == "ali"
-    assert service.get_config_payload()["configured"] is True
+    assert service.get_config_payload().configured is True
 
 
 def test_speech_config_rejects_profile_marked_as_tts(tmp_path: Path) -> None:
@@ -248,3 +248,42 @@ def test_speech_config_rejects_profile_marked_as_tts(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="Unsupported realtime STT model"):
         service.save_config(SpeechConfigUpdate(stt_profile_name="tts"))
+
+
+def test_speech_config_payload_exposes_structured_profile_eligibility(
+    tmp_path: Path,
+) -> None:
+    service = SpeechConfigService(
+        config_dir=tmp_path,
+        get_profiles=lambda: {
+            "renamed-transcriber": ModelEndpointConfig(
+                provider=ProviderType.OPENAI_COMPATIBLE,
+                model="custom-model-name",
+                base_url="https://api.example.test/v1",
+                api_key="test-key",
+                capabilities=ModelCapabilities(
+                    input=ModelModalityMatrix(audio=True),
+                    output=ModelModalityMatrix(text=True),
+                ),
+            ),
+            "renamed-speaker": ModelEndpointConfig(
+                provider=ProviderType.OPENAI_COMPATIBLE,
+                model="another-custom-name",
+                base_url="https://api.example.test/v1",
+                api_key="test-key",
+                capabilities=ModelCapabilities(
+                    input=ModelModalityMatrix(audio=False),
+                    output=ModelModalityMatrix(audio=True),
+                ),
+            ),
+        },
+    )
+
+    entries = {
+        entry.profile_name: entry for entry in service.get_config_payload().profile_eligibility
+    }
+
+    assert entries["renamed-transcriber"].eligible is True
+    assert entries["renamed-transcriber"].reason is None
+    assert entries["renamed-speaker"].eligible is False
+    assert entries["renamed-speaker"].reason == "tts_only"

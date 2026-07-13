@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket
-from pydantic import JsonValue
 
 from relay_teams.interfaces.server.deps import (
     get_speech_config_service,
@@ -11,6 +10,7 @@ from relay_teams.interfaces.server.deps import (
 from relay_teams.speech import (
     RealtimeSttProxyService,
     SpeechConfigService,
+    SpeechConfigView,
     SpeechConfigUpdate,
 )
 
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/speech", tags=["Speech"])
 @router.get("/config")
 async def get_speech_config(
     service: SpeechConfigService = Depends(get_speech_config_service),
-) -> dict[str, JsonValue]:
+) -> SpeechConfigView:
     return await service.get_config_payload_async()
 
 
@@ -28,7 +28,7 @@ async def get_speech_config(
 async def save_speech_config(
     config: SpeechConfigUpdate,
     service: SpeechConfigService = Depends(get_speech_config_service),
-) -> dict[str, JsonValue]:
+) -> SpeechConfigView:
     try:
         await service.save_config_async(config)
     except ValueError as exc:

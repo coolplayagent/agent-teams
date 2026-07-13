@@ -2,10 +2,8 @@ import { App, Button, Form, Input, Select, Typography } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 
-import { getModelProfiles } from "../../api/client";
-import type { ModelProfileRecord } from "../../api/contracts";
 import { fetchSpeechConfig, saveSpeechConfig } from "../../api/speech";
-import type { SpeechConfig } from "../../api/speech";
+import type { SpeechConfig, SpeechProfileEligibility } from "../../api/speech";
 import { useTranslations } from "../../i18n";
 import { SettingsQueryState, SettingsSection } from "./SettingsShared";
 
@@ -15,17 +13,10 @@ interface SpeechFormValues {
   stt_profile_name: string;
 }
 
-type SpeechProfileUnavailableReason =
-  | "diarize"
-  | "no_speech"
-  | "provider"
-  | "tts"
-  | "unknown";
-
 interface UnavailableSpeechProfile {
   model: string;
   name: string;
-  reason: SpeechProfileUnavailableReason;
+  reason: Exclude<SpeechProfileEligibility["reason"], null>;
 }
 
 const SPEECH_LANGUAGE_OPTIONS = [
@@ -41,13 +32,6 @@ const SPEECH_LANGUAGE_OPTIONS = [
   ["es-ES", "Español"],
 ] as const;
 
-const KNOWN_STT_MODELS = new Set([
-  "whisper-1",
-  "gpt-4o-transcribe",
-  "gpt-4o-transcribe-latest",
-  "gpt-4o-mini-transcribe",
-]);
-
 export function SpeechSettingsSection() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
@@ -56,10 +40,6 @@ export function SpeechSettingsSection() {
   const speechQuery = useQuery({
     queryKey: ["speech", "config"],
     queryFn: fetchSpeechConfig,
-  });
-  const profilesQuery = useQuery({
-    queryKey: ["settings", "models", "profiles"],
-    queryFn: getModelProfiles,
   });
   const saveMutation = useMutation({
     mutationFn: (config: SpeechConfig) => saveSpeechConfig(config),
@@ -83,32 +63,25 @@ export function SpeechSettingsSection() {
     });
   }, [form, speechQuery.data]);
 
-  const profileEntries = Object.entries(profilesQuery.data ?? {})
-    .filter(([, profile]) => isSpeechProfileCandidate(profile))
-    .sort(([left], [right]) => left.localeCompare(right));
-  const unavailableProfileEntries = Object.entries(profilesQuery.data ?? {})
-    .map(([name, profile]) => {
-      const reason = speechProfileUnavailableReason(profile);
-      if (reason === null) {
-        return null;
-      }
-      return {
-        model: profile.model?.trim() || "-",
-        name,
-        reason,
-      };
-    })
+  const eligibility = speechQuery.data?.profile_eligibility ?? [];
+  const profileEntries = eligibility.filter((entry) => entry.eligible);
+  const unavailableProfileEntries = eligibility
+    .filter(
+      (entry): entry is SpeechProfileEligibility & { reason: Exclude<SpeechProfileEligibility["reason"], null> } =>
+        !entry.eligible && entry.reason !== null,
+    )
+    .map((entry) => ({ model: entry.model, name: entry.profile_name, reason: entry.reason }))
     .filter((entry): entry is UnavailableSpeechProfile => entry !== null)
     .sort((left, right) => left.name.localeCompare(right.name));
   const selectedLanguage = Form.useWatch("language", form) ?? "";
   const selectedProfile = speechQuery.data?.stt_profile_name ?? "";
   const hasSelectedProfileOption =
-    !selectedProfile || profileEntries.some(([name]) => name === selectedProfile);
+    !selectedProfile || profileEntries.some((entry) => entry.profile_name === selectedProfile);
   const displayedProfileEntries = hasSelectedProfileOption
     ? profileEntries
-    : [[selectedProfile, undefined] as const, ...profileEntries];
-  const loading = speechQuery.isLoading || profilesQuery.isLoading;
-  const error = speechQuery.error ?? profilesQuery.error;
+    : [{ eligible: true, model: "", profile_name: selectedProfile, reason: null }, ...profileEntries];
+  const loading = speechQuery.isLoading;
+  const error = speechQuery.error;
 
   function submit(values: SpeechFormValues) {
     const current = speechQuery.data ?? {};
@@ -130,7 +103,6 @@ export function SpeechSettingsSection() {
         loading={loading}
         onRetry={() => {
           void speechQuery.refetch();
-          void profilesQuery.refetch();
         }}
       />
       {!loading && error === null ? (
@@ -147,9 +119,9 @@ export function SpeechSettingsSection() {
                   optionFilterProp="label"
                   options={[
                     { label: t("settingsSpeechNoProfile"), value: "" },
-                    ...displayedProfileEntries.map(([name, profile]) => ({
-                      label: profile ? `${name} (${profile.model ?? "-"})` : name,
-                      value: name,
+                    ...displayedProfileEntries.map((profile) => ({
+                      label: profile.model ? `${profile.profile_name} (${profile.model})` : profile.profile_name,
+                      value: profile.profile_name,
                     })),
                   ]}
                   showSearch
@@ -228,81 +200,23 @@ function languageOptions(selected: string | undefined): Array<readonly [string, 
   return [...SPEECH_LANGUAGE_OPTIONS];
 }
 
-function isSpeechProfileCandidate(profile: ModelProfileRecord): boolean {
-  return speechProfileUnavailableReason(profile) === null;
-}
-
-function speechProfileUnavailableReason(
-  profile: ModelProfileRecord,
-): SpeechProfileUnavailableReason | null {
-  const provider = profile.provider?.trim() ?? "";
-  const model = profile.model?.trim() ?? "";
-  if (provider !== "openai_compatible") {
-    return "provider";
-  }
-  if (resolveRealtimeSpeechModel(profile) === "gpt-4o-transcribe-diarize") {
-    return "diarize";
-  }
-  if (profile.speech_realtime?.model?.trim()) {
-    return null;
-  }
-  if (isKnownRealtimeSttModel(model)) {
-    return null;
-  }
-  const speechCapability = resolveSpeechCapability(profile);
-  if (speechCapability === "stt") {
-    return null;
-  }
-  if (speechCapability === "tts") {
-    return "tts";
-  }
-  if (speechCapability === "none") {
-    return "no_speech";
-  }
-  return "unknown";
-}
-
 function speechUnavailableReasonLabel(
-  reason: SpeechProfileUnavailableReason,
+  reason: Exclude<SpeechProfileEligibility["reason"], null>,
   t: ReturnType<typeof useTranslations>,
 ): string {
-  if (reason === "provider") {
+  if (reason === "provider_not_supported") {
     return t("settingsSpeechReasonProvider");
   }
-  if (reason === "diarize") {
+  if (reason === "diarization_not_supported") {
     return t("settingsSpeechReasonDiarize");
   }
-  if (reason === "tts") {
+  if (reason === "tts_only") {
     return t("settingsSpeechReasonTts");
   }
-  if (reason === "no_speech") {
+  if (reason === "input_audio_not_supported") {
     return t("settingsSpeechReasonNoSpeech");
   }
   return t("settingsSpeechReasonUnknown");
-}
-
-function resolveRealtimeSpeechModel(profile: ModelProfileRecord): string {
-  return profile.speech_realtime?.model?.trim() || profile.model?.trim() || "";
-}
-
-function isKnownRealtimeSttModel(model: string): boolean {
-  return KNOWN_STT_MODELS.has(model) || model.startsWith("gpt-4o-mini-transcribe-");
-}
-
-function resolveSpeechCapability(profile: ModelProfileRecord): "none" | "stt" | "tts" | "unknown" {
-  const capabilities = profile.resolved_capabilities ?? profile.capabilities;
-  const inputAudio = capabilities?.input?.audio;
-  const outputAudio = capabilities?.output?.audio;
-  if (inputAudio === true) {
-    return "stt";
-  }
-  if (outputAudio === true) {
-    return "tts";
-  }
-  if (inputAudio === false && outputAudio === false) {
-    return "none";
-  }
-  return "unknown";
 }
 
 function normalizeOptional(value: string): string | null {

@@ -6,10 +6,23 @@ export interface SpeechConfig {
   noise_reduction?: "disabled" | "far_field" | "near_field";
   prompt?: string | null;
   stt_profile_name?: string | null;
-  supported_models?: string[];
+  profile_eligibility?: SpeechProfileEligibility[];
   vad_prefix_padding_ms?: number;
   vad_silence_duration_ms?: number;
   vad_threshold?: number;
+}
+
+export interface SpeechProfileEligibility {
+  eligible: boolean;
+  model: string;
+  profile_name: string;
+  reason:
+    | "diarization_not_supported"
+    | "input_audio_not_supported"
+    | "provider_not_supported"
+    | "realtime_stt_not_declared"
+    | "tts_only"
+    | null;
 }
 
 export function fetchSpeechConfig(): Promise<SpeechConfig> {

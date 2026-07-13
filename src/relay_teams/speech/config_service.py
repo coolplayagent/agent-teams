@@ -6,14 +6,17 @@ from json import JSONDecodeError, dumps, loads
 import logging
 from pathlib import Path
 
-from pydantic import JsonValue, ValidationError
+from pydantic import ValidationError
 
 from relay_teams.logger import get_logger, log_event
 from relay_teams.providers.model_config import ModelEndpointConfig, ProviderType
 from relay_teams.speech.models import (
     SUPPORTED_REALTIME_STT_MODELS,
     SpeechConfig,
+    SpeechConfigView,
     SpeechConfigUpdate,
+    SpeechProfileEligibility,
+    SpeechProfileEligibilityReason,
 )
 
 import asyncio
@@ -81,12 +84,17 @@ class SpeechConfigService:
             raise ValueError(f"Unsupported realtime STT model: {profile.model}")
         return profile
 
-    def get_config_payload(self) -> dict[str, JsonValue]:
+    def get_config_payload(self) -> SpeechConfigView:
         config = self.get_config()
-        payload = config.model_dump(mode="json")
-        payload["supported_models"] = sorted(SUPPORTED_REALTIME_STT_MODELS)
-        payload["configured"] = self._has_resolvable_stt_profile(config)
-        return payload
+        profiles = self._get_profiles()
+        return SpeechConfigView(
+            **config.model_dump(),
+            configured=self._has_resolvable_stt_profile(config),
+            profile_eligibility=tuple(
+                _profile_eligibility(name, profile)
+                for name, profile in sorted(profiles.items())
+            ),
+        )
 
     def _has_resolvable_stt_profile(self, config: SpeechConfig) -> bool:
         if config.stt_profile_name is None:
@@ -110,7 +118,7 @@ class SpeechConfigService:
             },
         )
 
-    async def get_config_payload_async(self) -> dict[str, JsonValue]:
+    async def get_config_payload_async(self) -> SpeechConfigView:
 
         return await asyncio.to_thread(self.get_config_payload)
 
@@ -138,3 +146,37 @@ def is_supported_realtime_stt_profile(profile: ModelEndpointConfig) -> bool:
     if is_supported_realtime_stt_model(profile.model):
         return True
     return profile.capabilities.input.audio is True
+
+
+def _profile_eligibility(
+    profile_name: str,
+    profile: ModelEndpointConfig,
+) -> SpeechProfileEligibility:
+    reason = _profile_ineligibility_reason(profile)
+    realtime_model = profile.speech_realtime.model
+    return SpeechProfileEligibility(
+        eligible=reason is None,
+        model=realtime_model if realtime_model is not None else profile.model,
+        profile_name=profile_name,
+        reason=reason,
+    )
+
+
+def _profile_ineligibility_reason(
+    profile: ModelEndpointConfig,
+) -> SpeechProfileEligibilityReason | None:
+    if profile.provider != ProviderType.OPENAI_COMPATIBLE:
+        return "provider_not_supported"
+    realtime_model = profile.speech_realtime.model
+    effective_model = realtime_model if realtime_model is not None else profile.model
+    if effective_model.strip() == "gpt-4o-transcribe-diarize":
+        return "diarization_not_supported"
+    if realtime_model is not None or is_supported_realtime_stt_model(profile.model):
+        return None
+    if profile.capabilities.input.audio is True:
+        return None
+    if profile.capabilities.output.audio is True:
+        return "tts_only"
+    if profile.capabilities.input.audio is False:
+        return "input_audio_not_supported"
+    return "realtime_stt_not_declared"

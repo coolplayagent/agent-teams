@@ -10,12 +10,9 @@ export interface TerminalDomSnapshot {
   timestamp: number;
 }
 
-type TerminalSnapshotGlobal = typeof globalThis & {
-  __agentTeamsTerminalSnapshots?: TerminalDomSnapshot[];
-};
-
 const rowIdentities = new WeakMap<Element, number>();
 let nextRowIdentity = 1;
+let terminalSnapshots: TerminalDomSnapshot[] = [];
 
 export function recordTerminalDomSnapshot(
   anchor: HTMLElement | null,
@@ -49,9 +46,7 @@ export function recordTerminalDomSnapshot(
     textLength: text.length,
     timestamp: globalThis.performance?.now() ?? Date.now(),
   };
-  const diagnosticsGlobal = globalThis as TerminalSnapshotGlobal;
-  const snapshots = diagnosticsGlobal.__agentTeamsTerminalSnapshots ?? [];
-  diagnosticsGlobal.__agentTeamsTerminalSnapshots = [...snapshots.slice(-99), snapshot];
+  terminalSnapshots = [...terminalSnapshots.slice(-99), snapshot];
 }
 
 export function stabilizeTerminalDomLayout(
@@ -89,13 +84,11 @@ function latestLightSnapshot(runId: string): TerminalDomSnapshot | undefined {
 }
 
 export function readTerminalDomSnapshots(): TerminalDomSnapshot[] {
-  const diagnosticsGlobal = globalThis as TerminalSnapshotGlobal;
-  return [...(diagnosticsGlobal.__agentTeamsTerminalSnapshots ?? [])];
+  return [...terminalSnapshots];
 }
 
 export function resetTerminalDomSnapshots(): void {
-  const diagnosticsGlobal = globalThis as TerminalSnapshotGlobal;
-  diagnosticsGlobal.__agentTeamsTerminalSnapshots = [];
+  terminalSnapshots = [];
 }
 
 function latestRunMessageRow(

@@ -27,10 +27,14 @@ describe("session sidebar row styles", () => {
     expect(sidebar).not.toContain("<Modal");
     expect(sidebar).toContain('className="at-session-inline-rename"');
     expect(sidebar).toContain('confirmingDelete ? (');
-    expect(sidebar).toContain('deleteWorkspaceTarget?.workspace_id === group.id ? (');
+    expect(sidebar).toMatch(
+      /deleteWorkspaceTarget\?\.workspace_id\s*===\s*workspaceId\s*\?\s*\(/,
+    );
     expect(sidebar).toContain('t("sidebarDeleteConfirmAction")');
     expect(sidebar).toContain('event.key !== "Escape" || !confirmingDelete');
-    expect(sidebar).toContain('deleteWorkspaceTarget?.workspace_id === group.id');
+    expect(sidebar).toMatch(
+      /deleteWorkspaceTarget\?\.workspace_id\s*===\s*workspaceId/,
+    );
     expect(css).toMatch(/\.at-session-item\s*\{[^}]*height:\s*32px[^}]*overflow:\s*hidden/s);
     expect(css).toMatch(/\.at-session-inline-rename\.ant-input\s*\{[^}]*height:\s*22px/s);
   });

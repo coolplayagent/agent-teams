@@ -17,7 +17,7 @@ describe("NewSessionView V1 parity contract", () => {
     ["orchestration preset", "orchestration_preset_id"],
     ["initial prompt", "createRun"],
     ["target role", "target_role_id"],
-    ["thinking", "thinking:"],
+    ["thinking", "thinking,"],
     ["shell safety", "shell_safety_policy_enabled"],
     ["YOLO", "yolo"],
   ])("keeps the V1 %s capability", (_capability, contractToken) => {
@@ -30,8 +30,10 @@ describe("NewSessionView V1 parity contract", () => {
   });
 
   it("keeps run-only controls out of the session topology payload", () => {
-    const topologyStart = source.indexOf("const session = sessionMode");
+    const topologyStart = source.indexOf("if (!progress.topologyReady)");
     const firstRunStart = source.indexOf("const normalizedPrompt");
+    expect(topologyStart).toBeGreaterThanOrEqual(0);
+    expect(firstRunStart).toBeGreaterThan(topologyStart);
     const topologySection = source.slice(topologyStart, firstRunStart);
     expect(topologySection).toContain("updateSessionTopology");
     expect(topologySection).not.toContain("target_role_id");

@@ -282,8 +282,41 @@ describe("runtime reducers", () => {
     expect(state.runs["run-1"].entries).toHaveLength(2);
     expect(state.runs["run-1"].entries[0]).toMatchObject({
       kind: "thinking_delta",
+      lastMergedEventId: 2,
       text: "inspect workspace",
     });
+  });
+
+  it("batch reduction keeps provider-sized orchestration streams replay-safe", () => {
+    const eventCount = 6000;
+    const events = Array.from({ length: eventCount }, (_value, index) =>
+      runEvent({
+        event_id: index + 1,
+        event_type: "thinking_delta",
+        instance_id: "orchestration-worker",
+        role_id: "Worker",
+        payload_json: JSON.stringify({
+          part_index: 0,
+          text: String(index % 10),
+        }),
+      }),
+    );
+
+    const state = reduceRunEvents(initialRuntimeState, events);
+    const runState = state.runs["run-1"];
+
+    expect(runState.entries).toHaveLength(1);
+    expect(runState.entries[0]).toMatchObject({
+      eventId: 1,
+      lastMergedEventId: eventCount,
+      text: Array.from(
+        { length: eventCount },
+        (_value, index) => String(index % 10),
+      ).join(""),
+    });
+    expect(runState.lastEventId).toBe(eventCount);
+    expect(runState.seenEventIdRanges).toEqual([[1, eventCount]]);
+    expect(reduceRunEvent(state, events[3000])).toBe(state);
   });
 
   it("keeps repeated cursorless stream deltas when no stable replay key exists", () => {

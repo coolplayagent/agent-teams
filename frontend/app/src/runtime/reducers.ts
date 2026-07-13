@@ -197,10 +197,137 @@ export function reduceRunEvents(
   rawEvents: readonly RunEventEnvelope[],
 ): RuntimeState {
   let nextState = state;
-  for (const rawEvent of rawEvents) {
-    nextState = reduceRunEvent(nextState, rawEvent);
+  for (const eventBatch of compactRunEventBatch(state, rawEvents)) {
+    nextState = reduceRunEvent(nextState, eventBatch.event);
+    if (eventBatch.lastEventId > eventBatch.firstEventId) {
+      nextState = applyCompactedEventCoverage(nextState, eventBatch);
+    }
   }
   return nextState;
+}
+
+interface CompactedRunEventBatch {
+  event: RunEventEnvelope;
+  firstEventId: number;
+  lastEventId: number;
+  runId: string;
+}
+
+function compactRunEventBatch(
+  state: RuntimeState,
+  rawEvents: readonly RunEventEnvelope[],
+): CompactedRunEventBatch[] {
+  const batches: CompactedRunEventBatch[] = [];
+  for (const rawEvent of rawEvents) {
+    const parsed = parseRunEvent(rawEvent);
+    const eventId = positiveEventId(parsed.event_id);
+    const previous = batches.at(-1);
+    if (
+      eventId !== null &&
+      previous !== undefined &&
+      eventId === previous.lastEventId + 1 &&
+      eventId > (state.runs[parsed.run_id]?.lastEventId ?? 0)
+    ) {
+      const mergedEvent = mergedAdjacentDeltaEvent(previous.event, rawEvent);
+      if (mergedEvent !== null) {
+        previous.event = mergedEvent;
+        previous.lastEventId = eventId;
+        continue;
+      }
+    }
+    batches.push({
+      event: rawEvent,
+      firstEventId: eventId ?? 0,
+      lastEventId: eventId ?? 0,
+      runId: parsed.run_id,
+    });
+  }
+  return batches;
+}
+
+function mergedAdjacentDeltaEvent(
+  previousRawEvent: RunEventEnvelope,
+  nextRawEvent: RunEventEnvelope,
+): RunEventEnvelope | null {
+  const previous = parseRunEvent(previousRawEvent);
+  const next = parseRunEvent(nextRawEvent);
+  if (
+    previous.run_id !== next.run_id ||
+    previous.session_id !== next.session_id ||
+    previous.trace_id !== next.trace_id ||
+    previous.instance_id !== next.instance_id ||
+    previous.role_id !== next.role_id ||
+    previous.event_type !== next.event_type ||
+    !isCompactableDeltaKind(next.event_type)
+  ) {
+    return null;
+  }
+  const previousPayload = jsonObject(previous.payload);
+  const nextPayload = jsonObject(next.payload);
+  if (
+    previousPayload === null ||
+    nextPayload === null ||
+    payloadPartIndex(previousPayload) !== payloadPartIndex(nextPayload)
+  ) {
+    return null;
+  }
+  const previousText = rawPayloadText(previousPayload);
+  const nextText = rawPayloadText(nextPayload);
+  if (previousText === null || nextText === null) {
+    return null;
+  }
+  return {
+    type: "relay.event",
+    event_id: previous.event_id,
+    session_id: previous.session_id,
+    run_id: previous.run_id,
+    trace_id: previous.trace_id,
+    task_id: previous.task_id,
+    instance_id: previous.instance_id,
+    role_id: previous.role_id,
+    relay_event_type: previous.event_type,
+    occurred_at: previous.occurred_at,
+    payload: {
+      ...previousPayload,
+      [previousText.key]: previousText.value + nextText.value,
+    },
+  };
+}
+
+function applyCompactedEventCoverage(
+  state: RuntimeState,
+  eventBatch: CompactedRunEventBatch,
+): RuntimeState {
+  const runState = state.runs[eventBatch.runId];
+  if (runState === undefined) {
+    return state;
+  }
+  const entries = runState.entries.map((entry) =>
+    entry.eventId === eventBatch.firstEventId ||
+      entry.lastMergedEventId === eventBatch.firstEventId
+      ? { ...entry, lastMergedEventId: eventBatch.lastEventId }
+      : entry
+  );
+  return {
+    ...state,
+    runs: {
+      ...state.runs,
+      [eventBatch.runId]: {
+        ...runState,
+        entries,
+        lastEventId: Math.max(runState.lastEventId, eventBatch.lastEventId),
+        seenEventIdRanges: rememberSeenEventRange(
+          runState.seenEventIdRanges ?? [],
+          eventBatch.firstEventId,
+          eventBatch.lastEventId,
+        ),
+      },
+    },
+  };
+}
+
+function positiveEventId(value: number | null | undefined): number | null {
+  return typeof value === "number" && value > 0 ? value : null;
 }
 
 function markReferencedSubagentRuns(
@@ -470,27 +597,35 @@ function rememberSeenEventId(
   ranges: Array<[number, number]>,
   eventId: number,
 ): Array<[number, number]> {
+  return rememberSeenEventRange(ranges, eventId, eventId);
+}
+
+function rememberSeenEventRange(
+  ranges: Array<[number, number]>,
+  rangeStart: number,
+  rangeEnd: number,
+): Array<[number, number]> {
   let insertionIndex = 0;
   while (
     insertionIndex < ranges.length &&
-    (ranges[insertionIndex]?.[1] ?? Number.NEGATIVE_INFINITY) < eventId - 1
+    (ranges[insertionIndex]?.[1] ?? Number.NEGATIVE_INFINITY) < rangeStart - 1
   ) {
     insertionIndex += 1;
   }
   const currentRange = ranges[insertionIndex];
   if (currentRange === undefined) {
-    return [...ranges, [eventId, eventId]];
+    return [...ranges, [rangeStart, rangeEnd]];
   }
-  if (eventId < currentRange[0] - 1) {
+  if (rangeEnd < currentRange[0] - 1) {
     return [
       ...ranges.slice(0, insertionIndex),
-      [eventId, eventId],
+      [rangeStart, rangeEnd],
       ...ranges.slice(insertionIndex),
     ];
   }
 
-  let mergedStart = Math.min(currentRange[0], eventId);
-  let mergedEnd = Math.max(currentRange[1], eventId);
+  let mergedStart = Math.min(currentRange[0], rangeStart);
+  let mergedEnd = Math.max(currentRange[1], rangeEnd);
   let mergeEndIndex = insertionIndex + 1;
   while (
     mergeEndIndex < ranges.length &&

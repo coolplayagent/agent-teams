@@ -1007,7 +1007,10 @@ function SettingsModels({
     }) => {
       const result = await saveModelProfile(
         profileId,
-        buildModelProfileSaveRequest(profile, { isDefault: true }),
+        buildModelProfileSaveRequest(profile, {
+          isDefault: true,
+          providerRequiredMessage: t("settingsModelProviderRequired"),
+        }),
       );
       await reloadModelConfig();
       return result;
@@ -1057,6 +1060,7 @@ function SettingsModels({
       values: ModelProfileFormValues;
     }) => {
       const request = buildModelProfileSaveRequest(profile, {
+        providerRequiredMessage: t("settingsModelProviderRequired"),
         sourceName: currentProfileId ?? undefined,
         values,
       });
@@ -1461,7 +1465,7 @@ function ModelProfileDetail({
     model: ModelCatalogModel,
   ) => {
     const nextBaseUrl = modelCatalogBaseUrl(provider);
-    const nextProvider = provider.runtime_provider?.trim() || "openai_compatible";
+    const nextProvider = provider.runtime_provider?.trim() ?? "";
     const nextPatch: ModelProfileRecord = {
       base_url: nextBaseUrl,
       catalog_model_name: model.name,
@@ -1741,9 +1745,10 @@ function buildModelProfileSaveRequest(
   profile: ModelProfileRecord,
   options: {
     isDefault?: boolean;
+    providerRequiredMessage: string;
     sourceName?: string;
     values?: ModelProfileFormValues;
-  } = {},
+  },
 ): ModelProfileSaveRequest {
   const values = options.values;
   const request: ModelProfileSaveRequest = {
@@ -1775,7 +1780,10 @@ function buildModelProfileSaveRequest(
           ? values.is_default === true
           : profile.is_default === true,
     model: values?.model?.trim() ?? profile.model ?? "",
-    provider: values?.provider?.trim() ?? profile.provider ?? "openai_compatible",
+    provider: requiredModelProvider(
+      values?.provider ?? profile.provider,
+      options.providerRequiredMessage,
+    ),
     temperature:
       values !== undefined
         ? finiteNumberFromText(values.temperature, finiteNumber(profile.temperature, 0.7))
@@ -1871,7 +1879,7 @@ function modelProfileToFormValues(
     maas_password: "",
     maas_username: stringFromJsonObject(profile.maas_auth, "username"),
     profile_id: profileId,
-    provider: profile.provider ?? "openai_compatible",
+    provider: profile.provider?.trim() ?? "",
     ssl_verify: serializeOptionalBoolean(profile.ssl_verify),
     temperature: String(finiteNumber(profile.temperature, 0.7)),
     top_p: String(finiteNumber(profile.top_p, 1)),
@@ -1887,11 +1895,7 @@ function modelProfileHasPassword(auth: JsonValue | null | undefined): boolean {
   if (authObject === null) {
     return false;
   }
-  return (
-    authObject.has_password === true ||
-    jsonString(authObject.password).length > 0 ||
-    stringFromJsonObject(auth, "password").includes("*")
-  );
+  return authObject.has_password === true;
 }
 
 function modelMaasAuthFromForm(
@@ -1906,7 +1910,7 @@ function modelMaasAuthFromForm(
   if (username !== null) {
     auth.username = username;
   }
-  if (password.length > 0 && !looksLikeMaskedSecret(password)) {
+  if (password.length > 0) {
     auth.password = password;
   }
   if (password.length === 0 && modelProfileHasPassword(previousAuth)) {
@@ -1929,7 +1933,7 @@ function modelCodeAgentAuthFromForm(
   if (username !== null) {
     auth.username = username;
   }
-  if (authMethod === "password" && password.length > 0 && !looksLikeMaskedSecret(password)) {
+  if (authMethod === "password" && password.length > 0) {
     auth.password = password;
   }
   if (authMethod === "password" && password.length === 0 && modelProfileHasPassword(previousAuth)) {
@@ -1956,13 +1960,19 @@ function jsonObject(value: JsonValue | null | undefined): { [key: string]: JsonV
   return value;
 }
 
-function looksLikeMaskedSecret(value: string): boolean {
-  const normalized = value.trim();
-  return normalized.length > 0 && [...normalized].every((character) => character === "*" || character === "•");
-}
-
 function normalizeModelProvider(value: string | null | undefined): string {
   return value?.trim().toLowerCase() ?? "";
+}
+
+function requiredModelProvider(
+  value: string | null | undefined,
+  errorMessage: string,
+): string {
+  const provider = value?.trim() ?? "";
+  if (!provider) {
+    throw new Error(errorMessage);
+  }
+  return provider;
 }
 
 const MODEL_PROVIDER_OPTIONS = [
@@ -2126,7 +2136,7 @@ function newModelProfileDraft(): ModelProfileRecord {
     is_default: false,
     max_tokens: null,
     model: "",
-    provider: "openai_compatible",
+    provider: "",
     temperature: 0.7,
     top_p: 1,
   };

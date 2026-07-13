@@ -3821,6 +3821,44 @@ describe("SettingsDrawer", () => {
     );
   }, 25000);
 
+  it("requires an explicit provider when a catalog entry has no runtime provider", async () => {
+    getModelCatalogMock.mockResolvedValueOnce({
+      ok: true,
+      providers: [
+        {
+          default_base_url: "https://catalog.example/v1",
+          id: "catalog-only",
+          models: [{ id: "catalog-chat", name: "Catalog Chat" }],
+          name: "Catalog only",
+        },
+      ],
+      source_url: "https://models.dev/api.json",
+    });
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "Model" }));
+    fireEvent.click(await screen.findByRole("button", { name: "New profile" }));
+    expect(await screen.findByText("Catalog only · catalog-only")).toBeVisible();
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "Search models" }));
+    await clickFirstOpenSelectOption();
+
+    expect(screen.getByRole("combobox", { name: "Provider" })).toHaveValue("");
+    expect(screen.getByLabelText("Model")).toHaveValue("catalog-chat");
+    expect(screen.getByLabelText("Base URL")).toHaveValue(
+      "https://catalog.example/v1",
+    );
+    fireEvent.change(screen.getByLabelText("Profile ID"), {
+      target: { value: "catalog-profile" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText("Enter a provider.")).toBeVisible();
+    expect(saveModelProfileMock).not.toHaveBeenCalled();
+  }, 25000);
+
   it("creates a MaaS model profile with profile-owned credentials", async () => {
     getModelCatalogMock.mockResolvedValueOnce({
       ok: true,
@@ -3889,6 +3927,99 @@ describe("SettingsDrawer", () => {
       }),
     );
     expect(saveModelProfileMock.mock.calls[0]?.[1]).not.toHaveProperty("api_key");
+  }, 25000);
+
+  it("does not infer saved password state from a masked password string", async () => {
+    getModelProfilesMock.mockResolvedValue({
+      "maas-profile": {
+        base_url: "https://maas.example/v1",
+        maas_auth: {
+          auth_source: "profile",
+          password: "************",
+          username: "legacy-user",
+        },
+        model: "maas-chat",
+        provider: "maas",
+      },
+    });
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "Model" }));
+    const profileRow = (await screen.findByText("maas-profile")).closest(
+      ".at-model-profile-row",
+    );
+    expect(profileRow).not.toBeNull();
+    fireEvent.click(
+      within(profileRow as HTMLElement).getByRole("button", {
+        name: /maas-profile/,
+      }),
+    );
+
+    expect(await screen.findByLabelText("MaaS password")).toHaveAttribute(
+      "placeholder",
+      "Optional provider password",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(saveModelProfileMock).toHaveBeenCalledTimes(1));
+    expect(saveModelProfileMock).toHaveBeenCalledWith(
+      "maas-profile",
+      expect.objectContaining({
+        maas_auth: {
+          auth_source: "profile",
+          username: "legacy-user",
+        },
+      }),
+    );
+  }, 25000);
+
+  it("treats a password typed into the blank edit field as an explicit replacement", async () => {
+    getModelProfilesMock.mockResolvedValue({
+      "maas-profile": {
+        base_url: "https://maas.example/v1",
+        maas_auth: {
+          auth_source: "profile",
+          has_password: true,
+          username: "relay-user",
+        },
+        model: "maas-chat",
+        provider: "maas",
+      },
+    });
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "Model" }));
+    const profileRow = (await screen.findByText("maas-profile")).closest(
+      ".at-model-profile-row",
+    );
+    expect(profileRow).not.toBeNull();
+    fireEvent.click(
+      within(profileRow as HTMLElement).getByRole("button", {
+        name: /maas-profile/,
+      }),
+    );
+    fireEvent.change(await screen.findByLabelText("MaaS password"), {
+      target: { value: "************" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(saveModelProfileMock).toHaveBeenCalledTimes(1));
+    expect(saveModelProfileMock).toHaveBeenCalledWith(
+      "maas-profile",
+      expect.objectContaining({
+        maas_auth: {
+          auth_source: "profile",
+          password: "************",
+          username: "relay-user",
+        },
+      }),
+    );
   }, 25000);
 
   it("preserves saved CodeAgent password credentials when the password is left blank", async () => {

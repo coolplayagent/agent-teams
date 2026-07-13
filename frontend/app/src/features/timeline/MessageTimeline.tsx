@@ -3158,7 +3158,7 @@ function persistedRowsWithCorrelatedSubagents(
     const rowRunId = row.runId?.trim() ?? "";
     let rowChanged = false;
     const parts = row.parts.map((part) => {
-      if (part.kind !== "tool" || part.subagent !== null) {
+      if (part.kind !== "tool") {
         return part;
       }
       const callId = part.callId.trim();
@@ -3179,26 +3179,35 @@ function persistedRowsWithCorrelatedSubagents(
         ...part,
         actionFamily: "subagent" as const,
         sourceRunId: match.sourceRunId,
-        subagent: {
-          instanceId: match.instanceId,
-          interactive: match.interactive,
-          roleId: match.roleId,
-          runId: match.runId,
-          runPhase: match.runPhase,
-          runStatus: match.runStatus,
-          sessionId,
-          sourceRunId: match.sourceRunId,
-          sourceToolCallId: match.sourceToolCallId,
-          status: match.status,
-          subagentKind: match.subagentKind,
-          taskId: match.taskId,
-          title: match.title,
-        },
+        subagent: correlatedSubagentReference(part.subagent, match, sessionId),
       };
     });
     return rowChanged ? { ...row, parts } : row;
   });
   return changed ? nextRows : rows;
+}
+
+function correlatedSubagentReference(
+  existing: TimelineSubagentReference | null,
+  match: CorrelatedSubagentRecord,
+  sessionId: string,
+): TimelineSubagentReference {
+  return {
+    ...existing,
+    instanceId: match.instanceId || existing?.instanceId,
+    interactive: match.interactive ?? existing?.interactive,
+    roleId: match.roleId || existing?.roleId,
+    runId: match.runId || existing?.runId,
+    runPhase: match.runPhase || existing?.runPhase,
+    runStatus: match.runStatus || existing?.runStatus,
+    sessionId,
+    sourceRunId: match.sourceRunId,
+    sourceToolCallId: match.sourceToolCallId,
+    status: match.status || existing?.status,
+    subagentKind: match.subagentKind || existing?.subagentKind,
+    taskId: match.taskId || existing?.taskId,
+    title: match.title || existing?.title,
+  };
 }
 
 function persistedRowsWithOpenRoundStreaming(

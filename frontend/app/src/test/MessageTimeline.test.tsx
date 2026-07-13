@@ -3819,6 +3819,7 @@ describe("MessageTimeline", () => {
             run_started_at: "2026-06-23T12:42:50Z",
             run_status: "completed",
             run_updated_at: "2026-06-23T12:42:56Z",
+            intent: "Initial task",
             run_user_message: "Initial task",
           },
           {
@@ -3833,6 +3834,7 @@ describe("MessageTimeline", () => {
             ],
             run_id: "run-2",
             run_status: "completed",
+            intent: "Follow-up task",
             run_user_message: "Follow-up task",
           },
         ],
@@ -3914,18 +3916,21 @@ describe("MessageTimeline", () => {
             created_at: "2026-06-23T12:42:33Z",
             run_id: "run-1",
             run_status: "completed",
+            intent: "First task",
             run_user_message: "First task",
           },
           {
             created_at: "2026-06-23T12:43:04Z",
             run_id: "run-2",
             run_status: "completed",
+            intent: "Second task",
             run_user_message: "Second task",
           },
           {
             created_at: "2026-06-23T12:44:04Z",
             run_id: "run-3",
             run_status: "completed",
+            intent: "Third task",
             run_user_message: "Third task",
           },
         ],
@@ -3999,12 +4004,14 @@ describe("MessageTimeline", () => {
             created_at: "2026-06-23T12:42:00Z",
             run_id: "run-middle",
             run_status: "completed",
+            intent: "Middle stale task",
             run_user_message: "Middle stale task",
           },
           {
             created_at: "2026-06-23T12:43:00Z",
             run_id: "run-latest",
             run_status: "completed",
+            intent: "Latest task",
             run_user_message: "Latest task",
           },
         ],
@@ -4017,12 +4024,14 @@ describe("MessageTimeline", () => {
             created_at: "2026-06-23T12:41:00Z",
             run_id: "run-archive",
             run_status: "completed",
+            intent: "Archive task",
             run_user_message: "Archive task",
           },
           {
             created_at: "2026-06-23T12:42:00Z",
             run_id: "run-middle",
             run_status: "completed",
+            intent: "Middle updated task",
             run_user_message: "Middle updated task",
           },
         ],
@@ -4087,6 +4096,7 @@ describe("MessageTimeline", () => {
             created_at: "2026-06-23T12:44:00Z",
             run_id: "session-2-run",
             run_status: "completed",
+            intent: "Fresh session task",
             run_user_message: "Fresh session task",
           },
         ],
@@ -4274,18 +4284,21 @@ describe("MessageTimeline", () => {
             created_at: "2026-06-23T12:41:00Z",
             run_id: "run-1",
             run_status: "completed",
+            intent: "Older task",
             run_user_message: "Older task",
           },
           {
             created_at: "2026-06-23T12:42:00Z",
             run_id: "run-2",
             run_status: "completed",
+            intent: "Latest task",
             run_user_message: "Latest task",
           },
           {
             created_at: "2026-06-23T12:43:00Z",
             run_id: "run-3",
             run_status: "completed",
+            intent: "Newest task",
             run_user_message: "Newest task",
           },
         ],
@@ -4353,6 +4366,7 @@ describe("MessageTimeline", () => {
             created_at: "2026-06-23T12:41:00Z",
             run_id: "run-1",
             run_status: "completed",
+            intent: "Older task",
             run_user_message: "Older task",
           },
         ],
@@ -4374,6 +4388,7 @@ describe("MessageTimeline", () => {
             created_at: "2026-06-23T12:42:00Z",
             run_id: "run-2",
             run_status: "completed",
+            intent: "Latest task",
             run_user_message: "Latest task",
           },
         ],
@@ -4415,6 +4430,7 @@ describe("MessageTimeline", () => {
             has_user_messages: true,
             run_id: "run-1",
             run_status: "completed",
+            intent: "approval-only run",
             run_user_message: "approval-only run",
           },
         ],
@@ -4427,6 +4443,7 @@ describe("MessageTimeline", () => {
             created_at: "2026-06-23T12:42:00Z",
             run_id: "run-2",
             run_status: "completed",
+            intent: "newer",
             run_user_message: "newer",
           },
         ],
@@ -4687,6 +4704,7 @@ describe("MessageTimeline", () => {
           created_at: "2026-06-23T12:42:33Z",
           run_id: "run-prompt",
           run_status: "completed",
+          intent: "Run the verification",
           run_user_message: "Run the verification",
         },
       ],
@@ -4724,6 +4742,7 @@ describe("MessageTimeline", () => {
           created_at: "2026-06-23T12:42:33Z",
           run_id: "run-localized-prompt",
           run_status: "completed",
+          intent: "你好 连续修复验证 五轮 3",
           run_user_message: "你好 连续修复验证 五轮 3",
         },
       ],
@@ -5070,6 +5089,7 @@ describe("MessageTimeline", () => {
           created_at: "2026-06-23T12:42:33Z",
           run_id: "run-long",
           run_status: "completed",
+          intent: prompt,
           run_user_message: prompt,
         },
       ],
@@ -5122,6 +5142,7 @@ describe("MessageTimeline", () => {
           created_at: "2026-06-23T12:42:33Z",
           run_id: "run-question",
           run_status: "completed",
+          intent: prompt,
           run_user_message: prompt,
         },
       ],
@@ -5420,6 +5441,7 @@ describe("MessageTimeline", () => {
           run_diagnostic_message: "Waiting for user confirmation",
           run_id: "run-1",
           run_status: "paused",
+          intent: "Approve deployment",
           run_user_message: "Approve deployment",
           todo: {
             items: [
@@ -5483,6 +5505,7 @@ describe("MessageTimeline", () => {
           ],
           run_id: "retry-run-1",
           run_status: "running",
+          intent: "Retry active provider call",
           run_user_message: "Retry active provider call",
         },
       ],
@@ -5590,6 +5613,7 @@ describe("MessageTimeline", () => {
           created_at: "2026-06-23T12:42:33Z",
           run_id: "run-output",
           run_status: "running",
+          intent: "Retry streaming answer",
           run_user_message: "Retry streaming answer",
         },
       ],
@@ -5669,6 +5693,7 @@ describe("MessageTimeline", () => {
           created_at: "2026-06-23T12:42:33Z",
           run_id: "run-output",
           run_status: "running",
+          intent: "Switch model after provider failure",
           run_user_message: "Switch model after provider failure",
         },
       ],
@@ -5723,6 +5748,7 @@ describe("MessageTimeline", () => {
           created_at: "2026-06-23T12:40:00Z",
           run_id: "run-archived",
           run_status: "completed",
+          intent: "Archived task",
           run_user_message: "Archived task",
         },
         {
@@ -5730,6 +5756,7 @@ describe("MessageTimeline", () => {
           created_at: "2026-06-23T12:42:00Z",
           run_id: "run-current",
           run_status: "completed",
+          intent: "Current task",
           run_user_message: "Current task",
         },
       ],
@@ -5794,6 +5821,7 @@ describe("MessageTimeline", () => {
           created_at: "2026-06-23T12:40:00Z",
           run_id: "run-archived",
           run_status: "completed",
+          intent: "Archived task",
           run_user_message: "Archived task",
         },
         {
@@ -5810,6 +5838,7 @@ describe("MessageTimeline", () => {
           created_at: "2026-06-23T12:42:00Z",
           run_id: "run-current",
           run_status: "completed",
+          intent: "Current task",
           run_user_message: "Current task",
         },
       ],
@@ -5902,6 +5931,7 @@ describe("MessageTimeline", () => {
           created_at: "2026-06-23T12:42:33Z",
           run_id: "run-1",
           run_status: "completed",
+          intent: "Single task",
           run_user_message: "Single task",
         },
       ],
@@ -7696,6 +7726,7 @@ describe("MessageTimeline", () => {
       items: [{
         run_id: `run-${sessionId}`,
         run_status: "completed",
+        intent: prompts[sessionId] ?? "Fallback prompt",
         run_user_message: prompts[sessionId] ?? "Fallback prompt",
       }],
       next_cursor: null,
@@ -7760,6 +7791,7 @@ describe("MessageTimeline", () => {
         items: [{
           run_id: "run-prompt-anchor",
           run_status: "completed",
+          intent: "A long prompt whose disclosure should not move its control in the viewport.",
           run_user_message: "A long prompt whose disclosure should not move its control in the viewport.",
         }],
         next_cursor: null,
@@ -8964,6 +8996,64 @@ describe("MessageTimeline", () => {
       sourceRunId: "structured-parent-run",
       sourceToolCallId: "structured-dispatch-call",
       taskId: "structured-child-task",
+    }));
+  });
+
+  it("hydrates a task-scoped subagent card that already has a partial argument reference", async () => {
+    const onSubagentOpen = vi.fn();
+    listSessionSubagentsMock.mockResolvedValue([{
+      instance_id: "persisted-instance",
+      role_id: "Crafter",
+      run_id: "persisted-child-run",
+      run_status: "completed",
+      source_run_id: "persisted-parent-run",
+      status: "completed",
+      subagent_task_id: "persisted-child-task",
+      title: "Persisted child task",
+    }]);
+    listSessionMessagesMock.mockResolvedValue([{
+      message: { parts: [{
+        action_family: "subagent",
+        args: {
+          prompt: "Implement the persisted child task.",
+          role_id: "Crafter",
+          task_id: "persisted-child-task",
+        },
+        kind: "tool-call",
+        semantic_category: "orchestration",
+        tool_call_id: "persisted-dispatch-call",
+        tool_name: "delegation-tool",
+      }] },
+      message_id: "persisted-dispatch-message",
+      role: "assistant",
+      trace_id: "persisted-parent-run",
+    }]);
+
+    const { container } = renderTimeline("session-1", { onSubagentOpen });
+
+    const tool = await waitFor(() => {
+      const candidate = container.querySelector<HTMLElement>(
+        '[data-tool-call-id="persisted-dispatch-call"]',
+      );
+      expect(candidate).toHaveClass("is-openable-subagent");
+      return candidate as HTMLElement;
+    });
+    expect(tool).toHaveAttribute("data-subagent-instance-id", "persisted-instance");
+    expect(tool).toHaveAttribute("data-subagent-run-id", "persisted-child-run");
+    expect(tool).toHaveAttribute("data-subagent-task-id", "persisted-child-task");
+    expect(within(tool).getByText("Persisted child task")).toBeVisible();
+
+    fireEvent.click(tool.querySelector("summary") as HTMLElement);
+
+    expect(onSubagentOpen).toHaveBeenCalledWith(expect.objectContaining({
+      instanceId: "persisted-instance",
+      prompt: "Implement the persisted child task.",
+      roleId: "Crafter",
+      runId: "persisted-child-run",
+      sourceRunId: "persisted-parent-run",
+      sourceToolCallId: "persisted-dispatch-call",
+      taskId: "persisted-child-task",
+      title: "Persisted child task",
     }));
   });
 
@@ -10392,6 +10482,7 @@ describe("MessageTimeline", () => {
         primary_task_id: "task-root",
         run_id: "run-mixed-replay",
         run_status: "completed",
+        intent: "real user prompt",
         run_user_message: "real user prompt",
       }],
       next_cursor: null,

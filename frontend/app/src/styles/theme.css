@@ -5958,6 +5958,7 @@ body {
 .at-message-markdown td {
   padding: 6px 8px;
   border: 1px solid var(--at-border);
+  overflow-wrap: break-word;
   text-align: left;
   vertical-align: top;
 }

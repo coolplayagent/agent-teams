@@ -93,7 +93,6 @@ import {
 } from "./timelineEventContracts";
 import {
   recordTerminalDomSnapshot,
-  stabilizeTerminalDomLayout,
 } from "./terminalDomSnapshot";
 import {
   TimelineRowHydrationPlaceholder,
@@ -104,6 +103,7 @@ import "./ToolCallDetails.css";
 
 const TIMELINE_BOTTOM_FOLLOW_THRESHOLD_PX = 96;
 const TIMELINE_SCROLL_SCOPE_CACHE_LIMIT = 100;
+const TIMELINE_SCROLL_TOLERANCE = 2;
 const TIMELINE_DERIVED_ROWS_CACHE_LIMIT = 8;
 const LIVE_PROCESSED_RUNS_STORAGE_KEY = "agentTeams.liveProcessedRuns";
 const TIMELINE_FALLBACK_RENDER_LIMIT = 8;
@@ -251,6 +251,7 @@ export function MessageTimeline({
     subagentScopeTaskId,
   );
   const scrollScopeKeyRef = useRef(scrollScopeKey);
+  const pendingScrollScopeRestoreRef = useRef<string | null>(null);
   const scrollSnapshotRef = useRef<TimelineScrollSnapshot | null>(null);
   const scrollSnapshotsByScopeRef = useRef(
     new Map<string, TimelineScrollSnapshot>(),
@@ -270,7 +271,6 @@ export function MessageTimeline({
   );
   const [newContentAvailable, setNewContentAvailable] = useState(false);
   const hydrationFrameRef = useRef<number | null>(null);
-  const liveRowMeasurementFrameRef = useRef<number | null>(null);
   const hydratedOverscanRowsRef = useRef({
     rowKeys: new Set<string>(),
     scopeKey: scrollScopeKey,
@@ -860,16 +860,6 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
     ? virtualizer.getTotalSize()
     : fallbackTotalSize(rows);
   const resizeTimelineRow = virtualizer.resizeItem;
-  const liveRowMeasurementSignature = renderedVirtualItems
-    .map((virtualItem) => rows[virtualItem.index])
-    .filter((row): row is TimelineRow => row !== undefined)
-    .filter((row) => row.source === "runtime")
-    .map((row) => [
-      row.key,
-      timelineRowContentLength(row),
-      timelineRowHasStreamingContent(row) ? "streaming" : "settled",
-    ].join(":"))
-    .join("|");
   const immediateHydrationRowKeys = immediateTimelineHydrationRowKeys({
     alwaysHydrate: (row) => row.roundMarker !== null,
     anchorRowKey: scrollSnapshotRef.current?.anchor?.rowKey ?? null,
@@ -888,6 +878,20 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
       !hydratedOverscanRowsRef.current.rowKeys.has(rowKey)
     );
   const deferredHydrationSignature = deferredHydrationRowKeys.join("|");
+  const captureCurrentTimelineScrollSnapshot = useCallback((
+    container: HTMLElement,
+    forceAnchor = false,
+    preferAnchor = false,
+  ) => captureTimelineScrollSnapshot(
+    container,
+    forceAnchor,
+    preferAnchor,
+    timelineScrollAnchorFromVirtualItems(
+      scrollMetric(container.scrollTop),
+      renderedVirtualItems,
+      rows,
+    ),
+  ), [renderedVirtualItems, rows]);
   const hydrateCurrentViewportRows = useCallback((container: HTMLElement) => {
     const rowKeys = immediateTimelineHydrationRowKeys({
       alwaysHydrate: (row: TimelineRow) => row.roundMarker !== null,
@@ -919,9 +923,6 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
     if (!visible || timelineContainerIsHidden(container)) {
       return;
     }
-    if (isProgrammaticTimelineScrollEvent(event.nativeEvent)) {
-      return;
-    }
     if (event.nativeEvent.isTrusted) {
       if (
         consumePendingProgrammaticTimelineScroll(
@@ -936,10 +937,7 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
       pendingProgrammaticScrollRef.current = null;
     }
     if (container === parentRef.current) {
-      const snapshot = captureTimelineScrollSnapshot(
-        container,
-        timelineUserScrollRequiresTransientAnchor(container),
-      );
+      const snapshot = captureCurrentTimelineScrollSnapshot(container);
       scrollSnapshotRef.current = snapshot;
       rememberTimelineScopeValue(
         scrollSnapshotsByScopeRef.current,
@@ -952,7 +950,7 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
       syncActiveRunIdFromViewport(container, pendingRoundRunIdRef, setActiveRunId);
       hydrateCurrentViewportRows(container);
     }
-  }, [hydrateCurrentViewportRows, scrollScopeKey, visible]);
+  }, [captureCurrentTimelineScrollSnapshot, hydrateCurrentViewportRows, scrollScopeKey, visible]);
   const handleTimelinePointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
     const target = event.target;
     if (!(target instanceof Element)) {
@@ -967,13 +965,13 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
     }
     const container = parentRef.current;
     if (container !== null) {
-      scrollSnapshotRef.current = captureTimelineScrollSnapshot(
+      scrollSnapshotRef.current = captureCurrentTimelineScrollSnapshot(
         container,
         true,
         true,
       );
     }
-  }, []);
+  }, [captureCurrentTimelineScrollSnapshot]);
   const handleRoundSelect = useCallback((runId: string) => {
     pendingRoundRunIdRef.current = runId;
     setActiveRunId(runId);
@@ -992,10 +990,9 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
       scrollTop: syncTimelineScrollPosition(
         container,
         timelineMaxScrollTop(container),
-        scrollScopeKey,
       ),
     };
-    const snapshot = captureTimelineScrollSnapshot(container);
+    const snapshot = captureCurrentTimelineScrollSnapshot(container);
     scrollSnapshotRef.current = snapshot;
     rememberTimelineScopeValue(
       scrollSnapshotsByScopeRef.current,
@@ -1003,7 +1000,7 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
       snapshot,
     );
     setNewContentAvailable(false);
-  }, [scrollScopeKey]);
+  }, [captureCurrentTimelineScrollSnapshot, scrollScopeKey]);
   const handleToggleHistorySegment = useCallback((segmentId: string) => {
     setExpandedHistorySegmentIds((current) => {
       const next = new Set(current);
@@ -1037,7 +1034,7 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
     if (row === null) {
       return;
     }
-    window.requestAnimationFrame(() => virtualizer.measureElement(row));
+    virtualizer.measureElement(row);
   }, [virtualizer]);
   const renderVirtualRow = useCallback<TimelineVirtualRowRenderer<TimelineRow>>(
     (row, index, start, measureElement, contentReady) => timelineRowElement(
@@ -1128,10 +1125,11 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
     if (parentRef.current !== null) {
       setHydrationRevision((revision) => revision + 1);
     }
-  }, [rows.length > 0, scrollScopeKey]);
+  }, [rows.length > 0]);
 
   useLayoutEffect(() => {
-    if (scrollScopeKeyRef.current !== scrollScopeKey) {
+    const scopeChanged = scrollScopeKeyRef.current !== scrollScopeKey;
+    if (scopeChanged) {
       scrollScopeKeyRef.current = scrollScopeKey;
       if (pendingProgrammaticScrollRef.current?.scopeKey !== scrollScopeKey) {
         pendingProgrammaticScrollRef.current = null;
@@ -1149,6 +1147,30 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
       return;
     }
     const snapshot = scrollSnapshotRef.current;
+    const restoredAnchorRowKey = snapshot?.anchor?.rowKey ?? null;
+    const restoredAnchorReady = restoredAnchorRowKey === null ||
+      rows.some((row) => row.key === restoredAnchorRowKey);
+    const restoredOffsetReady = snapshot === null ||
+      snapshot.shouldFollow ||
+      timelineMaxScrollTop(container) + TIMELINE_SCROLL_TOLERANCE >= snapshot.scrollTop;
+    if (
+      scopeChanged &&
+      (!restoredAnchorReady || !restoredOffsetReady)
+    ) {
+      pendingScrollScopeRestoreRef.current = scrollScopeKey;
+    }
+    let scopeRestorePending =
+      pendingScrollScopeRestoreRef.current === scrollScopeKey;
+    let scopeRestoreBecameReady = false;
+    if (
+      scopeRestorePending &&
+      restoredAnchorReady &&
+      restoredOffsetReady
+    ) {
+      pendingScrollScopeRestoreRef.current = null;
+      scopeRestorePending = false;
+      scopeRestoreBecameReady = true;
+    }
     const previousContentSignature =
       contentSignaturesByScrollScopeRef.current.get(scrollScopeKey);
     const nextContentSignature = timelineContentSignature(rows);
@@ -1171,79 +1193,56 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
     ) {
       setNewContentAvailable(true);
     }
-    pendingProgrammaticScrollRef.current = {
-      scopeKey: scrollScopeKey,
-      scrollTop: syncTimelineScrollPosition(
-        container,
-        snapshot === null
-          ? timelineMaxScrollTop(container)
-          : timelineScrollTopForSnapshot(
-              container,
-              snapshot,
-              rows,
-              snapshot.preferAnchor || (contentChanged && !contentAppended),
-            ),
-        scrollScopeKey,
-      ),
-    };
-    scrollSnapshotRef.current = captureTimelineScrollSnapshot(
-      container,
-      snapshot?.shouldFollow === false,
-      false,
-    );
+    const shouldWriteScrollPosition = scopeChanged || scopeRestoreBecameReady || snapshot === null ||
+      snapshot.shouldFollow || snapshot.preferAnchor ||
+      (contentChanged && !contentAppended);
+    if (shouldWriteScrollPosition) {
+      pendingProgrammaticScrollRef.current = {
+        scopeKey: scrollScopeKey,
+        scrollTop: syncTimelineScrollPosition(
+          container,
+          snapshot === null
+            ? timelineMaxScrollTop(container)
+            : timelineScrollTopForSnapshot(
+                container,
+                snapshot,
+                rows,
+                !scopeChanged &&
+                  !scopeRestorePending &&
+                  (snapshot.preferAnchor || (contentChanged && !contentAppended)),
+              ),
+        ),
+      };
+      scrollSnapshotRef.current = snapshot?.shouldFollow === false
+        ? {
+            ...snapshot,
+            preferAnchor: false,
+            scrollTop: scrollMetric(container.scrollTop),
+          }
+        : captureCurrentTimelineScrollSnapshot(container);
+    }
     rememberTimelineScopeValue(
       scrollSnapshotsByScopeRef.current,
       scrollScopeKey,
       scrollSnapshotRef.current,
     );
-    rememberTimelineScopeValue(
-      contentSignaturesByScrollScopeRef.current,
-      scrollScopeKey,
-      nextContentSignature,
-    );
+    if (!scopeRestorePending) {
+      rememberTimelineScopeValue(
+        contentSignaturesByScrollScopeRef.current,
+        scrollScopeKey,
+        nextContentSignature,
+      );
+    }
     syncActiveRunIdFromViewport(container, pendingRoundRunIdRef, setActiveRunId);
     hydrateCurrentViewportRows(container);
   }, [
+    captureCurrentTimelineScrollSnapshot,
     hydrateCurrentViewportRows,
     rows,
     scrollScopeKey,
     timelineHeight,
     visible,
   ]);
-
-  useEffect(() => {
-    if (liveRowMeasurementSignature.length === 0) {
-      return;
-    }
-    liveRowMeasurementFrameRef.current = window.requestAnimationFrame(() => {
-      liveRowMeasurementFrameRef.current = null;
-      const container = parentRef.current;
-      if (
-        !visible ||
-        container === null ||
-        timelineContainerIsHidden(container)
-      ) {
-        return;
-      }
-      for (const row of container.querySelectorAll<HTMLElement>(
-        [
-          '.at-timeline-row.is-runtime[data-index][data-row-key]',
-          '.at-processed-group-row[data-index][data-row-key][data-run-id]',
-        ].join(","),
-      )) {
-        const index = Number(row.dataset.index);
-        if (Number.isInteger(index) && index >= 0) {
-          resizeTimelineRow(index, row.offsetHeight);
-        }
-      }
-    });
-    return () => {
-      if (liveRowMeasurementFrameRef.current !== null) {
-        window.cancelAnimationFrame(liveRowMeasurementFrameRef.current);
-        liveRowMeasurementFrameRef.current = null;
-      }
-    };
-  }, [liveRowMeasurementSignature, resizeTimelineRow, scrollScopeKey, visible]);
 
   if (sessionId === null) {
     return (
@@ -1740,11 +1739,12 @@ function captureTimelineScrollSnapshot(
   container: HTMLElement,
   forceAnchor = false,
   preferAnchor = false,
+  anchor: TimelineScrollAnchor | null = null,
 ): TimelineScrollSnapshot {
   const scrollTop = scrollMetric(container.scrollTop);
   const shouldFollow = !forceAnchor && isTimelineNearBottom(container);
   return {
-    anchor: shouldFollow ? null : captureTimelineScrollAnchor(container, scrollTop),
+    anchor: shouldFollow ? null : anchor,
     preferAnchor,
     scrollTop,
     shouldFollow,
@@ -1765,30 +1765,6 @@ function timelineScrollTopForSnapshot(
   }
   const anchoredScrollTop = timelineAnchorScrollTop(container, snapshot, rows);
   return clampScrollTop(container, anchoredScrollTop);
-}
-
-function captureTimelineScrollAnchor(
-  container: HTMLElement,
-  scrollTop: number,
-): TimelineScrollAnchor | null {
-  const rows = Array.from(
-    container.querySelectorAll<HTMLElement>(".at-timeline-row[data-row-key]"),
-  );
-  for (const row of rows) {
-    const rowKey = row.dataset.rowKey;
-    if (rowKey === undefined) {
-      continue;
-    }
-    const rowTop = timelineRowTop(row);
-    const rowBottom = rowTop + timelineRowHeight(row);
-    if (rowBottom >= scrollTop) {
-      return {
-        offset: scrollTop - rowTop,
-        rowKey,
-      };
-    }
-  }
-  return null;
 }
 
 function timelineAnchorScrollTop(
@@ -1824,37 +1800,42 @@ function findTimelineAnchorRow(
   container: HTMLElement,
   rowKey: string,
 ): HTMLElement | null {
-  const rows = Array.from(
-    container.querySelectorAll<HTMLElement>(".at-timeline-row[data-row-key]"),
+  const escapedRowKey = rowKey
+    .replaceAll("\\", "\\\\")
+    .replaceAll('"', '\\"');
+  return container.querySelector<HTMLElement>(
+    `.at-timeline-row[data-row-key="${escapedRowKey}"]`,
   );
-  return rows.find((row) => row.dataset.rowKey === rowKey) ?? null;
 }
 
 function syncTimelineScrollPosition(
   container: HTMLElement,
   scrollTop: number,
-  scopeKey: string,
 ): number {
   const nextScrollTop = clampScrollTop(container, scrollTop);
   container.scrollTop = nextScrollTop;
-  const ownerWindow = container.ownerDocument.defaultView;
-  ownerWindow?.setTimeout(() => {
-    container.dispatchEvent(new ownerWindow.CustomEvent("scroll", {
-      detail: {
-        timelineProgrammatic: true,
-        timelineScopeKey: scopeKey,
-        timelineScrollTop: nextScrollTop,
-      },
-    }));
-  }, 0);
   return nextScrollTop;
 }
 
-function isProgrammaticTimelineScrollEvent(event: Event): boolean {
-  const detail = (event as CustomEvent<unknown>).detail;
-  return typeof detail === "object" &&
-    detail !== null &&
-    (detail as { timelineProgrammatic?: unknown }).timelineProgrammatic === true;
+function timelineScrollAnchorFromVirtualItems(
+  scrollTop: number,
+  virtualItems: readonly { index: number; size?: number; start: number }[],
+  rows: TimelineRow[],
+): TimelineScrollAnchor | null {
+  for (const virtualItem of virtualItems) {
+    const row = rows[virtualItem.index];
+    if (row === undefined) {
+      continue;
+    }
+    const size = virtualItem.size ?? estimateRowSize(row);
+    if (virtualItem.start + size >= scrollTop) {
+      return {
+        offset: scrollTop - virtualItem.start,
+        rowKey: row.key,
+      };
+    }
+  }
+  return null;
 }
 
 function consumePendingProgrammaticTimelineScroll(
@@ -1874,24 +1855,6 @@ function consumePendingProgrammaticTimelineScroll(
 function isTimelineNearBottom(container: HTMLElement): boolean {
   return timelineMaxScrollTop(container) - scrollMetric(container.scrollTop)
     <= TIMELINE_BOTTOM_FOLLOW_THRESHOLD_PX;
-}
-
-function timelineUserScrollRequiresTransientAnchor(
-  container: HTMLElement,
-): boolean {
-  if (timelineMaxScrollTop(container) - scrollMetric(container.scrollTop) <= 1) {
-    return false;
-  }
-  const virtualHost = container.querySelector<HTMLElement>(
-    ".at-timeline-virtual",
-  );
-  if (virtualHost === null) {
-    return false;
-  }
-  const hostHeight = scrollMetric(Number.parseFloat(virtualHost.style.height));
-  return Array.from(
-    container.querySelectorAll<HTMLElement>(".at-timeline-row[data-row-key]"),
-  ).some((row) => timelineRowTop(row) + timelineRowHeight(row) > hostHeight + 1);
 }
 
 function clampScrollTop(container: HTMLElement, scrollTop: number): number {
@@ -1914,14 +1877,6 @@ function timelineRowTop(row: HTMLElement): number {
     ? scrollMetric(virtualHost.offsetTop)
     : 0;
   return hostTop + translateY(row.style.transform);
-}
-
-function timelineRowHeight(row: HTMLElement): number {
-  const offsetHeight = scrollMetric(row.offsetHeight);
-  if (offsetHeight > 0) {
-    return offsetHeight;
-  }
-  return scrollMetric(row.getBoundingClientRect().height);
 }
 
 function translateY(transform: string): number {
@@ -2045,21 +2000,6 @@ function timelineRowElement(
           index={row.roundMarker.index}
           onPromptOpenChange={(expanded) =>
             onDisclosureChange(disclosureId, expanded)}
-          onPromptToggle={(event) => {
-            const markerRow = event.currentTarget.closest<HTMLElement>(
-              ".at-timeline-row[data-row-key]",
-            );
-            const timeline = markerRow?.closest<HTMLElement>(".at-timeline") ?? null;
-            if (markerRow !== null && timeline !== null) {
-              const viewportOffset = timelineRowTop(markerRow) - timeline.scrollTop;
-              window.requestAnimationFrame(() => {
-                measureElement(markerRow);
-                window.requestAnimationFrame(() => {
-                  timeline.scrollTop = timelineRowTop(markerRow) - viewportOffset;
-                });
-              });
-            }
-          }}
           promptOpen={expandedDisclosureIds.has(disclosureId)}
           round={row.roundMarker.round}
           t={t}
@@ -2168,18 +2108,6 @@ function ProcessedGroupRow({
   style: { transform: string };
   t: Translate;
 }) {
-  const rowRef = useRef<HTMLElement | null>(null);
-  const setRowRef = useCallback((element: HTMLElement | null) => {
-    rowRef.current = element;
-    measureElement(element);
-  }, [measureElement]);
-  const handleToggle = useCallback(() => {
-    const element = rowRef.current;
-    if (element === null) {
-      return;
-    }
-    window.requestAnimationFrame(() => measureElement(element));
-  }, [measureElement]);
   const GroupItem = group.continuity ? "article" : "div";
   return (
     <section
@@ -2187,7 +2115,7 @@ function ProcessedGroupRow({
       data-index={index}
       data-row-key={rowKey}
       data-run-id={runId ?? undefined}
-      ref={setRowRef}
+      ref={measureElement}
       style={style}
     >
       {contentReady ? <TimelineDisclosure
@@ -2195,10 +2123,7 @@ function ProcessedGroupRow({
         disclosureId={`processed:${runId ?? rowKey}`}
         expanded={expanded}
         onExpandedChange={onDisclosureChange}
-        onToggle={(event) => {
-          handleToggle();
-          onDisclosureToggle(event);
-        }}
+        onToggle={onDisclosureToggle}
       >
         <summary className="at-processed-group-summary">
           <span className="at-processed-group-toggle" aria-hidden="true">{">"}</span>
@@ -8669,10 +8594,18 @@ function MessageText({
     : "";
   const containerRef = useRef<HTMLDivElement | null>(null);
   const wasStreamingRef = useRef(part.streaming);
+  const terminalSnapshotRef = useRef({
+    light: false,
+    runId,
+    settled: false,
+  });
   useLayoutEffect(() => {
+    if (terminalSnapshotRef.current.runId !== runId) {
+      terminalSnapshotRef.current = { light: false, runId, settled: false };
+    }
     const wasStreaming = wasStreamingRef.current;
     wasStreamingRef.current = part.streaming;
-    if (!wasStreaming || part.streaming || runId === null) {
+    if (runId === null || terminalEntry === null) {
       return;
     }
     const terminalEventType = useRuntimeStore
@@ -8683,15 +8616,22 @@ function MessageText({
       return;
     }
     try {
+      if (!terminalSnapshotRef.current.light) {
+        terminalSnapshotRef.current.light = true;
+        recordTerminalDomSnapshot(containerRef.current, runId, "light");
+      }
+      if (!wasStreaming || part.streaming || terminalSnapshotRef.current.settled) {
+        return;
+      }
+      terminalSnapshotRef.current.settled = true;
       globalThis.performance?.mark(
         `agent-teams:terminal:settled-dom:${runId}:${status}`,
       );
-      stabilizeTerminalDomLayout(containerRef.current, runId);
       recordTerminalDomSnapshot(containerRef.current, runId, "settled");
     } catch {
       // Performance instrumentation must never affect message rendering.
     }
-  }, [part.streaming, runId]);
+  }, [part.streaming, runId, terminalEntry]);
   return (
     <div
       className={[

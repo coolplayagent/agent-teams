@@ -11,7 +11,6 @@ import {
   roundStatusDisplayLabel,
   roundSummary,
 } from "./roundMetadata";
-import { recordTerminalDomSnapshot } from "./terminalDomSnapshot";
 import "./RoundMarker.css";
 
 interface RoundMarkerProps {
@@ -75,7 +74,6 @@ export function RoundMarker({
       globalThis.performance?.mark(
         `agent-teams:terminal:dom:${round.run_id}:${normalizedStatus}`,
       );
-      recordTerminalDomSnapshot(containerRef.current, round.run_id, "light");
     } catch {
       // Performance instrumentation must never affect marker rendering.
     }

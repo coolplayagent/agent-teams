@@ -78,9 +78,10 @@ describe("MessageTimeline", () => {
     const { container } = render(
       <div className="at-timeline">
         <article className="at-message" data-run-id="run-snapshot">
-          <div className="at-message-text">stable final text</div>
+          <div className="at-message-text" data-testid="snapshot-anchor">
+            stable final text
+          </div>
         </article>
-        <div data-testid="snapshot-anchor" />
       </div>,
     );
     const timeline = container.querySelector<HTMLElement>(".at-timeline");
@@ -103,6 +104,8 @@ describe("MessageTimeline", () => {
       textHash: snapshots[0]?.textHash,
       textLength: snapshots[0]?.textLength,
     });
+    const messageRow = anchor.closest<HTMLElement>(".at-message");
+    expect(messageRow?.style.minHeight).toBe("");
   });
 
   it("does not hydrate or poll a retained hidden timeline", async () => {
@@ -15003,8 +15006,16 @@ describe("MessageTimeline", () => {
 
       const { container } = renderTimeline();
 
-      expect(await screen.findByText("Hydration message 20")).toBeVisible();
+      await waitFor(() => {
+        const currentTimeline = timelineElement(container);
+        expect(currentTimeline).toHaveAttribute("data-total-row-count", "20");
+        expect(currentTimeline.scrollTop).toBe(timelineMaxScrollTop(currentTimeline));
+      });
       const timeline = timelineElement(container);
+      // Browsers emit a native scroll event for a programmatic scrollTop update;
+      // jsdom does not, so notify the virtualizer without production-side events.
+      fireEvent.scroll(timeline);
+      expect(await screen.findByText("Hydration message 20")).toBeVisible();
       await waitFor(() =>
         expect(timeline.scrollTop).toBe(timelineMaxScrollTop(timeline)),
       );
@@ -15095,6 +15106,7 @@ describe("MessageTimeline", () => {
       },
     });
     const restoreRects = mockTimelineRects();
+    const restoreResizeObserver = mockTimelineRowResizeObserver();
     const streamingEntries = (count: number) =>
       Array.from({ length: count }, (_, index) => runtimeTextDeltaEntry({
         eventId: index + 1,
@@ -15153,6 +15165,7 @@ describe("MessageTimeline", () => {
       });
       expect(timeline.scrollTop).toBe(awayFromBottom);
     } finally {
+      restoreResizeObserver();
       restoreRects();
       restoreMeasurements();
     }
@@ -15199,12 +15212,18 @@ describe("MessageTimeline", () => {
       const { container } = render(<SessionScrollHarness />);
       expect(await screen.findByText("session-1 history 8")).toBeVisible();
       const sessionOneTimeline = timelineElement(container);
+      await waitFor(() =>
+        expect(timelineMaxScrollTop(sessionOneTimeline)).toBeGreaterThanOrEqual(480),
+      );
       sessionOneTimeline.scrollTop = 120;
       fireEvent.scroll(sessionOneTimeline);
 
       fireEvent.click(screen.getByRole("button", { name: "Scroll session 2" }));
       expect(await screen.findByText("session-2 history 8")).toBeVisible();
       const sessionTwoTimeline = timelineElement(container);
+      await waitFor(() =>
+        expect(timelineMaxScrollTop(sessionTwoTimeline)).toBeGreaterThanOrEqual(480),
+      );
       sessionTwoTimeline.scrollTop = 360;
       fireEvent.scroll(sessionTwoTimeline);
 
@@ -15949,6 +15968,53 @@ function mockElementMeasurements(
     restoreProperty(HTMLElement.prototype, "scrollHeight", scrollHeightDescriptor);
     restoreProperty(HTMLElement.prototype, "offsetWidth", widthDescriptor);
   };
+}
+
+function mockTimelineRowResizeObserver(): () => void {
+  const resizeObserverDescriptor = Object.getOwnPropertyDescriptor(
+    globalThis,
+    "ResizeObserver",
+  );
+  class TestResizeObserver {
+    private readonly mutationObservers: MutationObserver[] = [];
+
+    constructor(private readonly callback: ResizeObserverCallback) {}
+
+    disconnect(): void {
+      for (const observer of this.mutationObservers) {
+        observer.disconnect();
+      }
+      this.mutationObservers.length = 0;
+    }
+
+    observe(target: Element): void {
+      if (!(target instanceof HTMLElement) || !target.matches(".at-message")) {
+        return;
+      }
+      const emit = () => this.callback([{
+        borderBoxSize: [{ blockSize: target.offsetHeight, inlineSize: target.offsetWidth }],
+        contentBoxSize: [{ blockSize: target.offsetHeight, inlineSize: target.offsetWidth }],
+        contentRect: domRect(0, 0, target.offsetWidth, target.offsetHeight),
+        devicePixelContentBoxSize: [],
+        target,
+      } as unknown as ResizeObserverEntry], this as unknown as ResizeObserver);
+      emit();
+      const observer = new MutationObserver(emit);
+      observer.observe(target, {
+        characterData: true,
+        childList: true,
+        subtree: true,
+      });
+      this.mutationObservers.push(observer);
+    }
+
+    unobserve(): void {}
+  }
+  Object.defineProperty(globalThis, "ResizeObserver", {
+    configurable: true,
+    value: TestResizeObserver,
+  });
+  return () => restoreProperty(globalThis, "ResizeObserver", resizeObserverDescriptor);
 }
 
 function mockTimelineRects(): () => void {

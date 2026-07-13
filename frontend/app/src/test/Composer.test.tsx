@@ -31,7 +31,6 @@ import {
   createSpeechSttWebSocketUrl,
   fetchSpeechConfig,
 } from "../api/speech";
-import { resetFeedbackMessageDedupeForTests } from "../components/feedbackMessages";
 import { Composer } from "../features/composer/Composer";
 import type {
   RecoverySnapshot,
@@ -180,7 +179,6 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   restoreVoiceRuntime();
-  resetFeedbackMessageDedupeForTests();
   vi.clearAllMocks();
   localStorage.clear();
   useUiStore.setState({ language: "en" });

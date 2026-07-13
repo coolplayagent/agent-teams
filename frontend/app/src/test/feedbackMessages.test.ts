@@ -1,7 +1,6 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
-  resetFeedbackMessageDedupeForTests,
   showFeedbackMessage,
   type FeedbackMessenger,
 } from "../components/feedbackMessages";
@@ -14,10 +13,6 @@ function createMessenger(): FeedbackMessenger {
     warning: vi.fn(),
   };
 }
-
-afterEach(() => {
-  resetFeedbackMessageDedupeForTests();
-});
 
 describe("feedbackMessages", () => {
   it("suppresses repeated messages for the same dedupe key", () => {

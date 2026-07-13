@@ -1,14 +1,23 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError, requestJson, resetHttpRequestStateForTests } from "../api/http";
-import {
-  flushFrontendLogs,
-  resetFrontendLoggerForTests,
-} from "../runtime/frontendLogger";
+import type { ApiError } from "../api/http";
 
-afterEach(() => {
-  resetHttpRequestStateForTests();
-  resetFrontendLoggerForTests();
+type FrontendLoggerModule = typeof import("../runtime/frontendLogger");
+type HttpModule = typeof import("../api/http");
+
+let frontendLogger: FrontendLoggerModule;
+let http: HttpModule;
+
+beforeEach(async () => {
+  vi.resetModules();
+  [frontendLogger, http] = await Promise.all([
+    import("../runtime/frontendLogger"),
+    import("../api/http"),
+  ]);
+});
+
+afterEach(async () => {
+  await frontendLogger.flushFrontendLogs();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -22,9 +31,9 @@ describe("api http request helper", () => {
       );
     vi.stubGlobal("fetch", fetchMock);
 
-    await requestJson("/sessions");
-    await requestJson("/sessions", { method: "HEAD" });
-    await requestJson("/sessions", { cache: "reload" });
+    await http.requestJson("/sessions");
+    await http.requestJson("/sessions", { method: "HEAD" });
+    await http.requestJson("/sessions", { cache: "reload" });
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
@@ -60,7 +69,7 @@ describe("api http request helper", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(
-      requestJson("/sessions", {
+      http.requestJson("/sessions", {
         body: JSON.stringify({ title: "Hello" }),
         method: "POST",
       }),
@@ -70,7 +79,7 @@ describe("api http request helper", () => {
       payload: { detail: "busy" },
       status: 503,
     } satisfies Partial<ApiError>);
-    await flushFrontendLogs();
+    await frontendLogger.flushFrontendLogs();
 
     const requestInit = capturedRequestInit(fetchMock, 0);
     const headers = requestInit.headers;
@@ -113,7 +122,7 @@ describe("api http request helper", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(
-      requestJson("/system/configs/hooks:validate", { method: "POST" }),
+      http.requestJson("/system/configs/hooks:validate", { method: "POST" }),
     ).rejects.toMatchObject({
       detail: "hooks.PreToolUse.0.hooks.0.command: Field required",
       message: "hooks.PreToolUse.0.hooks.0.command: Field required",
@@ -127,10 +136,10 @@ describe("api http request helper", () => {
     const fetchMock = vi.fn().mockRejectedValue(new DOMException("aborted", "AbortError"));
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(requestJson("/sessions")).rejects.toMatchObject({
+    await expect(http.requestJson("/sessions")).rejects.toMatchObject({
       name: "AbortError",
     });
-    await flushFrontendLogs();
+    await frontendLogger.flushFrontendLogs();
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(hints.values).toEqual([]);
@@ -147,9 +156,9 @@ describe("api http request helper", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(requestJson("/sessions")).rejects.toThrow("network down");
-    await expect(requestJson("/roles")).rejects.toThrow("network down");
-    await flushFrontendLogs();
+    await expect(http.requestJson("/sessions")).rejects.toThrow("network down");
+    await expect(http.requestJson("/roles")).rejects.toThrow("network down");
+    await frontendLogger.flushFrontendLogs();
 
     expect(hints.values).toEqual(["offline"]);
     const batch = capturedLogBatch(fetchMock, 2);

@@ -1,17 +1,20 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  flushFrontendLogs,
-  installGlobalErrorLogging,
-  logError,
-  logInfo,
-  resetFrontendLoggerForTests,
-  setFrontendLogContext,
-  sysLog,
-} from "../runtime/frontendLogger";
+type FrontendLoggerModule = typeof import("../runtime/frontendLogger");
 
-afterEach(() => {
-  resetFrontendLoggerForTests();
+let frontendLogger: FrontendLoggerModule;
+let uninstallGlobalLogging: (() => void) | null = null;
+
+beforeEach(async () => {
+  vi.resetModules();
+  window.sessionStorage.clear();
+  frontendLogger = await import("../runtime/frontendLogger");
+});
+
+afterEach(async () => {
+  uninstallGlobalLogging?.();
+  uninstallGlobalLogging = null;
+  await frontendLogger.flushFrontendLogs();
   vi.restoreAllMocks();
   window.history.replaceState(null, "", "/");
 });
@@ -21,10 +24,10 @@ describe("frontendLogger", () => {
     const fetchMock = mockFetch();
     window.history.replaceState(null, "", "/");
 
-    logError("frontend.test.failure", "frontend failed", {
+    frontendLogger.logError("frontend.test.failure", "frontend failed", {
       component: "composer",
     });
-    await flushFrontendLogs();
+    await frontendLogger.flushFrontendLogs();
 
     const batch = capturedBatch(fetchMock);
     expect(batch.events).toHaveLength(1);
@@ -41,10 +44,10 @@ describe("frontendLogger", () => {
 
   it("keeps run context nullable when no active run is known", async () => {
     const fetchMock = mockFetch();
-    setFrontendLogContext({ runId: null, sessionId: "session-ui" });
+    frontendLogger.setFrontendLogContext({ runId: null, sessionId: "session-ui" });
 
-    logInfo("frontend.test.info", "frontend ok");
-    await flushFrontendLogs();
+    frontendLogger.logInfo("frontend.test.info", "frontend ok");
+    await frontendLogger.flushFrontendLogs();
 
     expect(capturedBatch(fetchMock).events[0]).toMatchObject({
       run_id: null,
@@ -62,7 +65,7 @@ describe("frontendLogger", () => {
     });
 
     for (let index = 0; index < 20; index += 1) {
-      logInfo("frontend.test.batch", `batch ${index}`);
+      frontendLogger.logInfo("frontend.test.batch", `batch ${index}`);
     }
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 
@@ -79,9 +82,9 @@ describe("frontendLogger", () => {
       warning: vi.fn(),
     };
 
-    sysLog("Session load failed", "log-error", messenger);
-    sysLog("Background sync complete");
-    await flushFrontendLogs();
+    frontendLogger.sysLog("Session load failed", "log-error", messenger);
+    frontendLogger.sysLog("Background sync complete");
+    await frontendLogger.flushFrontendLogs();
 
     expect(messenger.error).toHaveBeenCalledWith("Session load failed");
     expect(capturedBatch(fetchMock).events.map((event) => event.level)).toEqual([
@@ -97,10 +100,10 @@ describe("frontendLogger", () => {
       configurable: true,
       value: sendBeacon,
     });
-    setFrontendLogContext({ activeStreamCount: 1, runId: "run-ui" });
+    frontendLogger.setFrontendLogContext({ activeStreamCount: 1, runId: "run-ui" });
 
-    installGlobalErrorLogging();
-    logError("frontend.test.unload", "flush during unload");
+    uninstallGlobalLogging = frontendLogger.installGlobalErrorLogging();
+    frontendLogger.logError("frontend.test.unload", "flush during unload");
     window.dispatchEvent(new Event("beforeunload"));
 
     expect(sendBeacon).toHaveBeenCalledWith(

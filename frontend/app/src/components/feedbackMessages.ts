@@ -37,7 +37,3 @@ export function showFeedbackMessage(
   messenger[kind](content);
   return true;
 }
-
-export function resetFeedbackMessageDedupeForTests(): void {
-  dedupeExpiryByKey.clear();
-}

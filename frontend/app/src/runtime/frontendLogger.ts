@@ -136,27 +136,25 @@ export async function flushFrontendLogs(options: { keepalive?: boolean } = {}): 
   }
 }
 
-export function installGlobalErrorLogging(): void {
+export function installGlobalErrorLogging(): () => void {
   if (globalLoggingInstalled) {
-    return;
+    return uninstallGlobalErrorLogging;
   }
   window.addEventListener("error", handleWindowError);
   window.addEventListener("unhandledrejection", handleUnhandledRejection);
   window.addEventListener("beforeunload", handleBeforeUnload);
   globalLoggingInstalled = true;
+  return uninstallGlobalErrorLogging;
 }
 
-export function resetFrontendLoggerForTests(): void {
-  queuedEvents = [];
-  context = {};
-  clearFlushTimer();
-  if (globalLoggingInstalled) {
-    window.removeEventListener("error", handleWindowError);
-    window.removeEventListener("unhandledrejection", handleUnhandledRejection);
-    window.removeEventListener("beforeunload", handleBeforeUnload);
-    globalLoggingInstalled = false;
+function uninstallGlobalErrorLogging(): void {
+  if (!globalLoggingInstalled) {
+    return;
   }
-  window.sessionStorage.removeItem(browserSessionStorageKey);
+  window.removeEventListener("error", handleWindowError);
+  window.removeEventListener("unhandledrejection", handleUnhandledRejection);
+  window.removeEventListener("beforeunload", handleBeforeUnload);
+  globalLoggingInstalled = false;
 }
 
 function enqueueFrontendLog(

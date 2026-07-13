@@ -79,10 +79,6 @@ export async function requestJson<TResponse>(
   return payload as TResponse;
 }
 
-export function resetHttpRequestStateForTests(): void {
-  lastBackendStatusHint = null;
-}
-
 async function readJson(response: Response): Promise<JsonValue | null> {
   const text = await response.text();
   if (!text.trim()) {

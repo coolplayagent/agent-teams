@@ -6626,6 +6626,10 @@ body {
   outline: none;
 }
 
+.at-settings-mobile-navigation {
+  display: none;
+}
+
 .at-settings-content {
   min-width: 0;
   min-height: 0;
@@ -9138,22 +9142,22 @@ body {
     grid-template-rows: auto minmax(0, 1fr);
   }
 
-  .at-settings-nav {
-    align-items: center;
-    display: flex;
-    gap: 4px;
-    min-height: 0;
-    padding: 8px;
-    border-right: 0;
-    border-bottom: 1px solid var(--at-border);
-    overflow-x: auto;
-    overflow-y: hidden;
+  .at-settings-desktop-nav {
+    display: none;
   }
 
-  .at-settings-nav-item {
-    flex: 0 0 auto;
-    width: auto;
-    white-space: nowrap;
+  .at-settings-mobile-navigation {
+    display: block;
+    min-width: 0;
+    padding: 8px;
+    border-bottom: 1px solid var(--at-border);
+    background: var(--at-sidebar);
+  }
+
+  .at-settings-mobile-navigation .ant-select {
+    display: block;
+    width: 100%;
+    min-width: 0;
   }
 
   .at-settings-section-header {

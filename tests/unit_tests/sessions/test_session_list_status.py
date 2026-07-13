@@ -29,12 +29,15 @@ from relay_teams.agents.tasks.task_repository import TaskRepository
 from relay_teams.agents.tasks.enums import TaskStatus
 from relay_teams.providers.token_usage_repo import TokenUsageRepository
 from relay_teams.agents.tasks.models import TaskEnvelope, VerificationPlan
+from relay_teams.roles.role_models import RoleDefinition, SystemRoleIdentity
+from relay_teams.roles.role_registry import RoleRegistry
 
 
 def _build_service(
     db_path: Path,
     *,
     active_run_registry: ActiveSessionRunRegistry | None = None,
+    role_registry: RoleRegistry | None = None,
 ) -> SessionService:
     return SessionService(
         session_repo=SessionRepository(db_path),
@@ -47,7 +50,33 @@ def _build_service(
         run_event_hub=None,
         active_run_registry=active_run_registry,
         event_log=EventLog(db_path),
+        role_registry=role_registry,
     )
+
+
+def _build_system_role_registry() -> RoleRegistry:
+    registry = RoleRegistry()
+    registry.register(
+        RoleDefinition(
+            role_id="root-agent",
+            name="Root agent",
+            description="Runs normal-mode sessions.",
+            version="1",
+            system_role=SystemRoleIdentity.MAIN_AGENT,
+            system_prompt="Handle the user request.",
+        )
+    )
+    registry.register(
+        RoleDefinition(
+            role_id="orchestration-root",
+            name="Orchestration root",
+            description="Coordinates orchestration-mode sessions.",
+            version="1",
+            system_role=SystemRoleIdentity.COORDINATOR,
+            system_prompt="Coordinate delegated work.",
+        )
+    )
+    return registry
 
 
 def _seed_root_task(db_path: Path, *, run_id: str, session_id: str) -> None:
@@ -732,7 +761,10 @@ def test_list_sessions_counts_orchestration_subagents_by_role(
     tmp_path: Path,
 ) -> None:
     db_path = tmp_path / "session_orchestration_subagent_count.db"
-    service = _build_service(db_path)
+    service = _build_service(
+        db_path,
+        role_registry=_build_system_role_registry(),
+    )
     _ = service.create_session(
         session_id="session-orch",
         workspace_id="default",
@@ -747,7 +779,7 @@ def test_list_sessions_counts_orchestration_subagents_by_role(
         trace_id="run-orch",
         session_id="session-orch",
         instance_id="inst-coordinator",
-        role_id="Coordinator",
+        role_id="orchestration-root",
         workspace_id="default",
         status=InstanceStatus.RUNNING,
     )

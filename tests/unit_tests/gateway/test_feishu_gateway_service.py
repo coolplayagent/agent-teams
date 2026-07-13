@@ -23,7 +23,7 @@ from relay_teams.gateway.feishu.models import (
     FeishuTriggerTargetConfig,
 )
 from relay_teams.gateway.feishu.secret_store import FeishuTriggerSecretStore
-from relay_teams.roles.role_models import RoleDefinition
+from relay_teams.roles.role_models import RoleDefinition, SystemRoleIdentity
 from relay_teams.roles.role_registry import RoleRegistry
 from relay_teams.sessions.external_session_binding_repository import (
     ExternalSessionBindingRepository,
@@ -98,6 +98,7 @@ def _build_role_registry() -> RoleRegistry:
             name="Main Agent",
             description="Default role.",
             version="1",
+            system_role=SystemRoleIdentity.MAIN_AGENT,
             tools=(),
             system_prompt="You are Main Agent.",
         )
@@ -108,6 +109,7 @@ def _build_role_registry() -> RoleRegistry:
             name="Coordinator",
             description="Coordinates tasks.",
             version="1",
+            system_role=SystemRoleIdentity.COORDINATOR,
             tools=("orch_create_tasks", "orch_update_task", "orch_dispatch_task"),
             system_prompt="Coordinate work.",
         )

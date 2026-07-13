@@ -493,12 +493,14 @@ function SessionsSidebarView({
         filteredSessions,
         includeEmptyWorkspaces,
         workspaceSortMode,
+        t("sidebarUnassignedWorkspace"),
       ),
     [
       filteredSessions,
       includeEmptyWorkspaces,
       workspaceOptions,
       workspaceSortMode,
+      t,
     ],
   );
   const totalVisibleSessions = sessionGroups.reduce(
@@ -880,19 +882,26 @@ function SessionsSidebarView({
         ) : null}
         {!isChronologicalMode
           ? sessionGroups.map((group) => {
-              const workspaceRecord = workspaceById.get(group.id);
+              const workspaceId =
+                group.identity.kind === "workspace"
+                  ? group.identity.workspaceId
+                  : null;
+              const workspaceRecord =
+                workspaceId === null
+                  ? undefined
+                  : workspaceById.get(workspaceId);
               const groupExpanded =
-                isFiltering || workspaceExpanded[group.id] !== false;
+                isFiltering || workspaceExpanded[group.stateKey] !== false;
               const visibleSessions = visibleSessionsForGroup(
                 group,
                 selectedSessionId,
-                visibleSessionLimits[group.id],
+                visibleSessionLimits[group.stateKey],
                 isFiltering,
               );
               const hiddenSessionCount =
                 group.sessions.length - visibleSessions.length;
               return (
-                <section className="at-workspace-group" key={group.id}>
+                <section className="at-workspace-group" key={group.stateKey}>
                   <div
                     aria-expanded={groupExpanded}
                     aria-description={group.pathHint || undefined}
@@ -901,7 +910,7 @@ function SessionsSidebarView({
                       { label: group.label },
                     )}
                     className="at-workspace-group-header"
-                    data-workspace-id={group.id}
+                    data-workspace-id={workspaceId ?? undefined}
                     onClick={(event) => {
                       if (
                         (event.target as HTMLElement).closest(
@@ -910,12 +919,13 @@ function SessionsSidebarView({
                       ) {
                         return;
                       }
-                      toggleWorkspaceGroup(group.id);
+                      toggleWorkspaceGroup(group.stateKey);
                     }}
                     onKeyDown={(event) => {
                       if (
                         event.key === "Escape" &&
-                        deleteWorkspaceTarget?.workspace_id === group.id
+                        deleteWorkspaceTarget?.workspace_id ===
+                          workspaceId
                       ) {
                         event.preventDefault();
                         event.stopPropagation();
@@ -933,7 +943,7 @@ function SessionsSidebarView({
                         return;
                       }
                       event.preventDefault();
-                      toggleWorkspaceGroup(group.id);
+                      toggleWorkspaceGroup(group.stateKey);
                     }}
                     role="button"
                     tabIndex={0}
@@ -955,7 +965,8 @@ function SessionsSidebarView({
                       </span>
                     </Tooltip>
                     <div className="at-workspace-group-actions">
-                      {deleteWorkspaceTarget?.workspace_id === group.id ? (
+                      {deleteWorkspaceTarget?.workspace_id ===
+                      workspaceId ? (
                         <>
                           <Tooltip
                             title={t(
@@ -999,7 +1010,8 @@ function SessionsSidebarView({
                         </>
                       ) : (
                         <>
-                          {onOpenWorkspaceView !== undefined ? (
+                          {workspaceId !== null &&
+                          onOpenWorkspaceView !== undefined ? (
                             <Tooltip
                               title={t("sidebarOpenWorkspaceViewFor", {
                                 label: group.label,
@@ -1011,18 +1023,17 @@ function SessionsSidebarView({
                                 })}
                                 aria-pressed={
                                   workspaceViewActive &&
-                                  group.id === selectedWorkspaceId
+                                  workspaceId === selectedWorkspaceId
                                 }
                                 className={
                                   workspaceViewActive &&
-                                  group.id === selectedWorkspaceId
+                                  workspaceId === selectedWorkspaceId
                                     ? "is-active"
                                     : undefined
                                 }
-                                disabled={workspaceOptions.length === 0}
                                 icon={<FolderSearch size={14} />}
                                 onClick={() => {
-                                  setSelectedWorkspaceId(group.id);
+                                  setSelectedWorkspaceId(workspaceId);
                                   onOpenWorkspaceView();
                                 }}
                                 size="small"
@@ -1030,25 +1041,26 @@ function SessionsSidebarView({
                               />
                             </Tooltip>
                           ) : null}
-                          <Tooltip
-                            title={t("sidebarNewSessionInWorkspace", {
-                              label: group.label,
-                            })}
-                          >
-                            <Button
-                              aria-label={t("sidebarNewSessionInWorkspace", {
+                          {workspaceId !== null ? (
+                            <Tooltip
+                              title={t("sidebarNewSessionInWorkspace", {
                                 label: group.label,
                               })}
-                              disabled={!group.id.trim()}
-                              icon={<Plus size={14} />}
-                              loading={createSessionMutation.isPending}
-                              onClick={() =>
-                                createSessionMutation.mutate(group.id)
-                              }
-                              size="small"
-                              type="text"
-                            />
-                          </Tooltip>
+                            >
+                              <Button
+                                aria-label={t("sidebarNewSessionInWorkspace", {
+                                  label: group.label,
+                                })}
+                                icon={<Plus size={14} />}
+                                loading={createSessionMutation.isPending}
+                                onClick={() =>
+                                  createSessionMutation.mutate(workspaceId)
+                                }
+                                size="small"
+                                type="text"
+                              />
+                            </Tooltip>
+                          ) : null}
                           {workspaceRecord !== undefined ? (
                             <Tooltip
                               title={t("sidebarDeleteWorkspaceFor", {
@@ -1060,7 +1072,6 @@ function SessionsSidebarView({
                                   label: group.label,
                                 })}
                                 danger
-                                disabled={!group.id.trim()}
                                 icon={<Trash2 size={14} />}
                                 onClick={(event) =>
                                   openDeleteWorkspace(
@@ -1095,7 +1106,7 @@ function SessionsSidebarView({
                               label: group.label,
                             })}
                             className="at-workspace-group-more"
-                            onClick={() => showMoreSessions(group.id)}
+                            onClick={() => showMoreSessions(group.stateKey)}
                             type="button"
                           >
                             <ChevronDown aria-hidden="true" size={14} />
@@ -1413,12 +1424,17 @@ function SessionSubagentList({
 
 interface SessionGroup {
   createdAt: number;
-  id: string;
+  identity: SessionGroupIdentity;
   label: string;
   pathHint: string;
   sessions: SessionSidebarRecord[];
+  stateKey: string;
   updatedAt: number;
 }
+
+type SessionGroupIdentity =
+  | { kind: "unassigned" }
+  | { kind: "workspace"; workspaceId: string };
 
 function sessionLabel(session: SessionSidebarRecord): string {
   return sessionDisplayLabel(session, session.session_id);
@@ -1621,6 +1637,7 @@ function buildSessionGroups(
   sessions: SessionSidebarRecord[],
   includeEmptyWorkspaces: boolean,
   sortMode: WorkspaceSortMode,
+  unassignedWorkspaceLabel: string,
 ): SessionGroup[] {
   const groups = new Map<string, SessionGroup>();
   const workspaceById = new Map(
@@ -1628,36 +1645,51 @@ function buildSessionGroups(
   );
   if (includeEmptyWorkspaces) {
     workspaces.forEach((workspace) => {
-      groups.set(workspace.workspace_id, {
+      const identity: SessionGroupIdentity = {
+        kind: "workspace",
+        workspaceId: workspace.workspace_id,
+      };
+      const stateKey = sessionGroupStateKey(identity);
+      groups.set(stateKey, {
         createdAt: workspaceCreatedTimestampValue(workspace),
-        id: workspace.workspace_id,
+        identity,
         label: workspaceLabel(workspace),
         pathHint: workspace.root_path,
         sessions: [],
+        stateKey,
         updatedAt: workspaceUpdatedTimestampValue(workspace),
       });
     });
   }
   sessions.forEach((session) => {
-    const workspaceId = session.workspace_id?.trim() || "unknown";
-    const existing = groups.get(workspaceId);
-    const workspace = workspaceById.get(workspaceId);
+    const workspaceId = session.workspace_id?.trim() || null;
+    const identity: SessionGroupIdentity =
+      workspaceId === null
+        ? { kind: "unassigned" }
+        : { kind: "workspace", workspaceId };
+    const stateKey = sessionGroupStateKey(identity);
+    const existing = groups.get(stateKey);
+    const workspace =
+      workspaceId === null ? undefined : workspaceById.get(workspaceId);
     const group = existing ?? {
       createdAt:
         workspace === undefined ? 0 : workspaceCreatedTimestampValue(workspace),
-      id: workspaceId,
+      identity,
       label:
-        workspace === undefined
+        workspaceId === null
+          ? unassignedWorkspaceLabel
+          : workspace === undefined
           ? workspaceFallbackLabel(workspaceId)
           : workspaceLabel(workspace),
       pathHint: workspace?.root_path ?? "",
       sessions: [],
+      stateKey,
       updatedAt:
         workspace === undefined ? 0 : workspaceUpdatedTimestampValue(workspace),
     };
     group.sessions.push(session);
     group.updatedAt = Math.max(group.updatedAt, sessionTimestampValue(session));
-    groups.set(workspaceId, group);
+    groups.set(stateKey, group);
   });
   return Array.from(groups.values())
     .map((group) => {
@@ -1672,8 +1704,12 @@ function buildSessionGroups(
       (left, right) =>
         groupSortValue(right, sortMode) - groupSortValue(left, sortMode) ||
         left.label.localeCompare(right.label) ||
-        left.id.localeCompare(right.id),
+        left.stateKey.localeCompare(right.stateKey),
     );
+}
+
+function sessionGroupStateKey(identity: SessionGroupIdentity): string {
+  return JSON.stringify(identity);
 }
 
 function groupSortValue(

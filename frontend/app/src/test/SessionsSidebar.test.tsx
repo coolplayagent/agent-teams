@@ -1433,6 +1433,79 @@ describe("SessionsSidebar", () => {
     expect(useUiStore.getState().selectedWorkspaceId).toBe("workspace-2");
   });
 
+  it("keeps an unassigned group isolated from a workspace whose id is unknown", async () => {
+    listWorkspacesMock.mockResolvedValue([
+      {
+        workspace_id: "unknown",
+        root_path: "C:/work/literal-unknown",
+        display_name: "Workspace named unknown",
+      },
+    ]);
+    listSidebarSessionsMock.mockResolvedValue([
+      {
+        session_id: "session-assigned",
+        title: "Assigned session",
+        updated_at: "2026-06-23T10:00:00Z",
+        workspace_id: "unknown",
+      },
+      {
+        session_id: "session-unassigned",
+        title: "Unassigned session",
+        updated_at: "2026-06-23T11:00:00Z",
+      },
+    ]);
+
+    renderSidebar({ onOpenWorkspaceView: vi.fn() });
+
+    const assignedHeader = await screen.findByRole("button", {
+      name: "Collapse Workspace named unknown",
+    });
+    const unassignedHeader = screen.getByRole("button", {
+      name: "Collapse Unknown workspace",
+    });
+    const assignedDisclosure = screen
+      .getByText("Assigned session")
+      .closest(".at-workspace-group-disclosure");
+    const unassignedDisclosure = screen
+      .getByText("Unassigned session")
+      .closest(".at-workspace-group-disclosure");
+
+    expect(assignedHeader).toHaveAttribute("data-workspace-id", "unknown");
+    expect(unassignedHeader).not.toHaveAttribute("data-workspace-id");
+    expect(
+      screen.getByRole("button", {
+        name: "New session in Workspace named unknown",
+      }),
+    ).toBeEnabled();
+    expect(
+      screen.queryByRole("button", {
+        name: "New session in Unknown workspace",
+      }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(unassignedHeader);
+
+    expect(unassignedDisclosure).toHaveAttribute("data-open", "false");
+    expect(assignedDisclosure).toHaveAttribute("data-open", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Assigned session" }));
+    expect(useUiStore.getState()).toMatchObject({
+      selectedSessionId: "session-assigned",
+      selectedWorkspaceId: "unknown",
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Expand Unknown workspace" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Unassigned session" }),
+    );
+    expect(useUiStore.getState().selectedSessionId).toBe(
+      "session-unassigned",
+    );
+    expect(assignedDisclosure).toHaveAttribute("data-open", "true");
+  });
+
   it("filters sessions by workspace label without showing empty workspace groups", async () => {
     listWorkspacesMock.mockResolvedValue([
       {

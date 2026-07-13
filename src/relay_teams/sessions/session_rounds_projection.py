@@ -135,6 +135,16 @@ def build_session_rounds(
             }
         )
 
+    # A role can have multiple instances in one orchestration run. Keep the
+    # legacy role-to-instance projection root-biased; child tasks must never
+    # overwrite the primary instance used to project the main conversation.
+    for run_id, root_task in root_task_by_run.items():
+        envelope = getattr(root_task, "envelope", None)
+        role_id = getattr(envelope, "role_id", None)
+        instance_id = getattr(root_task, "assigned_instance_id", None)
+        if isinstance(role_id, str) and role_id and isinstance(instance_id, str) and instance_id:
+            role_instance_by_run[run_id][role_id] = instance_id
+
     messages_by_run: dict[str, list[dict[str, object]]] = defaultdict(list)
     for message in session_messages:
         run_id = str(message.get("trace_id") or "")
@@ -308,6 +318,7 @@ def build_session_rounds(
         ) or bool(intent_input_parts)
         coordinator_role_id = None
         coordinator_instance_id = None
+        coordinator_task_id = None
         if root_task is not None:
             envelope = getattr(root_task, "envelope", None)
             candidate_role_id = getattr(envelope, "role_id", None)
@@ -316,6 +327,9 @@ def build_session_rounds(
             candidate_instance_id = getattr(root_task, "assigned_instance_id", None)
             if isinstance(candidate_instance_id, str) and candidate_instance_id:
                 coordinator_instance_id = candidate_instance_id
+            candidate_task_id = getattr(envelope, "task_id", None)
+            if isinstance(candidate_task_id, str) and candidate_task_id:
+                coordinator_task_id = candidate_task_id
         if coordinator_instance_id is None and coordinator_role_id is not None:
             coordinator_instance_id = role_instance_by_run.get(run_id, {}).get(
                 coordinator_role_id
@@ -325,7 +339,10 @@ def build_session_rounds(
             for message in run_messages
             if (
                 projected := _round_coordinator_message_projection(
-                    message, coordinator_role_id
+                    message,
+                    coordinator_role_id,
+                    coordinator_instance_id,
+                    coordinator_task_id,
                 )
             )
             is not None
@@ -351,7 +368,7 @@ def build_session_rounds(
             run_id=run_id,
             root_task=root_task,
             coordinator_role_id=coordinator_role_id,
-            role_instance_map=role_instance_by_run.get(run_id, {}),
+            coordinator_instance_id=coordinator_instance_id,
             output_event=final_output_by_run.get(run_id),
         )
         created_at = _round_created_at(root_task, run_messages)
@@ -371,6 +388,8 @@ def build_session_rounds(
             "intent": _round_intent(root_task, run_messages, intent_parts=intent_parts),
             "intent_parts": intent_parts,
             "primary_role_id": coordinator_role_id,
+            "primary_instance_id": coordinator_instance_id,
+            "primary_task_id": coordinator_task_id,
             "coordinator_messages": coordinator_messages,
             "injection_messages": injection_messages_by_run.get(run_id, []),
             "retry_events": retry_events_by_run.get(run_id, []),
@@ -1346,14 +1365,14 @@ def _append_completed_output_message_if_missing(
     run_id: str,
     root_task: object | None,
     coordinator_role_id: str | None,
-    role_instance_map: dict[str, str],
+    coordinator_instance_id: str | None,
     output_event: dict[str, str] | None,
 ) -> list[dict[str, object]]:
     reconstructed = _reconstruct_completed_output_message(
         run_id=run_id,
         root_task=root_task,
         coordinator_role_id=coordinator_role_id,
-        role_instance_map=role_instance_map,
+        coordinator_instance_id=coordinator_instance_id,
         output_event=output_event,
     )
     if reconstructed is None:
@@ -1792,10 +1811,27 @@ def _intent_parts_to_text(intent_parts: list[dict[str, object]]) -> str | None:
 def _round_coordinator_message_projection(
     message: dict[str, object],
     coordinator_role_id: str | None,
+    coordinator_instance_id: str | None,
+    coordinator_task_id: str | None = None,
 ) -> dict[str, object] | None:
     if coordinator_role_id is None:
         return None
-    if str(message.get("role_id") or "") != coordinator_role_id:
+    role_id = str(message.get("agent_role_id") or message.get("role_id") or "")
+    if role_id != coordinator_role_id:
+        return None
+    instance_id = str(message.get("instance_id") or "")
+    task_id = str(message.get("task_id") or "")
+    if (
+        coordinator_instance_id is not None
+        and (
+            (instance_id and instance_id != coordinator_instance_id)
+            or (
+                not instance_id
+                and coordinator_task_id is not None
+                and task_id != coordinator_task_id
+            )
+        )
+    ):
         return None
     role = str(message.get("role") or "")
     if role != "user":
@@ -1858,7 +1894,7 @@ def _reconstruct_completed_output_message(
     run_id: str,
     root_task: object | None,
     coordinator_role_id: str | None,
-    role_instance_map: dict[str, str],
+    coordinator_instance_id: str | None,
     output_event: dict[str, str] | None,
 ) -> dict[str, object] | None:
     if output_event is None:
@@ -1872,9 +1908,7 @@ def _reconstruct_completed_output_message(
         candidate_task_id = getattr(envelope, "task_id", None)
         if isinstance(candidate_task_id, str):
             task_id = candidate_task_id
-    instance_id = ""
-    if coordinator_role_id is not None:
-        instance_id = str(role_instance_map.get(coordinator_role_id) or "")
+    instance_id = str(coordinator_instance_id or "")
     return {
         "conversation_id": "",
         "agent_role_id": coordinator_role_id or "",

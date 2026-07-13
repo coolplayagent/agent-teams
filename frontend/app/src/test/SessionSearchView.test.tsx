@@ -16,13 +16,13 @@ const sessions: SessionSidebarRecord[] = [
   {
     session_id: "session-alpha",
     workspace_id: "workspace-main",
-    title: "Alpha session",
+    metadata: { title: "Alpha session" },
     updated_at: "2026-06-23T10:00:00Z",
   },
   {
     session_id: "session-release",
     workspace_id: "workspace-desktop",
-    title: "Release notes",
+    metadata: { title: "Release notes" },
     updated_at: "2026-06-23T11:00:00Z",
   },
 ];

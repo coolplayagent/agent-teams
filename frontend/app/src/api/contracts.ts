@@ -1676,7 +1676,6 @@ export interface SessionSidebarRecord {
   session_id: string;
   workspace_id?: string;
   metadata?: Record<string, string | null | undefined>;
-  title?: string;
   session_mode?: SessionMode;
   updated_at?: string;
   active_run_id?: string | null;

@@ -116,7 +116,7 @@ describe("SessionsSidebar", () => {
     listSidebarSessionsMock.mockResolvedValue(
       Array.from({ length: 10 }, (_, index) => ({
         session_id: `session-${index}`,
-        title: `Session ${index}`,
+        metadata: { title: `Session ${index}` },
         updated_at: "2026-07-12T01:00:00Z",
         workspace_id: "workspace-1",
       })),
@@ -179,7 +179,7 @@ describe("SessionsSidebar", () => {
     listSidebarSessionsMock.mockResolvedValue([
       {
         session_id: "session-a",
-        title: "Alpha",
+        metadata: { title: "Alpha" },
         updated_at: "2026-06-23T10:00:00Z",
         workspace_id: "workspace-1",
       },
@@ -237,7 +237,7 @@ describe("SessionsSidebar", () => {
     listSidebarSessionsMock.mockResolvedValue([
       {
         session_id: "session-a",
-        title: "Alpha",
+        metadata: { title: "Alpha" },
         updated_at: "2026-06-23T10:00:00Z",
         workspace_id: "workspace-1",
       },
@@ -320,7 +320,7 @@ describe("SessionsSidebar", () => {
       .mockResolvedValue([
         {
           session_id: "session-a",
-          title: "Recovered session",
+          metadata: { title: "Recovered session" },
           updated_at: "2026-06-23T10:00:00Z",
           workspace_id: "workspace-1",
         },
@@ -347,7 +347,7 @@ describe("SessionsSidebar", () => {
     listSidebarSessionsMock.mockResolvedValue([
       {
         session_id: "session-a",
-        title: "Fallback session",
+        metadata: { title: "Fallback session" },
         updated_at: "2026-06-23T10:00:00Z",
         workspace_id: "workspace-1",
       },
@@ -375,7 +375,7 @@ describe("SessionsSidebar", () => {
     listSidebarSessionsMock.mockResolvedValue([
       {
         session_id: "session-a",
-        title: "Alpha",
+        metadata: { title: "Alpha" },
         updated_at: "2026-06-23T10:00:00Z",
         workspace_id: "workspace-1",
       },
@@ -409,7 +409,7 @@ describe("SessionsSidebar", () => {
     }]);
     listSidebarSessionsMock.mockResolvedValue([{
       session_id: "session-a",
-      title: "Alpha",
+      metadata: { title: "Alpha" },
       updated_at: "2026-06-23T10:00:00Z",
       workspace_id: "workspace-1",
     }]);
@@ -444,19 +444,19 @@ describe("SessionsSidebar", () => {
       listSidebarSessionsMock.mockResolvedValue([
         {
           session_id: "session-a",
-          title: "Alpha",
+          metadata: { title: "Alpha" },
           updated_at: "2026-06-23T10:00:00Z",
           workspace_id: "workspace-1",
         },
         {
           session_id: "session-b",
-          title: "Beta",
+          metadata: { title: "Beta" },
           updated_at: "2026-06-23T10:01:00Z",
           workspace_id: "workspace-1",
         },
         {
           session_id: "session-c",
-          title: "Gamma",
+          metadata: { title: "Gamma" },
           updated_at: "2026-06-23T10:02:00Z",
           workspace_id: "workspace-1",
         },
@@ -490,7 +490,7 @@ describe("SessionsSidebar", () => {
     listSidebarSessionsMock.mockResolvedValue([
       {
         session_id: "session-a",
-        title: "Alpha",
+        metadata: { title: "Alpha" },
         updated_at: "2026-06-23T10:00:00Z",
         workspace_id: "default",
       },
@@ -516,7 +516,7 @@ describe("SessionsSidebar", () => {
     listSidebarSessionsMock.mockResolvedValue([
       {
         session_id: "session-a",
-        title: "Alpha",
+        metadata: { title: "Alpha" },
         updated_at: "2026-06-23T10:00:00Z",
         workspace_id: "default",
       },
@@ -574,7 +574,7 @@ describe("SessionsSidebar", () => {
     listSidebarSessionsMock.mockResolvedValue([
       {
         session_id: "session-current",
-        title: "Current session",
+        metadata: { title: "Current session" },
         updated_at: "2026-06-23T10:00:00Z",
         workspace_id: "workspace-1",
       },
@@ -654,7 +654,7 @@ describe("SessionsSidebar", () => {
     listSidebarSessionsMock.mockResolvedValue([
       {
         session_id: "session-a",
-        title: "Alpha",
+        metadata: { title: "Alpha" },
         updated_at: "2026-06-23T10:00:00Z",
         workspace_id: "workspace-1",
       },
@@ -699,13 +699,13 @@ describe("SessionsSidebar", () => {
     listSidebarSessionsMock.mockResolvedValue([
       {
         session_id: "session-old",
-        title: "Older Alpha",
+        metadata: { title: "Older Alpha" },
         updated_at: "2026-06-23T10:00:00Z",
         workspace_id: "workspace-1",
       },
       {
         session_id: "session-new",
-        title: "Newer Beta",
+        metadata: { title: "Newer Beta" },
         updated_at: "2026-06-23T11:00:00Z",
         workspace_id: "workspace-2",
       },
@@ -793,7 +793,6 @@ describe("SessionsSidebar", () => {
           title: "Old readable name",
         },
         session_id: "session-a",
-        title: "Legacy title",
         updated_at: "2026-06-23T10:00:00Z",
         workspace_id: "workspace-1",
       },
@@ -855,13 +854,13 @@ describe("SessionsSidebar", () => {
     listSidebarSessionsMock.mockResolvedValue([
       {
         session_id: "session-a",
-        title: "Alpha",
+        metadata: { title: "Alpha" },
         updated_at: "2026-06-23T10:00:00Z",
         workspace_id: "workspace-1",
       },
       {
         session_id: "session-b",
-        title: "Beta",
+        metadata: { title: "Beta" },
         updated_at: "2026-06-23T09:00:00Z",
         workspace_id: "workspace-1",
       },
@@ -953,7 +952,7 @@ describe("SessionsSidebar", () => {
     listSidebarSessionsMock.mockResolvedValue([
       {
         session_id: "session-a",
-        title: "Alpha",
+        metadata: { title: "Alpha" },
         updated_at: "2026-06-23T10:00:00Z",
         workspace_id: "workspace-1",
       },
@@ -1017,7 +1016,7 @@ describe("SessionsSidebar", () => {
     listSidebarSessionsMock.mockResolvedValue([
       {
         session_id: "session-a",
-        title: "Alpha",
+        metadata: { title: "Alpha" },
         updated_at: "2026-06-23T10:00:00Z",
         workspace_id: "workspace-1",
       },
@@ -1092,7 +1091,6 @@ describe("SessionsSidebar", () => {
         pending_tool_approval_count: 1,
         pending_user_question_count: 1,
         session_id: "session-running",
-        title: "Legacy title",
         updated_at: "2026-06-23T00:00:00Z",
         workspace_id: "workspace-1",
       },
@@ -1134,28 +1132,28 @@ describe("SessionsSidebar", () => {
       {
         active_run_status: "queued",
         session_id: "session-queued",
-        title: "Queued session",
+        metadata: { title: "Queued session" },
         updated_at: "2026-06-23T10:30:00Z",
         workspace_id: "workspace-1",
       },
       {
         active_run_status: "stopping",
         session_id: "session-stopping",
-        title: "Stopping session",
+        metadata: { title: "Stopping session" },
         updated_at: "2026-06-23T10:15:00Z",
         workspace_id: "workspace-1",
       },
       {
         active_run_status: "failed",
         session_id: "session-failed",
-        title: "Failed session",
+        metadata: { title: "Failed session" },
         updated_at: "2026-06-23T10:00:00Z",
         workspace_id: "workspace-1",
       },
       {
         active_run_status: "stopped",
         session_id: "session-stopped",
-        title: "Stopped session",
+        metadata: { title: "Stopped session" },
         updated_at: "2026-06-23T09:00:00Z",
         workspace_id: "workspace-1",
       },
@@ -1165,7 +1163,7 @@ describe("SessionsSidebar", () => {
         latest_terminal_run_status: "completed",
         latest_terminal_run_updated_at: "2026-06-23T08:30:00Z",
         session_id: "session-unread",
-        title: "Unread terminal session",
+        metadata: { title: "Unread terminal session" },
         updated_at: "2026-06-23T08:30:00Z",
         workspace_id: "workspace-1",
       },
@@ -1222,7 +1220,7 @@ describe("SessionsSidebar", () => {
         latest_terminal_run_status: "failed",
         latest_terminal_run_updated_at: "2026-06-23T10:00:00Z",
         session_id: "session-selected",
-        title: "Current task",
+        metadata: { title: "Current task" },
         updated_at: "2026-06-23T10:00:00Z",
         workspace_id: "workspace-1",
       },
@@ -1254,13 +1252,13 @@ describe("SessionsSidebar", () => {
         latest_terminal_run_status: "completed",
         latest_terminal_run_updated_at: "2026-06-23T10:00:00Z",
         session_id: "session-unread",
-        title: "Finished task",
+        metadata: { title: "Finished task" },
         updated_at: "2026-06-23T10:00:00Z",
         workspace_id: "workspace-1",
       },
       {
         session_id: "session-current",
-        title: "Current task",
+        metadata: { title: "Current task" },
         updated_at: "2026-06-23T09:00:00Z",
         workspace_id: "workspace-1",
       },
@@ -1296,13 +1294,13 @@ describe("SessionsSidebar", () => {
     listSidebarSessionsMock.mockResolvedValue([
       {
         session_id: "session-11",
-        title: "Session 11",
+        metadata: { title: "Session 11" },
         updated_at: "2026-06-23T10:11:00Z",
         workspace_id: "workspace-1",
       },
       {
         session_id: "session-10",
-        title: "Session 10",
+        metadata: { title: "Session 10" },
         updated_at: "2026-06-23T10:10:00Z",
         workspace_id: "workspace-1",
       },
@@ -1338,7 +1336,7 @@ describe("SessionsSidebar", () => {
       {
         session_id: "session-parent",
         subagent_count: 3,
-        title: "Parent session",
+        metadata: { title: "Parent session" },
         updated_at: "2026-06-23T10:00:00Z",
         workspace_id: "workspace-1",
       },
@@ -1372,7 +1370,7 @@ describe("SessionsSidebar", () => {
     listSidebarSessionsMock.mockResolvedValue([
       {
         session_id: "session-11",
-        title: "Session 11",
+        metadata: { title: "Session 11" },
         updated_at: "2026-06-23T10:11:00Z",
         workspace_id: "workspace-1",
       },
@@ -1408,13 +1406,13 @@ describe("SessionsSidebar", () => {
     listSidebarSessionsMock.mockResolvedValue([
       {
         session_id: "session-a",
-        title: "Alpha",
+        metadata: { title: "Alpha" },
         updated_at: "2026-06-23T10:00:00Z",
         workspace_id: "workspace-1",
       },
       {
         session_id: "session-b",
-        title: "Beta",
+        metadata: { title: "Beta" },
         updated_at: "2026-06-23T11:00:00Z",
         workspace_id: "workspace-2",
       },
@@ -1444,13 +1442,13 @@ describe("SessionsSidebar", () => {
     listSidebarSessionsMock.mockResolvedValue([
       {
         session_id: "session-assigned",
-        title: "Assigned session",
+        metadata: { title: "Assigned session" },
         updated_at: "2026-06-23T10:00:00Z",
         workspace_id: "unknown",
       },
       {
         session_id: "session-unassigned",
-        title: "Unassigned session",
+        metadata: { title: "Unassigned session" },
         updated_at: "2026-06-23T11:00:00Z",
       },
     ]);
@@ -1522,13 +1520,13 @@ describe("SessionsSidebar", () => {
     listSidebarSessionsMock.mockResolvedValue([
       {
         session_id: "session-a",
-        title: "Alpha",
+        metadata: { title: "Alpha" },
         updated_at: "2026-06-23T10:00:00Z",
         workspace_id: "workspace-1",
       },
       {
         session_id: "session-b",
-        title: "Beta",
+        metadata: { title: "Beta" },
         updated_at: "2026-06-23T11:00:00Z",
         workspace_id: "workspace-2",
       },
@@ -1561,13 +1559,13 @@ describe("SessionsSidebar", () => {
     listSidebarSessionsMock.mockResolvedValue([
       {
         session_id: "session-a",
-        title: "Alpha",
+        metadata: { title: "Alpha" },
         updated_at: "2026-06-23T10:00:00Z",
         workspace_id: "workspace-1",
       },
       {
         session_id: "session-b",
-        title: "Beta",
+        metadata: { title: "Beta" },
         updated_at: "2026-06-23T11:00:00Z",
         workspace_id: "workspace-1",
       },
@@ -1628,19 +1626,19 @@ describe("SessionsSidebar", () => {
     listSidebarSessionsMock.mockResolvedValue([
       ...Array.from({ length: 10 }, (_, index) => ({
         session_id: `session-visible-${index}`,
-        title: `Visible session ${index + 1}`,
+        metadata: { title: `Visible session ${index + 1}` },
         updated_at: `2026-06-23T10:${String(index).padStart(2, "0")}:00Z`,
         workspace_id: "workspace-1",
       })),
       {
         session_id: "session-hidden-1",
-        title: "Hidden session 1",
+        metadata: { title: "Hidden session 1" },
         updated_at: "2026-06-23T09:00:00Z",
         workspace_id: "workspace-1",
       },
       {
         session_id: "session-hidden-2",
-        title: "Hidden session 2",
+        metadata: { title: "Hidden session 2" },
         updated_at: "2026-06-23T08:00:00Z",
         workspace_id: "workspace-1",
       },
@@ -1671,7 +1669,7 @@ describe("SessionsSidebar", () => {
     listSidebarSessionsMock.mockResolvedValue(
       Array.from({ length: 2000 }, (_, index) => ({
         session_id: `session-${String(index).padStart(4, "0")}`,
-        title: `Session title ${index}`,
+        metadata: { title: `Session title ${index}` },
         updated_at: new Date(Date.UTC(2026, 5, 23, 10, 0, 2000 - index))
           .toISOString(),
         workspace_id: "workspace-1",
@@ -1694,7 +1692,7 @@ describe("SessionsSidebar", () => {
   it("keeps a capped workspace capped after creating a new session", async () => {
     const initialSessions = Array.from({ length: 12 }, (_, index) => ({
       session_id: `session-${String(index).padStart(2, "0")}`,
-      title: `Existing session ${String(index).padStart(2, "0")}`,
+      metadata: { title: `Existing session ${String(index).padStart(2, "0")}` },
       updated_at: new Date(Date.UTC(2026, 5, 23, 10, 0, 12 - index))
         .toISOString(),
       workspace_id: "workspace-1",
@@ -1711,7 +1709,7 @@ describe("SessionsSidebar", () => {
       .mockResolvedValue([
         {
           session_id: "session-new",
-          title: "Fresh session",
+          metadata: { title: "Fresh session" },
           updated_at: "2026-06-23T11:00:00Z",
           workspace_id: "workspace-1",
         },
@@ -1759,7 +1757,7 @@ describe("SessionsSidebar", () => {
     listSidebarSessionsMock.mockResolvedValue(
       Array.from({ length: 12 }, (_, index) => ({
         session_id: `session-result-${index}`,
-        title: `Filtered result ${String(index + 1).padStart(2, "0")}`,
+        metadata: { title: `Filtered result ${String(index + 1).padStart(2, "0")}` },
         updated_at: `2026-06-23T10:${String(index).padStart(2, "0")}:00Z`,
         workspace_id: "workspace-1",
       })),
@@ -1798,7 +1796,7 @@ describe("SessionsSidebar", () => {
         return {
           ...(ordinal === 50 ? { active_run_status: "running" } : {}),
           session_id: sessionId,
-          title: `Loaded session ${String(ordinal).padStart(2, "0")}`,
+          metadata: { title: `Loaded session ${String(ordinal).padStart(2, "0")}` },
           updated_at: `2026-06-23T10:${String(ordinal).padStart(2, "0")}:00Z`,
           workspace_id: "workspace-1",
         };

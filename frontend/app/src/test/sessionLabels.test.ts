@@ -4,7 +4,7 @@ import type { SessionSidebarRecord } from "../api/contracts";
 import { sessionDisplayLabel } from "../features/sessions/sessionLabels";
 
 describe("sessionDisplayLabel", () => {
-  it("prefers metadata title, name, then label", () => {
+  it("uses metadata.title as the sole title contract", () => {
     expect(
       sessionDisplayLabel(
         session({
@@ -13,7 +13,6 @@ describe("sessionDisplayLabel", () => {
             name: "Named title",
             title: "Prompt title",
           },
-          title: "Legacy title",
         }),
       ),
     ).toBe("Prompt title");
@@ -26,10 +25,9 @@ describe("sessionDisplayLabel", () => {
             name: "Named title",
             title: " ",
           },
-          title: "Legacy title",
         }),
       ),
-    ).toBe("Named title");
+    ).toBe("session-1");
 
     expect(
       sessionDisplayLabel(
@@ -38,14 +36,12 @@ describe("sessionDisplayLabel", () => {
             label: "Label title",
             name: null,
           },
-          title: "Legacy title",
         }),
       ),
-    ).toBe("Label title");
+    ).toBe("session-1");
   });
 
-  it("falls back to legacy title, session id, fallback label, then app name", () => {
-    expect(sessionDisplayLabel(session({ title: "Legacy title" }))).toBe("Legacy title");
+  it("falls back to session id, fallback label, then app name", () => {
     expect(sessionDisplayLabel(session({ session_id: "session-fallback" }))).toBe(
       "session-fallback",
     );

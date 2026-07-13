@@ -582,9 +582,9 @@ function sourceSessionSidebarRecord(state: SessionSwitchMockState): Record<strin
     active_run_status: state.completed ? null : "running",
     created_at: "2026-06-25T08:00:00Z",
     message_count: 1,
+    metadata: { title: state.sourceSessionTitle },
     session_id: SESSION_ID,
     session_mode: state.sourceSessionMode,
-    title: state.sourceSessionTitle,
     updated_at: "2026-06-25T08:32:00Z",
     workspace_id: WORKSPACE_ID,
   };
@@ -595,9 +595,9 @@ function secondarySessionSidebarRecord(state?: SessionSwitchMockState): Record<s
     active_run_status: null,
     created_at: "2026-06-25T08:01:00Z",
     message_count: 1,
+    metadata: { title: state?.secondarySessionTitle ?? "TS secondary session" },
     session_id: SECOND_SESSION_ID,
     session_mode: "normal",
-    title: state?.secondarySessionTitle ?? "TS secondary session",
     updated_at: "2026-06-25T08:31:00Z",
     workspace_id: WORKSPACE_ID,
   };

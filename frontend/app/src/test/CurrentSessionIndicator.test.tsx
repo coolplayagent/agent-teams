@@ -22,7 +22,6 @@ describe("CurrentSessionIndicator", () => {
           metadata: {
             title: "Frontend rewrite",
           },
-          title: "Legacy rewrite",
           active_run_status: "running",
         }}
         workspaceLabel="Agent Teams"
@@ -68,7 +67,7 @@ describe("CurrentSessionIndicator", () => {
         session={{
           active_run_status: "running",
           session_id: "session-running",
-          title: "流式验证",
+          metadata: { title: "流式验证" },
         }}
         workspaceLabel="agent-teams"
       />,

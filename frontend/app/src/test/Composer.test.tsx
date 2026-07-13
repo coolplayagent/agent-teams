@@ -544,7 +544,6 @@ describe("Composer", () => {
           title: "Old title",
         },
         session_id: "session-1",
-        title: "Old title",
         updated_at: "2026-06-30T00:00:00Z",
         workspace_id: "workspace-1",
       },
@@ -590,7 +589,6 @@ describe("Composer", () => {
           title: "preview after run",
         },
         session_id: "session-1",
-        title: "preview after run",
       }),
     );
     expect(
@@ -2842,7 +2840,7 @@ describe("Composer", () => {
     });
 
     const queryClient = renderComposer(runStreamController(), "sidebar");
-    const sidebarRows = [{ session_id: "sidebar", title: "Sidebar" }];
+    const sidebarRows = [{ metadata: { title: "Sidebar" }, session_id: "sidebar" }];
     queryClient.setQueryData(["sessions", "sidebar"], sidebarRows);
 
     await openModelControls();

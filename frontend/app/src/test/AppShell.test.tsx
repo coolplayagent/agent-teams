@@ -222,9 +222,9 @@ vi.mock("../features/shell/CurrentSessionIndicator", () => ({
     session: SessionSidebarRecord | null;
     workspaceLabel: string;
   }) => (
-    <div aria-label={session?.title ?? selectedSessionId ?? ""}>
-      <span title={`${workspaceLabel} · ${session?.title ?? selectedSessionId ?? ""}`}>
-        {session?.title ?? selectedSessionId ?? ""}
+    <div aria-label={session?.metadata?.title ?? selectedSessionId ?? ""}>
+      <span title={`${workspaceLabel} · ${session?.metadata?.title ?? selectedSessionId ?? ""}`}>
+        {session?.metadata?.title ?? selectedSessionId ?? ""}
       </span>
     </div>
   ),
@@ -395,7 +395,7 @@ beforeEach(() => {
     {
       session_id: "session-1",
       workspace_id: "workspace-1",
-      title: "Session 1",
+      metadata: { title: "Session 1" },
     },
   ]);
   listSessionSubagentsMock.mockResolvedValue([
@@ -518,7 +518,7 @@ describe("AppShell", () => {
       {
         session_id: "session-1",
         workspace_id: "default",
-        title: "Session 1",
+        metadata: { title: "Session 1" },
       },
     ]);
     listWorkspacesMock.mockResolvedValue([
@@ -547,7 +547,7 @@ describe("AppShell", () => {
       {
         session_id: "session-1",
         workspace_id: "default",
-        title: "Session 1",
+        metadata: { title: "Session 1" },
       },
     ]);
     listWorkspacesMock.mockImplementation(
@@ -568,7 +568,7 @@ describe("AppShell", () => {
       {
         session_id: "session-first",
         workspace_id: "workspace-1",
-        title: "First session",
+        metadata: { title: "First session" },
       },
     ]);
     getSessionMock.mockResolvedValue({
@@ -605,12 +605,12 @@ describe("AppShell", () => {
       {
         session_id: "session-a",
         workspace_id: "workspace-a",
-        title: "Session A",
+        metadata: { title: "Session A" },
       },
       {
         session_id: "session-b",
         workspace_id: "workspace-b",
-        title: "Session B",
+        metadata: { title: "Session B" },
       },
     ]);
     listWorkspacesMock.mockResolvedValue([
@@ -713,7 +713,7 @@ describe("AppShell", () => {
       latest_terminal_run_status: "completed",
       latest_terminal_run_updated_at: "2026-06-23T10:00:00Z",
       session_id: "session-1",
-      title: "Session 1",
+      metadata: { title: "Session 1" },
       workspace_id: "workspace-1",
     };
     listSidebarSessionsMock.mockResolvedValue([firstTerminalSession]);
@@ -748,7 +748,7 @@ describe("AppShell", () => {
         latest_terminal_run_status: "completed",
         latest_terminal_run_updated_at: "2026-06-23T10:00:00Z",
         session_id: "session-1",
-        title: "Session 1",
+        metadata: { title: "Session 1" },
         workspace_id: "workspace-1",
       },
     ]);
@@ -820,12 +820,12 @@ describe("AppShell", () => {
           latest_terminal_run_status: "completed",
           latest_terminal_run_updated_at: "2026-06-23T10:00:00Z",
           session_id: "session-a",
-          title: "Session A",
+          metadata: { title: "Session A" },
           workspace_id: "workspace-a",
         },
         {
           session_id: "session-b",
-          title: "Session B",
+          metadata: { title: "Session B" },
           workspace_id: "workspace-b",
         },
       ]);
@@ -848,7 +848,7 @@ describe("AppShell", () => {
       latest_terminal_run_status: "completed",
       latest_terminal_run_updated_at: "2026-06-23T10:00:00Z",
       session_id: "session-1",
-      title: "Session 1",
+      metadata: { title: "Session 1" },
       workspace_id: "workspace-1",
     };
     listSidebarSessionsMock.mockResolvedValue([firstTerminalSession]);
@@ -874,7 +874,7 @@ describe("AppShell", () => {
       latest_terminal_run_status: "completed",
       latest_terminal_run_updated_at: "2026-06-23T10:00:00Z",
       session_id: "session-1",
-      title: "Session 1",
+      metadata: { title: "Session 1" },
       workspace_id: "workspace-1",
     }]);
     markSessionTerminalRunViewedMock.mockResolvedValue({ status: "deferred" });
@@ -895,7 +895,7 @@ describe("AppShell", () => {
       latest_terminal_run_status: "completed",
       latest_terminal_run_updated_at: "2026-06-23T10:00:00Z",
       session_id: "session-1",
-      title: "Session 1",
+      metadata: { title: "Session 1" },
       workspace_id: "workspace-1",
     };
     listSidebarSessionsMock.mockResolvedValue([firstTerminalSession]);
@@ -1346,7 +1346,7 @@ describe("AppShell", () => {
         latest_terminal_run_id: "run-active",
         latest_terminal_run_status: "completed",
         session_id: "session-1",
-        title: "Session 1",
+        metadata: { title: "Session 1" },
         workspace_id: "workspace-1",
       },
     ]);
@@ -1877,12 +1877,12 @@ describe("AppShell", () => {
       {
         session_id: "session-1",
         workspace_id: "workspace-1",
-        title: "Session 1",
+        metadata: { title: "Session 1" },
       },
       {
         session_id: "session-2",
         workspace_id: "workspace-2",
-        title: "Session 2",
+        metadata: { title: "Session 2" },
       },
     ]);
     listWorkspacesMock.mockResolvedValue([
@@ -1971,12 +1971,12 @@ describe("AppShell", () => {
       {
         session_id: "session-1",
         workspace_id: "workspace-1",
-        title: "Session 1",
+        metadata: { title: "Session 1" },
       },
       {
         session_id: "session-2",
         workspace_id: "workspace-2",
-        title: "Session 2",
+        metadata: { title: "Session 2" },
       },
     ]);
     listWorkspacesMock.mockResolvedValue([

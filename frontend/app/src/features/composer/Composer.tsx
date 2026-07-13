@@ -206,7 +206,6 @@ function sessionWithTitlePreview(
             ...(session.metadata ?? {}),
             title,
           },
-          title,
         }
       : {}),
     active_run_id: runId,

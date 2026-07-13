@@ -2033,9 +2033,9 @@ function parentSessionSidebarRecord(
     active_run_status: state.completed ? null : "running",
     created_at: "2026-06-26T09:00:00Z",
     message_count: 1,
+    metadata: { title: "TS parent session" },
     session_id: SESSION_ID,
     subagent_count: 1,
-    title: "TS parent session",
     updated_at: "2026-06-26T09:30:00Z",
     workspace_id: WORKSPACE_ID,
   };
@@ -2046,9 +2046,9 @@ function raceParentSidebarRecord(): Record<string, unknown> {
     active_run_status: null,
     created_at: "2026-06-26T10:00:00Z",
     message_count: 1,
+    metadata: { title: "TS race parent" },
     session_id: SESSION_ID,
     subagent_count: 1,
-    title: "TS race parent",
     updated_at: "2026-06-26T10:30:00Z",
     workspace_id: WORKSPACE_ID,
   };
@@ -2059,8 +2059,8 @@ function controlSessionSidebarRecord(): Record<string, unknown> {
     active_run_status: null,
     created_at: "2026-06-26T10:01:00Z",
     message_count: 1,
+    metadata: { title: "TS control session" },
     session_id: CONTROL_SESSION_ID,
-    title: "TS control session",
     updated_at: "2026-06-26T10:29:00Z",
     workspace_id: WORKSPACE_ID,
   };

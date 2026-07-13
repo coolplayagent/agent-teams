@@ -52,6 +52,7 @@ import {
   formatToolDuration,
   toolActionFamily,
   toolDurationMs,
+  type ToolActionFamily,
 } from "./toolPresentation";
 import { roundPromptText, roundTitle } from "./roundMetadata";
 import {
@@ -148,7 +149,6 @@ interface MessageTimelineProps {
   runtimeRunId?: string | null;
   sessionId: string | null;
   subagentScopeRoleId?: string | null;
-  suppressExactText?: string;
   variant?: "session" | "subagent-panel";
   visible?: boolean;
   workspaceId?: string | null;
@@ -201,7 +201,6 @@ export function MessageTimeline({
   runtimeRunId = null,
   sessionId,
   subagentScopeRoleId = null,
-  suppressExactText = "",
   variant = "session",
   visible = true,
   workspaceId = null,
@@ -603,8 +602,7 @@ export function MessageTimeline({
   }, [optimisticPrompt, optimisticPromptConfirmed]);
   const timelineRowsBeforeGrouping = useMemo(
     () => {
-      const mergedRows = dropExactTextRows(
-        dropStrictPrefixAnswerRows(
+      const mergedRows = dropStrictPrefixAnswerRows(
           mergeTerminalRuntimeTextRowsIntoPersistedAnswers(
             dropDuplicateFinalPartsFromWorkRows(
               dropDuplicateWorkRowsAfterToolMerge(
@@ -618,8 +616,6 @@ export function MessageTimeline({
               ),
             ),
           ),
-        ),
-        suppressExactText,
       );
       return optimisticPrompt === null || optimisticPromptConfirmed
         ? mergedRows
@@ -630,7 +626,6 @@ export function MessageTimeline({
       optimisticPrompt,
       optimisticPromptConfirmed,
       runtimeRows,
-      suppressExactText,
     ],
   );
 
@@ -1416,6 +1411,7 @@ interface TimelineMediaPart {
 
 interface TimelineToolPart {
   action: string;
+  actionFamily?: ToolActionFamily;
   body: string;
   callId: string;
   durationMs?: number;
@@ -2306,24 +2302,6 @@ function insertRoundMarkerRowsIfEnabled(
     return baseRows;
   }
   return insertRoundMarkerRows(baseRows, rounds, expandedHistorySegmentIds);
-}
-
-function dropExactTextRows(rows: TimelineRow[], suppressedText: string): TimelineRow[] {
-  const normalizedSuppressedText = normalizedTimelineText(suppressedText);
-  if (normalizedSuppressedText.length === 0) {
-    return rows;
-  }
-  let removed = false;
-  return rows.filter((row) => {
-    if (removed) {
-      return true;
-    }
-    if (normalizedTimelineText(row.text) !== normalizedSuppressedText) {
-      return true;
-    }
-    removed = true;
-    return false;
-  });
 }
 
 function dropRoundPromptDuplicateUserRows(
@@ -4297,7 +4275,7 @@ function mergeToolPartState(
   if (next.phase === "call") {
     existing.inputBody = next.inputBody || next.body || existing.inputBody;
     existing.body = appendToolCallArgsToResultBody(existing.body, next.body);
-    if (existing.toolName === "unknown_tool" && next.toolName !== "unknown_tool") {
+    if (existing.toolName.trim().length === 0 && next.toolName.trim().length > 0) {
       existing.toolName = next.toolName;
     }
     existing.subagent = mergeSubagentReference(existing.subagent, next.subagent);
@@ -6744,8 +6722,9 @@ function runtimeEntryIsSubagentToolLifecycle(entry: TimelineEntry): boolean {
   if (payload === null || payloadHasParseError(payload)) {
     return false;
   }
-  const toolName = objectString(payload, "tool_name") || entry.text;
-  return toolActionCategory(toolName) === "subagent";
+  return subagentCandidateObjects(entry.payload).some(
+    subagentObjectHasExplicitReferenceFields,
+  );
 }
 
 function timelineMessageHasDetachedSubagentPayload(message: TimelineMessage): boolean {
@@ -8627,7 +8606,7 @@ function MessageToolBlock({
   const preview = toolSummaryPreview(tool);
   const status = toolBlockStatus(tool);
   const isRunning = status === "running";
-  const isSubagentTool = toolActionCategory(tool.toolName) === "subagent";
+  const isSubagentTool = toolActionCategory(tool) === "subagent";
   const subagentReference = completeSubagentReference(
     tool.subagent,
     sessionId,
@@ -9040,15 +9019,14 @@ function contentPartTool(part: ContentPart): TimelineToolPart | null {
       subagent: subagentReferenceFromValues({
         callId: "tool_call_id" in part ? part.tool_call_id ?? "" : "",
         payload: "args" in part ? jsonCompatibleValue(part.args ?? null) : null,
-        toolName: "tool_name" in part ? part.tool_name ?? "unknown_tool" : "unknown_tool",
       }),
-      toolName: "tool_name" in part ? part.tool_name ?? "unknown_tool" : "unknown_tool",
+      toolName: "tool_name" in part ? part.tool_name ?? "" : "",
     };
   }
   if (kind === "tool-return") {
     const content = "content" in part ? part.content ?? null : null;
     const error = toolReturnIsError(part, content);
-    const toolName = "tool_name" in part ? part.tool_name ?? "unknown_tool" : "unknown_tool";
+    const toolName = "tool_name" in part ? part.tool_name ?? "" : "";
     const outputBody = toolReturnBody(content, error, toolName);
     return {
       action: "",
@@ -9063,7 +9041,6 @@ function contentPartTool(part: ContentPart): TimelineToolPart | null {
       subagent: subagentReferenceFromValues({
         callId: "tool_call_id" in part ? part.tool_call_id ?? "" : "",
         payload: jsonCompatibleValue(content),
-        toolName,
       }),
       toolName,
     };
@@ -9080,7 +9057,7 @@ function contentPartTool(part: ContentPart): TimelineToolPart | null {
       outputBody,
       phase: "validation",
       subagent: null,
-      toolName: "tool_name" in part ? part.tool_name ?? "unknown_tool" : "unknown_tool",
+      toolName: "tool_name" in part ? part.tool_name ?? "" : "",
     };
   }
   return null;
@@ -9122,7 +9099,7 @@ function runtimeApprovalPart(entry: TimelineEntry): TimelineToolPart | null {
       ? "approval-requested"
       : "approval-resolved",
     subagent: null,
-    toolName: toolName || entry.text || "unknown_tool",
+    toolName,
   };
 }
 
@@ -9255,7 +9232,7 @@ function runtimeToolPart(entry: TimelineEntry): TimelineToolPart | null {
   if (payload === null || payloadHasParseError(payload)) {
     return null;
   }
-  const toolName = objectString(payload, "tool_name") || entry.text || "unknown_tool";
+  const toolName = objectString(payload, "tool_name");
   const callId = objectString(payload, "tool_call_id");
   if (entry.kind === "tool_call") {
     if (!callId && !objectString(payload, "tool_name") && payload.args === undefined) {
@@ -9275,7 +9252,6 @@ function runtimeToolPart(entry: TimelineEntry): TimelineToolPart | null {
         subagentReferenceFromValues({
           callId,
           payload: payload.args ?? null,
-          toolName,
         }),
         entry,
         callId,
@@ -9322,7 +9298,6 @@ function runtimeToolPart(entry: TimelineEntry): TimelineToolPart | null {
       subagentReferenceFromValues({
         callId,
         payload: result,
-        toolName,
       }),
       entry,
       callId,
@@ -9596,23 +9571,23 @@ function toolPhaseLabel(tool: TimelineToolPart, t: Translate): string {
     return t("timelineApprovalResolved");
   }
   if (tool.phase === "call") {
-    return toolActionLabel(tool.toolName, "running", t);
+    return toolActionLabel(tool, "running", t);
   }
   if (tool.phase === "validation") {
     return t("timelineToolValidation");
   }
   if (tool.error) {
-    return toolActionLabel(tool.toolName, "error", t);
+    return toolActionLabel(tool, "error", t);
   }
-  return toolActionLabel(tool.toolName, "completed", t);
+  return toolActionLabel(tool, "completed", t);
 }
 
 function toolActionLabel(
-  toolName: string,
+  tool: TimelineToolPart,
   phase: "completed" | "error" | "running",
   t: Translate,
 ): string {
-  const category = toolActionCategory(toolName);
+  const category = toolActionCategory(tool);
   if (category === "orchestration") {
     if (phase === "running") {
       return t("timelineToolRunningOrchestration");
@@ -9677,28 +9652,32 @@ function toolActionLabel(
 }
 
 function toolActionCategory(
-  toolName: string,
+  tool: TimelineToolPart,
 ): "edit" | "generic" | "orchestration" | "read" | "run" | "search" | "subagent" {
-  return toolActionFamily(toolName);
+  if (tool.subagent !== null) {
+    return "subagent";
+  }
+  return toolActionFamily(tool.toolName, { actionFamily: tool.actionFamily });
 }
 
 function toolDisplayName(tool: TimelineToolPart): string | null {
-  return toolActionCategory(tool.toolName) === "subagent" ? null : tool.toolName;
+  if (toolActionCategory(tool) === "subagent") {
+    return null;
+  }
+  return tool.toolName.trim().length > 0 ? tool.toolName : null;
 }
 
 function subagentReferenceFromValues({
   callId,
   payload,
-  toolName,
 }: {
   callId: string;
   payload: JsonValue;
-  toolName: string;
 }): TimelineSubagentReference | null {
   const candidateObjects = subagentCandidateObjects(payload);
-  const hasSubagentShape =
-    toolActionCategory(toolName) === "subagent" ||
-    candidateObjects.some(subagentObjectHasExplicitReferenceFields);
+  const hasSubagentShape = candidateObjects.some(
+    subagentObjectHasExplicitReferenceFields,
+  );
   if (!hasSubagentShape) {
     return null;
   }

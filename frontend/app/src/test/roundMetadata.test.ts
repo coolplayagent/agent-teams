@@ -145,9 +145,10 @@ describe("roundMetadata", () => {
   it("hides raw verification diagnostics until diagnostics are enabled", () => {
     const rawDiagnostic = "verification_failedruntime_guardrail:pre_execution_boundary";
 
-    expect(sanitizeRoundDiagnosticText(rawDiagnostic)).toBe(
+    expect(sanitizeRoundDiagnosticText(rawDiagnostic, "verification_failed")).toBe(
       "Verification not passed.",
     );
+    expect(sanitizeRoundDiagnosticText(rawDiagnostic)).toBe(rawDiagnostic);
     expect(
       sanitizeRoundDiagnosticText(
         "The verification_failed error code means the run did not satisfy a verifier.",
@@ -158,7 +159,8 @@ describe("roundMetadata", () => {
 
     document.documentElement.dataset.diagnosticsVisible = "true";
 
-    expect(sanitizeRoundDiagnosticText(rawDiagnostic)).toBe(rawDiagnostic);
+    expect(sanitizeRoundDiagnosticText(rawDiagnostic, "verification_failed"))
+      .toBe(rawDiagnostic);
   });
 
   it("uses safe diagnostic text for fallback round titles and labels", () => {
@@ -171,13 +173,14 @@ describe("roundMetadata", () => {
           "Failed:",
           "[FAIL] runtime_guardrail:pre_execution_boundary -- blocked.",
         ].join("\n"),
+        run_error_code: "verification_failed",
         run_user_message: "",
       }),
       0,
     );
 
-    expect(summary.title).toBe("Kept answer. Verification not passed.");
-    expect(summary.diagnosticLabel).toBe("Kept answer. Verification not passed.");
+    expect(summary.title).toBe("Verification not passed.");
+    expect(summary.diagnosticLabel).toBe("Verification not passed.");
   });
 });
 

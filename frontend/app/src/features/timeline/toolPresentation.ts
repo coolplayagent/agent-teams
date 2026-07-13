@@ -18,82 +18,29 @@ export type ToolActionFamily =
   | "search"
   | "subagent";
 
-const FILE_EDIT_TOKENS = [
-  "apply_patch",
-  "diff",
-  "edit",
-  "notebook_edit",
-  "patch",
-  "replace",
-  "write",
-];
-const FILE_READ_TOKENS = ["glob", "grep", "list_directory", "read", "rg"];
-const EXECUTION_TOKENS = [
-  "background_task",
-  "command",
-  "exec",
-  "process",
-  "run_command",
-  "shell",
-  "terminal",
-];
-const WEB_TOKENS = ["browser", "fetch", "search", "url", "web"];
-const ORCHESTRATION_TOKENS = [
-  "orch_",
-  "activate_skill_roles",
-  "create_task",
-  "dispatch_task",
-  "orchestration",
-  "spawn_subagent",
-  "subagent",
-  "update_task",
-];
-const SUBAGENT_ACTION_TOKENS = ["dispatch_task", "spawn_subagent", "subagent"];
-const INTERACTIVE_TOKENS = ["approval", "ask_question", "confirm", "select"];
-const PLANNING_TOKENS = ["plan", "todo"];
-const MEMORY_ARTIFACT_TOKENS = ["artifact", "attachment", "memory"];
-
-export function toolSemanticCategory(toolName: string): ToolSemanticCategory {
-  const normalized = normalizedToolName(toolName);
-  if (containsToken(normalized, ORCHESTRATION_TOKENS)) {
-    return "orchestration";
-  }
-  if (containsToken(normalized, INTERACTIVE_TOKENS)) {
-    return "interactive";
-  }
-  if (containsToken(normalized, PLANNING_TOKENS)) {
-    return "planning";
-  }
-  if (containsToken(normalized, MEMORY_ARTIFACT_TOKENS)) {
-    return "memory-artifact";
-  }
-  if (containsToken(normalized, FILE_EDIT_TOKENS)) {
-    return "file-edit";
-  }
-  if (containsToken(normalized, EXECUTION_TOKENS)) {
-    return "execution";
-  }
-  if (containsToken(normalized, WEB_TOKENS)) {
-    return "web";
-  }
-  if (
-    containsToken(normalized, FILE_READ_TOKENS) ||
-    normalized.includes("find_file") ||
-    normalized.includes("list_file") ||
-    normalized === "open"
-  ) {
-    return "file-read";
-  }
-  return "unknown";
+export interface ToolPresentationSemantics {
+  actionFamily?: string | null;
+  semanticCategory?: string | null;
 }
 
-export function toolActionFamily(toolName: string): ToolActionFamily {
-  const category = toolSemanticCategory(toolName);
-  if (category === "orchestration") {
-    return containsToken(normalizedToolName(toolName), SUBAGENT_ACTION_TOKENS)
-      ? "subagent"
-      : "orchestration";
+export function toolSemanticCategory(
+  _toolName: string,
+  semantics?: ToolPresentationSemantics,
+): ToolSemanticCategory {
+  return isToolSemanticCategory(semantics?.semanticCategory)
+    ? semantics.semanticCategory
+    : "unknown";
+}
+
+export function toolActionFamily(
+  _toolName: string,
+  semantics?: ToolPresentationSemantics,
+): ToolActionFamily {
+  if (isToolActionFamily(semantics?.actionFamily)) {
+    return semantics.actionFamily;
   }
+  const category = toolSemanticCategory(_toolName, semantics);
+  if (category === "orchestration") return "orchestration";
   if (category === "execution") {
     return "run";
   }
@@ -104,10 +51,7 @@ export function toolActionFamily(toolName: string): ToolActionFamily {
     return "search";
   }
   if (category === "file-read") {
-    const normalized = normalizedToolName(toolName);
-    return containsToken(normalized, ["glob", "grep", "rg", "find"])
-      ? "search"
-      : "read";
+    return "read";
   }
   return "generic";
 }
@@ -169,12 +113,17 @@ export function formatToolDuration(durationMs: number): string {
   return `${minutes}m ${seconds}s`;
 }
 
-function normalizedToolName(toolName: string): string {
-  return toolName.trim().toLowerCase().replaceAll("-", "_");
+function isToolSemanticCategory(value: unknown): value is ToolSemanticCategory {
+  return typeof value === "string" && [
+    "execution", "file-edit", "file-read", "interactive", "memory-artifact",
+    "orchestration", "planning", "unknown", "web",
+  ].includes(value);
 }
 
-function containsToken(value: string, tokens: string[]): boolean {
-  return tokens.some((token) => value === token || value.includes(token));
+function isToolActionFamily(value: unknown): value is ToolActionFamily {
+  return typeof value === "string" && [
+    "edit", "generic", "orchestration", "read", "run", "search", "subagent",
+  ].includes(value);
 }
 
 function parseStructuredText(text: string): unknown | null {

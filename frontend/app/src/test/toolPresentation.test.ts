@@ -9,25 +9,26 @@ import {
 } from "../features/timeline/toolPresentation";
 
 describe("toolPresentation", () => {
-  it.each([
-    ["read", "file-read", "read"],
-    ["glob", "file-read", "search"],
-    ["apply_patch", "file-edit", "edit"],
-    ["shell", "execution", "run"],
-    ["websearch", "web", "search"],
-    ["browser_click", "web", "search"],
-    ["orch_dispatch_task", "orchestration", "subagent"],
-    ["orch_create_tasks", "orchestration", "orchestration"],
-    ["orch_update_task", "orchestration", "orchestration"],
-    ["orch_list_available_roles", "orchestration", "orchestration"],
-    ["orch_create_temporary_role", "orchestration", "orchestration"],
-    ["ask_question", "interactive", "generic"],
-    ["todo_write", "planning", "generic"],
-    ["memory_rewrite", "memory-artifact", "generic"],
-    ["custom_server_tool", "unknown", "generic"],
-  ] as const)("classifies %s", (toolName, semantic, family) => {
-    expect(toolSemanticCategory(toolName)).toBe(semantic);
-    expect(toolActionFamily(toolName)).toBe(family);
+  it("does not infer presentation semantics from a tool name", () => {
+    expect(toolSemanticCategory("spawn_subagent")).toBe("unknown");
+    expect(toolSemanticCategory("ask_question")).toBe("unknown");
+    expect(toolActionFamily("spawn_subagent")).toBe("generic");
+  });
+
+  it("uses explicit presentation semantics from the transport contract", () => {
+    expect(toolSemanticCategory("opaque", { semanticCategory: "interactive" }))
+      .toBe("interactive");
+    expect(toolActionFamily("opaque", { actionFamily: "subagent" }))
+      .toBe("subagent");
+    expect(toolActionFamily("opaque", { semanticCategory: "file-read" }))
+      .toBe("read");
+  });
+
+  it("rejects unsupported semantic values instead of guessing", () => {
+    expect(toolSemanticCategory("shell", { semanticCategory: "commandish" }))
+      .toBe("unknown");
+    expect(toolActionFamily("shell", { actionFamily: "execute-ish" }))
+      .toBe("generic");
   });
 
   it("renders common result collections as readable lists", () => {

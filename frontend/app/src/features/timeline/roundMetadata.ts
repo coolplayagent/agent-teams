@@ -91,14 +91,16 @@ export function roundTitle(round: SessionRound, index: number): string {
   return `Round ${index + 1}`;
 }
 
-export function sanitizeRoundDiagnosticText(value: string): string {
+export function sanitizeRoundDiagnosticText(
+  value: string,
+  errorCode: string | null | undefined = null,
+): string {
   const text = normalizedText(value);
   if (text.length === 0 || areDiagnosticsVisible()) {
     return text;
   }
-  const lowerText = text.toLowerCase();
-  if (isVerificationDiagnostic(lowerText)) {
-    return hiddenVerificationDiagnosticText(text, lowerText);
+  if (normalizedText(errorCode).toLowerCase() === "verification_failed") {
+    return VERIFICATION_NOT_PASSED_LABEL;
   }
   return text;
 }
@@ -299,7 +301,10 @@ function roundDiagnosticLabel(round: SessionRound): string | null {
 }
 
 function roundDiagnosticText(round: SessionRound): string {
-  return sanitizeRoundDiagnosticText(round.run_diagnostic_message ?? "");
+  return sanitizeRoundDiagnosticText(
+    round.run_diagnostic_message ?? "",
+    round.run_error_code,
+  );
 }
 
 function roundRetrySummary(round: SessionRound): RoundRetrySummary | null {
@@ -389,32 +394,6 @@ function areDiagnosticsVisible(): boolean {
     return false;
   }
   return document.documentElement.dataset.diagnosticsVisible === "true";
-}
-
-function isVerificationDiagnostic(lowerText: string): boolean {
-  if (
-    lowerText.includes("runtime_guardrail:") ||
-    lowerText.includes("pre-execution guardrail") ||
-    lowerText.includes("guardrail block")
-  ) {
-    return true;
-  }
-  return lowerText === "verification failed" ||
-    lowerText === "verification failed." ||
-    lowerText === "verification not passed" ||
-    lowerText === "verification not passed." ||
-    lowerText.includes("verification did not pass");
-}
-
-function hiddenVerificationDiagnosticText(text: string, lowerText: string): string {
-  const verificationIndex = lowerText.indexOf("verification failed");
-  if (verificationIndex <= 0) {
-    return VERIFICATION_NOT_PASSED_LABEL;
-  }
-  const prefix = text.slice(0, verificationIndex).trim().replace(/[.\s]+$/u, "");
-  return prefix.length > 0
-    ? `${prefix}. ${VERIFICATION_NOT_PASSED_LABEL}`
-    : VERIFICATION_NOT_PASSED_LABEL;
 }
 
 function roundDurationLabel(round: SessionRound): string | null {

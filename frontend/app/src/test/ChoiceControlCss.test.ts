@@ -26,11 +26,23 @@ describe("choice control styling", () => {
     expect(css).not.toMatch(
       /\.at-choice-control\.is-row\.is-checked\s*\{[^}]*border-color/s,
     );
+    expect(css).not.toMatch(
+      /:has\(\.at-choice-control-input:focus-visible\)\s*\{[^}]*box-shadow/s,
+    );
     expect(css).toMatch(
-      /:has\(\.at-choice-control-input:focus-visible\)\s*\{[^}]*box-shadow:\s*inset 0 0 0 1px var\(--at-primary\)/s,
+      /\.at-choice-control-input:focus-visible\s*\+\s*\.at-choice-control-indicator\s*\{[^}]*box-shadow:\s*0 0 0 3px var\(--at-focus-ring\)/s,
     );
     expect(css).toMatch(
       /\.at-choice-control-input:focus-visible\s*\{[^}]*outline:\s*none;/s,
+    );
+  });
+
+  it("anchors the native input to its visible control so focusing cannot scroll elsewhere", () => {
+    expect(css).toMatch(
+      /\.at-choice-control\s*\{[^}]*position:\s*relative;/s,
+    );
+    expect(css).toMatch(
+      /\.at-choice-control-input\s*\{[^}]*position:\s*absolute;[^}]*top:\s*0;[^}]*left:\s*0;/s,
     );
   });
 });

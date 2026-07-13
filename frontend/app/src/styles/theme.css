@@ -7080,9 +7080,8 @@ body {
 
 .at-appearance-panel {
   overflow: visible;
-  border: 1px solid var(--at-border);
-  border-radius: 8px;
-  background: var(--at-surface);
+  border: 0;
+  background: transparent;
 }
 
 .at-appearance-panel-header,

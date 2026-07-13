@@ -12,4 +12,13 @@ describe("settings appearance layout CSS", () => {
     );
     expect(themeCss).not.toContain("width: min(100%, 690px);");
   });
+
+  it("groups appearance rows without a heavy outer frame", () => {
+    expect(themeCss).toMatch(
+      /\.at-appearance-panel\s*\{[^}]*border:\s*0;[^}]*background:\s*transparent;/s,
+    );
+    expect(themeCss).toMatch(
+      /\.at-appearance-table-row\s*\{[^}]*border-bottom:\s*1px solid color-mix/s,
+    );
+  });
 });

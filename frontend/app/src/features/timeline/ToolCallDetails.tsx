@@ -38,7 +38,6 @@ export function ToolCallDetails({
       {input.trim() ? (
         <ToolDetailSection
           label={t("timelineToolInput")}
-          t={t}
           text={input}
           toolName={toolName}
         />
@@ -47,7 +46,6 @@ export function ToolCallDetails({
         <ToolDetailSection
           error={error}
           label={error ? t("timelineToolError") : t("timelineToolOutput")}
-          t={t}
           text={output}
           toolName={toolName}
         />
@@ -69,29 +67,27 @@ function ToolDetailSection({
   error = false,
   label,
   text,
-  t,
   toolName,
 }: {
   error?: boolean;
   label: string;
   text: string;
-  t: Translate;
   toolName: string;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const display = humanReadableToolText(toolName, text);
-  const long = display.length > 1_200 || display.split("\n").length > 20;
   return (
     <section className={["at-tool-detail-section", error ? "is-error" : ""]
       .filter(Boolean).join(" ")}
     >
       <div className="at-tool-detail-heading">{label}</div>
-      <pre className={!expanded && long ? "is-clamped" : ""}>{display}</pre>
-      {long ? (
-        <Button onClick={() => setExpanded((value) => !value)} size="small" type="text">
-          {expanded ? t("timelineShowLess") : t("timelineShowMore")}
-        </Button>
-      ) : null}
+      <pre
+        aria-label={label}
+        className="at-tool-detail-content at-scroll-region"
+        role="region"
+        tabIndex={0}
+      >
+        {display}
+      </pre>
     </section>
   );
 }

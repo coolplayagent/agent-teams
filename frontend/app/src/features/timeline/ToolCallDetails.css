@@ -75,21 +75,14 @@
   white-space: pre-wrap;
 }
 
-.at-tool-detail-section pre.is-clamped {
-  max-height: 240px;
-  overflow: hidden;
+.at-tool-detail-content {
+  max-height: min(360px, 42vh);
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .at-tool-detail-section.is-error pre {
   color: var(--at-danger);
-}
-
-.at-tool-detail-section > .ant-btn {
-  height: 24px;
-  margin-top: 4px;
-  padding-inline: 0;
-  color: var(--at-text-muted);
-  font-size: 11px;
 }
 
 .at-tool-raw-details {

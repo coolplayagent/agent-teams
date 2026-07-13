@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { ToolCallDetails } from "../features/timeline/ToolCallDetails";
@@ -41,7 +41,49 @@ describe("ToolCallDetails", () => {
 
     expect(await screen.findByRole("button", { name: "Copy failed" })).toBeVisible();
   });
+
+  it("renders complete input and output in scroll regions without nested disclosure controls", () => {
+    const longInput = Array.from(
+      { length: 30 },
+      (_, index) => `input-line-${index + 1}`,
+    ).join("\n");
+    const longOutput = Array.from(
+      { length: 30 },
+      (_, index) => `output-line-${index + 1}`,
+    ).join("\n");
+
+    const { container } = render(
+      <LongToolDetailsHarness input={longInput} output={longOutput} />,
+    );
+    const { getByRole, queryByRole } = within(container);
+
+    const input = getByRole("region", { name: "Input" });
+    const output = getByRole("region", { name: "Output" });
+    expect(input).toHaveTextContent("input-line-1");
+    expect(input).toHaveTextContent("input-line-30");
+    expect(output).toHaveTextContent("output-line-1");
+    expect(output).toHaveTextContent("output-line-30");
+    expect(input).toHaveClass("at-tool-detail-content", "at-scroll-region");
+    expect(output).toHaveClass("at-tool-detail-content", "at-scroll-region");
+    expect(queryByRole("button", { name: "Show more" })).not.toBeInTheDocument();
+    expect(queryByRole("button", { name: "Show less" })).not.toBeInTheDocument();
+  });
 });
+
+function LongToolDetailsHarness({ input, output }: { input: string; output: string }) {
+  const t = useTranslations();
+  return (
+    <ToolCallDetails
+      callId="call-long"
+      error={false}
+      input={input}
+      output={output}
+      raw=""
+      t={t}
+      toolName="shell"
+    />
+  );
+}
 
 function ToolDetailsHarness() {
   const t = useTranslations();

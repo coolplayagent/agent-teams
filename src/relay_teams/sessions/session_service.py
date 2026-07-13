@@ -9,7 +9,7 @@ import logging
 import shutil
 import sqlite3
 import uuid
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Mapping
 from typing import TYPE_CHECKING, NamedTuple, Protocol, cast
 
 from relay_teams.agent_runtimes.instances.models import AgentRuntimeRecord
@@ -2106,7 +2106,7 @@ class SessionService:
         session_id: str,
         *,
         after_event_id: int | None = None,
-    ) -> AsyncIterator[RunEvent | None]:
+    ) -> AsyncGenerator[RunEvent | None, None]:
         """Stream recovery-relevant session events, yielding ``None`` when ready."""
         _ = self._session_repo.get(session_id)
         queue = (

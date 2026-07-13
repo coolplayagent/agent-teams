@@ -132,6 +132,7 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
   let pendingTerminalTimeout: ReturnType<typeof globalThis.setTimeout> | null = null;
   let pendingTerminalEvents: RunEventEnvelope[] = [];
   let pendingEvents: RunEventEnvelope[] = [];
+  let pendingEventHead = 0;
   let lastStateNotificationAt = Number.NEGATIVE_INFINITY;
   const preferManualReconnect = options.trackedRunIds.length > 1;
 
@@ -155,11 +156,20 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
   };
 
   const applyPendingEventBatch = (limit = STREAM_EVENT_BATCH_SIZE) => {
-    if (pendingEvents.length === 0) {
+    const pendingCount = pendingEvents.length - pendingEventHead;
+    if (pendingCount === 0) {
       return false;
     }
-    const events = pendingEvents.slice(0, limit);
-    pendingEvents = pendingEvents.slice(events.length);
+    const eventCount = Math.min(limit, pendingCount);
+    const events = pendingEvents.slice(pendingEventHead, pendingEventHead + eventCount);
+    pendingEventHead += eventCount;
+    if (pendingEventHead === pendingEvents.length) {
+      pendingEvents = [];
+      pendingEventHead = 0;
+    } else if (pendingEventHead >= STREAM_EVENT_BATCH_SIZE * 4) {
+      pendingEvents = pendingEvents.slice(pendingEventHead);
+      pendingEventHead = 0;
+    }
     const nextRuntimeState = reduceRunEvents(runtimeState, events);
     if (nextRuntimeState === runtimeState) {
       return false;
@@ -175,7 +185,7 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
       lastStateNotificationAt = Date.now();
       options.onState(runtimeState);
     }
-    if (pendingEvents.length > 0) {
+    if (pendingEvents.length > pendingEventHead) {
       pendingStateNotification = globalThis.setTimeout(
         notifyStateNow,
         STREAM_STATE_NOTIFICATION_INTERVAL_MS,
@@ -186,15 +196,22 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
   };
 
   const flushPendingStateNotification = () => {
-    if (pendingStateNotification === null && pendingEvents.length === 0) {
+    if (
+      pendingStateNotification === null &&
+      pendingEvents.length === pendingEventHead
+    ) {
       return;
     }
     cancelPendingStateNotification();
-    if (pendingEvents.length === 0) {
+    if (pendingEvents.length === pendingEventHead) {
       return;
     }
-    const nextRuntimeState = reduceRunEvents(runtimeState, pendingEvents);
+    const nextRuntimeState = reduceRunEvents(
+      runtimeState,
+      pendingEvents.slice(pendingEventHead),
+    );
     pendingEvents = [];
+    pendingEventHead = 0;
     if (nextRuntimeState !== runtimeState) {
       runtimeState = nextRuntimeState;
       lastStateNotificationAt = Date.now();
@@ -301,7 +318,7 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
     if (isTerminalRunEvent(eventType)) {
       markStreamTerminalTiming("received", event.run_id, eventType);
       const terminalEvent = pendingEvents.pop();
-      const hasPendingDeltaState = pendingEvents.length > 0;
+      const hasPendingDeltaState = pendingEvents.length > pendingEventHead;
       flushPendingStateNotification();
       if (terminalEvent !== undefined && hasPendingDeltaState) {
         scheduleTerminalNotificationAfterDeltaPaint(terminalEvent);
@@ -315,7 +332,10 @@ function openRunEventSource(options: RunEventSourceOptions): RunStreamHandle {
       return;
     }
     notifyStateOnStreamCadence();
-    if (pendingEvents.length === 0 && trackedRunsClosed(runtimeState, options.trackedRunIds)) {
+    if (
+      pendingEvents.length === pendingEventHead &&
+      trackedRunsClosed(runtimeState, options.trackedRunIds)
+    ) {
       notifyClosed();
     }
   };

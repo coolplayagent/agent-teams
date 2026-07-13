@@ -7822,6 +7822,105 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText(/SUBAGENT_STREAM_DONE/)).not.toBeInTheDocument();
   });
 
+  it("isolates a shared orchestration run by subagent instance and task", async () => {
+    listSessionMessagesMock.mockResolvedValue([]);
+    const selectedEntry = runtimeGenericEntry({
+      eventId: 2,
+      id: "shared-run:2:selected",
+      instanceId: "crafter-instance",
+      kind: "text_delta",
+      roleId: "Crafter",
+      runId: "shared-run",
+      taskId: "crafter-task",
+      text: "Selected Crafter task output",
+    });
+    const entries = [
+      runtimeGenericEntry({
+        eventId: 1,
+        id: "shared-run:1:main",
+        instanceId: "main-instance",
+        kind: "text_delta",
+        roleId: "MainAgent",
+        runId: "shared-run",
+        taskId: "main-task",
+        text: "Main coordinator output",
+      }),
+      selectedEntry,
+      runtimeGenericEntry({
+        eventId: 3,
+        id: "shared-run:3:old-crafter-task",
+        instanceId: "crafter-instance",
+        kind: "text_delta",
+        roleId: "Crafter",
+        runId: "shared-run",
+        taskId: "old-crafter-task",
+        text: "Old Crafter task output",
+      }),
+      runtimeGenericEntry({
+        eventId: 4,
+        id: "shared-run:4:explorer",
+        instanceId: "explorer-instance",
+        kind: "text_delta",
+        roleId: "Explorer",
+        runId: "shared-run",
+        taskId: "explorer-task",
+        text: "Explorer sibling output",
+      }),
+    ];
+    setRuntimeEntries(entries, "open");
+
+    const { container } = renderTimeline("session-1", {
+      runtimeRunId: "shared-run",
+      subagentScopeInstanceId: "crafter-instance",
+      subagentScopeRoleId: "Crafter",
+      subagentScopeTaskId: "crafter-task",
+      variant: "subagent-panel",
+    });
+
+    const selectedText = await screen.findByText("Selected Crafter task output");
+    const selectedRow = selectedText.closest("article");
+    expect(selectedRow).not.toBeNull();
+    expect(screen.queryByText("Main coordinator output")).not.toBeInTheDocument();
+    expect(screen.queryByText("Old Crafter task output")).not.toBeInTheDocument();
+    expect(screen.queryByText("Explorer sibling output")).not.toBeInTheDocument();
+
+    act(() => {
+      const current = useRuntimeStore.getState().runtimeState;
+      const runState = current.runs["shared-run"];
+      if (runState === undefined) {
+        throw new Error("shared run missing");
+      }
+      useRuntimeStore.getState().setRuntimeState({
+        ...current,
+        runs: {
+          ...current.runs,
+          "shared-run": {
+            ...runState,
+            entries: [
+              ...runState.entries,
+              runtimeGenericEntry({
+                eventId: 5,
+                id: "shared-run:5:unrelated-explorer-delta",
+                instanceId: "explorer-instance",
+                kind: "text_delta",
+                roleId: "Explorer",
+                runId: "shared-run",
+                taskId: "explorer-task",
+                text: "New unrelated Explorer delta",
+              }),
+            ],
+            lastEventId: 5,
+          },
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText("New unrelated Explorer delta")).not.toBeInTheDocument();
+      expect(container.querySelector("article")).toBe(selectedRow);
+    });
+  });
+
   it("does not leave a streaming cursor on a completed subagent stream", async () => {
     setRuntimeStateFromEvents([
       relayRunEvent({
@@ -13733,6 +13832,9 @@ interface RenderTimelineOptions {
   primaryRoleId?: string | null;
   roundsEnabled?: boolean;
   runtimeRunId?: string | null;
+  subagentScopeInstanceId?: string | null;
+  subagentScopeRoleId?: string | null;
+  subagentScopeTaskId?: string | null;
   variant?: Parameters<typeof MessageTimeline>[0]["variant"];
   visible?: boolean;
   workspaceId?: string | null;
@@ -13765,6 +13867,9 @@ function renderTimeline(
             roundsEnabled={options.roundsEnabled ?? true}
             sessionId={sessionId}
             runtimeRunId={options.runtimeRunId ?? null}
+            subagentScopeInstanceId={options.subagentScopeInstanceId ?? null}
+            subagentScopeRoleId={options.subagentScopeRoleId ?? null}
+            subagentScopeTaskId={options.subagentScopeTaskId ?? null}
             variant={options.variant ?? "session"}
             visible={options.visible ?? true}
             workspaceId={options.workspaceId ?? null}
@@ -14151,6 +14256,8 @@ function runtimeGenericEntry({
   instanceId,
   kind,
   roleId = "MainAgent",
+  runId = "run-output",
+  taskId,
   text,
   eventId,
   payload,
@@ -14159,6 +14266,8 @@ function runtimeGenericEntry({
   instanceId?: string;
   kind: TimelineEntry["kind"];
   roleId?: string;
+  runId?: string;
+  taskId?: string;
   text: string;
   eventId: number;
   payload?: TimelineEntry["payload"];
@@ -14167,7 +14276,8 @@ function runtimeGenericEntry({
     id,
     instanceId,
     sessionId: "session-1",
-    runId: "run-output",
+    runId,
+    taskId,
     roleId,
     kind,
     text,

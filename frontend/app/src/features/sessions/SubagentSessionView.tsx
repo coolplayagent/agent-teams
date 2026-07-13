@@ -69,9 +69,15 @@ export const SubagentSessionView = memo(function SubagentSessionView({
       : mergeSubagentRecordContext(latestSubagentRecord, subagent);
   const sessionId = recordAwareSubagent.sessionId;
   const runId = recordAwareSubagent.runId.trim();
+  const dedicatedRunId = recordAwareSubagent.subagentKind === "orchestration"
+    ? ""
+    : runId;
   const sourceRunId = recordAwareSubagent.sourceRunId?.trim() ?? "";
   const timelineRunId = runId || sourceRunId;
   const instanceId = recordAwareSubagent.instanceId.trim();
+  const usesSharedTimelineRun =
+    recordAwareSubagent.subagentKind === "orchestration" ||
+    (runId.length === 0 && sourceRunId.length > 0);
   const runtimeRunState = useRuntimeStore((state) =>
     runId ? state.runtimeState.runs[runId] ?? null : null,
   );
@@ -112,9 +118,21 @@ export const SubagentSessionView = memo(function SubagentSessionView({
         return [];
       }
       const messages = await listAgentMessages(sessionId, instanceId);
-      return filterStructuredSubagentPrompt(messages, displayedSubagent.taskId ?? "");
+      return subagentTaskMessages(
+        messages,
+        displayedSubagent.taskId ?? "",
+        shouldShowSubagentPrompt,
+        recordAwareSubagent.subagentKind === "orchestration",
+      );
     },
-    [displayedSubagent.taskId, hasMessageHistoryTarget, instanceId, sessionId],
+    [
+      displayedSubagent.taskId,
+      hasMessageHistoryTarget,
+      instanceId,
+      sessionId,
+      shouldShowSubagentPrompt,
+      recordAwareSubagent.subagentKind,
+    ],
   );
 
   useEffect(() => {
@@ -156,25 +174,25 @@ export const SubagentSessionView = memo(function SubagentSessionView({
   useEffect(() => {
     if (!visible) {
       resetSubagentReconnect();
-      if (streamedRunIdRef.current === runId) {
+      if (streamedRunIdRef.current === dedicatedRunId) {
         subagentStreamRef.current?.close();
         subagentStreamRef.current = null;
         streamedRunIdRef.current = null;
       }
       return;
     }
-    if (!shouldStreamSubagentRun(runId, streamStatusKey)) {
+    if (!shouldStreamSubagentRun(dedicatedRunId, streamStatusKey)) {
       return;
     }
-    if (streamedRunIdRef.current === runId) {
+    if (streamedRunIdRef.current === dedicatedRunId) {
       return;
     }
     subagentStreamRef.current?.close();
-    streamedRunIdRef.current = runId;
+    streamedRunIdRef.current = dedicatedRunId;
     const storeRuntimeState = useRuntimeStore.getState().runtimeState;
     const currentRuntimeState = runtimeStateWithScopedRun(
       storeRuntimeState,
-      runId,
+      dedicatedRunId,
       sessionId,
       "subagent",
     );
@@ -182,7 +200,7 @@ export const SubagentSessionView = memo(function SubagentSessionView({
       setRuntimeState(currentRuntimeState);
     }
     const streamHandle = openSessionSubagentRunStream({
-      afterEventId: currentRuntimeState.runs[runId]?.lastEventId ?? 0,
+      afterEventId: currentRuntimeState.runs[dedicatedRunId]?.lastEventId ?? 0,
       initialState: currentRuntimeState,
       onActivity: resetSubagentReconnect,
       onClosed: (closedRuntimeState) => {
@@ -191,11 +209,11 @@ export const SubagentSessionView = memo(function SubagentSessionView({
         const displayRuntimeState = subagentClosedRuntimeStateForDisplay({
           closedRuntimeState,
           currentRuntimeState: latestRuntimeState,
-          runId,
+          runId: dedicatedRunId,
           sessionId,
         });
         setRuntimeState(displayRuntimeState);
-        if (streamedRunIdRef.current === runId) {
+        if (streamedRunIdRef.current === dedicatedRunId) {
           streamedRunIdRef.current = null;
           subagentStreamRef.current = null;
         }
@@ -205,18 +223,18 @@ export const SubagentSessionView = memo(function SubagentSessionView({
         }
         const terminalInstanceId =
           latestTarget.instanceId.trim() ||
-          runtimeInstanceId(closedRuntimeState.runs[runId]);
+          runtimeInstanceId(closedRuntimeState.runs[dedicatedRunId]);
         void refreshSubagentTerminalHistoryFromRuntime({
           instanceId: terminalInstanceId,
           messageQueryKey: latestTarget.messageQueryKey,
           queryClient: latestTarget.queryClient,
-          runId,
+          runId: dedicatedRunId,
           runtimeState: displayRuntimeState,
           sessionId: latestTarget.sessionId,
         });
       },
       onError: (_message, errorKind) => {
-        if (streamedRunIdRef.current === runId) {
+        if (streamedRunIdRef.current === dedicatedRunId) {
           subagentStreamRef.current?.close();
           streamedRunIdRef.current = null;
           subagentStreamRef.current = null;
@@ -226,19 +244,19 @@ export const SubagentSessionView = memo(function SubagentSessionView({
         }
       },
       onState: (nextRuntimeState) => {
-        const nextSubagentRun = nextRuntimeState.runs[runId];
+        const nextSubagentRun = nextRuntimeState.runs[dedicatedRunId];
         const latestRuntimeState = useRuntimeStore.getState().runtimeState;
         const scopedRuntimeState = mergeSubagentRunIntoRuntimeState(
           latestRuntimeState,
           nextSubagentRun,
-          runId,
+          dedicatedRunId,
           sessionId,
         );
-        if (scopedRuntimeState.runs[runId]?.status === "closed") {
+        if (scopedRuntimeState.runs[dedicatedRunId]?.status === "closed") {
           const displayRuntimeState = subagentClosedRuntimeStateForDisplay({
             closedRuntimeState: scopedRuntimeState,
             currentRuntimeState: latestRuntimeState,
-            runId,
+            runId: dedicatedRunId,
             sessionId,
           });
           setRuntimeState(displayRuntimeState);
@@ -246,13 +264,13 @@ export const SubagentSessionView = memo(function SubagentSessionView({
         }
         setRuntimeState(scopedRuntimeState);
       },
-      runId,
+      runId: dedicatedRunId,
       sessionId,
     });
     subagentStreamRef.current = streamHandle;
   }, [
     resetSubagentReconnect,
-    runId,
+    dedicatedRunId,
     scheduleSubagentReconnect,
     sessionId,
     setRuntimeState,
@@ -264,13 +282,13 @@ export const SubagentSessionView = memo(function SubagentSessionView({
   useEffect(() => {
     return () => {
       resetSubagentReconnect();
-      if (streamedRunIdRef.current === runId) {
+      if (streamedRunIdRef.current === dedicatedRunId) {
         subagentStreamRef.current?.close();
         subagentStreamRef.current = null;
         streamedRunIdRef.current = null;
       }
     };
-  }, [resetSubagentReconnect, runId, sessionId]);
+  }, [dedicatedRunId, resetSubagentReconnect, sessionId]);
 
   useEffect(() => {
     return () => {
@@ -338,7 +356,19 @@ export const SubagentSessionView = memo(function SubagentSessionView({
             roundsEnabled={false}
             runtimeRunId={timelineRunId}
             sessionId={sessionId}
-            subagentScopeRoleId={runId.length > 0 ? null : recordAwareSubagent.roleId}
+            subagentScopeInstanceId={
+              usesSharedTimelineRun ? instanceId : null
+            }
+            subagentScopeRoleId={
+              usesSharedTimelineRun
+                ? recordAwareSubagent.roleId
+                : null
+            }
+            subagentScopeTaskId={
+              usesSharedTimelineRun
+                ? displayedSubagent.taskId ?? null
+                : null
+            }
             variant="subagent-panel"
             visible={visible}
           />
@@ -622,18 +652,34 @@ function agentMessagesHaveExpectedToolCalls(
   );
 }
 
-function filterStructuredSubagentPrompt(
+function subagentTaskMessages(
   messages: TimelineMessage[],
   taskId: string,
+  omitPrompt: boolean,
+  scopeToTask: boolean,
 ): TimelineMessage[] {
-  const normalizedTaskId = taskId.trim();
+  const normalizedTaskId = taskId.trim() || latestMessageTaskId(messages);
   if (normalizedTaskId.length === 0) {
     return messages;
   }
   return messages.filter((message) => {
+    if (scopeToTask && message.task_id?.trim() !== normalizedTaskId) {
+      return false;
+    }
     const role = message.role?.trim().toLowerCase() ?? "";
-    return message.task_id?.trim() !== normalizedTaskId || role !== "user";
+    return !omitPrompt || role !== "user" ||
+      (!scopeToTask && message.task_id?.trim() !== normalizedTaskId);
   });
+}
+
+function latestMessageTaskId(messages: TimelineMessage[]): string {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const taskId = messages[index]?.task_id?.trim() ?? "";
+    if (taskId.length > 0) {
+      return taskId;
+    }
+  }
+  return "";
 }
 
 function timelineMessageParts(message: TimelineMessage): ContentPart[] {
@@ -673,15 +719,39 @@ function matchingSubagentFromRecords(
     .filter((record): record is ActiveSubagentSession => record !== null);
   const runId = subagent.runId.trim();
   const instanceId = subagent.instanceId.trim();
-  for (const record of normalized) {
-    if (runId.length > 0 && record.runId === runId) {
-      return record;
-    }
-    if (instanceId.length > 0 && record.instanceId === instanceId) {
-      return record;
+  if (instanceId.length > 0) {
+    const instanceMatch = normalized.find(
+      (record) => record.instanceId === instanceId,
+    );
+    if (instanceMatch !== undefined) {
+      return instanceMatch;
     }
   }
-  return null;
+  const taskId = subagent.taskId?.trim() ?? "";
+  if (taskId.length > 0) {
+    const taskMatch = normalized.find((record) => record.taskId === taskId);
+    if (taskMatch !== undefined) {
+      return taskMatch;
+    }
+  }
+  const runMatches = normalized.filter(
+    (record) => runId.length > 0 && record.runId === runId,
+  );
+  if (runMatches.length === 1) {
+    return runMatches[0] ?? null;
+  }
+  const roleId = subagent.roleId.trim();
+  if (roleId.length > 0) {
+    const roleMatches = (runId.length > 0 ? runMatches : normalized).filter(
+      (record) => record.roleId === roleId,
+    );
+    if (roleMatches.length === 1) {
+      return roleMatches[0] ?? null;
+    }
+  }
+  return runId.length === 0 && instanceId.length === 0 && normalized.length === 1
+    ? normalized[0] ?? null
+    : null;
 }
 
 function mergeSubagentRecordContext(

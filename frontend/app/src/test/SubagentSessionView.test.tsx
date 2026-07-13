@@ -337,6 +337,7 @@ describe("SubagentSessionView", () => {
         message_id: "subagent-answer",
         role_id: "assistant",
         run_id: "subagent_run_1",
+        task_id: "subagent-task-1",
       },
     ]);
     const controller = createRunStreamController();
@@ -357,6 +358,85 @@ describe("SubagentSessionView", () => {
       .toBeVisible();
     expect(document.body.textContent?.match(new RegExp(prompt, "g")) ?? [])
       .toHaveLength(1);
+  });
+
+  it("loads only the selected task from a reused orchestration instance", async () => {
+    listAgentMessagesMock.mockResolvedValue([
+      {
+        content: "Old task output that must stay outside this panel.",
+        created_at: "2026-06-23T09:00:00Z",
+        message_id: "old-task-answer",
+        role: "assistant",
+        role_id: "Crafter",
+        run_id: "parent-run",
+        task_id: "old-task",
+      },
+      {
+        content: "Current task prompt.",
+        created_at: "2026-06-23T10:00:00Z",
+        message_id: "current-task-prompt",
+        role: "user",
+        role_id: "Crafter",
+        run_id: "parent-run",
+        task_id: "current-task",
+      },
+      {
+        content: "Current task output.",
+        created_at: "2026-06-23T10:01:00Z",
+        message_id: "current-task-answer",
+        role: "assistant",
+        role_id: "Crafter",
+        run_id: "parent-run",
+        task_id: "current-task",
+      },
+    ]);
+
+    renderSubagentSessionView({
+      subagent: createSubagent({
+        promptText: "Current task prompt.",
+        roleId: "Crafter",
+        runId: "parent-run",
+        runPhase: "completed",
+        runStatus: "completed",
+        status: "completed",
+        subagentKind: "orchestration",
+        taskId: "current-task",
+      }),
+    });
+
+    expect(await screen.findByText("Current task output.")).toBeVisible();
+    expect(
+      screen.queryByText("Old task output that must stay outside this panel."),
+    ).not.toBeInTheDocument();
+    expect(document.body.textContent?.match(/Current task prompt\./g) ?? [])
+      .toHaveLength(1);
+  });
+
+  it("does not attach the normal-mode event stream to a shared orchestration run", async () => {
+    const parentRunId = "shared-parent-run";
+    setRuntimeEntries([
+      runtimeMessageEntry({
+        instanceId: "subagent-instance-1",
+        runId: parentRunId,
+        text: "Current orchestration child output.",
+      }),
+    ]);
+
+    renderSubagentSessionView({
+      subagent: createSubagent({
+        runId: parentRunId,
+        runPhase: "running",
+        runStatus: "running",
+        status: "running",
+        subagentKind: "orchestration",
+      }),
+    });
+
+    expect(await screen.findByText("Current orchestration child output."))
+      .toBeVisible();
+    expect(openSessionSubagentRunStreamMock).not.toHaveBeenCalled();
+    expect(useRuntimeStore.getState().runtimeState.runs[parentRunId]?.scope)
+      .toBeUndefined();
   });
 
   it("replays a running subagent from the beginning when no live cursor exists", async () => {

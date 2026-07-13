@@ -312,12 +312,23 @@ export function MessageTimeline({
         primaryRoleId,
         runtimeRunId,
         sessionId,
+        subagentInstanceId: subagentScopeInstanceId,
         subagentRoleId: subagentScopeRoleId,
+        subagentTaskId: subagentScopeTaskId,
         variant,
       },
       runtimeRowSelectionCacheRef.current,
     ),
-    [primaryInstancesByRunId, primaryRoleId, runtimeRunId, sessionId, subagentScopeRoleId, variant],
+    [
+      primaryInstancesByRunId,
+      primaryRoleId,
+      runtimeRunId,
+      sessionId,
+      subagentScopeInstanceId,
+      subagentScopeRoleId,
+      subagentScopeTaskId,
+      variant,
+    ],
   ));
   const activeRunIds = useRuntimeStore(
     (state) => state.runtimeState.activeRunIds,
@@ -345,7 +356,9 @@ export function MessageTimeline({
         primaryRoleId,
         runtimeRunId,
         sessionId,
+        subagentInstanceId: subagentScopeInstanceId,
         subagentRoleId: subagentScopeRoleId,
+        subagentTaskId: subagentScopeTaskId,
         variant,
       }))
       .map((runState) => [runState.runId, runState]),
@@ -356,7 +369,9 @@ export function MessageTimeline({
     runtimeRunId,
     runtimeRuns,
     sessionId,
+    subagentScopeInstanceId,
     subagentScopeRoleId,
+    subagentScopeTaskId,
     variant,
   ]);
   const roundChromeEnabled = variant === "session";
@@ -383,7 +398,9 @@ export function MessageTimeline({
       sessionId,
       runtimeRunId,
       primaryRoleId,
+      subagentScopeInstanceId,
       subagentScopeRoleId,
+      subagentScopeTaskId,
       variant,
     ),
     [
@@ -392,7 +409,9 @@ export function MessageTimeline({
       runtimeRunId,
       runtimeRunsForRows,
       sessionId,
+      subagentScopeInstanceId,
       subagentScopeRoleId,
+      subagentScopeTaskId,
       variant,
     ],
   );
@@ -447,7 +466,9 @@ export function MessageTimeline({
           primaryRoleId,
           runtimeRunId,
           sessionId,
+          subagentInstanceId: subagentScopeInstanceId,
           subagentRoleId: subagentScopeRoleId,
+          subagentTaskId: subagentScopeTaskId,
           variant,
         });
         const messageRoundLookup = createMessageRoundLookup(scopedRounds);
@@ -484,7 +505,9 @@ export function MessageTimeline({
         primaryRoleId,
         runtimeRunId,
         sessionId,
+        subagentInstanceId: subagentScopeInstanceId,
         subagentRoleId: subagentScopeRoleId,
+        subagentTaskId: subagentScopeTaskId,
         variant,
         workspaceId,
       }),
@@ -501,7 +524,9 @@ export function MessageTimeline({
       rounds,
       runtimeRunId,
       sessionId,
+      subagentScopeInstanceId,
       subagentScopeRoleId,
+      subagentScopeTaskId,
       variant,
       workspaceId,
     ],
@@ -551,7 +576,9 @@ export function MessageTimeline({
             sessionId,
             runtimeRunId,
             primaryRoleId,
+            subagentScopeInstanceId,
             subagentScopeRoleId,
+            subagentScopeTaskId,
             variant,
             hydratedOutputTextByRunId,
             hydratedOutputSourcesByRunId,
@@ -568,7 +595,9 @@ export function MessageTimeline({
       runtimeRunId,
       runtimeRunsForRows,
       sessionId,
+      subagentScopeInstanceId,
       subagentScopeRoleId,
+      subagentScopeTaskId,
       variant,
     ],
   );
@@ -757,7 +786,9 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
             primaryRoleId,
             runtimeRunId,
             sessionId,
+            subagentInstanceId: subagentScopeInstanceId,
             subagentRoleId: subagentScopeRoleId,
+            subagentTaskId: subagentScopeTaskId,
             variant,
           });
       }),
@@ -767,7 +798,9 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
       runtimeRunId,
       runtimeRuns,
       sessionId,
+      subagentScopeInstanceId,
       subagentScopeRoleId,
+      subagentScopeTaskId,
       variant,
     ],
   );
@@ -1365,7 +1398,9 @@ interface PersistedRowsCacheKeyOptions {
   primaryRoleId: string | null;
   runtimeRunId: string | null;
   sessionId: string | null;
+  subagentInstanceId: string | null;
   subagentRoleId: string | null;
+  subagentTaskId: string | null;
   variant: "session" | "subagent-panel";
   workspaceId: string | null;
 }
@@ -1568,8 +1603,16 @@ function timelineScrollScopeKey(
   sessionId: string | null,
   variant: "session" | "subagent-panel",
   runtimeRunId: string | null,
+  subagentInstanceId: string | null,
+  subagentTaskId: string | null,
 ): string {
-  return [variant, sessionId ?? "", runtimeRunId?.trim() ?? ""].join(":");
+  return [
+    variant,
+    sessionId ?? "",
+    runtimeRunId?.trim() ?? "",
+    subagentInstanceId?.trim() ?? "",
+    subagentTaskId?.trim() ?? "",
+  ].join(":");
 }
 
 function persistedRowsCacheKey({
@@ -1577,7 +1620,9 @@ function persistedRowsCacheKey({
   primaryRoleId,
   runtimeRunId,
   sessionId,
+  subagentInstanceId,
   subagentRoleId,
+  subagentTaskId,
   variant,
   workspaceId,
 }: PersistedRowsCacheKeyOptions): string {
@@ -1587,7 +1632,9 @@ function persistedRowsCacheKey({
     runtimeRunId?.trim() ?? "",
     fallbackRunId?.trim() ?? "",
     primaryRoleId?.trim() ?? "",
+    subagentInstanceId?.trim() ?? "",
     subagentRoleId?.trim() ?? "",
+    subagentTaskId?.trim() ?? "",
     workspaceId?.trim() ?? "",
   ].join(":");
 }
@@ -5090,7 +5137,9 @@ function roundsWithRuntimeRunState(
   sessionId: string | null,
   runtimeRunId: string | null,
   primaryRoleId: string | null,
+  subagentScopeInstanceId: string | null,
   subagentScopeRoleId: string | null,
+  subagentScopeTaskId: string | null,
   variant: "session" | "subagent-panel",
 ): SessionRound[] {
   let changed = false;
@@ -5150,7 +5199,9 @@ function roundsWithRuntimeRunState(
       primaryRoleId,
       runtimeRunId,
       sessionId,
+      subagentInstanceId: subagentScopeInstanceId,
       subagentRoleId: subagentScopeRoleId,
+      subagentTaskId: subagentScopeTaskId,
       variant,
     });
     return runtimeRound === null ? [] : [runtimeRound];
@@ -5162,7 +5213,9 @@ function roundsWithRuntimeRunState(
     primaryRoleId,
     runtimeRunId,
     sessionId,
+    subagentInstanceId: subagentScopeInstanceId,
     subagentRoleId: subagentScopeRoleId,
+    subagentTaskId: subagentScopeTaskId,
     variant,
   });
 }
@@ -5323,8 +5376,7 @@ function runtimeRunStateMatchesScope(
   runState: RuntimeRunState,
   scope: RuntimeTimelineScope,
 ): boolean {
-  const { primaryRoleId, runtimeRunId, sessionId, subagentRoleId, variant } =
-    scope;
+  const { primaryRoleId, runtimeRunId, sessionId, variant } = scope;
   if (sessionId === null) {
     return false;
   }
@@ -5336,8 +5388,9 @@ function runtimeRunStateMatchesScope(
     ) {
       return false;
     }
-    return variant !== "subagent-panel" ||
-      runtimeRunStateHasSubagentScopeRole(runState, subagentRoleId);
+    return variant !== "subagent-panel" || runState.entries.some((entry) =>
+      runtimeEntryMatchesSubagentScope(entry, scope)
+    );
   }
   if (variant === "subagent-panel" || !runtimeRunStateHasSession(runState, sessionId)) {
     return false;
@@ -5355,32 +5408,20 @@ function runtimeRunStateHasSession(
   return runState.entries.some((entry) => entry.sessionId === sessionId);
 }
 
-function runtimeRunStateHasSubagentScopeRole(
-  runState: RuntimeRunState,
-  roleId: string | null,
-): boolean {
-  const normalizedRole = stableTimelineRole(roleId ?? "");
-  if (normalizedRole.length === 0) {
-    return true;
-  }
-  return runState.entries.some(
-    (entry) => stableTimelineRole(entry.roleId) === normalizedRole,
-  );
-}
-
-function runtimeEntryMatchesSubagentScopeRole(
+function runtimeEntryMatchesSubagentScope(
   entry: TimelineEntry,
-  roleId: string | null,
-  variant: "session" | "subagent-panel",
+  scope: RuntimeTimelineScope,
 ): boolean {
-  if (variant !== "subagent-panel") {
+  if (scope.variant !== "subagent-panel") {
     return true;
   }
-  const normalizedRole = stableTimelineRole(roleId ?? "");
-  return (
-    normalizedRole.length === 0 ||
-    stableTimelineRole(entry.roleId) === normalizedRole
-  );
+  const normalizedRole = stableTimelineRole(scope.subagentRoleId ?? "");
+  const instanceId = scope.subagentInstanceId?.trim() ?? "";
+  const taskId = scope.subagentTaskId?.trim() ?? "";
+  return (normalizedRole.length === 0 ||
+      stableTimelineRole(entry.roleId) === normalizedRole) &&
+    (instanceId.length === 0 || entry.instanceId?.trim() === instanceId) &&
+    (taskId.length === 0 || entry.taskId?.trim() === taskId);
 }
 
 function runtimeRunCreatedAt(runState: RuntimeRunState): string | undefined {
@@ -5728,7 +5769,9 @@ function runtimeEntriesAfterHydration(
   sessionId: string | null,
   runtimeRunId: string | null,
   primaryRoleId: string | null,
+  subagentScopeInstanceId: string | null,
   subagentScopeRoleId: string | null,
+  subagentScopeTaskId: string | null,
   variant: "session" | "subagent-panel",
   hydratedOutputTextByRunId: Map<string, string>,
   hydratedOutputSourcesByRunId: Map<string, Set<TimelineRunIdSource>>,
@@ -5740,7 +5783,9 @@ function runtimeEntriesAfterHydration(
       primaryRoleId,
       runtimeRunId,
       sessionId,
+      subagentInstanceId: subagentScopeInstanceId,
       subagentRoleId: subagentScopeRoleId,
+      subagentTaskId: subagentScopeTaskId,
       variant,
     }),
   );
@@ -6041,7 +6086,9 @@ interface RuntimeTimelineScope {
   primaryRoleId: string | null;
   runtimeRunId: string | null;
   sessionId: string | null;
+  subagentInstanceId: string | null;
   subagentRoleId: string | null;
+  subagentTaskId: string | null;
   variant: "session" | "subagent-panel";
 }
 
@@ -6057,7 +6104,9 @@ function selectRuntimeRowsForTimeline(
     Array.from(scope.primaryInstancesByRunId ?? [])
       .map(([runId, instanceId]) => `${runId}:${instanceId}`)
       .join(","),
+    scope.subagentInstanceId ?? "",
     scope.subagentRoleId ?? "",
+    scope.subagentTaskId ?? "",
     scope.variant,
   ].join("|");
   if (cache.scopeKey !== scopeKey) {
@@ -6093,7 +6142,7 @@ function scopedRuntimeRunSnapshot(
   previous: RuntimeRunState | undefined,
 ): RuntimeRunState {
   if (
-    scope.variant !== "session" ||
+    scope.variant === "session" &&
     (scope.runtimeRunId?.trim() ?? "").length > 0
   ) {
     return runState;
@@ -6150,15 +6199,14 @@ function runtimeEntryMatchesScope(
   runState: RuntimeRunState,
   scope: RuntimeTimelineScope,
 ): boolean {
-  const { primaryRoleId, runtimeRunId, sessionId, subagentRoleId, variant } =
-    scope;
+  const { primaryRoleId, runtimeRunId, sessionId, variant } = scope;
   if (entry.sessionId !== sessionId) {
     return false;
   }
   const scopedRunId = runtimeRunId?.trim() ?? "";
   if (scopedRunId.length > 0) {
     return entry.runId === scopedRunId &&
-      runtimeEntryMatchesSubagentScopeRole(entry, subagentRoleId, variant);
+      runtimeEntryMatchesSubagentScope(entry, scope);
   }
   if (variant === "subagent-panel") {
     return false;

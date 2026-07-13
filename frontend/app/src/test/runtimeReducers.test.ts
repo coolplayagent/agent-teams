@@ -69,6 +69,24 @@ describe("runtime reducers", () => {
     expect(twice.runs["run-1"].lastEventId).toBe(7);
   });
 
+  it("preserves task and instance identity for shared orchestration runs", () => {
+    const state = reduceRunEvent(
+      initialRuntimeState,
+      runEvent({
+        event_id: 8,
+        event_type: "thinking_delta",
+        instance_id: "crafter-instance",
+        task_id: "crafter-task",
+        payload_json: JSON.stringify({ text: "Inspecting" }),
+      }),
+    );
+
+    expect(state.runs["run-1"].entries[0]).toMatchObject({
+      instanceId: "crafter-instance",
+      taskId: "crafter-task",
+    });
+  });
+
   it("replays model slot waiting as local run state without timeline noise", () => {
     const waiting = reduceRunEvent(
       initialRuntimeState,

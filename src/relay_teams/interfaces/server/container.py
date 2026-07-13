@@ -45,7 +45,7 @@ from relay_teams.builtin import (
 from relay_teams.boards import BoardTodoRepository, BoardTodoService
 from relay_teams.commands import CommandRegistry
 from relay_teams.connector import ConnectorService, W3ConnectorService
-from relay_teams.computer import build_default_computer_runtime
+from relay_teams.computer import ComputerRuntime, build_default_computer_runtime
 from relay_teams.agents.orchestration.meta_agent import MetaAgent
 from relay_teams.agents.orchestration.settings_config_manager import (
     OrchestrationSettingsConfigManager,
@@ -301,6 +301,7 @@ class ServerContainer:
         roles_dir: Path | None = None,
         db_path: Path | None = None,
         manage_runtime_state: bool = True,
+        computer_runtime: ComputerRuntime | None = None,
         session_model_profile_lookup: (Callable[[str], ModelEndpointConfig | None])
         | None = None,
     ) -> None:
@@ -526,7 +527,11 @@ class ServerContainer:
             repository=self.media_asset_repo,
             workspace_manager=self.workspace_manager,
         )
-        self.computer_runtime = build_default_computer_runtime(project_root=Path.cwd())
+        self.computer_runtime = (
+            build_default_computer_runtime(project_root=Path.cwd())
+            if computer_runtime is None
+            else computer_runtime
+        )
         self.event_log: EventLog = EventLog(runtime.paths.db_path)
         self.agent_repo: AgentInstanceRepository = AgentInstanceRepository(
             runtime.paths.db_path

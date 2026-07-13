@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+from relay_teams.computer import ComputerRuntime
 from relay_teams.interfaces.server.async_call import (
     RouteWorkRejectedError,
     reset_default_route_work_class,
@@ -53,9 +54,20 @@ RequestHandler = Callable[[Request], Awaitable[Response]]
 logger = get_logger(__name__)
 
 
-def build_hydration_bundle(*, config_dir: Path, version: str) -> HydrationBundle:
+def build_hydration_bundle(
+    *,
+    config_dir: Path,
+    version: str,
+    computer_runtime: ComputerRuntime | None = None,
+) -> HydrationBundle:
     configure_logging(config_dir=config_dir)
-    container = ServerContainer(config_dir=config_dir)
+    if computer_runtime is None:
+        container = ServerContainer(config_dir=config_dir)
+    else:
+        container = ServerContainer(
+            config_dir=config_dir,
+            computer_runtime=computer_runtime,
+        )
     api_app = FastAPI(
         title="Agent Teams Server",
         description="REST API for Agent Teams orchestration.",

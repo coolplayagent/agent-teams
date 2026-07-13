@@ -57,7 +57,7 @@ export async function startManagedRealBackend(): Promise<ManagedRealBackend> {
       args: [
         "-m",
         "uvicorn",
-        "relay_teams.interfaces.server.app:app",
+        "integration_tests.support.server_app:app",
         "--host",
         "127.0.0.1",
         "--port",
@@ -146,7 +146,6 @@ function managedProcessEnv(runtimeRoot: string): NodeJS.ProcessEnv {
     env.HOMEDRIVE = runtimeRoot.slice(0, 2);
     env.HOMEPATH = runtimeRoot.slice(2) || "\\";
   }
-  env.AGENT_TEAMS_COMPUTER_RUNTIME = "fake";
   env.PYTHON_KEYRING_BACKEND = "keyring.backends.null.Keyring";
   env.RELAY_TEAMS_LLM_HTTP_MAX_CONCURRENCY = "4";
   for (const key of [

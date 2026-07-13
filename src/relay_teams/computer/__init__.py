@@ -25,7 +25,6 @@ from relay_teams.computer.mapping import (
 from relay_teams.computer.runtime import (
     ComputerRuntime,
     DisabledComputerRuntime,
-    ScriptedComputerRuntime,
     build_default_computer_runtime,
 )
 
@@ -48,7 +47,6 @@ __all__ = [
     "DisabledComputerRuntime",
     "ExecutionSurface",
     "LinuxDesktopRuntime",
-    "ScriptedComputerRuntime",
     "WindowsDesktopRuntime",
     "build_computer_tool_payload",
     "build_default_computer_runtime",

@@ -82,6 +82,10 @@ import {
   rememberHydratedTimelineRow,
 } from "./timelineRowHydration";
 import {
+  projectRuntimeEntriesForScope,
+  type RuntimeEntryScopeProjection,
+} from "./runtimeScopeProjection";
+import {
   approvalActionIsApproved,
   approvalActionIsError,
   normalizedInjectionStatus,
@@ -329,6 +333,7 @@ export function MessageTimeline({
     }
   }, [primaryInstancesByRunId]);
   const runtimeRowSelectionCacheRef = useRef<RuntimeRowSelectionCache>({
+    entryProjectionsByRunId: new Map(),
     runs: [],
     runsById: new Map(),
   });
@@ -378,30 +383,7 @@ export function MessageTimeline({
   );
   const visibleModelRequestPhase = latestModelRequestPhase(runtimeRunList);
   const messages = useMemo(() => messagesQuery.data ?? [], [messagesQuery.data]);
-  const runtimeRunsForRows = useMemo(() => Object.fromEntries(
-    Object.values(useRuntimeStore.getState().runtimeState.runs)
-      .filter((runState) => runtimeRunStateMatchesScope(runState, {
-        primaryRoleId,
-        runtimeRunId,
-        sessionId,
-        subagentInstanceId: subagentScopeInstanceId,
-        subagentRoleId: subagentScopeRoleId,
-        subagentTaskId: subagentScopeTaskId,
-        variant,
-      }))
-      .map((runState) => [runState.runId, runState]),
-  ), [
-    messagesQuery.dataUpdatedAt,
-    primaryRoleId,
-    roundsQuery.dataUpdatedAt,
-    runtimeRunId,
-    runtimeRuns,
-    sessionId,
-    subagentScopeInstanceId,
-    subagentScopeRoleId,
-    subagentScopeTaskId,
-    variant,
-  ]);
+  const runtimeRunsForRows = runtimeRuns;
   const roundChromeEnabled = variant === "session";
   const persistedRounds = useMemo(
     () =>
@@ -609,12 +591,6 @@ export function MessageTimeline({
         .flatMap((runState) =>
           runtimeEntriesAfterHydration(
             runState,
-            sessionId,
-            runtimeRunId,
-            primaryRoleId,
-            subagentScopeInstanceId,
-            subagentScopeRoleId,
-            subagentScopeTaskId,
             variant,
             hydratedOutputTextByRunId,
             hydratedOutputSourcesByRunId,
@@ -627,13 +603,7 @@ export function MessageTimeline({
       hydratedOutputSourcesByRunId,
       hydratedThinkingTextByRunId,
       hydratedToolStatesByRunId,
-      primaryRoleId,
-      runtimeRunId,
       runtimeRunsForRows,
-      sessionId,
-      subagentScopeInstanceId,
-      subagentScopeRoleId,
-      subagentScopeTaskId,
       variant,
     ],
   );
@@ -1457,6 +1427,7 @@ interface TimelineProcessedGroup {
 }
 
 interface RuntimeRowSelectionCache {
+  entryProjectionsByRunId: Map<string, RuntimeEntryScopeProjection>;
   runs: RuntimeRunState[];
   runsById: Map<string, RuntimeRunState>;
   scopeKey?: string;
@@ -5867,29 +5838,13 @@ function timelineThinkingTextByRunId(rows: TimelineRow[]): Map<string, string> {
 
 function runtimeEntriesAfterHydration(
   runState: RuntimeRunState,
-  sessionId: string | null,
-  runtimeRunId: string | null,
-  primaryRoleId: string | null,
-  subagentScopeInstanceId: string | null,
-  subagentScopeRoleId: string | null,
-  subagentScopeTaskId: string | null,
   variant: "session" | "subagent-panel",
   hydratedOutputTextByRunId: Map<string, string>,
   hydratedOutputSourcesByRunId: Map<string, Set<TimelineRunIdSource>>,
   hydratedThinkingTextByRunId: Map<string, string>,
   hydratedToolStatesByRunId: Map<string, Map<string, TimelineToolHydrationState>>,
 ): TimelineEntry[] {
-  const scopedEntries = runState.entries.filter((entry) =>
-    runtimeEntryMatchesScope(entry, runState, {
-      primaryRoleId,
-      runtimeRunId,
-      sessionId,
-      subagentInstanceId: subagentScopeInstanceId,
-      subagentRoleId: subagentScopeRoleId,
-      subagentTaskId: subagentScopeTaskId,
-      variant,
-    }),
-  );
+  const scopedEntries = runState.entries;
   const hydratedText = hydratedOutputTextByRunId.get(runState.runId);
   const hydratedOutputSources = hydratedOutputSourcesByRunId.get(runState.runId);
   const hydratedThinkingText = hydratedThinkingTextByRunId.get(runState.runId);
@@ -6212,20 +6167,31 @@ function selectRuntimeRowsForTimeline(
   ].join("|");
   if (cache.scopeKey !== scopeKey) {
     cache.scopeKey = scopeKey;
+    cache.entryProjectionsByRunId = new Map();
     cache.runs = [];
     cache.runsById = new Map();
   }
-  const nextRuns = Object.values(runtimeRuns)
-    .filter((runState) => runtimeRunStateMatchesScope(runState, scope))
+  const scopedRunId = scope.runtimeRunId?.trim() ?? "";
+  const candidateRuns = scopedRunId.length > 0
+    ? [runtimeRuns[scopedRunId]].filter(
+        (runState): runState is RuntimeRunState => runState !== undefined,
+      )
+    : Object.values(runtimeRuns);
+  const nextRuns = candidateRuns
+    .filter((runState) => runtimeRunStateCanProjectScope(runState, scope))
     .map((runState) => scopedRuntimeRunSnapshot(
       runState,
       scope,
       cache.runsById.get(runState.runId),
+      cache.entryProjectionsByRunId,
     ))
     .map((runState) => stableRuntimeRowSnapshot(
       runState,
       cache.runsById.get(runState.runId),
-    ));
+    ))
+    .filter((runState) =>
+      scope.variant !== "subagent-panel" || runState.entries.length > 0
+    );
   const unchanged = nextRuns.length === cache.runs.length && nextRuns.every(
     (runState, index) => cache.runs[index] === runState,
   );
@@ -6237,10 +6203,38 @@ function selectRuntimeRowsForTimeline(
   return nextRuns;
 }
 
+function runtimeRunStateCanProjectScope(
+  runState: RuntimeRunState,
+  scope: RuntimeTimelineScope,
+): boolean {
+  if (scope.sessionId === null) {
+    return false;
+  }
+  const scopedRunId = scope.runtimeRunId?.trim() ?? "";
+  if (scopedRunId.length > 0 && scopedRunId !== runState.runId) {
+    return false;
+  }
+  const explicitSessionId = runState.sessionId?.trim() ?? "";
+  if (explicitSessionId.length > 0 && explicitSessionId !== scope.sessionId) {
+    return false;
+  }
+  if (scope.variant === "subagent-panel") {
+    return true;
+  }
+  if (
+    explicitSessionId.length === 0 &&
+    !runState.entries.some((entry) => entry.sessionId === scope.sessionId)
+  ) {
+    return false;
+  }
+  return runtimeRunStateBelongsToMainTimeline(runState, scope.primaryRoleId);
+}
+
 function scopedRuntimeRunSnapshot(
   runState: RuntimeRunState,
   scope: RuntimeTimelineScope,
   previous: RuntimeRunState | undefined,
+  entryProjectionsByRunId: Map<string, RuntimeEntryScopeProjection>,
 ): RuntimeRunState {
   if (
     scope.variant === "session" &&
@@ -6248,12 +6242,17 @@ function scopedRuntimeRunSnapshot(
   ) {
     return runState;
   }
-  const entries = runState.entries.filter((entry) =>
-    runtimeEntryMatchesScope(entry, runState, scope)
+  const entryProjection = projectRuntimeEntriesForScope(
+    runState.entries,
+    entryProjectionsByRunId.get(runState.runId),
+    (entry) => runtimeEntryMatchesScope(entry, runState, scope),
   );
+  entryProjectionsByRunId.set(runState.runId, entryProjection);
+  const entries = entryProjection.scopedEntries;
   const entriesUnchanged = previous !== undefined &&
-    entries.length === previous.entries.length &&
-    entries.every((entry, index) => previous.entries[index] === entry);
+    (entries === previous.entries ||
+      (entries.length === previous.entries.length &&
+        entries.every((entry, index) => previous.entries[index] === entry)));
   if (
     entriesUnchanged &&
     previous.status === runState.status &&
@@ -6292,7 +6291,17 @@ function stableRuntimeRowSnapshot(
   ) {
     return runState;
   }
-  return previous;
+  if (
+    previous.status === runState.status &&
+    previous.terminalEventType === runState.terminalEventType &&
+    previous.lastEventId === runState.lastEventId
+  ) {
+    return previous;
+  }
+  return {
+    ...runState,
+    entries: previous.entries,
+  };
 }
 
 function runtimeEntryMatchesScope(

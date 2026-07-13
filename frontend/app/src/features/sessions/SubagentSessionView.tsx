@@ -23,6 +23,7 @@ import {
 } from "../../runtime/streamClient";
 import { useTranslations, type Translate } from "../../i18n";
 import { MessageTimeline } from "../timeline/MessageTimeline";
+import { mergeRuntimeTimelineEntries } from "../timeline/runtimeScopeProjection";
 import { SubagentQuestionBar } from "../recovery/RecoveryBar";
 import {
   normalizeSessionSubagent,
@@ -463,7 +464,7 @@ function mergeSubagentRunState(
   runId: string,
   sessionId: string,
 ): RuntimeRunState {
-  const mergedEntries = mergeTimelineEntries(
+  const mergedEntries = mergeRuntimeTimelineEntries(
     currentRun?.entries ?? [],
     nextRun.entries,
   );
@@ -485,23 +486,25 @@ function mergeSubagentRunState(
 }
 
 function mergeSeenEventKeys(left: string[], right: string[]): string[] {
+  if (left === right || left.length === 0) {
+    return right;
+  }
+  if (right.length === 0) {
+    return left;
+  }
+  if (
+    right.length > left.length &&
+    right[left.length - 1] === left[left.length - 1]
+  ) {
+    return right;
+  }
+  if (
+    left.length > right.length &&
+    left[right.length - 1] === right[right.length - 1]
+  ) {
+    return left;
+  }
   return Array.from(new Set([...left, ...right]));
-}
-
-function mergeTimelineEntries(
-  currentEntries: TimelineEntry[],
-  closedEntries: TimelineEntry[],
-): TimelineEntry[] {
-  const entriesById = new Map<string, TimelineEntry>();
-  for (const entry of currentEntries) {
-    entriesById.set(entry.id, entry);
-  }
-  for (const entry of closedEntries) {
-    entriesById.set(entry.id, entry);
-  }
-  return Array.from(entriesById.values()).sort(
-    (left, right) => left.eventId - right.eventId,
-  );
 }
 
 async function refreshSubagentTerminalHistoryFromRuntime({

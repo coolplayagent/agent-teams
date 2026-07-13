@@ -32,9 +32,7 @@ import {
   getAgentRuntimeRegistry,
   getAgentRuntimes,
   getAgentRuntimeTestJob,
-  getClawHubConfig,
   getCommandCatalog,
-  getConfigStatus,
   getEnvironmentVariables,
   getGeneralConfig,
   getGitHubConfig,
@@ -46,6 +44,7 @@ import {
   getMcpServer,
   getMcpServerTools,
   getModelCatalog,
+  getModelFallbackConfig,
   getModelProfiles,
   getNotificationConfig,
   getOrchestrationConfig,
@@ -63,7 +62,6 @@ import {
   listMcpServers,
   probeModelConnection,
   probeSshProfileConnection,
-  probeClawHubConnectivity,
   probeGitHubConnectivity,
   probeGitHubWebhookConnectivity,
   probeWebConnectivity,
@@ -80,7 +78,6 @@ import {
   reloadProxyConfig,
   saveEnvironmentVariable,
   saveAgentRuntime,
-  saveClawHubConfig,
   saveGeneralConfig,
   saveGitHubConfig,
   saveHooksConfig,
@@ -116,6 +113,7 @@ import type {
 } from "../api/contracts";
 import { fetchSpeechConfig, saveSpeechConfig } from "../api/speech";
 import { SettingsDrawer } from "../features/shell/SettingsDrawer";
+import type { SystemSettingsPage } from "../features/settings/settingsNavigation";
 import {
   appearanceStorageKey,
   applyAppearanceSettings,
@@ -144,9 +142,7 @@ vi.mock("../api/client", () => ({
   getAgentRuntimeRegistry: vi.fn(),
   getAgentRuntimes: vi.fn(),
   getAgentRuntimeTestJob: vi.fn(),
-  getClawHubConfig: vi.fn(),
   getCommandCatalog: vi.fn(),
-  getConfigStatus: vi.fn(),
   getEnvironmentVariables: vi.fn(),
   getGeneralConfig: vi.fn(),
   getGitHubConfig: vi.fn(),
@@ -158,6 +154,7 @@ vi.mock("../api/client", () => ({
   getMcpServer: vi.fn(),
   getMcpServerTools: vi.fn(),
   getModelCatalog: vi.fn(),
+  getModelFallbackConfig: vi.fn(),
   getModelProfiles: vi.fn(),
   getNotificationConfig: vi.fn(),
   getOrchestrationConfig: vi.fn(),
@@ -176,7 +173,6 @@ vi.mock("../api/client", () => ({
   listWorkspaces: vi.fn(),
   probeModelConnection: vi.fn(),
   probeSshProfileConnection: vi.fn(),
-  probeClawHubConnectivity: vi.fn(),
   probeGitHubConnectivity: vi.fn(),
   probeGitHubWebhookConnectivity: vi.fn(),
   probeWebConnectivity: vi.fn(),
@@ -192,7 +188,6 @@ vi.mock("../api/client", () => ({
   reloadProxyConfig: vi.fn(),
   saveEnvironmentVariable: vi.fn(),
   saveAgentRuntime: vi.fn(),
-  saveClawHubConfig: vi.fn(),
   saveGeneralConfig: vi.fn(),
   saveGitHubConfig: vi.fn(),
   saveHooksConfig: vi.fn(),
@@ -249,9 +244,7 @@ const getAgentRuntimeMock = vi.mocked(getAgentRuntime);
 const getAgentRuntimeRegistryMock = vi.mocked(getAgentRuntimeRegistry);
 const getAgentRuntimesMock = vi.mocked(getAgentRuntimes);
 const getAgentRuntimeTestJobMock = vi.mocked(getAgentRuntimeTestJob);
-const getClawHubConfigMock = vi.mocked(getClawHubConfig);
 const getCommandCatalogMock = vi.mocked(getCommandCatalog);
-const getConfigStatusMock = vi.mocked(getConfigStatus);
 const getEnvironmentVariablesMock = vi.mocked(getEnvironmentVariables);
 const getGeneralConfigMock = vi.mocked(getGeneralConfig);
 const getGitHubConfigMock = vi.mocked(getGitHubConfig);
@@ -263,6 +256,7 @@ const listWeChatGatewayAccountsMock = vi.mocked(listWeChatGatewayAccounts);
 const getMcpServerMock = vi.mocked(getMcpServer);
 const getMcpServerToolsMock = vi.mocked(getMcpServerTools);
 const getModelCatalogMock = vi.mocked(getModelCatalog);
+const getModelFallbackConfigMock = vi.mocked(getModelFallbackConfig);
 const getModelProfilesMock = vi.mocked(getModelProfiles);
 const getNotificationConfigMock = vi.mocked(getNotificationConfig);
 const getOrchestrationConfigMock = vi.mocked(getOrchestrationConfig);
@@ -281,7 +275,6 @@ const listSshProfilesMock = vi.mocked(listSshProfiles);
 const listWorkspacesMock = vi.mocked(listWorkspaces);
 const probeModelConnectionMock = vi.mocked(probeModelConnection);
 const probeSshProfileConnectionMock = vi.mocked(probeSshProfileConnection);
-const probeClawHubConnectivityMock = vi.mocked(probeClawHubConnectivity);
 const probeGitHubConnectivityMock = vi.mocked(probeGitHubConnectivity);
 const probeGitHubWebhookConnectivityMock = vi.mocked(probeGitHubWebhookConnectivity);
 const probeWebConnectivityMock = vi.mocked(probeWebConnectivity);
@@ -297,7 +290,6 @@ const reloadMcpConfigMock = vi.mocked(reloadMcpConfig);
 const reloadProxyConfigMock = vi.mocked(reloadProxyConfig);
 const saveEnvironmentVariableMock = vi.mocked(saveEnvironmentVariable);
 const saveAgentRuntimeMock = vi.mocked(saveAgentRuntime);
-const saveClawHubConfigMock = vi.mocked(saveClawHubConfig);
 const saveGeneralConfigMock = vi.mocked(saveGeneralConfig);
 const saveGitHubConfigMock = vi.mocked(saveGitHubConfig);
 const saveHooksConfigMock = vi.mocked(saveHooksConfig);
@@ -384,19 +376,6 @@ beforeEach(() => {
     })),
   });
   getGeneralConfigMock.mockResolvedValue({ shell_safety_policy_enabled: true });
-  getConfigStatusMock.mockResolvedValue({
-    skills: {
-      loaded: true,
-      skills: [
-        {
-          description: "Create skills.",
-          name: "skill-creator",
-          ref: "skill-creator",
-          source: "builtin",
-        },
-      ],
-    },
-  });
   getModelProfilesMock.mockResolvedValue({
     default: {
       is_default: true,
@@ -424,6 +403,7 @@ beforeEach(() => {
       },
     },
   });
+  getModelFallbackConfigMock.mockResolvedValue({ policies: [] });
   fetchSpeechConfigMock.mockResolvedValue({
     language: "zh-CN",
     prompt: "domain terms",
@@ -457,22 +437,6 @@ beforeEach(() => {
     },
   });
   saveNotificationConfigMock.mockResolvedValue({ status: "ok" });
-  getClawHubConfigMock.mockResolvedValue({ token_configured: true });
-  saveClawHubConfigMock.mockResolvedValue({ status: "ok" });
-  probeClawHubConnectivityMock.mockResolvedValue({
-    checked_at: "2026-06-24T00:00:00Z",
-    clawhub_version: "1.2.3",
-    diagnostics: {
-      binary_available: true,
-      endpoint_fallback_used: false,
-      installation_attempted: false,
-      installed_during_probe: false,
-      token_configured: true,
-    },
-    latency_ms: 31,
-    ok: true,
-    retryable: false,
-  });
   getGitHubConfigMock.mockResolvedValue({
     token_configured: true,
     webhook_base_url: "https://hooks.example",
@@ -1474,8 +1438,27 @@ afterEach(() => {
 });
 
 describe("SettingsDrawer", () => {
+  it("shows contextual routes in the compact selector and can return to settings", async () => {
+    renderDrawer("github");
+
+    expect(await screen.findByText("GitHub CLI")).toBeVisible();
+    const compactNavigation = document.querySelector<HTMLElement>(
+      ".at-settings-mobile-navigation",
+    );
+    expect(compactNavigation).not.toBeNull();
+    expect(compactNavigation).toHaveTextContent("GitHub");
+    const selector = within(compactNavigation as HTMLElement).getByRole("combobox", {
+      hidden: true,
+      name: "Settings sections",
+    });
+    fireEvent.mouseDown(selector);
+    fireEvent.click(await screen.findByText("Appearance", { selector: ".ant-select-item-option-content" }));
+
+    expect(await screen.findByRole("heading", { name: "Appearance" })).toBeVisible();
+    expect(compactNavigation).toHaveTextContent("Appearance");
+  });
+
   it("renders a real settings center backed by existing config endpoints", async () => {
-    installDesktopApi("9.8.7");
     renderDrawer();
 
     const settingsDialog = await screen.findByRole("dialog", { name: "Settings" });
@@ -1489,22 +1472,22 @@ describe("SettingsDrawer", () => {
       "Speech",
       "Notifications",
       "Model",
+      "MCP",
+      "Plugins",
+      "Commands",
+      "Hooks",
+      "Agent Runtime",
       "Roles",
       "Orchestration",
       "Web",
-      "ClawHub",
       "Proxy",
       "Remote workspace",
       "Environment variables",
-      "System",
     ]);
-    expect(within(sections).queryByRole("button", { name: "MCP" })).toBeNull();
-    expect(within(sections).queryByRole("button", { name: "Plugins" })).toBeNull();
-    expect(within(sections).queryByRole("button", { name: "Commands" })).toBeNull();
-    expect(within(sections).queryByRole("button", { name: "Hooks" })).toBeNull();
-    expect(within(sections).queryByRole("button", { name: "Agent Runtime" })).toBeNull();
+    expect(within(sections).queryByRole("button", { name: "ClawHub" })).toBeNull();
     expect(within(sections).queryByRole("button", { name: "GitHub" })).toBeNull();
     expect(within(sections).queryByRole("button", { name: "Gateway" })).toBeNull();
+    expect(within(sections).queryByRole("button", { name: "System" })).toBeNull();
 
     await waitFor(() => expect(getRoleConfigOptionsMock).toHaveBeenCalledTimes(1));
     expect(getModelProfilesMock).toHaveBeenCalledTimes(1);
@@ -1581,9 +1564,11 @@ describe("SettingsDrawer", () => {
     const presetNameInput = screen.getByDisplayValue("Default");
     const presetDescriptionInput = screen.getByDisplayValue("Main plus reviewer");
     const presetPromptInput = screen.getByDisplayValue("Coordinate the work.");
-    expect(screen.getByRole("checkbox", { name: "main" })).toBeChecked();
-    expect(screen.getByRole("checkbox", { name: "Reviewer (reviewer)" }))
-      .toBeChecked();
+    const presetRoles = screen.getByRole("combobox", { name: "Roles" })
+      .closest(".ant-select");
+    expect(presetRoles).not.toBeNull();
+    expect(presetRoles).toHaveTextContent("main");
+    expect(presetRoles).toHaveTextContent("Reviewer (reviewer)");
     fireEvent.change(presetNameInput, { target: { value: "Edited Default" } });
     fireEvent.change(presetDescriptionInput, { target: { value: "Edited reviewer flow" } });
     fireEvent.change(presetPromptInput, {
@@ -1631,41 +1616,24 @@ describe("SettingsDrawer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(await screen.findByText("2 roles · Main plus reviewer")).toBeVisible();
 
-    fireEvent.click(within(sections).getByRole("button", { name: "ClawHub" }));
-    expect(await screen.findByText("Saved")).toBeVisible();
-    expect(screen.getByText("clawhub.ai")).toBeVisible();
-    expect(getClawHubConfigMock).toHaveBeenCalledTimes(1);
-
-    fireEvent.click(within(sections).getByRole("button", { name: "System" }));
-    expect(await screen.findByText("Desktop version")).toBeVisible();
-    expect(screen.getByText("9.8.7")).toBeVisible();
-    expect(await screen.findByText("MCP")).toBeVisible();
-    expect(screen.getByText("Global and workspace command files.")).toBeVisible();
-    expect(screen.getByText("GitHub CLI token, webhook callback, and tunnel.")).toBeVisible();
-    expect(screen.getByText("Feishu gateway trigger accounts and session targets.")).toBeVisible();
-    expect(getConfigStatusMock).toHaveBeenCalledTimes(1);
-
-    fireEvent.click(screen.getByText("Commands").closest("button") as HTMLElement);
+    fireEvent.click(within(sections).getByRole("button", { name: "Commands" }));
     expect(await screen.findByText("/opsx:propose")).toBeVisible();
     expect(screen.getByText("Global commands")).toBeVisible();
     expect(getCommandCatalogMock).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole("button", { name: "Back to System" }));
 
-    fireEvent.click(screen.getByText("Plugins").closest("button") as HTMLElement);
+    fireEvent.click(within(sections).getByRole("button", { name: "Plugins" }));
     expect(await screen.findByText("workspace-tools")).toBeVisible();
     expect(screen.getByText("2 components")).toBeVisible();
     expect(getPluginsConfigMock).toHaveBeenCalledTimes(1);
     expect(getPluginsRuntimeMock).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole("button", { name: "Back to System" }));
 
-    fireEvent.click(screen.getByText("Hooks").closest("button") as HTMLElement);
+    fireEvent.click(within(sections).getByRole("button", { name: "Hooks" }));
     expect((await screen.findAllByText("Session startup setup")).length).toBeGreaterThan(0);
     expect(screen.getByText("SessionStart · python hooks/start.py")).toBeVisible();
     expect(getHooksConfigMock).toHaveBeenCalledTimes(1);
     expect(getHookRuntimeViewMock).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole("button", { name: "Back to System" }));
 
-    fireEvent.click(screen.getByText("Agent Runtime").closest("button") as HTMLElement);
+    fireEvent.click(within(sections).getByRole("button", { name: "Agent Runtime" }));
     expect(await screen.findByText("Codex CLI")).toBeVisible();
     expect(screen.getByText("acp · registry")).toBeVisible();
     expect(getAgentRuntimesMock).toHaveBeenCalledTimes(1);
@@ -1816,96 +1784,6 @@ describe("SettingsDrawer", () => {
     expect(
       screen.getByText("Mark this profile as an STT model in Model settings."),
     ).toBeVisible();
-  });
-
-  it("keeps saved ClawHub tokens intact for unchanged probe and save actions", async () => {
-    await openClawHubSettings();
-
-    const tokenInput = screen.getByLabelText("Token") as HTMLInputElement;
-    expect(tokenInput).toHaveAttribute("autocomplete", "new-password");
-    expect(tokenInput).toHaveAttribute("placeholder", "************");
-    expect(
-      screen.getByRole("link", { name: /https:\/\/clawhub\.ai\/settings/ }),
-    ).toHaveAttribute("rel", "noreferrer");
-
-    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
-    await waitFor(() =>
-      expect(probeClawHubConnectivityMock).toHaveBeenCalledWith({
-        token: null,
-      }),
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() =>
-      expect(saveClawHubConfigMock).toHaveBeenCalledWith({
-        preserve_token: true,
-        token: null,
-      }),
-    );
-  });
-
-  it("ignores ClawHub browser autofill until the token field is edited", async () => {
-    await openClawHubSettings();
-
-    const tokenInput = screen.getByLabelText("Token") as HTMLInputElement;
-    tokenInput.value = "browser_password";
-
-    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
-    await waitFor(() =>
-      expect(probeClawHubConnectivityMock).toHaveBeenCalledWith({
-        token: null,
-      }),
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() =>
-      expect(saveClawHubConfigMock).toHaveBeenCalledWith({
-        preserve_token: true,
-        token: null,
-      }),
-    );
-  });
-
-  it("clears saved ClawHub tokens and reports auto-install probe results", async () => {
-    probeClawHubConnectivityMock.mockResolvedValueOnce({
-      checked_at: "2026-06-24T00:00:00Z",
-      clawhub_version: "clawhub 0.9.0",
-      diagnostics: {
-        binary_available: true,
-        endpoint_fallback_used: false,
-        installation_attempted: true,
-        installed_during_probe: true,
-        token_configured: true,
-      },
-      latency_ms: 4200,
-      ok: true,
-      retryable: false,
-    });
-    await openClawHubSettings();
-
-    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
-    expect(
-      await screen.findByText(
-        "Connected with clawhub 0.9.0 in 4,200 ms. Installed automatically.",
-      ),
-    ).toBeVisible();
-
-    fireEvent.click(screen.getByRole("button", { name: "Clear token" }));
-    expect(screen.getByText("Not saved")).toBeVisible();
-
-    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
-    expect(
-      await screen.findByText("Enter a ClawHub token before testing."),
-    ).toBeVisible();
-    expect(probeClawHubConnectivityMock).toHaveBeenCalledTimes(1);
-
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() =>
-      expect(saveClawHubConfigMock).toHaveBeenCalledWith({
-        preserve_token: false,
-        token: null,
-      }),
-    );
   });
 
   it("links migrated model and proxy labels to real controls", async () => {
@@ -2061,11 +1939,10 @@ describe("SettingsDrawer", () => {
     expect(screen.getByRole("option", { name: "Subagent" })).toBeInTheDocument();
   });
 
-  it("manages plugins from the System secondary page", async () => {
+  it("manages plugins from its primary settings page", async () => {
     renderDrawer();
 
-    fireEvent.click((await screen.findAllByRole("button", { name: "System" }))[0] as HTMLElement);
-    fireEvent.click((await screen.findByText("Plugins")).closest("button") as HTMLElement);
+    await openSettingsSection("Plugins");
 
     expect(await screen.findByText("workspace-tools")).toBeVisible();
     expect(screen.getByText("quality")).toBeVisible();
@@ -2114,8 +1991,7 @@ describe("SettingsDrawer", () => {
     getPluginsRuntimeMock.mockResolvedValueOnce({ diagnostics: [], plugins: [] });
     renderDrawer();
 
-    fireEvent.click((await screen.findAllByRole("button", { name: "System" }))[0] as HTMLElement);
-    fireEvent.click((await screen.findByText("Plugins")).closest("button") as HTMLElement);
+    await openSettingsSection("Plugins");
 
     expect(await screen.findByText("No plugins configured.")).toBeVisible();
     expect(screen.getByRole("button", { name: "Add Plugin" })).toBeVisible();
@@ -2127,8 +2003,7 @@ describe("SettingsDrawer", () => {
   it("installs a plugin from the System Plugins secondary page", async () => {
     renderDrawer();
 
-    fireEvent.click((await screen.findAllByRole("button", { name: "System" }))[0] as HTMLElement);
-    fireEvent.click((await screen.findByText("Plugins")).closest("button") as HTMLElement);
+    await openSettingsSection("Plugins");
     fireEvent.click(await screen.findByRole("button", { name: "Add Plugin" }));
 
     fireEvent.mouseDown(await screen.findByRole("combobox", { name: "Source type" }));
@@ -2165,8 +2040,7 @@ describe("SettingsDrawer", () => {
     );
     renderDrawer();
 
-    fireEvent.click((await screen.findAllByRole("button", { name: "System" }))[0] as HTMLElement);
-    fireEvent.click((await screen.findByText("Plugins")).closest("button") as HTMLElement);
+    await openSettingsSection("Plugins");
     fireEvent.click(await screen.findByRole("button", { name: "Add Plugin" }));
     fireEvent.change(await screen.findByLabelText("Source"), {
       target: { value: "C:/plugins/local-quality" },
@@ -2182,8 +2056,7 @@ describe("SettingsDrawer", () => {
   it("keeps marketplace install fields scoped to marketplace mode", async () => {
     renderDrawer();
 
-    fireEvent.click((await screen.findAllByRole("button", { name: "System" }))[0] as HTMLElement);
-    fireEvent.click((await screen.findByText("Plugins")).closest("button") as HTMLElement);
+    await openSettingsSection("Plugins");
     fireEvent.click(await screen.findByRole("button", { name: "Add Plugin" }));
 
     expect(await screen.findByLabelText("Source")).toBeVisible();
@@ -2210,8 +2083,7 @@ describe("SettingsDrawer", () => {
   it("loads marketplace plugins before installing the selected version", async () => {
     renderDrawer();
 
-    fireEvent.click((await screen.findAllByRole("button", { name: "System" }))[0] as HTMLElement);
-    fireEvent.click((await screen.findByText("Plugins")).closest("button") as HTMLElement);
+    await openSettingsSection("Plugins");
     fireEvent.click(await screen.findByRole("button", { name: "Add Plugin" }));
 
     fireEvent.mouseDown(await screen.findByRole("combobox", { name: "Source type" }));
@@ -2278,8 +2150,7 @@ describe("SettingsDrawer", () => {
     });
     renderDrawer();
 
-    fireEvent.click((await screen.findAllByRole("button", { name: "System" }))[0] as HTMLElement);
-    fireEvent.click((await screen.findByText("Plugins")).closest("button") as HTMLElement);
+    await openSettingsSection("Plugins");
     fireEvent.click(await screen.findByRole("button", { name: "Add Plugin" }));
     fireEvent.mouseDown(await screen.findByRole("combobox", { name: "Source type" }));
     fireEvent.click(await screen.findByText("Marketplace"));
@@ -2314,8 +2185,7 @@ describe("SettingsDrawer", () => {
     });
     renderDrawer();
 
-    fireEvent.click((await screen.findAllByRole("button", { name: "System" }))[0] as HTMLElement);
-    fireEvent.click((await screen.findByText("Plugins")).closest("button") as HTMLElement);
+    await openSettingsSection("Plugins");
     fireEvent.click(await screen.findByRole("button", { name: "Add Plugin" }));
     fireEvent.mouseDown(await screen.findByRole("combobox", { name: "Source type" }));
     fireEvent.click(await screen.findByText("Marketplace"));
@@ -2369,8 +2239,7 @@ describe("SettingsDrawer", () => {
     });
     renderDrawer();
 
-    fireEvent.click((await screen.findAllByRole("button", { name: "System" }))[0] as HTMLElement);
-    fireEvent.click((await screen.findByText("Plugins")).closest("button") as HTMLElement);
+    await openSettingsSection("Plugins");
     fireEvent.click(await screen.findByRole("button", { name: "Add Plugin" }));
 
     fireEvent.mouseDown(await screen.findByRole("combobox", { name: "Source type" }));
@@ -2482,8 +2351,7 @@ describe("SettingsDrawer", () => {
     });
     renderDrawer();
 
-    fireEvent.click((await screen.findAllByRole("button", { name: "System" }))[0] as HTMLElement);
-    fireEvent.click((await screen.findByText("Plugins")).closest("button") as HTMLElement);
+    await openSettingsSection("Plugins");
     fireEvent.click(await screen.findByRole("button", { name: "Add Plugin" }));
 
     fireEvent.mouseDown(await screen.findByRole("combobox", { name: "Source type" }));
@@ -2536,8 +2404,7 @@ describe("SettingsDrawer", () => {
   it("selects a marketplace version before updating marketplace plugins", async () => {
     renderDrawer();
 
-    fireEvent.click((await screen.findAllByRole("button", { name: "System" }))[0] as HTMLElement);
-    fireEvent.click((await screen.findByText("Plugins")).closest("button") as HTMLElement);
+    await openSettingsSection("Plugins");
 
     const marketRow = (await screen.findByText("market-quality")).closest(
       ".at-plugin-list-row",
@@ -2557,7 +2424,7 @@ describe("SettingsDrawer", () => {
       }),
     );
     expect(await screen.findByText("latest (1.2.0)")).toBeVisible();
-    fireEvent.mouseDown(screen.getByRole("combobox"));
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "Version" }));
     fireEvent.click(await screen.findByText("1.1.0 v1.1.0"));
     fireEvent.click(screen.getByRole("button", { name: "Update" }));
 
@@ -2614,8 +2481,7 @@ describe("SettingsDrawer", () => {
     });
     renderDrawer();
 
-    fireEvent.click((await screen.findAllByRole("button", { name: "System" }))[0] as HTMLElement);
-    fireEvent.click((await screen.findByText("Plugins")).closest("button") as HTMLElement);
+    await openSettingsSection("Plugins");
     const feishuRow = (await screen.findByText("feishu")).closest(
       ".at-plugin-list-row",
     ) as HTMLElement;
@@ -2649,8 +2515,7 @@ describe("SettingsDrawer", () => {
   it("configures plugin user_config without resending unchanged sensitive values", async () => {
     renderDrawer();
 
-    fireEvent.click((await screen.findAllByRole("button", { name: "System" }))[0] as HTMLElement);
-    fireEvent.click((await screen.findByText("Plugins")).closest("button") as HTMLElement);
+    await openSettingsSection("Plugins");
 
     const enabledRow = (await screen.findByText("workspace-tools")).closest(
       ".at-plugin-list-row",
@@ -2703,8 +2568,7 @@ describe("SettingsDrawer", () => {
     });
     renderDrawer();
 
-    fireEvent.click((await screen.findAllByRole("button", { name: "System" }))[0] as HTMLElement);
-    fireEvent.click((await screen.findByText("Plugins")).closest("button") as HTMLElement);
+    await openSettingsSection("Plugins");
     const jsonRow = (await screen.findByText("json-config")).closest(
       ".at-plugin-list-row",
     ) as HTMLElement;
@@ -2777,8 +2641,7 @@ describe("SettingsDrawer", () => {
     });
     renderDrawer();
 
-    fireEvent.click((await screen.findAllByRole("button", { name: "System" }))[0] as HTMLElement);
-    fireEvent.click((await screen.findByText("Plugins")).closest("button") as HTMLElement);
+    await openSettingsSection("Plugins");
     const typedRow = (await screen.findByText("typed-config")).closest(
       ".at-plugin-list-row",
     ) as HTMLElement;
@@ -2819,11 +2682,10 @@ describe("SettingsDrawer", () => {
     );
   });
 
-  it("validates and saves hooks from the System secondary page", async () => {
+  it("validates and saves hooks from its primary settings page", async () => {
     renderDrawer();
 
-    fireEvent.click((await screen.findAllByRole("button", { name: "System" }))[0] as HTMLElement);
-    fireEvent.click((await screen.findByText("Hooks")).closest("button") as HTMLElement);
+    await openSettingsSection("Hooks");
 
     expect((await screen.findAllByText("Session startup setup")).length).toBeGreaterThan(0);
     expect(screen.getByText("SessionStart · python hooks/start.py")).toBeVisible();
@@ -2881,23 +2743,18 @@ describe("SettingsDrawer", () => {
     );
   });
 
-  it("manages GitHub settings from the System secondary page", async () => {
+  it("manages GitHub settings from its homepage contextual route", async () => {
     getGitHubWebhookTunnelStatusMock.mockResolvedValue({
       provider: "localhost.run",
       public_url: "https://relay.localhost.run",
       status: "active",
     });
-    renderDrawer();
+    renderDrawer("github");
 
     const sections = await screen.findByRole("navigation", {
       name: "Settings sections",
     });
     expect(within(sections).queryByRole("button", { name: "GitHub" })).toBeNull();
-
-    fireEvent.click(within(sections).getByRole("button", { name: "System" }));
-    const githubRow = (await screen.findByText("GitHub")).closest("button");
-    expect(githubRow).not.toBeNull();
-    fireEvent.click(githubRow as HTMLElement);
 
     expect(await screen.findByText("GitHub CLI")).toBeVisible();
     expect(screen.getByText("https://hooks.example/api/triggers/github/deliveries")).toBeVisible();
@@ -3003,8 +2860,7 @@ describe("SettingsDrawer", () => {
     });
 
     fireEvent.click(await screen.findByRole("button", { name: "New orchestration" }));
-    expect(screen.getByRole("checkbox", { name: "Reviewer (reviewer)" }))
-      .toBeChecked();
+    expectSelectedSelectOption("Roles", "Reviewer (reviewer)");
     fireEvent.change(await screen.findByLabelText("Preset ID"), {
       target: { value: "analysis" },
     });
@@ -3085,8 +2941,7 @@ describe("SettingsDrawer", () => {
     await waitFor(() => expect(newButton).toBeEnabled());
     fireEvent.click(newButton);
     expect(await screen.findByDisplayValue("orchestration_3")).toBeVisible();
-    expect(screen.getByRole("checkbox", { name: "Reviewer (reviewer)" }))
-      .toBeChecked();
+    expectSelectedSelectOption("Roles", "Reviewer (reviewer)");
     fireEvent.change(screen.getByLabelText("Preset name"), {
       target: { value: "Frozen draft" },
     });
@@ -3145,16 +3000,10 @@ describe("SettingsDrawer", () => {
     });
   });
 
-  it("creates and deletes agent runtimes from the System secondary page", async () => {
+  it("creates and deletes agent runtimes from its primary settings page", async () => {
     renderDrawer();
 
-    const sections = await screen.findByRole("navigation", {
-      name: "Settings sections",
-    });
-    fireEvent.click(within(sections).getByRole("button", { name: "System" }));
-    fireEvent.click(
-      (await screen.findByText("Agent Runtime")).closest("button") as HTMLElement,
-    );
+    await openSettingsSection("Agent Runtime");
 
     expect(await screen.findByText("Codex CLI")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "New runtime" }));
@@ -3214,13 +3063,7 @@ describe("SettingsDrawer", () => {
   it("refreshes the ACP registry from the Agent Runtime secondary view", async () => {
     renderDrawer();
 
-    const sections = await screen.findByRole("navigation", {
-      name: "Settings sections",
-    });
-    fireEvent.click(within(sections).getByRole("button", { name: "System" }));
-    fireEvent.click(
-      (await screen.findByText("Agent Runtime")).closest("button") as HTMLElement,
-    );
+    await openSettingsSection("Agent Runtime");
     expect(await screen.findByText("Codex CLI")).toBeVisible();
     fireEvent.click(await screen.findByRole("button", { name: "ACP registry" }));
 
@@ -3231,18 +3074,13 @@ describe("SettingsDrawer", () => {
     await waitFor(() => expect(refreshAgentRuntimeRegistryMock).toHaveBeenCalledTimes(1));
   }, 45000);
 
-  it("manages trigger gateway accounts from the System secondary page", async () => {
-    renderDrawer();
+  it("manages trigger gateway accounts from its homepage contextual route", async () => {
+    renderDrawer("triggers");
 
     const sections = await screen.findByRole("navigation", {
       name: "Settings sections",
     });
     expect(within(sections).queryByRole("button", { name: "Gateway" })).toBeNull();
-
-    fireEvent.click(within(sections).getByRole("button", { name: "System" }));
-    const triggersRow = (await screen.findByText("Gateway")).closest("button");
-    expect(triggersRow).not.toBeNull();
-    fireEvent.click(triggersRow as HTMLElement);
 
     expect(await screen.findByText("Feishu Main")).toBeVisible();
     expect(await screen.findByText("WeChat Main")).toBeVisible();
@@ -3712,7 +3550,7 @@ describe("SettingsDrawer", () => {
     fireEvent.click(within(visionRow as HTMLElement).getByRole("button", { name: /vision/ }));
 
     expect(await screen.findByLabelText("Profile ID")).toHaveValue("vision");
-    expect(screen.getByLabelText("Provider")).toHaveValue("openai_compatible");
+    expectSelectedSelectOption("Provider", "openai_compatible");
     expect(screen.getByLabelText("Model")).toHaveValue("gpt-5-vision");
     expect(screen.getByLabelText("Base URL")).toHaveValue("https://models.example/v1");
     expect(screen.getByLabelText("Temperature")).toBeVisible();
@@ -3781,7 +3619,7 @@ describe("SettingsDrawer", () => {
       target: { value: "maas-profile" },
     });
     expect(screen.getByLabelText("Profile ID")).toHaveValue("maas-profile");
-    expect(screen.getByLabelText("Provider")).toHaveValue("maas");
+    expectSelectedSelectOption("Provider", "maas");
     expect(screen.getByLabelText("Model")).toHaveValue("maas-chat");
     expect(screen.getByLabelText("Base URL")).toHaveValue(
       "http://snapengine.cida.cce.prod-szv-g.dragon.tools.huawei.com/api/v2/",
@@ -3950,7 +3788,7 @@ describe("SettingsDrawer", () => {
     const catalogModelSelect = screen.getByRole("combobox", { name: "Search models" });
     fireEvent.mouseDown(catalogModelSelect);
     await clickFirstOpenSelectOption();
-    expect(screen.getByLabelText("Provider")).toHaveValue("openai_compatible");
+    expectSelectedSelectOption("Provider", "openai_compatible");
     expect(screen.getByLabelText("Model")).toHaveValue("gpt-5-catalog");
     expect(screen.getByLabelText("Base URL")).toHaveValue("https://openai.example/v1");
     expect(screen.getByLabelText("Context window")).toHaveValue(128000);
@@ -4010,8 +3848,8 @@ describe("SettingsDrawer", () => {
     expect(saveModelProfileMock.mock.calls[0]?.[1]).not.toHaveProperty("source_name");
     await waitFor(() => expect(reloadModelConfigMock).toHaveBeenCalledTimes(1));
     expect(screen.getByLabelText("Profile ID")).toHaveValue("catalog-profile");
-    expect(within(sections).queryByRole("button", { name: "Plugins" })).toBeNull();
-  }, 25000);
+    expect(within(sections).getByRole("button", { name: "Plugins" })).toBeVisible();
+  }, 35000);
 
   it("manages MCP servers through the MCP config clients", async () => {
     renderDrawer();
@@ -4019,8 +3857,7 @@ describe("SettingsDrawer", () => {
     const sections = await screen.findByRole("navigation", {
       name: "Settings sections",
     });
-    fireEvent.click(within(sections).getByRole("button", { name: "System" }));
-    fireEvent.click((await screen.findByText("MCP")).closest("button") as HTMLElement);
+    await openSettingsSection("MCP");
 
     expect(await screen.findByText("filesystem")).toBeVisible();
     expect(screen.getByText("github")).toBeVisible();
@@ -4082,8 +3919,7 @@ describe("SettingsDrawer", () => {
     const sections = await screen.findByRole("navigation", {
       name: "Settings sections",
     });
-    fireEvent.click(within(sections).getByRole("button", { name: "System" }));
-    fireEvent.click((await screen.findByText("MCP")).closest("button") as HTMLElement);
+    await openSettingsSection("MCP");
     fireEvent.click(await screen.findByRole("button", { name: "Add Server" }));
 
     fireEvent.change(await screen.findByLabelText("Import JSON"), {
@@ -4137,8 +3973,7 @@ describe("SettingsDrawer", () => {
     const sections = await screen.findByRole("navigation", {
       name: "Settings sections",
     });
-    fireEvent.click(within(sections).getByRole("button", { name: "System" }));
-    fireEvent.click((await screen.findByText("MCP")).closest("button") as HTMLElement);
+    await openSettingsSection("MCP");
     fireEvent.click(await screen.findByRole("button", { name: "Add Server" }));
 
     fireEvent.change(await screen.findByLabelText("Import JSON"), {
@@ -4208,8 +4043,7 @@ describe("SettingsDrawer", () => {
     const sections = await screen.findByRole("navigation", {
       name: "Settings sections",
     });
-    fireEvent.click(within(sections).getByRole("button", { name: "System" }));
-    fireEvent.click((await screen.findByText("MCP")).closest("button") as HTMLElement);
+    await openSettingsSection("MCP");
     fireEvent.click(await screen.findByRole("button", { name: "Edit filesystem" }));
 
     await waitFor(() => expect(getMcpServerMock).toHaveBeenCalledWith("filesystem"));
@@ -4247,8 +4081,7 @@ describe("SettingsDrawer", () => {
     const sections = await screen.findByRole("navigation", {
       name: "Settings sections",
     });
-    fireEvent.click(within(sections).getByRole("button", { name: "System" }));
-    fireEvent.click((await screen.findByText("MCP")).closest("button") as HTMLElement);
+    await openSettingsSection("MCP");
 
     expect(await screen.findByText("Loading tools.")).toBeVisible();
     expect(screen.queryByText("delayed_tool")).toBeNull();
@@ -4272,8 +4105,7 @@ describe("SettingsDrawer", () => {
     const sections = await screen.findByRole("navigation", {
       name: "Settings sections",
     });
-    fireEvent.click(within(sections).getByRole("button", { name: "System" }));
-    fireEvent.click((await screen.findByText("MCP")).closest("button") as HTMLElement);
+    await openSettingsSection("MCP");
 
     expect(await screen.findByText("filesystem")).toBeVisible();
     expect(screen.queryByRole("button", { name: "Delete github" })).toBeNull();
@@ -4794,8 +4626,7 @@ describe("SettingsDrawer", () => {
     const sections = await screen.findByRole("navigation", {
       name: "Settings sections",
     });
-    fireEvent.click(within(sections).getByRole("button", { name: "System" }));
-    fireEvent.click((await screen.findByText("Commands")).closest("button") as HTMLElement);
+    await openSettingsSection("Commands");
 
     expect(await screen.findByText("/opsx:propose")).toBeVisible();
     fireEvent.click(
@@ -5017,7 +4848,7 @@ describe("SettingsDrawer", () => {
 
 });
 
-function renderDrawer() {
+function renderDrawer(initialSystemPage: SystemSettingsPage | null = null) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -5033,7 +4864,15 @@ function renderDrawer() {
         button={{ autoInsertSpace: false }}
         theme={{ token: { motion: false } }}
       >
-        <AntApp>{renderWithStrictModeBoundary(<SettingsDrawer onClose={vi.fn()} open />)}</AntApp>
+        <AntApp>
+          {renderWithStrictModeBoundary(
+            <SettingsDrawer
+              initialSystemPage={initialSystemPage}
+              onClose={vi.fn()}
+              open
+            />,
+          )}
+        </AntApp>
       </ConfigProvider>
     </QueryClientProvider>,
   );
@@ -5060,13 +4899,11 @@ async function clickFirstOpenSelectOption() {
   fireEvent.click(option);
 }
 
-async function openClawHubSettings() {
-  renderDrawer();
+async function openSettingsSection(label: string) {
   const sections = await screen.findByRole("navigation", {
     name: "Settings sections",
   });
-  fireEvent.click(within(sections).getByRole("button", { name: "ClawHub" }));
-  await screen.findByText("Credentials");
+  fireEvent.click(within(sections).getByRole("button", { name: label }));
 }
 
 async function openWebSettings() {
@@ -5093,7 +4930,7 @@ async function openOrchestrationSettings() {
     name: "Settings sections",
   });
   fireEvent.click(within(sections).getByRole("button", { name: "Orchestration" }));
-  await screen.findByText("Default preset");
+  await screen.findByText("2 roles · Main plus reviewer");
 }
 
 async function clickAntdSelectOption(label: string) {
@@ -5107,23 +4944,12 @@ async function clickAntdSelectOption(label: string) {
   fireEvent.click(optionContent);
 }
 
-function installDesktopApi(version: string) {
-  const desktopApi: NonNullable<Window["agentTeamsDesktop"]> = {
-    copyText: vi.fn().mockResolvedValue(undefined),
-    getBackendStatus: vi.fn().mockResolvedValue({
-      baseUrl: "http://127.0.0.1:8000",
-      message: "Backend ready.",
-      state: "ready",
-    }),
-    getVersion: vi.fn().mockResolvedValue(version),
-    onBackendStatus: vi.fn(() => () => undefined),
-    openExternal: vi.fn().mockResolvedValue(undefined),
-    retryStartup: vi.fn().mockResolvedValue(undefined),
-  };
-  Object.defineProperty(window, "agentTeamsDesktop", {
-    configurable: true,
-    value: desktopApi,
-  });
+function expectSelectedSelectOption(label: string, value: string) {
+  const select = screen.getByRole("combobox", { name: label }).closest(".ant-select");
+  if (!(select instanceof HTMLElement)) {
+    throw new Error(`Select not found: ${label}`);
+  }
+  expect(within(select).getByText(value)).toBeVisible();
 }
 
 function lastBackButton(): HTMLElement {

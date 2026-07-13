@@ -3,15 +3,15 @@ import { writeFile } from "node:fs/promises";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import {
-  SETTINGS_SECTION_DEFINITIONS,
-  SYSTEM_SETTINGS_PAGE_DEFINITIONS,
   LEGACY_SETTINGS_TAB_DEFINITIONS,
+  SETTINGS_SECTION_DEFINITIONS,
 } from "../src/features/settings/settingsNavigation";
 
 import {
   ensureScreenshotDir,
   expectNoDocumentScroll,
   expectNoUnhandledApiRoutes,
+  installMockEventSource,
   installShellState,
   mockShellApi,
   screenshotPath,
@@ -24,37 +24,28 @@ const SCREENSHOT_FOLDER = "frontend-v2-ts-settings-parity";
 
 const V2_LABEL_BY_SECTION = {
   appearance: "Appearance",
-  clawhub: "ClawHub",
+  "agent-runtime": "Agent Runtime",
+  commands: "Commands",
   environment: "Environment variables",
   general: "General",
+  hooks: "Hooks",
+  mcp: "MCP",
   models: "Model",
   notifications: "Notifications",
   orchestration: "Orchestration",
+  plugins: "Plugins",
   proxy: "Proxy",
   roles: "Roles",
   speech: "Speech",
-  system: "System",
   web: "Web",
   workspace: "Remote workspace",
-} as const;
-
-const V2_LABEL_BY_SYSTEM_PAGE = {
-  "agent-runtime": "Agent Runtime",
-  commands: "Commands",
-  github: "GitHub",
-  hooks: "Hooks",
-  mcp: "MCP",
-  plugins: "Plugins",
-  triggers: "Gateway",
 } as const;
 
 const V2_SETTINGS_SECTIONS = SETTINGS_SECTION_DEFINITIONS.map(
   (section) => V2_LABEL_BY_SECTION[section.key],
 );
 
-const SECONDARY_SYSTEM_PAGES = SYSTEM_SETTINGS_PAGE_DEFINITIONS.map(
-  (page) => V2_LABEL_BY_SYSTEM_PAGE[page.key],
-);
+const HOMEPAGE_CONTEXT_LABELS = ["ClawHub", "GitHub", "Gateway", "System"];
 
 interface SettingsParityState {
   failNextNotificationSave: boolean;
@@ -131,28 +122,28 @@ const SETTINGS_SURFACE_CONTRACTS: SettingsSurfaceContract[] = [
     id: "mcp",
     v1Text: ["No MCP servers loaded", "reload"],
     v2Controls: ["Refresh", "Reload config", "Add Server"],
-    v2Id: "system/mcp",
+    v2Id: "mcp",
     v2Text: ["Servers", "Enabled", "Tools", "No MCP servers configured"],
   },
   {
     id: "plugins",
     v1Text: ["No plugins installed", "roles", "skills", "hooks", "commands", "MCP servers"],
     v2Controls: ["Refresh", "Add Plugin"],
-    v2Id: "system/plugins",
+    v2Id: "plugins",
     v2Text: ["Plugins", "Diagnostics", "No plugins configured"],
   },
   {
     id: "commands",
     v1Text: ["No commands discovered", "app config commands", "workspace command"],
     v2Controls: ["Search command or workspace", "Refresh", "Add Command"],
-    v2Id: "system/commands",
+    v2Id: "commands",
     v2Text: ["Commands", "Workspaces", "Global", "No commands discovered"],
   },
   {
     id: "hooks",
     v1Text: ["No hooks configured", "Add a hook"],
     v2Controls: ["Refresh", "Add hook", "Validate", "Save"],
-    v2Id: "system/hooks",
+    v2Id: "hooks",
     v2Text: ["Configured groups", "Loaded hooks", "Sources", "No hooks configured"],
   },
   {
@@ -160,7 +151,7 @@ const SETTINGS_SURFACE_CONTRACTS: SettingsSurfaceContract[] = [
     v1Controls: ["Edit"],
     v1Text: ["Codex ACP", "ACP", "Stdio", "Default coding runtime"],
     v2Controls: ["Refresh", "ACP registry", "New runtime", "Codex ACP"],
-    v2Id: "system/agent-runtime",
+    v2Id: "agent-runtime",
     v2Text: ["Agent runtimes", "Default coding runtime", "acp", "stdio"],
   },
   {
@@ -395,13 +386,14 @@ const EXPECTED_NOTIFICATION_ROWS: NotificationRowSnapshot[] = [
   },
 ];
 
-test("surveys V2 settings sections and nested system pages from the browser", async ({
+test("surveys the flat V1-aligned settings navigation without homepage duplicates", async ({
   page,
 }) => {
   const appServer = await serveFrontendDist();
   const state = settingsParityState();
   try {
     await installShellState(page);
+    await installMockEventSource(page);
     const unhandledApiRoutes: string[] = [];
     await mockShellApi(page, appServer.url, unhandledApiRoutes, {
       handleRequest: (context) => handleSettingsParityApi(context, state),
@@ -419,8 +411,8 @@ test("surveys V2 settings sections and nested system pages from the browser", as
     await expect
       .poll(async () => sectionLabels(sections))
       .toEqual(V2_SETTINGS_SECTIONS);
-    for (const secondaryLabel of SECONDARY_SYSTEM_PAGES) {
-      await expect(sections.getByRole("button", { name: secondaryLabel }))
+    for (const homepageLabel of HOMEPAGE_CONTEXT_LABELS) {
+      await expect(sections.getByRole("button", { name: homepageLabel }))
         .toHaveCount(0);
     }
 
@@ -430,128 +422,88 @@ test("surveys V2 settings sections and nested system pages from the browser", as
         .toBeVisible();
     }
 
-    await expect(settings.getByText("Skills loaded")).toBeVisible();
-    await expect(settings.getByText("Enabled")).toBeVisible();
-    await expect(settings.getByText("Frontend parity verification.")).not.toBeVisible();
-    await expect
-      .poll(async () => systemPageLabels(settings))
-      .toEqual([...SECONDARY_SYSTEM_PAGES]);
-    await expect(settings.locator(".at-settings-list .at-settings-list-meta"))
-      .toHaveCount(0);
-    for (const secondaryLabel of SECONDARY_SYSTEM_PAGES) {
-      await expect(
-        settings.locator(".at-settings-list-button").filter({
-          hasText: secondaryLabel,
-        }),
-      ).toBeVisible();
-    }
-
     await expectNoDocumentScroll(page, "v2 settings parity survey should stay framed");
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
-    await page.screenshot({
-      path: screenshotPath("v2-settings-system-landing.png", SCREENSHOT_FOLDER),
-    });
     await page.screenshot({
       path: screenshotPath("v2-settings-v1-section-survey.png", SCREENSHOT_FOLDER),
     });
   } finally {
     await appServer.close();
   }
-});test("shows System status loading and error states without flattening secondary pages", async ({
+});
+
+test("keeps compact settings navigation discoverable at tablet and phone widths", async ({
   page,
 }) => {
   const appServer = await serveFrontendDist();
   const state = settingsParityState();
-  let systemStatusRequests = 0;
-  let resolveStatusRequest: () => void = () => undefined;
-  let resolveStatusResponse: () => void = () => undefined;
-  const statusRequestStarted = new Promise<void>((resolve) => {
-    resolveStatusRequest = resolve;
-  });
-  const statusResponseReleased = new Promise<void>((resolve) => {
-    resolveStatusResponse = resolve;
-  });
   try {
+    await page.setViewportSize({ height: 780, width: 768 });
     await installShellState(page);
+    await installMockEventSource(page);
     const unhandledApiRoutes: string[] = [];
     await mockShellApi(page, appServer.url, unhandledApiRoutes, {
-      handleRequest: async (context) => {
-        if (context.method === "GET" && context.path === "/system/configs") {
-          systemStatusRequests += 1;
-          if (systemStatusRequests <= 2) {
-            if (systemStatusRequests === 1) {
-              resolveStatusRequest();
-              await statusResponseReleased;
-            }
-            await context.fulfillJson(
-              { detail: "System status unavailable for parity." },
-              500,
-            );
-            return true;
-          }
-          await context.fulfillJson(systemConfigResponse());
-          return true;
-        }
-        return handleSettingsParityApi(context, state);
-      },
-      sessionTitle: "TS system status states",
+      handleRequest: (context) => handleSettingsParityApi(context, state),
+      sessionTitle: "TS compact settings navigation",
     });
     await ensureScreenshotDir(SCREENSHOT_FOLDER);
 
     await page.goto(`${appServer.url}/`);
     await waitForAppShell(page);
-    const settings = await openSettingsDialog(page);
-    const sections = settings.getByRole("navigation", {
+    let settings = await openSettingsDialog(page);
+    const compactNavigation = settings.locator(".at-settings-mobile-navigation");
+    await expect(compactNavigation).toBeVisible();
+    await expect(
+      settings.getByRole("navigation", { name: "Settings sections" }),
+    ).toBeHidden();
+    const selector = compactNavigation.getByRole("combobox", {
       name: "Settings sections",
     });
-
-    await sections.getByRole("button", { name: "System" }).click();
-    await statusRequestStarted;
-    await expect(settings.getByRole("heading", { name: "System" })).toBeVisible();
-    await expect(settings.locator(".at-settings-section .ant-skeleton"))
-      .toBeVisible();
-    await expect
-      .poll(async () => systemPageLabels(settings))
-      .toEqual([...SECONDARY_SYSTEM_PAGES]);
-    await page.screenshot({
-      path: screenshotPath("v2-settings-system-status-loading.png", SCREENSHOT_FOLDER),
-    });
-
-    resolveStatusResponse();
-    await expect(settings.getByText("System status unavailable for parity."))
-      .toBeVisible();
-    await expect(settings.locator(".at-settings-section .ant-skeleton"))
-      .toHaveCount(0);
-    await expect
-      .poll(async () => systemPageLabels(settings))
-      .toEqual([...SECONDARY_SYSTEM_PAGES]);
-    for (const secondaryLabel of SECONDARY_SYSTEM_PAGES) {
-      await expect(sections.getByRole("button", { name: secondaryLabel }))
-        .toHaveCount(0);
+    await expect(selector).toBeVisible();
+    await expect.poll(() => settings.evaluate((element) => (
+      element.scrollWidth <= element.clientWidth
+    ))).toBe(true);
+    await page.setViewportSize({ height: 780, width: 390 });
+    await expect(compactNavigation).toBeVisible();
+    await compactNavigation.locator(".ant-select-selector").click();
+    for (let index = 0; index < 5; index += 1) {
+      await selector.press("ArrowDown");
     }
-    expect(systemStatusRequests).toBeGreaterThanOrEqual(1);
-    expectNoUnhandledApiRoutes(unhandledApiRoutes);
-    await expectNoDocumentScroll(
-      page,
-      "v2 System status loading and error states should stay framed",
-    );
-    await page.screenshot({
-      path: screenshotPath("v2-settings-system-status-error.png", SCREENSHOT_FOLDER),
-    });
-    await settings.getByRole("button", { name: "Retry" }).click();
-    await expect(settings.getByText("Skills loaded")).toBeVisible();
-    await expect(settings.getByText("Enabled")).toBeVisible();
-    await expect(settings.getByText("System status unavailable for parity."))
-      .toHaveCount(0);
-    expect(systemStatusRequests).toBeGreaterThanOrEqual(3);
-    await expect(page.locator(".at-topbar")).toBeVisible();
-    await expect(settings.getByRole("navigation", { name: "Settings sections" }))
-      .toBeVisible();
-    await page.waitForTimeout(800);
+    await selector.press("Enter");
+    await expect(settings.getByRole("heading", { name: "MCP" })).toBeVisible();
+    await expect(compactNavigation).toContainText("MCP");
+    await expect.poll(() => settings.evaluate((element) => (
+      element.scrollWidth <= element.clientWidth
+    ))).toBe(true);
+    await expect.poll(() => page.evaluate(() => (
+      document.documentElement.scrollWidth <= document.documentElement.clientWidth
+    ))).toBe(true);
     await page.screenshot({
       animations: "disabled",
-      path: screenshotPath("v2-settings-system-status-recovered.png", SCREENSHOT_FOLDER),
+      path: screenshotPath("v2-settings-compact-navigation-390.png", SCREENSHOT_FOLDER),
     });
+
+    await settings.getByRole("button", { name: "Close" }).click();
+    await page
+      .getByRole("navigation", { name: "Primary navigation" })
+      .getByRole("button", { name: "Connectors" })
+      .click();
+    await page.getByRole("button", { name: "Close sidebar" }).click();
+    await page.getByTestId("connector-action-github").click();
+    settings = page.getByRole("dialog", { name: "Settings" });
+    await expect(settings.getByRole("heading", { name: "GitHub" })).toBeVisible();
+    const contextualNavigation = settings.locator(".at-settings-mobile-navigation");
+    await expect(contextualNavigation).toContainText("GitHub");
+    await contextualNavigation.locator(".ant-select-selector").click();
+    const contextualSelector = contextualNavigation.getByRole("combobox", {
+      name: "Settings sections",
+    });
+    await contextualSelector.press("ArrowDown");
+    await contextualSelector.press("Enter");
+    await expect(settings.getByRole("heading", { name: "Appearance" })).toBeVisible();
+    await expect(contextualNavigation).toContainText("Appearance");
+    await expectNoDocumentScroll(page, "compact contextual settings should stay framed");
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
   } finally {
     await appServer.close();
   }
@@ -566,6 +518,7 @@ test("recovers primary and role-detail settings after their automatic retries fa
   let roleDetailRequests = 0;
   try {
     await installShellState(page);
+    await installMockEventSource(page);
     const unhandledApiRoutes: string[] = [];
     await mockShellApi(page, appServer.url, unhandledApiRoutes, {
       handleRequest: async (context) => {
@@ -620,8 +573,9 @@ test("recovers primary and role-detail settings after their automatic retries fa
       .toBeVisible();
     await settings.getByRole("button", { name: "Retry" }).click();
     await expect(settings.getByLabel("Role ID")).toHaveValue("main");
-    await expect(settings.getByLabel("Execution surface"))
-      .toHaveValue("workspace");
+    await expect(settings.locator(
+      '.ant-select-selection-item[title="workspace"]',
+    )).toBeVisible();
     await expect(settings.getByText("Role detail unavailable."))
       .toHaveCount(0);
     expect(roleDetailRequests).toBeGreaterThanOrEqual(3);
@@ -651,7 +605,6 @@ test("recovers every remaining primary Settings page after loading and request f
     "/roles/configs",
     "/system/configs/orchestration",
     "/system/configs/web",
-    "/system/configs/clawhub",
     "/system/configs/proxy",
     "/system/configs/workspace/ssh-profiles",
     "/system/configs/environment-variables",
@@ -669,6 +622,7 @@ test("recovers every remaining primary Settings page after loading and request f
   );
   try {
     await installShellState(page);
+    await installMockEventSource(page);
     const unhandledApiRoutes: string[] = [];
     await mockShellApi(page, appServer.url, unhandledApiRoutes, {
       handleRequest: async (context) => {
@@ -743,14 +697,6 @@ test("recovers every remaining primary Settings page after loading and request f
         slug: "web",
       },
       {
-        name: "ClawHub",
-        path: "/system/configs/clawhub",
-        recovered: async () => {
-          await expect(settings.getByLabel("Token")).toBeVisible();
-        },
-        slug: "clawhub",
-      },
-      {
         name: "Proxy",
         path: "/system/configs/proxy",
         recovered: async () => {
@@ -819,13 +765,16 @@ test("recovers every remaining primary Settings page after loading and request f
   } finally {
     await appServer.close();
   }
-});test("keeps General related settings as routed pages instead of flattened controls", async ({
+});
+
+test("keeps General related settings as routed pages instead of flattened controls", async ({
   page,
 }) => {
   const appServer = await serveFrontendDist();
   const state = settingsParityState();
   try {
     await installShellState(page);
+    await installMockEventSource(page);
     const unhandledApiRoutes: string[] = [];
     await mockShellApi(page, appServer.url, unhandledApiRoutes, {
       handleRequest: (context) => handleSettingsParityApi(context, state),
@@ -854,7 +803,7 @@ test("recovers every remaining primary Settings page after loading and request f
     await expect(related.getByRole("button", { name: /Speech/ })).toBeVisible();
     await expect(related.getByRole("button", { name: /Notifications/ }))
       .toBeVisible();
-    await expect(settings.locator(".at-notification-row")).toHaveCount(0);
+    await expect(settings.locator(".at-notification-rule")).toHaveCount(0);
     await expect(settings.getByText("Tool approval requested")).toHaveCount(0);
 
     await related.getByRole("button", { name: /Speech/ }).click();
@@ -867,7 +816,7 @@ test("recovers every remaining primary Settings page after loading and request f
       .click();
     await expect(settings.getByRole("heading", { name: "Notifications" }))
       .toBeVisible();
-    await expect(settings.locator(".at-notification-row")).toHaveCount(4);
+    await expect(settings.locator(".at-notification-rule")).toHaveCount(4);
 
     await sections.getByRole("button", { name: "General" }).click();
     await settings
@@ -894,6 +843,7 @@ test("saves Notifications and Proxy settings through real V2 controls", async ({
   const state = settingsParityState();
   try {
     await installShellState(page);
+    await installMockEventSource(page);
     const unhandledApiRoutes: string[] = [];
     await mockShellApi(page, appServer.url, unhandledApiRoutes, {
       handleRequest: (context) => handleSettingsParityApi(context, state),
@@ -1269,14 +1219,6 @@ async function sectionLabels(sections: Locator): Promise<string[]> {
   );
 }
 
-async function systemPageLabels(settings: Locator): Promise<string[]> {
-  return settings.locator(".at-settings-list-button").evaluateAll((buttons) =>
-    buttons.map((button) =>
-      button.querySelector(".at-settings-list-main span")?.textContent?.trim() ?? "",
-    ),
-  );
-}
-
 async function extractV1NotificationRows(page: Page): Promise<NotificationRowSnapshot[]> {
   return page.locator("#general-panel .notification-row").evaluateAll((rows) =>
     rows.map((row) => {
@@ -1403,6 +1345,49 @@ async function handleSettingsParityApi(
   state.requestedPaths.push(context.path);
   const method = context.method;
   const path = context.path;
+  if (method === "GET" && path === "/connectors") {
+    await context.fulfillJson({
+      items: [
+        {
+          account_count: 0,
+          auth_type: "api_token",
+          capabilities: ["repositories", "pull_requests"],
+          category: "development",
+          connector_id: "github",
+          description: "Connect repositories and pull requests.",
+          display_name: "GitHub",
+          enabled_count: 0,
+          last_activity_at: null,
+          last_error: null,
+          provider: "github",
+          status: "needs_config",
+        },
+      ],
+      summary: {
+        connected: 0,
+        disabled: 0,
+        error: 0,
+        needs_config: 1,
+        total: 1,
+      },
+    });
+    return true;
+  }
+  if (method === "GET" && path === "/system/configs/github") {
+    await context.fulfillJson({
+      token_configured: false,
+      webhook_base_url: "https://hooks.example",
+    });
+    return true;
+  }
+  if (method === "GET" && path === "/system/configs/github/webhook/tunnel") {
+    await context.fulfillJson({
+      provider: null,
+      public_url: null,
+      status: "inactive",
+    });
+    return true;
+  }
   if (
     method === "GET"
     && (path === "/system/configs/model-fallback" || path === "/connectors/w3")

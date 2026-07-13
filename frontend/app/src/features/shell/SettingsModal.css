@@ -45,12 +45,39 @@
   overflow: visible;
 }
 
+.at-settings-modal .at-settings-mobile-navigation {
+  display: none;
+}
+
 .at-settings-modal .at-settings-content,
 .at-settings-modal .at-settings-section,
 .at-settings-modal .at-settings-section-body {
   height: auto;
   min-height: 0;
   overflow: visible;
+}
+
+@media (max-width: 900px) {
+  .at-settings-modal .at-settings-desktop-nav {
+    display: none;
+  }
+
+  .at-settings-modal .at-settings-mobile-navigation {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    display: block;
+    min-width: 0;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--at-border);
+    background: var(--at-sidebar);
+  }
+
+  .at-settings-modal .at-settings-mobile-navigation .ant-select {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
 }
 
 @media (max-width: 640px) {
@@ -64,10 +91,5 @@
   .at-settings-modal .ant-modal-content {
     height: calc(100dvh - 16px);
     max-height: calc(100dvh - 16px);
-  }
-
-  .at-settings-modal .at-settings-nav {
-    overflow-x: auto;
-    overflow-y: hidden;
   }
 }

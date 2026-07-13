@@ -712,6 +712,7 @@ function PluginMarketplaceUpdateView({
             <Form layout="vertical">
               <Form.Item label={t("settingsPluginsInstallVersion")}>
                 <Select
+                  aria-label={t("settingsPluginsInstallVersion")}
                   onChange={(value) => setSelectedVersion(value)}
                   options={versionOptions}
                   value={selectedVersion}

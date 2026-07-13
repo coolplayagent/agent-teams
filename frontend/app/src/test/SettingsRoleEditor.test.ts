@@ -34,4 +34,17 @@ describe("role settings editor", () => {
       /\.at-settings-detail-page\.at-role-config-detail[\s\S]*?width:\s*100%;[\s\S]*?max-width:\s*none;/,
     );
   });
+
+  it("aligns the memory switch with adjacent advanced-field controls", () => {
+    expect(source).toMatch(
+      /className="at-role-memory-field"[\s\S]{0,160}?name="memory_enabled"/,
+    );
+    expect(source).toMatch(
+      /className="at-role-memory-field"[\s\S]{0,180}?label=\{t\("settingsRoleMemoryEnabled"\)\}/,
+    );
+    expect(source).toMatch(
+      /name="memory_enabled"[\s\S]{0,220}?ariaLabel=\{t\("settingsRoleMemoryEnabled"\)\}[\s\S]{0,160}?label=\{t\("settingsEnabled"\)\}/,
+    );
+    expect(css).not.toMatch(/\.at-role-memory-field\s*{[\s\S]*?padding-top:/);
+  });
 });

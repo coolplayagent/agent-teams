@@ -11,13 +11,11 @@ import {
 import type { FormInstance } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft } from "lucide-react";
 
 import {
   deleteModelProfile,
   deleteRoleConfig,
   getGeneralConfig,
-  getConfigStatus,
   getModelCatalog,
   getModelFallbackConfig,
   getModelProfiles,
@@ -54,7 +52,6 @@ import type {
 import { ChoiceControl } from "../../components/ChoiceControl";
 import { useTranslations } from "../../i18n";
 import { useUiStore } from "../../runtime/uiStore";
-import { ClawHubSettingsSection } from "./ClawHubSettingsSection";
 import { CommandsSettingsSection } from "./CommandsSettingsSection";
 import { EnvironmentSettingsSection } from "./EnvironmentSettingsSection";
 import { GitHubSettingsSection } from "./GitHubSettingsSection";
@@ -81,9 +78,9 @@ import { TriggerSettingsSection } from "./TriggerSettingsSection";
 import { WebSettingsSection } from "./WebSettingsSection";
 import { WorkspaceSettingsSection } from "./WorkspaceSettingsSection";
 import {
-  isSystemSettingsPage,
+  CONTEXTUAL_SETTINGS_PAGE_DEFINITIONS,
   SETTINGS_SECTION_DEFINITIONS,
-  SYSTEM_SETTINGS_PAGE_DEFINITIONS,
+  isSystemSettingsPage,
   type SettingsSectionKey,
   type SystemSettingsPage,
 } from "./settingsNavigation";
@@ -108,7 +105,9 @@ export function SettingsCenter({
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const t = useTranslations();
-  const [activeSection, setActiveSection] = useState<SettingsSectionKey>("appearance");
+  const [activeSection, setActiveSection] = useState<
+    SettingsSectionKey | SystemSettingsPage
+  >("appearance");
   const [form] = Form.useForm<GeneralConfig>();
   const themeMode = useUiStore((state) => state.themeMode);
   const setThemeMode = useUiStore((state) => state.setThemeMode);
@@ -151,7 +150,7 @@ export function SettingsCenter({
   }, [activeSection, generalQuery.data, form]);
   useEffect(() => {
     if (open && initialSystemPage !== null) {
-      setActiveSection("system");
+      setActiveSection(initialSystemPage);
     }
   }, [initialSystemPage, open]);
 
@@ -162,10 +161,32 @@ export function SettingsCenter({
     })),
     [t],
   );
+  const mobileSections = useMemo(() => {
+    const options: Array<{
+      label: string;
+      value: SettingsSectionKey | SystemSettingsPage;
+    }> = sections.map((section) => ({
+      label: section.label,
+      value: section.key,
+    }));
+    const contextualPage = CONTEXTUAL_SETTINGS_PAGE_DEFINITIONS.find(
+      (page) => page.key === activeSection,
+    );
+    if (contextualPage !== undefined) {
+      options.unshift({
+        label: t(contextualPage.labelKey),
+        value: contextualPage.key,
+      });
+    }
+    return options;
+  }, [activeSection, sections, t]);
 
   return (
     <div className="at-settings-center">
-      <nav aria-label={t("settingsSections")} className="at-settings-nav">
+      <nav
+        aria-label={t("settingsSections")}
+        className="at-settings-nav at-settings-desktop-nav"
+      >
         {sections.map((section) => (
           <button
             aria-current={activeSection === section.key ? "page" : undefined}
@@ -182,6 +203,14 @@ export function SettingsCenter({
           </button>
         ))}
       </nav>
+      <div className="at-settings-mobile-navigation">
+        <Select
+          aria-label={t("settingsSections")}
+          onChange={(section) => setActiveSection(section)}
+          options={mobileSections}
+          value={activeSection}
+        />
+      </div>
       <section className="at-settings-content">
         {activeSection === "appearance" ? (
           <SettingsAppearanceSection
@@ -194,7 +223,7 @@ export function SettingsCenter({
             error={generalQuery.error}
             form={form}
             loading={generalQuery.isLoading}
-            onNavigate={setActiveSection}
+            onNavigate={(section) => setActiveSection(section)}
             onRetry={() => void generalQuery.refetch()}
             onSubmit={(values) => saveMutation.mutate(values)}
             saving={saveMutation.isPending}
@@ -233,147 +262,34 @@ export function SettingsCenter({
           />
         ) : null}
         {activeSection === "web" ? <WebSettingsSection /> : null}
-        {activeSection === "clawhub" ? <ClawHubSettingsSection /> : null}
         {activeSection === "proxy" ? <ProxySettingsSection /> : null}
         {activeSection === "workspace" ? <WorkspaceSettingsSection /> : null}
         {activeSection === "environment" ? <EnvironmentSettingsSection /> : null}
-        {activeSection === "system" ? (
-          <SettingsSystem initialPage={initialSystemPage} />
+        {isSystemSettingsPage(activeSection) ? (
+          <SystemSettingsPageContent page={activeSection} />
         ) : null}
       </section>
     </div>
   );
 }
 
-function SettingsSystem({
-  initialPage,
-}: {
-  initialPage: SystemSettingsPage | null;
-}) {
-  const t = useTranslations();
-  const [selectedPage, setSelectedPage] = useState<SystemSettingsPage | null>(null);
-  const [desktopVersion, setDesktopVersion] = useState<string | null>(null);
-  const statusQuery = useQuery({
-    queryKey: ["settings", "system", "status"],
-    queryFn: getConfigStatus,
-    enabled: selectedPage === null,
-  });
-  useEffect(() => {
-    if (initialPage !== null) {
-      setSelectedPage(initialPage);
-    }
-  }, [initialPage]);
-  useEffect(() => {
-    let cancelled = false;
-    const desktopApi = window.agentTeamsDesktop;
-    if (desktopApi === undefined) {
-      setDesktopVersion(null);
-      return () => {
-        cancelled = true;
-      };
-    }
-    void desktopApi
-      .getVersion()
-      .then((version) => {
-        if (!cancelled) {
-          setDesktopVersion(version.trim() || null);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setDesktopVersion(null);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-  const systemItems = useMemo(
-    () => SYSTEM_SETTINGS_PAGE_DEFINITIONS.map((page) => ({
-      detail: t(page.detailKey),
-      key: page.key,
-      meta: "",
-      title: t(page.labelKey),
-    })),
-    [t],
-  );
-
-  if (selectedPage !== null) {
-    return (
-      <div className="at-settings-system-detail">
-        <div className="at-settings-system-detail-toolbar">
-          <Button
-            icon={<ArrowLeft size={15} />}
-            onClick={() => setSelectedPage(null)}
-            type="text"
-          >
-            {t("settingsBackToSystem")}
-          </Button>
-        </div>
-        <SystemSettingsPageContent page={selectedPage} />
-      </div>
-    );
-  }
-
-  return (
-    <SettingsSection title={t("settingsSystem")}>
-      <SettingsQueryState
-        error={statusQuery.error}
-        loading={statusQuery.isLoading}
-        onRetry={() => void statusQuery.refetch()}
-      />
-      {!statusQuery.isLoading && statusQuery.data !== undefined ? (
-        <div className="at-settings-facts">
-          <Fact
-            label={t("settingsSystemSkillsLoaded")}
-            value={
-              statusQuery.data.skills?.loaded === true
-                ? t("settingsEnabled")
-                : t("settingsDisabled")
-            }
-          />
-          <Fact
-            label={t("settingsSkills")}
-            value={String(statusQuery.data.skills?.skills?.length ?? 0)}
-          />
-          {desktopVersion !== null ? (
-            <Fact label={t("settingsSystemDesktopVersion")} value={desktopVersion} />
-          ) : null}
-        </div>
-      ) : null}
-      <SettingsList
-        emptyText={t("settingsSystemNoPages")}
-        items={systemItems}
-        onSelect={(item) => {
-          if (isSystemSettingsPage(item.key)) {
-            setSelectedPage(item.key);
-          }
-        }}
-      />
-    </SettingsSection>
-  );
-}
-
 function SystemSettingsPageContent({ page }: { page: SystemSettingsPage }) {
-  if (page === "mcp") {
-    return <McpSettingsSection />;
+  switch (page) {
+    case "mcp":
+      return <McpSettingsSection />;
+    case "plugins":
+      return <PluginsSettingsSection />;
+    case "commands":
+      return <CommandsSettingsSection />;
+    case "hooks":
+      return <HooksSettingsSection />;
+    case "agent-runtime":
+      return <AgentRuntimeSettingsSection />;
+    case "triggers":
+      return <TriggerSettingsSection />;
+    case "github":
+      return <GitHubSettingsSection />;
   }
-  if (page === "plugins") {
-    return <PluginsSettingsSection />;
-  }
-  if (page === "commands") {
-    return <CommandsSettingsSection />;
-  }
-  if (page === "hooks") {
-    return <HooksSettingsSection />;
-  }
-  if (page === "agent-runtime") {
-    return <AgentRuntimeSettingsSection />;
-  }
-  if (page === "triggers") {
-    return <TriggerSettingsSection />;
-  }
-  return <GitHubSettingsSection />;
 }
 
 function SettingsGeneral({
@@ -939,13 +855,16 @@ function RoleConfigDetail({
                     />
                   </Form.Item>
                   <Form.Item
+                    className="at-role-memory-field"
                     getValueProps={booleanChoiceValueProps}
+                    label={t("settingsRoleMemoryEnabled")}
                     name="memory_enabled"
                   >
                     <ChoiceControl
+                      ariaLabel={t("settingsRoleMemoryEnabled")}
                       checked={form.getFieldValue("memory_enabled") === true}
                       kind="switch"
-                      label={t("settingsRoleMemoryEnabled")}
+                      label={t("settingsEnabled")}
                       onChange={() => undefined}
                     />
                   </Form.Item>

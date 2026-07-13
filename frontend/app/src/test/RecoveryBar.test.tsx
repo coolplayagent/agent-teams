@@ -1486,7 +1486,7 @@ describe("RecoveryBar", () => {
     expect(screen.queryByRole("button", { name: "Resume" })).not.toBeInTheDocument();
   });
 
-  it("shows a paused subagent recovery state instead of a standalone resume action", async () => {
+  it("projects paused subagent recovery without rendering a standalone alert", async () => {
     getRecoverySnapshotMock.mockResolvedValue(
       recoverySnapshot({
         active_run: {
@@ -1506,21 +1506,10 @@ describe("RecoveryBar", () => {
       }),
     );
 
-    const onPausedSubagentOpen = vi.fn();
-    renderRecoveryBar(runStreamController(), onPausedSubagentOpen);
+    const onPausedSubagentChange = vi.fn();
+    renderRecoveryBar(runStreamController(), onPausedSubagentChange);
 
-    await screen.findByText("Paused subagent: spec_coder");
-    expect(
-      screen.getByText("Waiting for follow-up in the paused subagent panel."),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText("instance: inst-2 | task: task-7 | waiting for local follow-up"),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Resume" })).not.toBeInTheDocument();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Open subagent panel" }),
-    );
-    expect(onPausedSubagentOpen).toHaveBeenCalledWith(
+    await waitFor(() => expect(onPausedSubagentChange).toHaveBeenCalledWith(
       {
         instance_id: "inst-2",
         role_id: "spec_coder",
@@ -1531,10 +1520,12 @@ describe("RecoveryBar", () => {
         phase: "awaiting_subagent_followup",
         run_id: "run-1",
       }),
-    );
+    ));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Resume" })).not.toBeInTheDocument();
   });
 
-  it("treats structured paused-subagent role ids as opaque values", async () => {
+  it("does not expose structured paused-subagent identities in the recovery surface", async () => {
     getRecoverySnapshotMock.mockResolvedValue(
       recoverySnapshot({
         active_run: {
@@ -1553,12 +1544,11 @@ describe("RecoveryBar", () => {
       }),
     );
 
-    renderRecoveryBar();
+    const onPausedSubagentChange = vi.fn();
+    renderRecoveryBar(runStreamController(), onPausedSubagentChange);
 
-    await screen.findByText("Paused subagent: CoordinatorAgent");
-    expect(
-      screen.getByText("instance: coordinator-inst | task: task-coordinator"),
-    ).toBeInTheDocument();
+    await waitFor(() => expect(onPausedSubagentChange).toHaveBeenCalled());
+    expect(screen.queryByText(/coordinator-inst|task-coordinator/)).not.toBeInTheDocument();
   });
 
   it("shows active background tasks and stops them through the run API", async () => {
@@ -1743,14 +1733,14 @@ describe("RecoveryBar", () => {
 
 function renderRecoveryBar(
   controller = runStreamController(),
-  onPausedSubagentOpen?: ComponentProps<typeof RecoveryBar>["onPausedSubagentOpen"],
+  onPausedSubagentChange?: ComponentProps<typeof RecoveryBar>["onPausedSubagentChange"],
   visible = true,
 ) {
   const queryClient = createTestQueryClient();
   render(
     <TestProviders queryClient={queryClient}>
       <RecoveryBar
-        onPausedSubagentOpen={onPausedSubagentOpen}
+        onPausedSubagentChange={onPausedSubagentChange}
         runStreamController={controller}
         sessionId="session-1"
         visible={visible}

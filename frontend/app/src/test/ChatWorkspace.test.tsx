@@ -15,10 +15,10 @@ vi.mock("../features/composer/Composer", () => ({
 
 vi.mock("../features/recovery/RecoveryBar", () => ({
   RecoveryBar: ({
-    onPausedSubagentOpen,
+    onPausedSubagentChange,
     sessionId,
   }: {
-    onPausedSubagentOpen?: (
+    onPausedSubagentChange?: (
       pausedSubagent: {
         instance_id?: string;
         reason?: string | null;
@@ -34,12 +34,12 @@ vi.mock("../features/recovery/RecoveryBar", () => ({
     ) => void;
     sessionId: string | null;
   }) => (
-    <div data-testid="recovery">
-      {sessionId}
-      {onPausedSubagentOpen === undefined ? null : (
+    <>
+      <div data-testid="recovery">{sessionId}</div>
+      {onPausedSubagentChange === undefined ? null : (
         <button
           onClick={() =>
-            onPausedSubagentOpen(
+            onPausedSubagentChange(
               {
                 instance_id: "paused-instance",
                 reason: "Waiting for reviewer input",
@@ -56,10 +56,10 @@ vi.mock("../features/recovery/RecoveryBar", () => ({
           }
           type="button"
         >
-          Open paused recovery fixture
+          Publish paused recovery fixture
         </button>
       )}
-    </div>
+    </>
   ),
 }));
 
@@ -71,11 +71,15 @@ vi.mock("../features/shell/SessionTokenUsage", () => ({
 
 vi.mock("../features/timeline/MessageTimeline", () => ({
   MessageTimeline: ({
+    onSubagentOpen,
+    pausedSubagent,
     primaryRoleId,
     sessionId,
     visible,
     workspaceId,
   }: {
+    onSubagentOpen?: (subagent: Record<string, unknown>) => void;
+    pausedSubagent?: Record<string, unknown> | null;
     primaryRoleId?: string | null;
     sessionId: string | null;
     visible?: boolean;
@@ -90,6 +94,12 @@ vi.mock("../features/timeline/MessageTimeline", () => ({
         data-workspace-id={workspaceId ?? ""}
       >
         {sessionId}
+        {pausedSubagent === null || pausedSubagent === undefined ||
+            onSubagentOpen === undefined ? null : (
+          <button onClick={() => onSubagentOpen(pausedSubagent)} type="button">
+            Continue paused subagent
+          </button>
+        )}
       </div>
     );
   },
@@ -129,8 +139,9 @@ describe("ChatWorkspace", () => {
     );
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Open paused recovery fixture" }),
+      screen.getByRole("button", { name: "Publish paused recovery fixture" }),
     );
+    fireEvent.click(screen.getByRole("button", { name: "Continue paused subagent" }));
 
     expect(onSubagentOpen).toHaveBeenCalledWith({
       description: "Waiting for reviewer input",
@@ -142,6 +153,7 @@ describe("ChatWorkspace", () => {
       sessionId: "session-1",
       sourceRunId: "parent-run",
       status: "paused",
+      taskId: "paused-task",
       title: "reviewer",
     });
   });

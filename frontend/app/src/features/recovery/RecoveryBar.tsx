@@ -31,8 +31,8 @@ const NONE_OF_THE_ABOVE_OPTION_LABEL = "__none_of_the_above__";
 
 interface RecoveryBarProps {
   onPendingSubagentQuestionOpen?: (question: PendingUserQuestion) => void;
-  onPausedSubagentOpen?: (
-    pausedSubagent: RecoveryPausedSubagent,
+  onPausedSubagentChange?: (
+    pausedSubagent: RecoveryPausedSubagent | null,
     activeRun: RecoveryRun | null,
   ) => void;
   runStreamController: RunStreamController;
@@ -42,7 +42,7 @@ interface RecoveryBarProps {
 
 export function RecoveryBar({
   onPendingSubagentQuestionOpen,
-  onPausedSubagentOpen,
+  onPausedSubagentChange,
   runStreamController,
   sessionId,
   visible = true,
@@ -108,6 +108,11 @@ export function RecoveryBar({
   const pausedSubagent = visiblePausedSubagent(
     recoveryQuery.data?.paused_subagent ?? null,
   );
+  useEffect(() => {
+    if (recoveryQuery.data !== undefined) {
+      onPausedSubagentChange?.(pausedSubagent, activeRun);
+    }
+  }, [activeRun, onPausedSubagentChange, pausedSubagent, recoveryQuery.data]);
   const activeBackgroundTasks = useMemo(
     () =>
       (recoveryQuery.data?.background_tasks ?? []).filter(isActiveBackgroundTask),
@@ -118,6 +123,11 @@ export function RecoveryBar({
     pendingQuestions.length > 0 ||
     pendingSubagentQuestions.length > 0 ||
     pausedSubagent !== null ||
+    activeBackgroundTasks.length > 0;
+  const hasVisibleRecoveryItems =
+    pendingApprovals.length > 0 ||
+    pendingQuestions.length > 0 ||
+    pendingSubagentQuestions.length > 0 ||
     activeBackgroundTasks.length > 0;
   const visibleActiveRun =
     activeRun !== null &&
@@ -394,7 +404,7 @@ export function RecoveryBar({
     return null;
   }
   const recoveryPanelRunId = recoveryPanelRunKey(activeRun, activeBackgroundTasks);
-  if (!hasPendingRecoveryItems && !showResumeAction) {
+  if (!hasVisibleRecoveryItems && !showResumeAction) {
     return null;
   }
 
@@ -445,12 +455,6 @@ export function RecoveryBar({
               }));
             }}
             tasks={activeBackgroundTasks}
-          />
-          <PausedSubagentPanel
-            activeRun={activeRun}
-            onOpen={onPausedSubagentOpen}
-            pausedSubagent={pausedSubagent}
-            t={t}
           />
           {visibleActiveRun === null ? null : (
             <PendingApprovals
@@ -613,55 +617,6 @@ interface ApprovalActionRequest {
 interface BackgroundTaskStopRequest {
   backgroundTaskId: string;
   runId: string;
-}
-
-interface PausedSubagentPanelProps {
-  activeRun: RecoveryRun | null;
-  onOpen?: (
-    pausedSubagent: RecoveryPausedSubagent,
-    activeRun: RecoveryRun | null,
-  ) => void;
-  pausedSubagent: RecoveryPausedSubagent | null;
-  t: Translate;
-}
-
-function PausedSubagentPanel({
-  activeRun,
-  onOpen,
-  pausedSubagent,
-  t,
-}: PausedSubagentPanelProps) {
-  if (pausedSubagent === null) {
-    return null;
-  }
-  const detail = pausedSubagentDetail(pausedSubagent);
-  return (
-    <div className="at-recovery-panel">
-      <div className="at-recovery-item">
-        <div className="at-recovery-copy">
-          <Typography.Text strong>
-            Paused subagent: {pausedSubagentLabel(pausedSubagent)}
-          </Typography.Text>
-          <Typography.Text type="secondary">
-            Waiting for follow-up in the paused subagent panel.
-          </Typography.Text>
-          {detail ? (
-            <Typography.Text type="secondary" ellipsis>
-              {detail}
-            </Typography.Text>
-          ) : null}
-        </div>
-        {onOpen !== undefined ? (
-          <Button
-            onClick={() => onOpen(pausedSubagent, activeRun)}
-            size="small"
-          >
-            {t("timelineOpenSubagentPanel")}
-          </Button>
-        ) : null}
-      </div>
-    </div>
-  );
 }
 
 interface BackgroundTasksPanelProps {
@@ -1237,24 +1192,6 @@ function visiblePausedSubagent(
     role_id: roleId,
     task_id: pausedSubagent.task_id?.trim() || null,
   };
-}
-
-function pausedSubagentLabel(pausedSubagent: RecoveryPausedSubagent): string {
-  const roleId = pausedSubagent.role_id?.trim() ?? "";
-  const instanceId = pausedSubagent.instance_id?.trim() ?? "";
-  return roleId || instanceId || "unknown";
-}
-
-function pausedSubagentDetail(pausedSubagent: RecoveryPausedSubagent): string {
-  return [
-    pausedSubagent.instance_id?.trim()
-      ? `instance: ${pausedSubagent.instance_id.trim()}`
-      : "",
-    pausedSubagent.task_id?.trim() ? `task: ${pausedSubagent.task_id.trim()}` : "",
-    pausedSubagent.reason?.trim() ? pausedSubagent.reason.trim() : "",
-  ]
-    .filter(Boolean)
-    .join(" | ");
 }
 
 function isActiveBackgroundTask(task: RecoveryBackgroundTask): boolean {

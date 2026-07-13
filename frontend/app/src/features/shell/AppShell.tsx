@@ -1346,6 +1346,7 @@ function activeSubagentFromTimelineReference(
 ): ActiveSubagentSession | null {
   const runId = reference.runId?.trim() ?? "";
   const instanceId = reference.instanceId?.trim() ?? "";
+  const taskId = reference.taskId?.trim() ?? "";
   const roleId = reference.roleId?.trim() ?? "";
   const title = subagentTitleFromReference(reference);
   const runPhase = firstNonBlank(reference.runPhase);
@@ -1377,7 +1378,7 @@ function activeSubagentFromTimelineReference(
     sourceToolCallId: reference.sourceToolCallId ?? "",
     status,
     subagentKind: reference.subagentKind ?? "normal",
-    taskId: "",
+    taskId,
     title,
     updatedAt: reference.updatedAt ?? "",
   };
@@ -1392,6 +1393,7 @@ function matchingSubagentFromRecords(
   }
   const runId = reference.runId?.trim() ?? "";
   const instanceId = reference.instanceId?.trim() ?? "";
+  const taskId = reference.taskId?.trim() ?? "";
   const normalized = records
     .filter((record): record is SessionSubagentRecord =>
       record !== null && typeof record === "object"
@@ -1404,11 +1406,21 @@ function matchingSubagentFromRecords(
       ...record,
       promptText: firstNonBlank(record.promptText, reference.prompt),
     }));
-  if (runId.length > 0) {
-    return normalized.find((record) => record.runId === runId) ?? null;
+  if (taskId.length > 0) {
+    const taskMatches = normalized.filter((record) => record.taskId === taskId);
+    if (instanceId.length > 0) {
+      return taskMatches.find((record) => record.instanceId === instanceId) ?? null;
+    }
+    if (runId.length > 0) {
+      return taskMatches.find((record) => record.runId === runId) ?? null;
+    }
+    return taskMatches[0] ?? null;
   }
   if (instanceId.length > 0) {
     return normalized.find((record) => record.instanceId === instanceId) ?? null;
+  }
+  if (runId.length > 0) {
+    return normalized.find((record) => record.runId === runId) ?? null;
   }
   return null;
 }
@@ -1475,11 +1487,16 @@ function subagentPanelIdentityMatches(
   if (left.sessionId !== right.sessionId) {
     return false;
   }
-  if (left.runId.length > 0 && right.runId.length > 0) {
-    return left.runId === right.runId;
+  const leftTaskId = left.taskId?.trim() ?? "";
+  const rightTaskId = right.taskId?.trim() ?? "";
+  if (leftTaskId.length > 0 && rightTaskId.length > 0) {
+    return leftTaskId === rightTaskId;
   }
   if (left.instanceId.length > 0 && right.instanceId.length > 0) {
     return left.instanceId === right.instanceId;
+  }
+  if (left.runId.length > 0 && right.runId.length > 0) {
+    return left.runId === right.runId;
   }
   if (
     left.sourceToolCallId !== undefined &&

@@ -7903,6 +7903,93 @@ describe("MessageTimeline", () => {
     expect(toolRow).toHaveAttribute("data-instance-id", "main-instance");
   });
 
+  it("projects paused recovery onto only the matching task for a reused instance", async () => {
+    const onSubagentOpen = vi.fn();
+    listSessionMessagesMock.mockResolvedValue([{
+      message: { parts: [
+        {
+          action_family: "subagent",
+          args: { prompt: "First task", role_id: "Crafter", task_id: "task-a" },
+          part_kind: "tool-call",
+          tool_call_id: "call-task-a",
+          tool_name: "delegated_worker",
+        },
+        {
+          action_family: "subagent",
+          content: {
+            subagent_instance_id: "shared-instance",
+            subagent_role_id: "Crafter",
+            task_id: "task-a",
+          },
+          part_kind: "tool-return",
+          tool_call_id: "call-task-a",
+          tool_name: "delegated_worker",
+        },
+        {
+          action_family: "subagent",
+          args: { prompt: "Second task", role_id: "Crafter", task_id: "task-b" },
+          part_kind: "tool-call",
+          tool_call_id: "call-task-b",
+          tool_name: "delegated_worker",
+        },
+        {
+          action_family: "subagent",
+          content: {
+            subagent_instance_id: "shared-instance",
+            subagent_role_id: "Crafter",
+            task_id: "task-b",
+          },
+          part_kind: "tool-return",
+          tool_call_id: "call-task-b",
+          tool_name: "delegated_worker",
+        },
+      ] },
+      message_id: "assistant-shared-instance-tasks",
+      role_id: "MainAgent",
+      run_id: "parent-run",
+    }]);
+
+    const { container } = renderTimeline("session-1", {
+      onSubagentOpen,
+      pausedSubagent: {
+        description: "Waiting for follow-up",
+        instanceId: "shared-instance",
+        roleId: "Crafter",
+        runPhase: "awaiting_subagent_followup",
+        runStatus: "paused",
+        sessionId: "session-1",
+        sourceRunId: "parent-run",
+        status: "paused",
+        taskId: "task-b",
+        title: "Crafter",
+      },
+    });
+
+    await waitFor(() => expect(
+      container.querySelector<HTMLElement>('[data-subagent-task-id="task-a"]'),
+    ).not.toBeNull());
+    const firstTask = container.querySelector<HTMLElement>(
+      '[data-subagent-task-id="task-a"]',
+    );
+    const secondTask = container.querySelector<HTMLElement>(
+      '[data-subagent-task-id="task-b"]',
+    );
+    expect(firstTask).not.toBeNull();
+    expect(secondTask).not.toBeNull();
+    expect(firstTask).not.toHaveClass("is-paused-subagent");
+    expect(secondTask).toHaveClass("is-paused-subagent");
+    expect(within(secondTask as HTMLElement).getByText("Needs follow-up")).toBeVisible();
+    expect(within(secondTask as HTMLElement).getByText("Continue")).toBeVisible();
+    expect(screen.queryByText(/shared-instance|task-b/)).not.toBeInTheDocument();
+
+    fireEvent.click((secondTask as HTMLElement).querySelector("summary") as HTMLElement);
+    expect(onSubagentOpen).toHaveBeenCalledWith(expect.objectContaining({
+      instanceId: "shared-instance",
+      status: "paused",
+      taskId: "task-b",
+    }));
+  });
+
   it("opens the subagent panel from a completed subagent tool card", async () => {
     const onSubagentOpen = vi.fn();
     setRuntimeStateFromEvents([
@@ -13642,6 +13729,7 @@ interface RenderTimelineOptions {
   latestTerminalRunId?: string | null;
   latestTerminalRunStatus?: string | null;
   onSubagentOpen?: Parameters<typeof MessageTimeline>[0]["onSubagentOpen"];
+  pausedSubagent?: Parameters<typeof MessageTimeline>[0]["pausedSubagent"];
   primaryRoleId?: string | null;
   roundsEnabled?: boolean;
   runtimeRunId?: string | null;
@@ -13672,6 +13760,7 @@ function renderTimeline(
             latestTerminalRunId={options.latestTerminalRunId ?? null}
             latestTerminalRunStatus={options.latestTerminalRunStatus ?? null}
             onSubagentOpen={options.onSubagentOpen}
+            pausedSubagent={options.pausedSubagent ?? null}
             primaryRoleId={options.primaryRoleId ?? null}
             roundsEnabled={options.roundsEnabled ?? true}
             sessionId={sessionId}

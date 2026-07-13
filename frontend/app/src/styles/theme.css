@@ -6143,6 +6143,11 @@ body {
   border-color: color-mix(in srgb, var(--at-danger) 45%, var(--at-border));
 }
 
+.at-message-tool.is-paused-subagent {
+  border-color: color-mix(in srgb, var(--at-primary) 32%, var(--at-border));
+  background: color-mix(in srgb, var(--at-primary) 3%, var(--at-surface));
+}
+
 .at-message-tool-summary {
   display: flex;
   align-items: center;
@@ -6226,6 +6231,32 @@ body {
   font-weight: 400;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.at-subagent-tool-status,
+.at-subagent-tool-action {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.at-subagent-tool-status {
+  padding: 0 7px;
+  color: var(--at-text-muted);
+  background: var(--at-surface-muted);
+}
+
+.at-subagent-tool-status[data-status="paused"] {
+  color: var(--at-primary);
+  background: color-mix(in srgb, var(--at-primary) 10%, var(--at-surface));
+}
+
+.at-subagent-tool-action {
+  padding: 0 3px;
+  color: var(--at-primary);
+  font-weight: 600;
 }
 
 .at-message-tool[open] .at-message-tool-preview {

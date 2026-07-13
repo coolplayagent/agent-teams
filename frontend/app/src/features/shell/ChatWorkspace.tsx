@@ -66,6 +66,8 @@ export const ChatWorkspace = memo(function ChatWorkspace({
   const timelineRequestGenerationRef = useRef(0);
   const switchFrameRef = useRef<SessionSwitchFrame | null>(null);
   const [switchingSessionId, setSwitchingSessionId] = useState<string | null>(null);
+  const [pausedSubagentReference, setPausedSubagentReference] =
+    useState<TimelineSubagentReference | null>(null);
   const requestedTimelineContext = useMemo<TimelineContext>(() => ({
     fallbackRunId: runStreamController.activeRunId,
     latestTerminalRunId,
@@ -113,6 +115,24 @@ export const ChatWorkspace = memo(function ChatWorkspace({
       cancelSessionSwitchFrame(switchFrameRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    setPausedSubagentReference(null);
+  }, [sessionId]);
+
+  const handlePausedSubagentChange = useCallback((
+    pausedSubagent: RecoveryPausedSubagent | null,
+    activeRun: RecoveryRun | null,
+  ) => {
+    const nextReference = sessionId === null || pausedSubagent === null
+      ? null
+      : pausedSubagentTimelineReference(sessionId, pausedSubagent, activeRun);
+    setPausedSubagentReference((current) =>
+      timelineSubagentReferencesEqual(current, nextReference)
+        ? current
+        : nextReference
+    );
+  }, [sessionId]);
 
   useEffect(() => {
     if (timelineContextsEqual(displayedTimelineContext, requestedTimelineContext)) {
@@ -184,6 +204,7 @@ export const ChatWorkspace = memo(function ChatWorkspace({
         latestTerminalRunId={timelineContext.latestTerminalRunId}
         latestTerminalRunStatus={timelineContext.latestTerminalRunStatus}
         onSubagentOpen={onSubagentOpen}
+        pausedSubagent={pausedSubagentReference}
         primaryRoleId={timelineContext.primaryRoleId}
         sessionId={timelineContext.sessionId}
         visible={visible && !switching}
@@ -226,18 +247,7 @@ export const ChatWorkspace = memo(function ChatWorkspace({
                 pendingQuestionTimelineReference(sessionId, question),
               )
         }
-        onPausedSubagentOpen={
-          onSubagentOpen === undefined || sessionId === null
-            ? undefined
-            : (pausedSubagent, activeRun) =>
-                onSubagentOpen(
-                  pausedSubagentTimelineReference(
-                    sessionId,
-                    pausedSubagent,
-                    activeRun,
-                  ),
-                )
-        }
+        onPausedSubagentChange={handlePausedSubagentChange}
         runStreamController={runStreamController}
         sessionId={sessionId}
         visible={visible && !switching}
@@ -306,8 +316,31 @@ function pausedSubagentTimelineReference(
     sessionId,
     sourceRunId: activeRun?.run_id,
     status: "paused",
+    taskId: pausedSubagent.task_id?.trim() ?? "",
     title: roleId || instanceId || "Subagent",
   };
+}
+
+function timelineSubagentReferencesEqual(
+  left: TimelineSubagentReference | null,
+  right: TimelineSubagentReference | null,
+): boolean {
+  if (left === right) {
+    return true;
+  }
+  if (left === null || right === null) {
+    return false;
+  }
+  return left.instanceId === right.instanceId &&
+    left.roleId === right.roleId &&
+    left.runPhase === right.runPhase &&
+    left.runStatus === right.runStatus &&
+    left.sessionId === right.sessionId &&
+    left.sourceRunId === right.sourceRunId &&
+    left.status === right.status &&
+    left.taskId === right.taskId &&
+    left.title === right.title &&
+    left.description === right.description;
 }
 
 interface SessionSwitchFrame {

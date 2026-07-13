@@ -146,11 +146,14 @@ interface MessageTimelineProps {
   loadMessages?: (sessionId: string) => Promise<TimelineMessage[]>;
   messageQueryKey?: readonly unknown[];
   onSubagentOpen?: (subagent: TimelineSubagentReference) => void;
+  pausedSubagent?: TimelineSubagentReference | null;
   primaryRoleId?: string | null;
   roundsEnabled?: boolean;
   runtimeRunId?: string | null;
   sessionId: string | null;
+  subagentScopeInstanceId?: string | null;
   subagentScopeRoleId?: string | null;
+  subagentScopeTaskId?: string | null;
   variant?: "session" | "subagent-panel";
   visible?: boolean;
   workspaceId?: string | null;
@@ -172,6 +175,7 @@ export interface TimelineSubagentReference {
   sourceToolCallId?: string;
   status?: string;
   subagentKind?: string;
+  taskId?: string;
   title?: string;
   updatedAt?: string;
 }
@@ -198,11 +202,14 @@ export function MessageTimeline({
   loadMessages = listSessionMessages,
   messageQueryKey,
   onSubagentOpen,
+  pausedSubagent = null,
   primaryRoleId = null,
   roundsEnabled = true,
   runtimeRunId = null,
   sessionId,
+  subagentScopeInstanceId = null,
   subagentScopeRoleId = null,
+  subagentScopeTaskId = null,
   variant = "session",
   visible = true,
   workspaceId = null,
@@ -214,7 +221,13 @@ export function MessageTimeline({
     null,
   );
   const pendingRoundRunIdRef = useRef<string | null>(null);
-  const scrollScopeKey = timelineScrollScopeKey(sessionId, variant, runtimeRunId);
+  const scrollScopeKey = timelineScrollScopeKey(
+    sessionId,
+    variant,
+    runtimeRunId,
+    subagentScopeInstanceId,
+    subagentScopeTaskId,
+  );
   const scrollScopeKeyRef = useRef(scrollScopeKey);
   const scrollSnapshotRef = useRef<TimelineScrollSnapshot | null>(null);
   const scrollSnapshotsByScopeRef = useRef(
@@ -994,6 +1007,7 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
       handleDisclosureChange,
       handleDisclosureToggle,
       onSubagentOpen,
+      pausedSubagent,
       resizeTimelineRow,
       runtimeTerminalEventsByRunId,
       sessionId ?? "",
@@ -1011,6 +1025,7 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
       handleToggleHistorySegment,
       lastAnswerKey,
       onSubagentOpen,
+      pausedSubagent,
       resizeTimelineRow,
       runtimeTerminalEventsByRunId,
       sessionId,
@@ -1881,6 +1896,7 @@ function timelineRowElement(
   onDisclosureChange: (disclosureId: string, expanded: boolean) => void,
   onDisclosureToggle: (event: SyntheticEvent<HTMLDetailsElement>) => void,
   onSubagentOpen: ((subagent: TimelineSubagentReference) => void) | undefined,
+  pausedSubagent: TimelineSubagentReference | null,
   resizeTimelineRow: (index: number, size: number) => void,
   runtimeTerminalEventsByRunId: ReadonlyMap<string, RunEventType | null>,
   sessionId: string,
@@ -1903,6 +1919,7 @@ function timelineRowElement(
         key={`${row.key}:${automaticallyCollapsed ? "auto-collapsed" : "controlled"}`}
         measureElement={measureElement}
         onSubagentOpen={onSubagentOpen}
+        pausedSubagent={pausedSubagent}
         resizeTimelineRow={resizeTimelineRow}
         onDisclosureChange={(changedDisclosureId, expanded) => {
           if (changedDisclosureId === disclosureId && row.processedGroup?.continuity) {
@@ -2027,6 +2044,7 @@ function timelineRowElement(
         onDisclosureChange={onDisclosureChange}
         onDisclosureToggle={onDisclosureToggle}
         onSubagentOpen={onSubagentOpen}
+        pausedSubagent={pausedSubagent}
         parts={row.parts}
         row={row}
         sessionId={sessionId}
@@ -2058,6 +2076,7 @@ function ProcessedGroupRow({
   index,
   measureElement,
   onSubagentOpen,
+  pausedSubagent,
   onDisclosureChange,
   onDisclosureToggle,
   resizeTimelineRow,
@@ -2074,6 +2093,7 @@ function ProcessedGroupRow({
   index: number;
   measureElement: (element: Element | null) => void;
   onSubagentOpen?: (subagent: TimelineSubagentReference) => void;
+  pausedSubagent: TimelineSubagentReference | null;
   onDisclosureChange: (disclosureId: string, expanded: boolean) => void;
   onDisclosureToggle: (event: SyntheticEvent<HTMLDetailsElement>) => void;
   resizeTimelineRow: (index: number, size: number) => void;
@@ -2139,6 +2159,7 @@ function ProcessedGroupRow({
                 onDisclosureChange={onDisclosureChange}
                 onDisclosureToggle={onDisclosureToggle}
                 onSubagentOpen={onSubagentOpen}
+                pausedSubagent={pausedSubagent}
                 parts={groupRow.parts}
                 row={groupRow}
                 sessionId={sessionId}
@@ -4323,8 +4344,11 @@ function mergeSubagentReference(
     runPhase: next.runPhase || existing.runPhase,
     runStatus: next.runStatus || existing.runStatus,
     sessionId: next.sessionId || existing.sessionId,
+    sourceRunId: next.sourceRunId || existing.sourceRunId,
+    sourceToolCallId: next.sourceToolCallId || existing.sourceToolCallId,
     status: next.status || existing.status,
     subagentKind: next.subagentKind || existing.subagentKind,
+    taskId: next.taskId || existing.taskId,
     title: next.title || existing.title,
     updatedAt: next.updatedAt || existing.updatedAt,
   };
@@ -8254,6 +8278,7 @@ function MessageRowContent({
   onDisclosureChange,
   onDisclosureToggle,
   onSubagentOpen,
+  pausedSubagent,
   parts,
   row,
   sessionId,
@@ -8264,6 +8289,7 @@ function MessageRowContent({
   onDisclosureChange: (disclosureId: string, expanded: boolean) => void;
   onDisclosureToggle: (event: SyntheticEvent<HTMLDetailsElement>) => void;
   onSubagentOpen?: (subagent: TimelineSubagentReference) => void;
+  pausedSubagent: TimelineSubagentReference | null;
   parts: TimelineRenderPart[];
   row: TimelineRow;
   sessionId: string;
@@ -8301,6 +8327,7 @@ function MessageRowContent({
               onDisclosureChange={onDisclosureChange}
               onDisclosureToggle={onDisclosureToggle}
               onSubagentOpen={onSubagentOpen}
+              pausedSubagent={pausedSubagent}
               sessionId={sessionId}
               tool={part}
               t={t}
@@ -8593,6 +8620,7 @@ function MessageToolBlock({
   onDisclosureChange,
   onDisclosureToggle,
   onSubagentOpen,
+  pausedSubagent,
   sessionId,
   tool,
   t,
@@ -8602,29 +8630,47 @@ function MessageToolBlock({
   onDisclosureChange: (disclosureId: string, expanded: boolean) => void;
   onDisclosureToggle: (event: SyntheticEvent<HTMLDetailsElement>) => void;
   onSubagentOpen?: (subagent: TimelineSubagentReference) => void;
+  pausedSubagent: TimelineSubagentReference | null;
   sessionId: string;
   tool: TimelineToolPart;
   t: Translate;
 }) {
-  const phaseLabel = toolPhaseLabel(tool, t);
-  const displayName = toolDisplayName(tool);
-  const title = displayName === null ? phaseLabel : `${phaseLabel}: ${displayName}`;
-  const preview = toolSummaryPreview(tool);
-  const status = toolBlockStatus(tool);
-  const isRunning = status === "running";
+  const baseStatus = toolBlockStatus(tool);
   const isSubagentTool = toolActionCategory(tool) === "subagent";
   const subagentReference = completeSubagentReference(
     tool.subagent,
     sessionId,
-    status,
+    baseStatus,
   );
-  const openSubagentReference = subagentReference === null
+  const sourcedSubagentReference = subagentReference === null
     ? null
     : {
       ...subagentReference,
       sourceRunId: subagentReference.sourceRunId ?? tool.sourceRunId,
       sourceToolCallId: subagentReference.sourceToolCallId ?? tool.callId,
     };
+  const pausedToolSubagent = matchingPausedSubagentReference(
+    sourcedSubagentReference,
+    pausedSubagent,
+  );
+  const openSubagentReference = pausedToolSubagent ?? sourcedSubagentReference;
+  const status = pausedToolSubagent === null ? baseStatus : "paused";
+  const isRunning = status === "running";
+  const phaseLabel = pausedToolSubagent === null
+    ? toolPhaseLabel(tool, t)
+    : t("timelineSubagentNeedsFollowup");
+  const displayName = toolDisplayName(tool);
+  const subagentName = subagentDisplayName(openSubagentReference);
+  const title = isSubagentTool && subagentName.length > 0
+    ? subagentName
+    : displayName === null ? phaseLabel : `${phaseLabel}: ${displayName}`;
+  const preview = pausedToolSubagent === null
+    ? toolSummaryPreview(tool)
+    : truncatePreview(firstNonEmptyString([
+      pausedToolSubagent.description,
+      pausedToolSubagent.prompt,
+      toolSummaryPreview(tool),
+    ]));
   const canOpenSubagent =
     onSubagentOpen !== undefined &&
     openSubagentReference !== null;
@@ -8647,10 +8693,12 @@ function MessageToolBlock({
         "at-message-tool",
         tool.error ? "is-error" : "",
         canOpenSubagent ? "is-openable-subagent" : "",
+        pausedToolSubagent !== null ? "is-paused-subagent" : "",
       ].filter(Boolean).join(" ")}
       data-status={status}
       data-subagent-instance-id={openSubagentReference?.instanceId ?? undefined}
       data-subagent-run-id={openSubagentReference?.runId ?? undefined}
+      data-subagent-task-id={openSubagentReference?.taskId ?? undefined}
       data-tool-call-id={tool.callId || undefined}
       data-tool-name={tool.toolName}
       disclosureId={disclosureId}
@@ -8673,6 +8721,16 @@ function MessageToolBlock({
         {tool.durationMs !== undefined ? (
           <span className="at-message-tool-duration">
             {formatToolDuration(tool.durationMs)}
+          </span>
+        ) : null}
+        {isSubagentTool ? (
+          <span className="at-subagent-tool-status" data-status={status}>
+            {phaseLabel}
+          </span>
+        ) : null}
+        {pausedToolSubagent !== null ? (
+          <span className="at-subagent-tool-action">
+            {t("timelineContinueSubagent")}
           </span>
         ) : null}
         {isRunning ? (
@@ -9025,6 +9083,7 @@ function contentPartTool(part: ContentPart): TimelineToolPart | null {
       mediaParts: [],
       phase: "call",
       subagent: subagentReferenceFromValues({
+        assumeSubagent: semantics.actionFamily === "subagent",
         callId: "tool_call_id" in part ? part.tool_call_id ?? "" : "",
         payload: "args" in part ? jsonCompatibleValue(part.args ?? null) : null,
       }),
@@ -9049,6 +9108,7 @@ function contentPartTool(part: ContentPart): TimelineToolPart | null {
       outputBody,
       phase: "result",
       subagent: subagentReferenceFromValues({
+        assumeSubagent: semantics.actionFamily === "subagent",
         callId: "tool_call_id" in part ? part.tool_call_id ?? "" : "",
         payload: jsonCompatibleValue(content),
       }),
@@ -9266,9 +9326,10 @@ function runtimeToolPart(entry: TimelineEntry): TimelineToolPart | null {
       return null;
     }
     const inputBody = toolArgsBody(payload.args ?? null);
+    const semantics = runtimeToolSemantics(payload);
     return {
       action: "",
-      ...runtimeToolSemantics(payload),
+      ...semantics,
       body: inputBody,
       callId,
       error: false,
@@ -9278,6 +9339,7 @@ function runtimeToolPart(entry: TimelineEntry): TimelineToolPart | null {
       phase: "call",
       subagent: subagentReferenceWithSource(
         subagentReferenceFromValues({
+          assumeSubagent: semantics.actionFamily === "subagent",
           callId,
           payload: payload.args ?? null,
         }),
@@ -9327,6 +9389,7 @@ function runtimeToolPart(entry: TimelineEntry): TimelineToolPart | null {
     phase: "result",
     subagent: subagentReferenceWithSource(
       subagentReferenceFromValues({
+        assumeSubagent: semantics.actionFamily === "subagent",
         callId,
         payload: result,
       }),
@@ -9713,14 +9776,16 @@ function toolDisplayName(tool: TimelineToolPart): string | null {
 }
 
 function subagentReferenceFromValues({
+  assumeSubagent = false,
   callId,
   payload,
 }: {
+  assumeSubagent?: boolean;
   callId: string;
   payload: JsonValue;
 }): TimelineSubagentReference | null {
   const candidateObjects = subagentCandidateObjects(payload);
-  const hasSubagentShape = candidateObjects.some(
+  const hasSubagentShape = assumeSubagent || candidateObjects.some(
     subagentObjectHasExplicitReferenceFields,
   );
   if (!hasSubagentShape) {
@@ -9766,6 +9831,11 @@ function subagentReferenceFromValues({
       "kind",
       "subagentKind",
     ]),
+    taskId: subagentStringField(candidateObjects, [
+      "subagent_task_id",
+      "task_id",
+      "taskId",
+    ]),
     title: subagentStringField(candidateObjects, ["title", "name", "label"]),
     updatedAt: subagentStringField(candidateObjects, ["updated_at", "updatedAt"]),
   };
@@ -9801,6 +9871,92 @@ function completeSubagentReference(
     sessionId: reference.sessionId.trim() || sessionId,
     status,
   };
+}
+
+function matchingPausedSubagentReference(
+  candidate: TimelineSubagentReference | null,
+  paused: TimelineSubagentReference | null,
+): TimelineSubagentReference | null {
+  if (candidate === null || paused === null) {
+    return null;
+  }
+  if (
+    candidate.sessionId.trim().length > 0 &&
+    paused.sessionId.trim().length > 0 &&
+    candidate.sessionId !== paused.sessionId
+  ) {
+    return null;
+  }
+  const candidateTaskId = candidate.taskId?.trim() ?? "";
+  const pausedTaskId = paused.taskId?.trim() ?? "";
+  if (pausedTaskId.length > 0) {
+    if (candidateTaskId.length === 0 || candidateTaskId !== pausedTaskId) {
+      return null;
+    }
+  } else if (!subagentRuntimeIdentityMatches(candidate, paused)) {
+    return null;
+  }
+  if (subagentRuntimeIdentityConflicts(candidate, paused)) {
+    return null;
+  }
+  return {
+    ...candidate,
+    ...paused,
+    description: firstNonBlankTimelineValue(
+      paused.description,
+      candidate.description,
+    ),
+    prompt: firstNonBlankTimelineValue(candidate.prompt, paused.prompt),
+    roleId: firstNonBlankTimelineValue(paused.roleId, candidate.roleId),
+    taskId: firstNonBlankTimelineValue(paused.taskId, candidate.taskId),
+    title: firstNonBlankTimelineValue(
+      paused.title,
+      candidate.title,
+      paused.roleId,
+      candidate.roleId,
+    ),
+  };
+}
+
+function subagentRuntimeIdentityMatches(
+  candidate: TimelineSubagentReference,
+  paused: TimelineSubagentReference,
+): boolean {
+  return [
+    [candidate.runId, paused.runId],
+    [candidate.instanceId, paused.instanceId],
+  ].some(([candidateValue, pausedValue]) => {
+    const left = candidateValue?.trim() ?? "";
+    const right = pausedValue?.trim() ?? "";
+    return left.length > 0 && right.length > 0 && left === right;
+  });
+}
+
+function subagentRuntimeIdentityConflicts(
+  candidate: TimelineSubagentReference,
+  paused: TimelineSubagentReference,
+): boolean {
+  return [
+    [candidate.taskId, paused.taskId],
+    [candidate.runId, paused.runId],
+    [candidate.instanceId, paused.instanceId],
+    [candidate.sourceRunId, paused.sourceRunId],
+  ].some(([candidateValue, pausedValue]) => {
+    const left = candidateValue?.trim() ?? "";
+    const right = pausedValue?.trim() ?? "";
+    return left.length > 0 && right.length > 0 && left !== right;
+  });
+}
+
+function subagentDisplayName(reference: TimelineSubagentReference | null): string {
+  if (reference === null) {
+    return "";
+  }
+  return firstNonBlankTimelineValue(
+    reference.title,
+    reference.roleId,
+    reference.description,
+  );
 }
 
 function subagentReferenceWithSource(

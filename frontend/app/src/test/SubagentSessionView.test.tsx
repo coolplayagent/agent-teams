@@ -412,6 +412,70 @@ describe("SubagentSessionView", () => {
       .toHaveLength(1);
   });
 
+  it("hydrates the selected task record when an orchestration instance is reused", async () => {
+    listSessionSubagentsMock.mockResolvedValue([
+      {
+        instance_id: "shared-orchestration-instance",
+        role_id: "Crafter",
+        run_id: "shared-parent-run",
+        run_phase: "failed",
+        run_status: "failed",
+        session_id: "session-parent",
+        status: "failed",
+        subagent_kind: "orchestration",
+        task_id: "older-task",
+        title: "Older task record",
+      },
+      {
+        instance_id: "shared-orchestration-instance",
+        role_id: "Crafter",
+        run_id: "conflicting-parent-run",
+        run_phase: "paused",
+        run_status: "paused",
+        session_id: "session-parent",
+        status: "paused",
+        subagent_kind: "orchestration",
+        task_id: "selected-task",
+        title: "Conflicting selected task record",
+      },
+      {
+        instance_id: "shared-orchestration-instance",
+        role_id: "Crafter",
+        run_id: "shared-parent-run",
+        run_phase: "completed",
+        run_status: "completed",
+        session_id: "session-parent",
+        status: "completed",
+        subagent_kind: "orchestration",
+        task_id: "selected-task",
+        title: "Selected task record",
+      },
+    ]);
+
+    renderSubagentSessionView({
+      subagent: createSubagent({
+        instanceId: "shared-orchestration-instance",
+        roleId: "Crafter",
+        runId: "shared-parent-run",
+        subagentKind: "orchestration",
+        taskId: "selected-task",
+        title: "Pending task title",
+      }),
+    });
+
+    expect(await screen.findByText("Selected task record")).toBeVisible();
+    expect(screen.getByText("Completed")).toHaveAttribute(
+      "data-status",
+      "completed",
+    );
+    expect(screen.queryByText("Older task record")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Conflicting selected task record"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Failed")).not.toBeInTheDocument();
+    expect(screen.queryByText("Paused")).not.toBeInTheDocument();
+  });
+
   it("does not attach the normal-mode event stream to a shared orchestration run", async () => {
     const parentRunId = "shared-parent-run";
     setRuntimeEntries([

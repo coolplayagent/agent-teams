@@ -719,19 +719,28 @@ function matchingSubagentFromRecords(
     .filter((record): record is ActiveSubagentSession => record !== null);
   const runId = subagent.runId.trim();
   const instanceId = subagent.instanceId.trim();
-  if (instanceId.length > 0) {
-    const instanceMatch = normalized.find(
-      (record) => record.instanceId === instanceId,
-    );
-    if (instanceMatch !== undefined) {
-      return instanceMatch;
-    }
-  }
   const taskId = subagent.taskId?.trim() ?? "";
   if (taskId.length > 0) {
-    const taskMatch = normalized.find((record) => record.taskId === taskId);
-    if (taskMatch !== undefined) {
-      return taskMatch;
+    const taskMatches = normalized.filter((record) => record.taskId === taskId);
+    const compatibleTaskMatches = taskMatches.filter((record) =>
+      subagentRecordMatchesKnownIdentity(record, instanceId, runId),
+    );
+    return compatibleTaskMatches.length === 1
+      ? compatibleTaskMatches[0] ?? null
+      : null;
+  }
+  if (instanceId.length > 0) {
+    const instanceMatches = normalized.filter(
+      (record) => record.instanceId === instanceId,
+    );
+    const compatibleInstanceMatches = instanceMatches.filter((record) =>
+      subagentRecordMatchesKnownIdentity(record, instanceId, runId),
+    );
+    if (compatibleInstanceMatches.length === 1) {
+      return compatibleInstanceMatches[0] ?? null;
+    }
+    if (instanceMatches.length > 0) {
+      return null;
     }
   }
   const runMatches = normalized.filter(
@@ -752,6 +761,17 @@ function matchingSubagentFromRecords(
   return runId.length === 0 && instanceId.length === 0 && normalized.length === 1
     ? normalized[0] ?? null
     : null;
+}
+
+function subagentRecordMatchesKnownIdentity(
+  record: ActiveSubagentSession,
+  instanceId: string,
+  runId: string,
+): boolean {
+  return (
+    (instanceId.length === 0 || record.instanceId === instanceId) &&
+    (runId.length === 0 || record.runId === runId)
+  );
 }
 
 function mergeSubagentRecordContext(

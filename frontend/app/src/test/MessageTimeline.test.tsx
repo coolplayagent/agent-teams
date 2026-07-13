@@ -10472,6 +10472,98 @@ describe("MessageTimeline", () => {
     expect(container.querySelector('[data-instance-id="instance-child"]')).toBeNull();
   });
 
+  it("keeps primary messages visible when legacy persistence omits instance and task identity", async () => {
+    listSessionMessagesMock.mockResolvedValue([{
+      content: "Legacy primary answer without identity remains visible.",
+      message_id: "legacy-primary-without-identity",
+      role: "assistant",
+      run_id: "run-legacy-primary-identity",
+    }]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [{
+        primary_instance_id: "instance-root",
+        primary_role_id: "Coordinator",
+        primary_task_id: "task-root",
+        run_id: "run-legacy-primary-identity",
+        run_status: "completed",
+      }],
+      next_cursor: null,
+    });
+
+    renderTimeline("session-1", { primaryRoleId: "Coordinator" });
+
+    expect(
+      await screen.findByText("Legacy primary answer without identity remains visible."),
+    ).toBeVisible();
+  });
+
+  it("hides messages with an explicit standardized subagent source", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "Main answer remains visible beside scoped history.",
+        message_id: "explicit-main-scope-answer",
+        role: "assistant",
+        run_id: "run-explicit-message-scope",
+      },
+      {
+        content: "Explicit subagent history stays in its panel.",
+        message_id: "explicit-subagent-scope-answer",
+        role: "assistant",
+        run_id: "run-explicit-message-scope",
+        source: "subagent",
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [{
+        primary_instance_id: "instance-root",
+        primary_role_id: "Coordinator",
+        primary_task_id: "task-root",
+        run_id: "run-explicit-message-scope",
+        run_status: "completed",
+      }],
+      next_cursor: null,
+    });
+
+    renderTimeline("session-1", { primaryRoleId: "Coordinator" });
+
+    expect(await screen.findByText("Main answer remains visible beside scoped history."))
+      .toBeVisible();
+    expect(screen.queryByText("Explicit subagent history stays in its panel."))
+      .not.toBeInTheDocument();
+  });
+
+  it("does not infer subagent scope from unrelated nested tool arguments", async () => {
+    setRuntimeEntries([runtimeGenericEntry({
+      eventId: 1,
+      id: "run-nested-subagent-argument:1:0",
+      kind: "tool_call",
+      payload: {
+        args: {
+          query: {
+            subagent_instance_id: "plain-data-value",
+            subagent_role_id: "plain-data-role",
+          },
+        },
+        tool_call_id: "call-nested-subagent-argument",
+        action_family: "read",
+        semantic_category: "file-read",
+        tool_name: "read",
+      },
+      text: "read",
+    })]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("Read: read")).toBeInTheDocument();
+    const tool = container.querySelector('[data-tool-name="read"]');
+    expect(tool).not.toBeNull();
+    expect(tool).not.toHaveAttribute("data-subagent-instance-id");
+    expect(screen.queryByText("Subagent started")).not.toBeInTheDocument();
+  });
+
   it("keeps unmarked same-role child instance events out of the main runtime timeline", async () => {
     setRuntimeStateFromEvents([
       relayRunEvent({

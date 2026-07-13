@@ -113,7 +113,6 @@ const ROUND_RAIL_PAGE_LIMIT = 100;
 const ROUND_RAIL_MAX_PAGES = 10;
 const TOOL_RESULT_MAX_LINES = 200;
 const TOOL_RESULT_MAX_CHARS = 12000;
-const TIMELINE_SUBAGENT_MARKER_MAX_DEPTH = 8;
 const IMAGE_PATH_PATTERN = /\.(?:avif|bmp|gif|jpe?g|png|webp)$/i;
 const THINKING_DELTA_TEXT_KEYS = [
   "text",
@@ -6343,7 +6342,7 @@ function runtimeEntryLooksLikeDetachedSubagent(
   ) {
     return true;
   }
-  if (runtimeEntryHasDetachedSubagentPayload(entry)) {
+  if (runtimeEntryHasExplicitDetachedSubagentIdentity(entry)) {
     return true;
   }
   return false;
@@ -6817,30 +6816,18 @@ function timelineMessageLooksDetachedSubagent(
   if (timelineRoleCanBeDetachedAgent(agentRole, primaryRoleId)) {
     return true;
   }
-  if (
-    (primaryInstanceId.length > 0 || primaryTaskId.length > 0) &&
-    instanceId.length === 0 &&
-    taskId.length === 0
-  ) {
-    const role = stableTimelineRole(message.role ?? "");
-    return role !== "user" || messageContentParts(message).some((part) =>
-      contentPartHasToolCallShape(part)
-    );
-  }
   if (primaryRole.length > 0 && agentRole === primaryRole) {
     return false;
   }
-  if (timelineMessageHasDetachedSubagentPayload(message)) {
-    return true;
-  }
-  return false;
+  return timelineMessageHasExplicitDetachedScope(message);
 }
 
-function runtimeEntryHasDetachedSubagentPayload(entry: TimelineEntry): boolean {
+function runtimeEntryHasExplicitDetachedSubagentIdentity(entry: TimelineEntry): boolean {
   if (runtimeEntryIsSubagentToolLifecycle(entry)) {
     return false;
   }
-  return jsonValueHasDetachedSubagentMarker(entry.payload, 0);
+  const payload = jsonObject(entry.payload);
+  return payload !== null && jsonObjectHasDetachedSubagentMarker(payload);
 }
 
 function runtimeEntryIsSubagentToolLifecycle(entry: TimelineEntry): boolean {
@@ -6858,32 +6845,27 @@ function runtimeEntryIsSubagentToolLifecycle(entry: TimelineEntry): boolean {
   return runtimeToolSemantics(payload).actionFamily === "subagent";
 }
 
-function timelineMessageHasDetachedSubagentPayload(message: TimelineMessage): boolean {
-  return jsonValueHasDetachedSubagentMarker(jsonCompatibleValue(message), 0);
-}
-
-function jsonValueHasDetachedSubagentMarker(
-  value: JsonValue,
-  depth: number,
-): boolean {
-  if (depth > TIMELINE_SUBAGENT_MARKER_MAX_DEPTH) {
-    return false;
-  }
-  if (Array.isArray(value)) {
-    return value.some((item) =>
-      jsonValueHasDetachedSubagentMarker(item, depth + 1),
-    );
-  }
-  const object = jsonObject(value);
-  if (object === null) {
-    return false;
-  }
-  if (jsonObjectHasDetachedSubagentMarker(object)) {
+function timelineMessageHasExplicitDetachedScope(message: TimelineMessage): boolean {
+  const source = message.source?.trim().toLowerCase() ?? "";
+  if (source === "subagent") {
     return true;
   }
-  return Object.values(object).some((child) =>
-    jsonValueHasDetachedSubagentMarker(child, depth + 1),
-  );
+  const metadata = message.message?.metadata;
+  if (metadata === undefined) {
+    return false;
+  }
+  const normalizedMetadata = jsonObject(jsonCompatibleValue(metadata));
+  if (normalizedMetadata === null) {
+    return false;
+  }
+  const scope = objectString(normalizedMetadata, "scope").toLowerCase();
+  if (scope === "main") {
+    return false;
+  }
+  if (scope === "subagent") {
+    return true;
+  }
+  return jsonObjectHasDetachedSubagentMarker(normalizedMetadata);
 }
 
 function jsonObjectHasDetachedSubagentMarker(
@@ -9949,8 +9931,9 @@ function subagentReferenceFromValues({
   payload: JsonValue;
 }): TimelineSubagentReference | null {
   const candidateObjects = subagentCandidateObjects(payload);
-  const hasSubagentShape = assumeSubagent || candidateObjects.some(
-    subagentObjectHasExplicitReferenceFields,
+  const rootObject = jsonObject(payload);
+  const hasSubagentShape = assumeSubagent || (
+    rootObject !== null && subagentObjectHasExplicitReferenceFields(rootObject)
   );
   if (!hasSubagentShape) {
     return null;

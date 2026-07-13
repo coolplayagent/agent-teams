@@ -3623,17 +3623,43 @@ class SessionService:
         self,
         session: SessionRecord,
     ) -> tuple[dict[str, object], ...]:
-        records = self._latest_orchestration_subagents_by_role(
-            self._agent_repo.list_by_session(session.session_id),
-            session=session,
+        agent_records = self._agent_repo.list_by_session(session.session_id)
+        records_by_instance = {
+            record.instance_id: record
+            for record in agent_records
+            if not self._is_normal_mode_subagent_record(record, session=session)
+            and not self._is_reserved_system_role(record.role_id)
+        }
+        task_rows = tuple(
+            (task, records_by_instance[task.assigned_instance_id])
+            for task in self._task_repo.list_by_session(session.session_id)
+            if task.envelope.parent_task_id is not None
+            and task.assigned_instance_id is not None
+            and task.assigned_instance_id in records_by_instance
         )
-        rows = tuple(records[role_id] for role_id in sorted(records.keys()))
+        if task_rows:
+            rows = tuple(record for _, record in task_rows)
+        else:
+            records = self._latest_orchestration_subagents_by_role(
+                agent_records,
+                session=session,
+            )
+            rows = tuple(records[role_id] for role_id in sorted(records.keys()))
         run_ids = tuple(dict.fromkeys(record.run_id for record in rows))
         runtime_by_run = {
             runtime.run_id: runtime
             for runtime in self._run_runtime_repo.list_by_session(session.session_id)
             if runtime.run_id in run_ids
         }
+        if task_rows:
+            return tuple(
+                self._orchestration_subagent_projection(
+                    record,
+                    task=task,
+                    runtime_by_run=runtime_by_run,
+                )
+                for task, record in task_rows
+            )
         return tuple(
             self._orchestration_subagent_projection(
                 record,
@@ -3699,6 +3725,7 @@ class SessionService:
         self,
         record: AgentRuntimeRecord,
         *,
+        task: TaskRecord | None = None,
         runtime_by_run: Mapping[str, RunRuntimeRecord] | None = None,
     ) -> dict[str, object]:
         projected = self._agent_projection(record)
@@ -3707,12 +3734,20 @@ class SessionService:
             if runtime_by_run is not None
             else self._run_runtime_repo.get(record.run_id)
         )
-        projected["title"] = record.role_id
+        projected["title"] = (
+            str(task.envelope.title or task.envelope.objective).strip()
+            if task is not None
+            else record.role_id
+        )
         projected["subagent_kind"] = "orchestration"
         projected["interactive"] = True
         projected["deletable"] = False
         projected["run_status"] = (
-            runtime.status.value if runtime is not None else projected["status"]
+            task.status.value
+            if task is not None
+            else (
+                runtime.status.value if runtime is not None else projected["status"]
+            )
         )
         projected["run_phase"] = (
             self._public_phase(runtime, 0, 0) if runtime is not None else ""
@@ -3720,6 +3755,12 @@ class SessionService:
         projected["last_event_id"] = 0
         projected["checkpoint_event_id"] = 0
         projected["stream_connected"] = False
+        if task is not None:
+            projected["status"] = task.status.value
+            projected["task_id"] = task.envelope.task_id
+            projected["subagent_task_id"] = task.envelope.task_id
+            projected["source_run_id"] = task.envelope.trace_id
+            projected["source_task_id"] = task.envelope.parent_task_id or ""
         return projected
 
     def _normal_mode_subagent_projection(

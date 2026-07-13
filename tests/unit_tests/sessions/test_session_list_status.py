@@ -26,6 +26,7 @@ from relay_teams.sessions.runs.run_runtime_repo import (
 )
 from relay_teams.sessions.session_repository import SessionRepository
 from relay_teams.agents.tasks.task_repository import TaskRepository
+from relay_teams.agents.tasks.enums import TaskStatus
 from relay_teams.providers.token_usage_repo import TokenUsageRepository
 from relay_teams.agents.tasks.models import TaskEnvelope, VerificationPlan
 
@@ -820,6 +821,82 @@ def test_list_session_subagents_returns_orchestration_projection(
     assert subagents[0]["interactive"] is True
     assert subagents[0]["deletable"] is False
     assert subagents[0]["run_status"] == "running"
+
+
+def test_list_session_subagents_projects_each_assigned_orchestration_task(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "session_orchestration_task_subagents.db"
+    service = _build_service(db_path)
+    _ = service.create_session(
+        session_id="session-orch",
+        workspace_id="default",
+        session_mode=SessionMode.ORCHESTRATION,
+    )
+    task_repo = TaskRepository(db_path)
+    verification = VerificationPlan(checklist=("non_empty_response",))
+    _ = task_repo.create(
+        TaskEnvelope(
+            task_id="task-root",
+            session_id="session-orch",
+            trace_id="run-orch",
+            objective="Coordinate work",
+            verification=verification,
+        )
+    )
+    for task_id, title in (
+        ("task-crafter-first", "First implementation"),
+        ("task-crafter-second", "Replacement implementation"),
+    ):
+        _ = task_repo.create(
+            TaskEnvelope(
+                task_id=task_id,
+                session_id="session-orch",
+                parent_task_id="task-root",
+                trace_id="run-orch",
+                role_id="Crafter",
+                title=title,
+                objective=title,
+                verification=verification,
+            )
+        )
+        task_repo.update_status(
+            task_id,
+            TaskStatus.RUNNING,
+            assigned_instance_id="inst-crafter",
+        )
+
+    from relay_teams.agent_runtimes.instances.enums import InstanceStatus
+
+    AgentInstanceRepository(db_path).upsert_instance(
+        run_id="run-orch",
+        trace_id="run-orch",
+        session_id="session-orch",
+        instance_id="inst-crafter",
+        role_id="Crafter",
+        workspace_id="default",
+        conversation_id="conv_session_orch_crafter",
+        status=InstanceStatus.RUNNING,
+    )
+
+    subagents = service.list_session_subagents("session-orch")
+
+    assert [record["task_id"] for record in subagents] == [
+        "task-crafter-first",
+        "task-crafter-second",
+    ]
+    assert [record["subagent_task_id"] for record in subagents] == [
+        "task-crafter-first",
+        "task-crafter-second",
+    ]
+    assert [record["title"] for record in subagents] == [
+        "First implementation",
+        "Replacement implementation",
+    ]
+    assert all(record["instance_id"] == "inst-crafter" for record in subagents)
+    assert all(record["source_run_id"] == "run-orch" for record in subagents)
+    assert all(record["source_task_id"] == "task-root" for record in subagents)
+    assert all(record["run_status"] == "running" for record in subagents)
 
 
 def test_terminal_run_status_maps_only_terminal_events() -> None:

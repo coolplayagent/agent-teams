@@ -2077,18 +2077,8 @@ def test_resolve_role_allowed_tools_uses_updated_role_registry_tools() -> None:
     assert resolved == ("alpha", "generated_sum")
 
 
-def test_resolve_role_allowed_tools_filters_coordinator_tools_for_subagents() -> None:
+def test_resolve_role_allowed_tools_preserves_explicit_orchestration_tools() -> None:
     role_registry = RoleRegistry()
-    role_registry.register(
-        RoleDefinition(
-            role_id="Coordinator",
-            name="Coordinator",
-            description="Coordinates work.",
-            version="1",
-            tools=("orch_create_tasks", "orch_update_task", "orch_dispatch_task"),
-            system_prompt="Coordinate work.",
-        )
-    )
     role_registry.register(
         RoleDefinition(
             role_id="Crafter",
@@ -2114,7 +2104,7 @@ def test_resolve_role_allowed_tools_filters_coordinator_tools_for_subagents() ->
         session_id="session-1",
     )
 
-    assert resolved == ("alpha",)
+    assert resolved == ("alpha", "orch_dispatch_task")
 
 
 def test_resolve_role_allowed_tools_uses_fallback_for_missing_runtime_role() -> None:

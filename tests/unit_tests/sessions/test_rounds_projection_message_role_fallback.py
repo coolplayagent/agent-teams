@@ -2171,7 +2171,6 @@ def test_build_session_rounds_keeps_root_identity_for_same_role_child(
     run_id = "run-same-role"
     task_repo = TaskRepository(db_path)
     agent_repo = AgentInstanceRepository(db_path)
-    message_repo = MessageRepository(db_path)
     run_runtime_repo = RunRuntimeRepository(db_path)
 
     _ = task_repo.create(TaskEnvelope(

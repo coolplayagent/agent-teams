@@ -107,7 +107,7 @@ from relay_teams.sessions.runs.run_state_repo import RunStateRepository
 from relay_teams.sessions.session_models import SessionMode, SessionRecord
 from relay_teams.sessions.session_repository import SessionRepository
 from relay_teams.providers.provider_contracts import LLMProvider, LLMRequest
-from relay_teams.roles.role_models import RoleDefinition
+from relay_teams.roles.role_models import RoleDefinition, SystemRoleIdentity
 from relay_teams.roles.role_registry import RoleRegistry
 from relay_teams.agents.tasks.enums import TaskStatus
 from relay_teams.agents.tasks.task_repository import TaskRepository
@@ -307,6 +307,7 @@ def _media_role_registry() -> RoleRegistry:
     registry.register(
         RoleDefinition(
             role_id="MainAgent",
+            system_role=SystemRoleIdentity.MAIN_AGENT,
             name="Main Agent",
             description="Handles direct media generation",
             version="1",

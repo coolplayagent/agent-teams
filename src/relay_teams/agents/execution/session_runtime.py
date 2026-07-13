@@ -59,7 +59,7 @@ from relay_teams.net.async_request_limit_phase import (
 )
 from relay_teams.media import user_prompt_content_to_text
 from relay_teams.providers.llm_retry import extract_retry_error_info
-from relay_teams.providers.provider_contracts import LLMRequest
+from relay_teams.providers.provider_contracts import LLMRequest, ProviderStreamContract
 from relay_teams.roles.role_registry import RoleRegistry
 from relay_teams.roles.runtime_tools import runtime_tools_for_role
 from relay_teams.sessions.runs.enums import InjectionSource, RunEventType
@@ -1367,7 +1367,10 @@ class SessionRuntimeMixin(AgentLlmSessionMixinBase):
                                                         request=request,
                                                         text=text_delta,
                                                     )
-                                    _raise_if_stream_finished_without_reason(stream)
+                                    _raise_if_stream_finished_without_reason(
+                                        stream,
+                                        contract=self._provider_stream_contract,
+                                    )
                                     if await apply_interrupt_injections():
                                         raise _InjectionRestartApplied
                                     usage_after = stream.usage()
@@ -1833,12 +1836,15 @@ def _observed_tool_result_message(
     return None
 
 
-def _raise_if_stream_finished_without_reason(stream: object) -> None:
+def _raise_if_stream_finished_without_reason(
+    stream: object,
+    *,
+    contract: ProviderStreamContract,
+) -> None:
+    if not contract.requires_finish_reason:
+        return
     raw_stream = getattr(stream, "_raw_stream_response", None)
     if raw_stream is None:
-        return
-    raw_stream_type = type(raw_stream).__name__
-    if "OpenAI" not in raw_stream_type and "OpenRouter" not in raw_stream_type:
         return
     if getattr(raw_stream, "finish_reason", None) is not None:
         return

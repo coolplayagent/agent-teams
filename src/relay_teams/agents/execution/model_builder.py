@@ -16,12 +16,23 @@ from relay_teams.providers.openai_model_profiles import (
     resolve_openai_chat_model_profile,
 )
 from relay_teams.providers.openai_support import build_openai_provider
+from relay_teams.providers.provider_contracts import ProviderStreamContract
 
 RuntimeChatModel = OpenAIChatModel | RecoverableOpenAIChatModel | AnthropicModel
 
 
 def is_anthropic_provider(provider: ProviderType) -> bool:
     return provider == ProviderType.ANTHROPIC
+
+
+def build_provider_stream_contract(
+    provider: ProviderType,
+) -> ProviderStreamContract:
+    """Describe the selected provider transport without inspecting runtime classes."""
+
+    return ProviderStreamContract(
+        requires_finish_reason=not is_anthropic_provider(provider),
+    )
 
 
 def build_runtime_chat_model(

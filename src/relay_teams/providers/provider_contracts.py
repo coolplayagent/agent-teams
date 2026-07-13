@@ -22,6 +22,14 @@ class ProviderCapabilities(BaseModel):
     async_generation_modalities: tuple[MediaModality, ...] = ()
 
 
+class ProviderStreamContract(BaseModel):
+    """Transport-level guarantees expected from a provider stream."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    requires_finish_reason: bool = False
+
+
 class LLMRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 

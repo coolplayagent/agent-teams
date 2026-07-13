@@ -20,6 +20,7 @@ from relay_teams.agents.execution.conversation_microcompact import (
 )
 from relay_teams.agents.execution.agent_llm_session import AgentLlmSession
 from relay_teams.agents.execution.message_repository import MessageRepository
+from relay_teams.agents.execution.model_builder import build_provider_stream_contract
 from relay_teams.agent_runtimes.instances.instance_repository import (
     AgentInstanceRepository,
 )
@@ -150,6 +151,7 @@ class OpenAICompatibleProvider(LLMProvider):
         self._hook_service = hook_service
         self._session = AgentLlmSession(
             config=config,
+            provider_stream_contract=build_provider_stream_contract(config.provider),
             profile_name=profile_name,
             task_repo=task_repo,
             shared_store=shared_store,

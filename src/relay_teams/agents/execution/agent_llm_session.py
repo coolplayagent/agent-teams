@@ -50,6 +50,7 @@ from relay_teams.notifications import NotificationService
 from relay_teams.persistence.shared_state_repo import SharedStateRepository
 from relay_teams.providers.llm_retry import compute_retry_delay_ms
 from relay_teams.providers.model_config import LlmRetryConfig, ModelEndpointConfig
+from relay_teams.providers.provider_contracts import ProviderStreamContract
 from relay_teams.providers.model_fallback import (
     DisabledLlmFallbackMiddleware,
     LlmFallbackMiddleware,
@@ -101,6 +102,7 @@ class AgentLlmSession(
         self,
         config: ModelEndpointConfig,
         *,
+        provider_stream_contract: ProviderStreamContract,
         profile_name: str | None,
         task_repo: TaskRepository,
         shared_store: SharedStateRepository,
@@ -152,6 +154,7 @@ class AgentLlmSession(
         audit_service: AuditService | None = None,
     ) -> None:
         self._config = config
+        self._provider_stream_contract = provider_stream_contract
         self._profile_name = (
             profile_name.strip()
             if profile_name is not None and profile_name.strip()

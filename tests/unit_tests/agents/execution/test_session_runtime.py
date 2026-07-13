@@ -28,6 +28,7 @@ from relay_teams.net.async_request_limit_phase import (
     mark_async_request_limit_acquired,
     mark_async_request_limit_waiting,
 )
+from relay_teams.providers.provider_contracts import ProviderStreamContract
 from relay_teams.roles.role_models import RoleDefinition
 from relay_teams.roles.role_registry import RoleRegistry
 from relay_teams.tools.registry import ToolRegistry
@@ -99,11 +100,11 @@ def test_log_slow_llm_prep_stage_emits_warning(
     assert payload["message_count"] == 3
 
 
-class _OpenAIRawStreamWithoutFinish:
+class _RawStreamWithoutFinish:
     finish_reason = None
 
 
-class _OpenAIRawStreamWithFinish:
+class _RawStreamWithFinish:
     finish_reason = "stop"
 
 
@@ -483,17 +484,25 @@ async def test_spec_checkpoint_decision_reads_task_spec_from_runtime_repo() -> N
 
 
 def test_raise_if_stream_finished_without_reason_validates_provider_streams() -> None:
-    session_runtime_module._raise_if_stream_finished_without_reason(object())
+    optional_finish_reason = ProviderStreamContract()
+    required_finish_reason = ProviderStreamContract(requires_finish_reason=True)
+
     session_runtime_module._raise_if_stream_finished_without_reason(
-        SimpleNamespace(_raw_stream_response=_ForeignRawStream())
+        object(), contract=required_finish_reason
     )
     session_runtime_module._raise_if_stream_finished_without_reason(
-        SimpleNamespace(_raw_stream_response=_OpenAIRawStreamWithFinish())
+        SimpleNamespace(_raw_stream_response=_ForeignRawStream()),
+        contract=optional_finish_reason,
+    )
+    session_runtime_module._raise_if_stream_finished_without_reason(
+        SimpleNamespace(_raw_stream_response=_RawStreamWithFinish()),
+        contract=required_finish_reason,
     )
 
     with pytest.raises(httpx.RemoteProtocolError):
         session_runtime_module._raise_if_stream_finished_without_reason(
-            SimpleNamespace(_raw_stream_response=_OpenAIRawStreamWithoutFinish())
+            SimpleNamespace(_raw_stream_response=_RawStreamWithoutFinish()),
+            contract=required_finish_reason,
         )
 
 

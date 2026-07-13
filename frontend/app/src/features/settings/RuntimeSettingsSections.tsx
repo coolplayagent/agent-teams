@@ -15,6 +15,7 @@ import {
   getAgentRuntimes,
   getAgentRuntimeTestJob,
   getPluginsConfig,
+  getPluginMarketplaceProviders,
   getPluginsRuntime,
   installPlugin,
   installAgentRuntimeFromRegistry,
@@ -42,6 +43,8 @@ import type {
   PluginInstallSourceKind,
   PluginMarketplaceEntry,
   PluginMarketplaceIndex,
+  PluginMarketplaceProviderCatalog,
+  PluginMarketplaceProviderDescriptor,
   PluginMarketplaceRequest,
   PluginMarketplaceVersion,
   PluginRuntimeDiagnostics,
@@ -51,6 +54,12 @@ import type {
 import { FormChoiceControl } from "../../components/ChoiceControl";
 import { useTranslations, type Translate } from "../../i18n";
 import { SettingsQueryState, SettingsSection } from "./SettingsShared";
+import {
+  defaultPluginMarketplaceProvider,
+  pluginMarketplaceFormDefaults,
+  pluginMarketplaceProvider,
+  pluginMarketplaceProviderOptions,
+} from "./pluginMarketplaceProviders";
 
 type AgentRuntimeBindingConfig = AgentRuntimeSecretBinding;
 type PluginScope = NonNullable<PluginRuntimeRecord["scope"]>;
@@ -84,7 +93,7 @@ interface PluginInstallFormValues {
 
 interface PluginMarketplaceSourceDraft {
   marketplace: string;
-  marketplace_provider?: PluginInstallRequest["marketplace_provider"];
+  marketplace_provider?: string;
   marketplace_ref?: string;
   marketplace_source?: string;
   value?: string;
@@ -320,8 +329,13 @@ function PluginInstallView({
   const [form] = Form.useForm<PluginInstallFormValues>();
   const [marketplaceIndex, setMarketplaceIndex] =
     useState<PluginMarketplaceIndex | null>(null);
+  const providerCatalogQuery = useQuery({
+    queryKey: ["settings", "plugins", "marketplace-providers"],
+    queryFn: getPluginMarketplaceProviders,
+  });
   const sourceKind = Form.useWatch("source_kind", form) ?? "local";
   const selectedSource = Form.useWatch("source", form) ?? "";
+  const selectedProvider = Form.useWatch("marketplace_provider", form);
   const marketplaceEntries = marketplaceEntriesForInstall(marketplaceIndex);
   const selectedMarketplaceEntry = marketplaceEntries.find(
     (entry) => entry.name === selectedSource,
@@ -333,9 +347,19 @@ function PluginInstallView({
     marketplaceIndex !== null &&
     marketplaceEntries.length === 0;
   const marketplaceUnsupportedDetail = marketplaceUnsupportedReason(marketplaceIndex);
+  const providerOptions = pluginMarketplaceProviderOptions(providerCatalogQuery.data);
+  useEffect(() => {
+    if (sourceKind !== "marketplace" || selectedProvider !== undefined) {
+      return;
+    }
+    const provider = defaultPluginMarketplaceProvider(providerCatalogQuery.data);
+    if (provider !== undefined) {
+      form.setFieldsValue(pluginMarketplaceFormDefaults(provider));
+    }
+  }, [form, providerCatalogQuery.data, selectedProvider, sourceKind]);
   const installMutation = useMutation({
     mutationFn: (values: PluginInstallFormValues) =>
-      installPlugin(buildPluginInstallRequest(values)),
+      installPlugin(buildPluginInstallRequest(values, providerCatalogQuery.data)),
     onSuccess: async () => {
       void message.success(t("settingsPluginsInstalled"));
       await queryClient.invalidateQueries({ queryKey: ["settings", "plugins"] });
@@ -347,7 +371,13 @@ function PluginInstallView({
   });
   const marketplaceMutation = useMutation({
     mutationFn: () =>
-      loadPluginMarketplace(buildPluginMarketplaceRequest(form.getFieldsValue(), true)),
+      loadPluginMarketplace(
+        buildPluginMarketplaceRequest(
+          form.getFieldsValue(),
+          providerCatalogQuery.data,
+          true,
+        ),
+      ),
     onSuccess: (index) => {
       const entries = marketplaceEntriesForInstall(index);
       setMarketplaceIndex(index);
@@ -375,7 +405,6 @@ function PluginInstallView({
           allow_executes_code: false,
           allow_missing_digest: false,
           allow_unclean_scan: false,
-          marketplace_provider: "local_json",
           scope: "user",
           source_kind: "local",
         }}
@@ -390,7 +419,12 @@ function PluginInstallView({
           <Select
             onChange={(value) => {
               if (value === "marketplace") {
-                form.setFieldsValue(pluginMarketplaceProviderDefaults("local_json"));
+                const provider = defaultPluginMarketplaceProvider(
+                  providerCatalogQuery.data,
+                );
+                if (provider !== undefined) {
+                  form.setFieldsValue(pluginMarketplaceFormDefaults(provider));
+                }
               }
               setMarketplaceIndex(null);
             }}
@@ -450,6 +484,10 @@ function PluginInstallView({
         ) : null}
         {sourceKind === "marketplace" ? (
           <>
+            <SettingsQueryState
+              error={providerCatalogQuery.error}
+              loading={providerCatalogQuery.isLoading}
+            />
             <Form.Item
               label={t("settingsPluginsInstallMarketplace")}
               name="marketplace"
@@ -459,17 +497,21 @@ function PluginInstallView({
             <Form.Item
               label={t("settingsPluginsInstallMarketplaceProvider")}
               name="marketplace_provider"
+              rules={[{ required: true }]}
             >
               <Select
+                loading={providerCatalogQuery.isLoading}
                 onChange={(value) => {
-                  form.setFieldsValue(pluginMarketplaceProviderDefaults(value));
+                  const provider = pluginMarketplaceProvider(
+                    providerCatalogQuery.data,
+                    value,
+                  );
+                  if (provider !== undefined) {
+                    form.setFieldsValue(pluginMarketplaceFormDefaults(provider));
+                  }
                   setMarketplaceIndex(null);
                 }}
-                options={[
-                  { label: "local_json", value: "local_json" },
-                  { label: "claude", value: "claude" },
-                  { label: "clawhub", value: "clawhub" },
-                ]}
+                options={providerOptions}
               />
             </Form.Item>
             <Form.Item
@@ -493,6 +535,10 @@ function PluginInstallView({
             </Form.Item>
             <div className="at-settings-section-actions">
               <Button
+                disabled={
+                  providerCatalogQuery.data === undefined ||
+                  selectedProvider === undefined
+                }
                 loading={marketplaceMutation.isPending}
                 onClick={() => marketplaceMutation.mutate()}
               >
@@ -549,7 +595,13 @@ function PluginInstallView({
         ) : null}
         <div className="at-settings-section-actions">
           <Button
-            disabled={marketplaceLoadedWithoutEntries || installMutation.isPending}
+            disabled={
+              marketplaceLoadedWithoutEntries ||
+              installMutation.isPending ||
+              (sourceKind === "marketplace" &&
+                (providerCatalogQuery.data === undefined ||
+                  selectedProvider === undefined))
+            }
             htmlType="submit"
             loading={installMutation.isPending}
             type="primary"
@@ -663,10 +715,19 @@ function PluginMarketplaceUpdateView({
   const source = pluginMarketplaceSource(plugin);
   const [selectedVersion, setSelectedVersion] = useState("");
   const title = pluginTitle(plugin, t("settingsPluginsUnnamed"));
+  const providerCatalogQuery = useQuery({
+    queryKey: ["settings", "plugins", "marketplace-providers"],
+    queryFn: getPluginMarketplaceProviders,
+  });
+  const provider = pluginMarketplaceProvider(
+    providerCatalogQuery.data,
+    source?.marketplace_provider,
+  );
   const marketplaceQuery = useQuery({
-    enabled: source !== null,
+    enabled: source !== null && provider !== undefined,
     queryKey: ["settings", "plugins", "marketplace-update", pluginKey(plugin, title)],
-    queryFn: () => loadPluginMarketplace(buildPluginMarketplaceRequestFromSource(source)),
+    queryFn: () =>
+      loadPluginMarketplace(buildPluginMarketplaceRequestFromSource(source, provider)),
   });
   const marketplaceEntry = marketplaceEntryForPlugin(plugin, marketplaceQuery.data);
   const versionOptions = marketplaceVersionSelectOptions(marketplaceEntry);
@@ -677,8 +738,7 @@ function PluginMarketplaceUpdateView({
         throw new Error(t("settingsPluginsNameRequired"));
       }
       return updatePlugin(name, {
-        allow_missing_digest:
-          pluginMarketplaceAdapter(source?.marketplace_provider)?.allowMissingDigest ?? false,
+        allow_missing_digest: provider?.defaults.allow_missing_digest ?? false,
         scope: pluginScope(plugin),
         version: selectedVersion || null,
       });
@@ -704,10 +764,22 @@ function PluginMarketplaceUpdateView({
       </div>
       <Typography.Title level={4}>{title}</Typography.Title>
       <SettingsQueryState
-        error={marketplaceQuery.error}
-        loading={marketplaceQuery.isLoading}
+        error={providerCatalogQuery.error ?? marketplaceQuery.error}
+        loading={providerCatalogQuery.isLoading || marketplaceQuery.isLoading}
       />
-      {!marketplaceQuery.isLoading && marketplaceQuery.data !== undefined ? (
+      {!providerCatalogQuery.isLoading &&
+      providerCatalogQuery.data !== undefined &&
+      provider === undefined ? (
+        <div className="at-settings-empty">
+          {t("settingsPluginsMarketplaceProviderUnavailable", {
+            provider: source?.marketplace_provider ?? "",
+          })}
+        </div>
+      ) : null}
+      {!providerCatalogQuery.isLoading &&
+      !marketplaceQuery.isLoading &&
+      provider !== undefined &&
+      marketplaceQuery.data !== undefined ? (
         <>
           {versionOptions.length > 0 ? (
             <Form layout="vertical">
@@ -1628,6 +1700,7 @@ function optionalTrimmed(value: string | undefined): string | undefined {
 
 function buildPluginInstallRequest(
   values: PluginInstallFormValues,
+  catalog: PluginMarketplaceProviderCatalog | undefined,
 ): PluginInstallRequest {
   const sourceKind = values.source_kind ?? "local";
   const request: PluginInstallRequest = {
@@ -1641,10 +1714,18 @@ function buildPluginInstallRequest(
     request.source_ref = sourceRef;
   }
   if (sourceKind === "marketplace") {
-    request.marketplace = optionalTrimmed(values.marketplace) ?? null;
-    request.marketplace_provider = values.marketplace_provider ?? "local_json";
-    request.marketplace_source = optionalTrimmed(values.marketplace_source) ?? "";
-    request.marketplace_ref = optionalTrimmed(values.marketplace_ref) ?? "";
+    const provider = pluginMarketplaceProvider(catalog, values.marketplace_provider);
+    if (provider === undefined) {
+      throw new Error("Plugin marketplace provider is unavailable.");
+    }
+    request.marketplace =
+      optionalTrimmed(values.marketplace ?? provider.defaults.marketplace) ?? null;
+    request.marketplace_provider = provider.provider;
+    request.marketplace_source =
+      optionalTrimmed(values.marketplace_source ?? provider.defaults.marketplace_source) ??
+      "";
+    request.marketplace_ref =
+      optionalTrimmed(values.marketplace_ref ?? provider.defaults.marketplace_ref) ?? "";
     request.version = optionalTrimmed(values.version) ?? null;
     request.allow_community_plugins = values.allow_community_plugins === true;
     request.allow_executes_code = values.allow_executes_code === true;
@@ -1656,20 +1737,25 @@ function buildPluginInstallRequest(
 
 function buildPluginMarketplaceRequest(
   values: PluginInstallFormValues,
+  catalog: PluginMarketplaceProviderCatalog | undefined,
   refresh: boolean,
 ): PluginMarketplaceRequest {
-  const provider = values.marketplace_provider ?? "local_json";
-  const defaults = pluginMarketplaceProviderDefaults(provider);
+  const provider = pluginMarketplaceProvider(catalog, values.marketplace_provider);
+  if (provider === undefined) {
+    throw new Error("Plugin marketplace provider is unavailable.");
+  }
+  const defaults = provider.defaults;
   return {
     allow_community_plugins: values.allow_community_plugins === true,
     allow_executes_code: values.allow_executes_code === true,
     allow_missing_digest: values.allow_missing_digest === true,
     allow_unclean_scan: values.allow_unclean_scan === true,
     fetch_all: true,
-    include_details: false,
+    include_details: provider.include_details,
     marketplace: requiredTrimmed(values.marketplace ?? defaults.marketplace),
-    marketplace_provider: provider,
-    marketplace_ref: optionalTrimmed(values.marketplace_ref) ?? "",
+    marketplace_provider: provider.provider,
+    marketplace_ref:
+      optionalTrimmed(values.marketplace_ref ?? defaults.marketplace_ref) ?? "",
     marketplace_source:
       optionalTrimmed(values.marketplace_source ?? defaults.marketplace_source) ?? "",
     refresh,
@@ -1678,21 +1764,17 @@ function buildPluginMarketplaceRequest(
 
 function buildPluginMarketplaceRequestFromSource(
   source: PluginMarketplaceSourceDraft | null,
+  provider: PluginMarketplaceProviderDescriptor | undefined,
 ): PluginMarketplaceRequest {
-  if (source === null) {
-    return {
-      marketplace: "",
-      refresh: true,
-    };
+  if (source === null || provider === undefined) {
+    throw new Error("Plugin marketplace provider is unavailable.");
   }
-  const provider = source.marketplace_provider ?? "local_json";
-  const adapter = pluginMarketplaceAdapter(provider);
   return {
-    allow_missing_digest: adapter?.allowMissingDigest ?? false,
+    allow_missing_digest: provider.defaults.allow_missing_digest,
     fetch_all: true,
-    include_details: adapter?.includeDetails ?? false,
+    include_details: provider.include_details,
     marketplace: source.marketplace,
-    marketplace_provider: provider,
+    marketplace_provider: provider.provider,
     marketplace_ref: source.marketplace_ref ?? "",
     marketplace_source: source.marketplace_source ?? "",
     refresh: true,
@@ -1716,86 +1798,16 @@ function pluginMarketplaceSource(
   }
   return {
     marketplace,
-    marketplace_provider: pluginMarketplaceProviderValue(
-      stringRecordValue(source, "marketplace_provider"),
-    ),
+    marketplace_provider: stringRecordValue(source, "marketplace_provider"),
     marketplace_ref: stringRecordValue(source, "marketplace_ref"),
     marketplace_source: stringRecordValue(source, "marketplace_source"),
     value: stringRecordValue(source, "value"),
   };
 }
 
-function pluginMarketplaceProviderValue(
-  value: string,
-): PluginInstallRequest["marketplace_provider"] | undefined {
-  return PLUGIN_MARKETPLACE_PROVIDERS.has(value)
-    ? (value as PluginInstallRequest["marketplace_provider"])
-    : undefined;
-}
-
 function stringRecordValue(source: Record<string, JsonValue>, key: string): string {
   const value = source[key];
   return typeof value === "string" ? value.trim() : "";
-}
-
-function pluginMarketplaceProviderDefaults(
-  provider: PluginInstallRequest["marketplace_provider"],
-): Partial<PluginInstallFormValues> {
-  return pluginMarketplaceAdapter(provider)?.defaults ?? PLUGIN_MARKETPLACE_FALLBACK.defaults;
-}
-
-interface PluginMarketplaceAdapter {
-  allowMissingDigest: boolean;
-  defaults: Partial<PluginInstallFormValues>;
-  includeDetails: boolean;
-}
-
-const PLUGIN_MARKETPLACE_FALLBACK: PluginMarketplaceAdapter = {
-  allowMissingDigest: false,
-  defaults: {
-    allow_missing_digest: false,
-    marketplace: "",
-    marketplace_source: "",
-    source: "",
-    version: "",
-  },
-  includeDetails: false,
-};
-
-const PLUGIN_MARKETPLACE_ADAPTERS: Readonly<Record<string, PluginMarketplaceAdapter>> = {
-  claude: {
-    allowMissingDigest: false,
-    defaults: {
-      allow_missing_digest: false,
-      marketplace: "claude-plugins-official",
-      marketplace_source: "anthropics/claude-plugins-official",
-      source: "",
-      version: "",
-    },
-    includeDetails: false,
-  },
-  clawhub: {
-    allowMissingDigest: true,
-    defaults: {
-      allow_missing_digest: true,
-      marketplace: "clawhub",
-      marketplace_source: "https://clawhub.ai",
-      source: "",
-      version: "",
-    },
-    includeDetails: true,
-  },
-  local_json: PLUGIN_MARKETPLACE_FALLBACK,
-};
-
-const PLUGIN_MARKETPLACE_PROVIDERS = new Set(Object.keys(PLUGIN_MARKETPLACE_ADAPTERS));
-
-function pluginMarketplaceAdapter(
-  provider: string | null | undefined,
-): PluginMarketplaceAdapter | null {
-  return provider === null || provider === undefined
-    ? null
-    : PLUGIN_MARKETPLACE_ADAPTERS[provider] ?? null;
 }
 
 function marketplaceEntriesForInstall(

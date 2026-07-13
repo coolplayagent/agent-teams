@@ -241,7 +241,26 @@ export type PluginInstallSourceKind =
   | "marketplace"
   | "unsupported";
 
-export type PluginMarketplaceProviderKind = "local_json" | "claude" | "clawhub";
+export type PluginMarketplaceProviderKind = string;
+
+export interface PluginMarketplaceProviderDefaults {
+  allow_missing_digest: boolean;
+  marketplace: string;
+  marketplace_ref: string;
+  marketplace_source: string;
+}
+
+export interface PluginMarketplaceProviderDescriptor {
+  defaults: PluginMarketplaceProviderDefaults;
+  display_name: string;
+  include_details: boolean;
+  provider: PluginMarketplaceProviderKind;
+}
+
+export interface PluginMarketplaceProviderCatalog {
+  default_provider: PluginMarketplaceProviderKind;
+  providers: PluginMarketplaceProviderDescriptor[];
+}
 
 export interface PluginInstallSourceView {
   adapter?: string;

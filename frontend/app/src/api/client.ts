@@ -154,6 +154,7 @@ import type {
   PluginInstallRequest,
   PluginMarketplaceIndex,
   PluginMarketplaceInspectRequest,
+  PluginMarketplaceProviderCatalog,
   PluginMarketplaceRequest,
   PluginMarketplaceSearchRequest,
   PluginsRuntimePayload,
@@ -1999,6 +2000,12 @@ export function loadPluginMarketplace(
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export function getPluginMarketplaceProviders(): Promise<PluginMarketplaceProviderCatalog> {
+  return requestJson<PluginMarketplaceProviderCatalog>(
+    "/system/configs/plugins/marketplace/providers",
+  );
 }
 
 export function searchPluginMarketplace(

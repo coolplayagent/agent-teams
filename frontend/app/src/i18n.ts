@@ -1341,6 +1341,8 @@ const messages = {
     settingsPluginsInvalidNumber: "{name} must be a number.",
     settingsPluginsLoadMarketplace: "Load marketplace",
     settingsPluginsMarketplaceEmpty: "No supported marketplace versions.",
+    settingsPluginsMarketplaceProviderUnavailable:
+      "Marketplace provider {provider} is not advertised by this backend.",
     settingsPluginsNameRequired: "Plugin name is required.",
     settingsPluginsNoConfig: "This plugin does not declare configurable fields.",
     settingsPluginsRefresh: "Refresh",
@@ -3181,6 +3183,8 @@ const messages = {
     settingsPluginsInvalidNumber: "{name} 必须是数字。",
     settingsPluginsLoadMarketplace: "加载市场",
     settingsPluginsMarketplaceEmpty: "没有可用的市场版本。",
+    settingsPluginsMarketplaceProviderUnavailable:
+      "后端未提供市场提供方 {provider}。",
     settingsPluginsNameRequired: "需要插件名称。",
     settingsPluginsNoConfig: "这个插件没有声明可配置字段。",
     settingsPluginsRefresh: "刷新",

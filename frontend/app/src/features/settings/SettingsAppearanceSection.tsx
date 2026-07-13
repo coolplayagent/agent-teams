@@ -162,7 +162,6 @@ export function SettingsAppearanceSection({
   const { message } = App.useApp();
   const t = useTranslations();
   const importInputRef = useRef<HTMLInputElement>(null);
-  const presetMenuRef = useRef<HTMLDivElement>(null);
   const [appearance, setAppearance] = useState(readAppearanceSettings);
   const appearanceRef = useRef(appearance);
   const [presetMenuOpen, setPresetMenuOpen] = useState(false);
@@ -274,18 +273,7 @@ export function SettingsAppearanceSection({
   }
 
   function togglePresetMenu(): void {
-    const settingsBody = presetMenuRef.current?.closest(".at-settings-section-body");
-    const scrollContainer = settingsBody instanceof HTMLElement ? settingsBody : null;
-    const scrollTop = scrollContainer?.scrollTop ?? null;
     setPresetMenuOpen((open) => !open);
-    if (scrollContainer !== null && scrollTop !== null) {
-      const restoreScroll = () => {
-        scrollContainer.scrollTop = scrollTop;
-      };
-      window.requestAnimationFrame(restoreScroll);
-      window.setTimeout(restoreScroll, 0);
-      window.setTimeout(restoreScroll, 80);
-    }
   }
 
   function handlePresetMenuBlur(event: FocusEvent<HTMLDivElement>): void {
@@ -338,7 +326,6 @@ export function SettingsAppearanceSection({
                     setPresetMenuOpen(false);
                   }
                 }}
-                ref={presetMenuRef}
               >
                 <button
                   aria-expanded={presetMenuOpen}

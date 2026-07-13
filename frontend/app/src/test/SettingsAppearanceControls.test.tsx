@@ -48,6 +48,32 @@ describe("appearance settings controls", () => {
     expect(JSON.parse(window.localStorage.getItem(appearanceStorageKey) ?? "{}"))
       .toMatchObject({ showDiagnostics: true });
   });
+
+  it("opens the absolutely positioned preset menu without scheduling scroll repairs", () => {
+    const animationFrame = vi.spyOn(window, "requestAnimationFrame");
+    const timeout = vi.spyOn(window, "setTimeout");
+    const { container } = renderAppearance();
+    animationFrame.mockClear();
+    timeout.mockClear();
+    const settingsBody = container.querySelector<HTMLElement>(
+      ".at-settings-section-body",
+    );
+    expect(settingsBody).not.toBeNull();
+    if (settingsBody === null) {
+      return;
+    }
+    settingsBody.scrollTop = 72;
+
+    fireEvent.click(screen.getByRole("button", { name: "Theme preset" }));
+
+    expect(screen.getByRole("listbox")).toBeVisible();
+    expect(settingsBody.scrollTop).toBe(72);
+    expect(animationFrame).not.toHaveBeenCalled();
+    expect(timeout.mock.calls.map(([, delay]) => delay)).not.toContain(0);
+    expect(timeout.mock.calls.map(([, delay]) => delay)).not.toContain(80);
+    animationFrame.mockRestore();
+    timeout.mockRestore();
+  });
 });
 
 function renderAppearance() {

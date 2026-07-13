@@ -49,6 +49,15 @@ describe("connectors workbench layout", () => {
       /@media \(max-width: 760px\)[\s\S]*?\.at-connectors-card-list,\s*\.at-runtime-tools-grid\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/,
     );
     expect(css).toMatch(
+      /\.at-connectors-content\s*{[\s\S]*?container-name:\s*connectors-content;[\s\S]*?container-type:\s*inline-size;/,
+    );
+    expect(css).toMatch(
+      /@container connectors-content \(max-width: 980px\)[\s\S]*?\.at-connectors-card-list,\s*\.at-runtime-tools-grid\s*{[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/,
+    );
+    expect(css).toMatch(
+      /@container connectors-content \(max-width: 620px\)[\s\S]*?\.at-connectors-card-list,\s*\.at-runtime-tools-grid\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/,
+    );
+    expect(css).toMatch(
       /\.at-runtime-tools-grid\s*{[\s\S]*?grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\);/,
     );
     expect(css).toMatch(

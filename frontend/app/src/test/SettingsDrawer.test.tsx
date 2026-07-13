@@ -49,6 +49,7 @@ import {
   getNotificationConfig,
   getOrchestrationConfig,
   getPluginsConfig,
+  getPluginMarketplaceProviders,
   getPluginsRuntime,
   getProxyConfig,
   getRoleConfig,
@@ -160,6 +161,7 @@ vi.mock("../api/client", () => ({
   getNotificationConfig: vi.fn(),
   getOrchestrationConfig: vi.fn(),
   getPluginsConfig: vi.fn(),
+  getPluginMarketplaceProviders: vi.fn(),
   getPluginsRuntime: vi.fn(),
   getProxyConfig: vi.fn(),
   getRoleConfig: vi.fn(),
@@ -262,6 +264,9 @@ const getModelProfilesMock = vi.mocked(getModelProfiles);
 const getNotificationConfigMock = vi.mocked(getNotificationConfig);
 const getOrchestrationConfigMock = vi.mocked(getOrchestrationConfig);
 const getPluginsConfigMock = vi.mocked(getPluginsConfig);
+const getPluginMarketplaceProvidersMock = vi.mocked(
+  getPluginMarketplaceProviders,
+);
 const getPluginsRuntimeMock = vi.mocked(getPluginsRuntime);
 const getProxyConfigMock = vi.mocked(getProxyConfig);
 const getRoleConfigMock = vi.mocked(getRoleConfig);
@@ -1128,6 +1133,44 @@ beforeEach(() => {
   updatePluginMock.mockResolvedValue({ diagnostics: [], plugins: [] });
   deletePluginMock.mockResolvedValue({ diagnostics: [], plugins: [] });
   installPluginMock.mockResolvedValue({ diagnostics: [], plugins: [] });
+  getPluginMarketplaceProvidersMock.mockResolvedValue({
+    default_provider: "local_json",
+    providers: [
+      {
+        defaults: {
+          allow_missing_digest: false,
+          marketplace: "",
+          marketplace_ref: "",
+          marketplace_source: "",
+        },
+        display_name: "Local JSON",
+        include_details: false,
+        provider: "local_json",
+      },
+      {
+        defaults: {
+          allow_missing_digest: false,
+          marketplace: "claude-plugins-official",
+          marketplace_ref: "",
+          marketplace_source: "anthropics/claude-plugins-official",
+        },
+        display_name: "Claude",
+        include_details: false,
+        provider: "claude",
+      },
+      {
+        defaults: {
+          allow_missing_digest: true,
+          marketplace: "clawhub",
+          marketplace_ref: "",
+          marketplace_source: "https://clawhub.ai",
+        },
+        display_name: "ClawHub",
+        include_details: true,
+        provider: "clawhub",
+      },
+    ],
+  });
   loadPluginMarketplaceMock.mockResolvedValue({
     plugins: [
       {
@@ -2217,7 +2260,7 @@ describe("SettingsDrawer", () => {
     fireEvent.mouseDown(await screen.findByRole("combobox", { name: "Source type" }));
     fireEvent.click(await screen.findByText("Marketplace"));
     fireEvent.mouseDown(await screen.findByRole("combobox", { name: "Marketplace provider" }));
-    await clickAntdSelectOption("claude");
+    await clickAntdSelectOption("Claude");
     fireEvent.click(screen.getByRole("button", { name: "Load marketplace" }));
 
     expect(await screen.findByText(/No supported marketplace versions/)).toBeVisible();
@@ -2307,7 +2350,7 @@ describe("SettingsDrawer", () => {
     fireEvent.mouseDown(await screen.findByRole("combobox", { name: "Source type" }));
     fireEvent.click(await screen.findByText("Marketplace"));
     fireEvent.mouseDown(await screen.findByRole("combobox", { name: "Marketplace provider" }));
-    await clickAntdSelectOption("claude");
+    await clickAntdSelectOption("Claude");
     await waitFor(() =>
       expect(screen.getByLabelText("Marketplace")).toHaveValue(
         "claude-plugins-official",
@@ -2419,7 +2462,7 @@ describe("SettingsDrawer", () => {
     fireEvent.mouseDown(await screen.findByRole("combobox", { name: "Source type" }));
     fireEvent.click(await screen.findByText("Marketplace"));
     fireEvent.mouseDown(await screen.findByRole("combobox", { name: "Marketplace provider" }));
-    await clickAntdSelectOption("clawhub");
+    await clickAntdSelectOption("ClawHub");
     fireEvent.click(screen.getByRole("button", { name: "Load marketplace" }));
 
     await waitFor(() =>
@@ -2429,7 +2472,7 @@ describe("SettingsDrawer", () => {
         allow_missing_digest: true,
         allow_unclean_scan: false,
         fetch_all: true,
-        include_details: false,
+        include_details: true,
         marketplace: "clawhub",
         marketplace_provider: "clawhub",
         marketplace_ref: "",

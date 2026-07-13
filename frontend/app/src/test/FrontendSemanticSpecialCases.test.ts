@@ -90,7 +90,7 @@ interface Violation {
   message: string;
 }
 
-describe("V2 frontend semantic fidelity", () => {
+describe("frontend semantic fidelity", () => {
   it("does not hide diagnostics or acceptance hooks on window.__*", () => {
     expect(scanSourceTree().filter((violation) => violation.message.includes("window.__"))).toEqual([]);
   });

@@ -37,7 +37,14 @@ export function correlateSessionSubagents(
   const callSites = messages.flatMap(messageToolCallSites);
   return records.flatMap((record) => {
     const explicit = explicitSourceCallSite(record, callSites);
-    const callSite = explicit ?? legacySourceCallSite(record, messages, callSites);
+    const taskScoped = explicit === null
+      ? taskSourceCallSite(record, callSites)
+      : null;
+    const callSite = explicit ?? taskScoped ?? legacySourceCallSite(
+      record,
+      messages,
+      callSites,
+    );
     if (callSite === null) {
       return [];
     }
@@ -63,6 +70,24 @@ export function correlateSessionSubagents(
       title: normalized(record.title),
     }];
   });
+}
+
+function taskSourceCallSite(
+  record: SessionSubagentRecord,
+  callSites: readonly ToolCallSite[],
+): ToolCallSite | null {
+  const taskId = recordIdentity(record, "task");
+  if (taskId.length === 0) {
+    return null;
+  }
+  const sourceRunId = normalized(record.source_run_id);
+  const roleId = recordIdentity(record, "role");
+  const matches = callSites.filter((callSite) =>
+    callSite.taskId === taskId &&
+    (sourceRunId.length === 0 || callSite.runId === sourceRunId) &&
+    (roleId.length === 0 || callSite.roleId === roleId)
+  );
+  return matches.length === 1 ? matches[0] ?? null : null;
 }
 
 function explicitSourceCallSite(
@@ -135,7 +160,6 @@ function childPrompt(
 
 function messageToolCallSites(message: TimelineMessage): ToolCallSite[] {
   const runId = messageRunIdentity(message);
-  const taskId = normalized(message.task_id);
   return messageParts(message).flatMap((part) => {
     if (!(
       ("kind" in part && part.kind === "tool-call") ||
@@ -143,8 +167,21 @@ function messageToolCallSites(message: TimelineMessage): ToolCallSite[] {
     )) {
       return [];
     }
+    const callId = normalized(part.tool_call_id);
+    const args = jsonObject(part.args);
+    const roleId = jsonString(args, "role_id");
+    const prompt = jsonString(args, "prompt");
+    const taskId = jsonString(args, "task_id") || normalized(message.task_id);
+    const isLegacyOrchestrationDispatch =
+      part.action_family === "orchestration" &&
+      part.semantic_category === "orchestration" &&
+      jsonString(args, "task_id").length > 0;
     if (
-      (part.action_family !== undefined && part.action_family !== "subagent") ||
+      (
+        part.action_family !== undefined &&
+        part.action_family !== "subagent" &&
+        !isLegacyOrchestrationDispatch
+      ) ||
       (
         part.semantic_category !== undefined &&
         part.semantic_category !== "orchestration"
@@ -152,10 +189,6 @@ function messageToolCallSites(message: TimelineMessage): ToolCallSite[] {
     ) {
       return [];
     }
-    const callId = normalized(part.tool_call_id);
-    const args = jsonObject(part.args);
-    const roleId = jsonString(args, "role_id");
-    const prompt = jsonString(args, "prompt");
     if (callId.length === 0 || roleId.length === 0 || prompt.length === 0) {
       return [];
     }

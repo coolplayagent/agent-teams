@@ -13,6 +13,11 @@ from relay_teams.tools.registry.tool_groups import (
     ToolGroupDefinition,
     list_default_tool_groups,
 )
+from relay_teams.tools.registry.semantics import (
+    ToolActionFamily,
+    ToolSemanticCategory,
+    ToolSemantics,
+)
 
 __all__ = [
     "ToolAvailabilityRecord",
@@ -20,6 +25,9 @@ __all__ = [
     "ToolRegister",
     "ToolRegistry",
     "ToolResolutionContext",
+    "ToolActionFamily",
+    "ToolSemanticCategory",
+    "ToolSemantics",
     "ToolGroupDefinition",
     "list_default_tool_groups",
 ]

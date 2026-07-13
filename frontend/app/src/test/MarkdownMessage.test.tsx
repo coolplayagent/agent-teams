@@ -86,6 +86,40 @@ describe("MarkdownMessage", () => {
     );
   });
 
+  it("keeps a single plain-text node mounted across live thinking increments", () => {
+    vi.useFakeTimers();
+    const { container, rerender } = render(
+      <MarkdownMessage
+        streaming
+        streamingPresentation="plain"
+        text="Inspecting the runtime"
+      />,
+    );
+    const markdownContainer = container.querySelector(".at-message-markdown");
+    const liveText = container.querySelector(".at-message-streaming-plain");
+
+    rerender(
+      <MarkdownMessage
+        streaming
+        streamingPresentation="plain"
+        text="Inspecting the runtime state **without reparsing**"
+      />,
+    );
+    act(() => vi.advanceTimersByTime(500));
+
+    expect(container.querySelector(".at-message-markdown")).toBe(
+      markdownContainer,
+    );
+    expect(container.querySelector(".at-message-streaming-plain")).toBe(
+      liveText,
+    );
+    expect(liveText).toHaveTextContent(
+      "Inspecting the runtime state **without reparsing**",
+    );
+    expect(container.querySelector(".at-message-streaming-tail")).toBeNull();
+    expect(container.querySelector("strong")).toBeNull();
+  });
+
   it("keeps even very large streams below the one-second feedback budget", () => {
     expect(streamingMarkdownInterval(2_000)).toBe(80);
     expect(streamingMarkdownInterval(8_000)).toBe(180);

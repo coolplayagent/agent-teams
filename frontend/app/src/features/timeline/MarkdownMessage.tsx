@@ -5,6 +5,7 @@ import { rehypeCodeHighlight } from "./markdownHighlight";
 
 interface MarkdownMessageProps {
   resizeTimelineRow?: (index: number, size: number) => void;
+  streamingPresentation?: "markdown" | "plain";
   streaming?: boolean;
   text: string;
 }
@@ -33,17 +34,25 @@ const markdownComponents: Components = {
 
 export const MarkdownMessage = memo(function MarkdownMessage({
   resizeTimelineRow,
+  streamingPresentation = "markdown",
   streaming = false,
   text,
 }: MarkdownMessageProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const bufferedText = useStreamingMarkdownBuffer(text, streaming);
+  const lastMeasuredSizeRef = useRef<number | null>(null);
+  const renderPlainStreaming = streaming && streamingPresentation === "plain";
+  const bufferedText = useStreamingMarkdownBuffer(
+    text,
+    streaming && !renderPlainStreaming,
+  );
   const markdownText = stripMarkdownFrontmatter(
     streaming ? bufferedText : text,
   );
-  const unbufferedTail = streaming && text.startsWith(bufferedText)
-    ? text.slice(bufferedText.length)
-    : "";
+  const plainStreamingText = stripMarkdownFrontmatter(text);
+  const unbufferedTail =
+    streaming && !renderPlainStreaming && text.startsWith(bufferedText)
+      ? text.slice(bufferedText.length)
+      : "";
   useLayoutEffect(() => {
     if (resizeTimelineRow === undefined) {
       return;
@@ -59,23 +68,34 @@ export const MarkdownMessage = memo(function MarkdownMessage({
     const size = offsetHeight > 0
       ? offsetHeight
       : timelineRow.getBoundingClientRect().height;
-    if (Number.isFinite(size) && size > 0) {
+    if (
+      Number.isFinite(size) &&
+      size > 0 &&
+      lastMeasuredSizeRef.current !== size
+    ) {
+      lastMeasuredSizeRef.current = size;
       resizeTimelineRow(index, size);
     }
-  }, [markdownText, resizeTimelineRow]);
+  }, [markdownText, plainStreamingText, resizeTimelineRow]);
   return (
     <div
       className="at-message-markdown"
       data-stream-buffered={streaming ? "true" : undefined}
       ref={containerRef}
     >
-      <ReactMarkdown
-        components={markdownComponents}
-        rehypePlugins={streaming ? [] : [rehypeCodeHighlight]}
-        remarkPlugins={[remarkGfm]}
-      >
-        {markdownText}
-      </ReactMarkdown>
+      {renderPlainStreaming ? (
+        <span className="at-message-streaming-plain">
+          {plainStreamingText}
+        </span>
+      ) : (
+        <ReactMarkdown
+          components={markdownComponents}
+          rehypePlugins={streaming ? [] : [rehypeCodeHighlight]}
+          remarkPlugins={[remarkGfm]}
+        >
+          {markdownText}
+        </ReactMarkdown>
+      )}
       {unbufferedTail.length > 0 ? (
         <span
           className="at-message-streaming-tail"

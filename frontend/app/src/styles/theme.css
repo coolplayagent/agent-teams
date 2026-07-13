@@ -6109,6 +6109,12 @@ body {
   line-height: 1.48;
 }
 
+.at-message-streaming-plain {
+  display: block;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 .at-message-thinking-body .at-message-markdown p,
 .at-message-thinking-body .at-message-markdown h1,
 .at-message-thinking-body .at-message-markdown h2,

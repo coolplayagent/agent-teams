@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
+from enum import StrEnum
 from json import dumps, loads
 from pathlib import Path
 from time import time
@@ -65,6 +66,58 @@ class ModelCatalogProvider(BaseModel):
     models: tuple[ModelCatalogModel, ...] = ()
 
 
+class ModelProviderAuthKind(StrEnum):
+    API_KEY = "api_key"
+    PROFILE_PASSWORD = "profile_password"
+    SSO_OR_PASSWORD = "sso_or_password"
+
+
+class ModelProviderCredentialTarget(StrEnum):
+    API_KEY = "api_key"
+    MAAS_AUTH = "maas_auth"
+    CODEAGENT_AUTH = "codeagent_auth"
+
+
+class ModelRuntimeProvider(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: ProviderType
+    name: str = Field(min_length=1)
+    auth_kind: ModelProviderAuthKind
+    credential_target: ModelProviderCredentialTarget
+
+
+def model_runtime_provider_contracts() -> tuple[ModelRuntimeProvider, ...]:
+    password_providers = {
+        ProviderType.MAAS: (
+            ModelProviderAuthKind.PROFILE_PASSWORD,
+            ModelProviderCredentialTarget.MAAS_AUTH,
+        ),
+        ProviderType.CODEAGENT: (
+            ModelProviderAuthKind.SSO_OR_PASSWORD,
+            ModelProviderCredentialTarget.CODEAGENT_AUTH,
+        ),
+    }
+    providers: list[ModelRuntimeProvider] = []
+    for provider in ProviderType:
+        auth_kind, credential_target = password_providers.get(
+            provider,
+            (
+                ModelProviderAuthKind.API_KEY,
+                ModelProviderCredentialTarget.API_KEY,
+            ),
+        )
+        providers.append(
+            ModelRuntimeProvider(
+                id=provider,
+                name=provider.value.replace("_", " ").title(),
+                auth_kind=auth_kind,
+                credential_target=credential_target,
+            )
+        )
+    return tuple(providers)
+
+
 class ModelCatalogResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -74,6 +127,9 @@ class ModelCatalogResult(BaseModel):
     cache_age_seconds: int | None = Field(default=None, ge=0)
     stale: bool = False
     providers: tuple[ModelCatalogProvider, ...] = ()
+    runtime_providers: tuple[ModelRuntimeProvider, ...] = Field(
+        default_factory=model_runtime_provider_contracts
+    )
     error_code: str | None = None
     error_message: str | None = None
 

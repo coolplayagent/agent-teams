@@ -27,6 +27,10 @@ from relay_teams.providers.model_catalog import (
     ModelCatalogProvider,
     ModelCatalogResult,
     ModelCatalogService,
+    ModelProviderAuthKind,
+    ModelProviderCredentialTarget,
+    ModelRuntimeProvider,
+    model_runtime_provider_contracts,
 )
 from relay_teams.providers.provider_contracts import EchoProvider, LLMProvider
 from relay_teams.providers.token_usage_repo import (
@@ -50,6 +54,9 @@ __all__ = [
     "ModelCatalogProvider",
     "ModelCatalogResult",
     "ModelCatalogService",
+    "ModelProviderAuthKind",
+    "ModelProviderCredentialTarget",
+    "ModelRuntimeProvider",
     "ModelConfigPayload",
     "ModelEndpointConfig",
     "ModelFallbackConfig",
@@ -68,4 +75,5 @@ __all__ = [
     "TokenUsageRecord",
     "TokenUsageRepository",
     "default_model_fallback_config",
+    "model_runtime_provider_contracts",
 ]

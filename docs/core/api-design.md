@@ -271,6 +271,13 @@ Response fields:
   optional catalog `api`, optional backend-resolved `default_base_url`, optional
   `doc`, `env[]`, and `models[]`. Settings clients use `default_base_url` instead
   of maintaining provider-name-specific endpoint tables.
+- `runtime_providers[]`: backend-owned transport configuration contracts. Each
+  entry includes the provider `id`, display `name`, an `auth_kind` describing
+  which credential controls the editor must render, and a `credential_target`
+  describing the matching profile request field. Settings clients build
+  provider choices and authentication controls from this list instead of
+  maintaining provider-name tables. A provider found only in a saved profile
+  may be displayed as unavailable, but is not a selectable directory entry.
 - `error_code` and `error_message`: populated when `ok` is `false`.
 
 Model entries include `id`, `name`, optional family/date/limit fields, capability flags, normalized `capabilities`, and `input_modalities[]`.

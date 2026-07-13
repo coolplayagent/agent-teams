@@ -44,6 +44,7 @@ import type {
   ModelFallbackPolicy,
   ModelProfileRecord,
   ModelProfileSaveRequest,
+  ModelRuntimeProvider,
   JsonValue,
   RoleConfigDocument,
   RoleConfigSummary,
@@ -1061,6 +1062,7 @@ function SettingsModels({
     }) => {
       const request = buildModelProfileSaveRequest(profile, {
         providerRequiredMessage: t("settingsModelProviderRequired"),
+        runtimeProviders: catalogQuery.data?.runtime_providers,
         sourceName: currentProfileId ?? undefined,
         values,
       });
@@ -1193,9 +1195,9 @@ function SettingsModels({
           />
         ) : selectedProfileId !== null && selectedProfile !== undefined ? (
           <ModelProfileDetail
-            catalog={undefined}
-            catalogError={null}
-            catalogLoading={false}
+            catalog={catalogQuery.data}
+            catalogError={catalogQuery.error}
+            catalogLoading={catalogQuery.isLoading || refreshCatalogMutation.isPending}
             fallbackPolicies={fallbackPolicies}
             fallbackPoliciesLoading={fallbackQuery.isLoading}
             mode="edit"
@@ -1237,7 +1239,10 @@ function SettingsModels({
                     <div className="at-settings-list-row at-model-profile-row" key={profileId}>
                       <button
                         className="at-model-profile-row-main"
-                        onClick={() => setSelectedProfileId(profileId)}
+                        onClick={() => {
+                          setCatalogEnabled(true);
+                          setSelectedProfileId(profileId);
+                        }}
                         type="button"
                       >
                         <div className="at-settings-list-main">
@@ -1325,45 +1330,6 @@ interface ModelProfileFormValues {
   top_p?: string;
 }
 
-type ModelProviderAuthKind = "codeagent" | "generic" | "maas";
-
-interface ModelProviderAdapter {
-  acceptsGenericApiKey: boolean;
-  authKind: ModelProviderAuthKind;
-  applyAuth: (
-    profile: ModelProfileRecord,
-    values: ModelProfileFormValues,
-    request: ModelProfileSaveRequest,
-  ) => void;
-}
-
-const GENERIC_MODEL_PROVIDER_ADAPTER: ModelProviderAdapter = {
-  acceptsGenericApiKey: true,
-  applyAuth: () => undefined,
-  authKind: "generic",
-};
-
-const MODEL_PROVIDER_ADAPTERS: Readonly<Record<string, ModelProviderAdapter>> = {
-  codeagent: {
-    acceptsGenericApiKey: false,
-    applyAuth: (profile, values, request) => {
-      request.codeagent_auth = modelCodeAgentAuthFromForm(profile.codeagent_auth, values);
-    },
-    authKind: "codeagent",
-  },
-  maas: {
-    acceptsGenericApiKey: false,
-    applyAuth: (profile, values, request) => {
-      request.maas_auth = modelMaasAuthFromForm(profile.maas_auth, values);
-    },
-    authKind: "maas",
-  },
-};
-
-function modelProviderAdapter(provider: string): ModelProviderAdapter {
-  return MODEL_PROVIDER_ADAPTERS[provider] ?? GENERIC_MODEL_PROVIDER_ADAPTER;
-}
-
 type ImageCapabilityMode = "follow" | "supported" | "unsupported";
 
 interface ModelProbeState {
@@ -1435,11 +1401,18 @@ function ModelProfileDetail({
   const normalizedProvider = normalizeModelProvider(
     providerOverride ?? effectiveProfile.provider,
   );
-  const providerAdapter = modelProviderAdapter(normalizedProvider);
-  const showMaasAuth = providerAdapter.authKind === "maas";
-  const showCodeAgentAuth = providerAdapter.authKind === "codeagent";
-  const showGenericApiKey = providerAdapter.acceptsGenericApiKey;
-  const providerOptions = modelProviderOptions(effectiveProfile.provider);
+  const runtimeProviders = catalog?.runtime_providers ?? [];
+  const runtimeProvider = runtimeProviders.find(
+    (provider) => provider.id === normalizedProvider,
+  );
+  const showProfilePasswordAuth = runtimeProvider?.auth_kind === "profile_password";
+  const showSsoOrPasswordAuth = runtimeProvider?.auth_kind === "sso_or_password";
+  const showGenericApiKey = runtimeProvider?.auth_kind === "api_key";
+  const providerOptions = modelProviderOptions(
+    runtimeProviders,
+    effectiveProfile.provider,
+    t("settingsModelProviderUnavailable"),
+  );
   const fallbackPolicyOptions = modelFallbackPolicyOptions(
     fallbackPolicies,
     effectiveProfile.fallback_policy_id,
@@ -1641,12 +1614,12 @@ function ModelProfileDetail({
               />
             </Form.Item>
           ) : null}
-          {showMaasAuth ? (
+          {showProfilePasswordAuth ? (
             <>
-              <Form.Item className="at-model-field-short" label={t("settingsModelMaasUsername")} name="maas_username">
+              <Form.Item className="at-model-field-short" label={t("settingsModelUsername")} name="maas_username">
                 <Input autoComplete="username" />
               </Form.Item>
-              <Form.Item className="at-model-field-wide" label={t("settingsModelMaasPassword")} name="maas_password">
+              <Form.Item className="at-model-field-wide" label={t("settingsModelPassword")} name="maas_password">
                 <Input.Password
                   autoComplete="new-password"
                   placeholder={
@@ -1658,10 +1631,10 @@ function ModelProfileDetail({
               </Form.Item>
             </>
           ) : null}
-          {showCodeAgentAuth ? (
+          {showSsoOrPasswordAuth ? (
             <>
               <Form.Item
-                label={t("settingsModelCodeAgentAuthMethod")}
+                label={t("settingsModelAuthMethod")}
                 name="codeagent_auth_method"
               >
                 <Select
@@ -1678,13 +1651,13 @@ function ModelProfileDetail({
                 />
               </Form.Item>
               <Form.Item
-                label={t("settingsModelCodeAgentUsername")}
+                label={t("settingsModelUsername")}
                 name="codeagent_username"
               >
                 <Input autoComplete="username" />
               </Form.Item>
               <Form.Item
-                label={t("settingsModelCodeAgentPassword")}
+                label={t("settingsModelPassword")}
                 name="codeagent_password"
               >
                 <Input.Password
@@ -1746,6 +1719,7 @@ function buildModelProfileSaveRequest(
   options: {
     isDefault?: boolean;
     providerRequiredMessage: string;
+    runtimeProviders?: ModelRuntimeProvider[];
     sourceName?: string;
     values?: ModelProfileFormValues;
   },
@@ -1797,10 +1771,9 @@ function buildModelProfileSaveRequest(
     request.max_tokens = positiveIntegerOrNullFromText(values.max_tokens);
     const apiKey = textValue(values.api_key);
     const provider = normalizeModelProvider(values.provider ?? profile.provider);
-    const providerAdapter = modelProviderAdapter(provider);
-    if (apiKey.length > 0 && providerAdapter.acceptsGenericApiKey) {
-      request.api_key = apiKey;
-    }
+    const runtimeProvider = options.runtimeProviders?.find(
+      (candidate) => candidate.id === provider,
+    );
     const imageCapabilities = modelCapabilitiesForImageMode(
       profile.capabilities,
       values.image_capability,
@@ -1812,7 +1785,7 @@ function buildModelProfileSaveRequest(
     if (sslVerify !== null) {
       request.ssl_verify = sslVerify;
     }
-    providerAdapter.applyAuth(profile, values, request);
+    applyModelProviderCredentials(runtimeProvider, profile, values, request, apiKey);
   } else if (profile.max_tokens !== undefined) {
     request.max_tokens = integerOrNull(profile.max_tokens);
   }
@@ -1942,6 +1915,33 @@ function modelCodeAgentAuthFromForm(
   return auth;
 }
 
+function applyModelProviderCredentials(
+  runtimeProvider: ModelRuntimeProvider | undefined,
+  profile: ModelProfileRecord,
+  values: ModelProfileFormValues,
+  request: ModelProfileSaveRequest,
+  apiKey: string,
+): void {
+  switch (runtimeProvider?.credential_target) {
+    case "api_key":
+      if (apiKey.length > 0) {
+        request.api_key = apiKey;
+      }
+      return;
+    case "maas_auth":
+      request.maas_auth = modelMaasAuthFromForm(profile.maas_auth, values);
+      return;
+    case "codeagent_auth":
+      request.codeagent_auth = modelCodeAgentAuthFromForm(
+        profile.codeagent_auth,
+        values,
+      );
+      return;
+    default:
+      return;
+  }
+}
+
 function stringFromJsonObject(
   auth: JsonValue | null | undefined,
   key: string,
@@ -1975,29 +1975,35 @@ function requiredModelProvider(
   return provider;
 }
 
-const MODEL_PROVIDER_OPTIONS = [
-  "openai_compatible",
-  "anthropic",
-  "bigmodel",
-  "minimax",
-  "maas",
-  "codeagent",
-  "echo",
-];
-
-function modelProviderOptions(currentProvider: string | undefined): Array<{
+function modelProviderOptions(
+  runtimeProviders: ModelRuntimeProvider[],
+  currentProvider: string | undefined,
+  unavailableLabel: string,
+): Array<{
+  disabled?: boolean;
   label: string;
   value: string;
 }> {
   const normalizedCurrent = normalizeModelProvider(currentProvider);
-  const providers = new Set(MODEL_PROVIDER_OPTIONS);
-  if (normalizedCurrent) {
-    providers.add(normalizedCurrent);
-  }
-  return [...providers].map((provider) => ({
-    label: provider,
-    value: provider,
+  const options: Array<{
+    disabled?: boolean;
+    label: string;
+    value: string;
+  }> = runtimeProviders.map((provider) => ({
+    label: provider.id,
+    value: provider.id,
   }));
+  if (
+    normalizedCurrent &&
+    runtimeProviders.every((provider) => provider.id !== normalizedCurrent)
+  ) {
+    options.push({
+      disabled: true,
+      label: `${normalizedCurrent} (${unavailableLabel})`,
+      value: normalizedCurrent,
+    });
+  }
+  return options;
 }
 
 function modelFallbackPolicyOptions(

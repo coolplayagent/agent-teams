@@ -1544,6 +1544,23 @@ export interface ModelCatalogProvider {
   models?: ModelCatalogModel[];
 }
 
+export type ModelProviderAuthKind =
+  | "api_key"
+  | "profile_password"
+  | "sso_or_password";
+
+export type ModelProviderCredentialTarget =
+  | "api_key"
+  | "maas_auth"
+  | "codeagent_auth";
+
+export interface ModelRuntimeProvider {
+  id: string;
+  name: string;
+  auth_kind: ModelProviderAuthKind;
+  credential_target: ModelProviderCredentialTarget;
+}
+
 export interface ModelCatalogResult {
   ok: boolean;
   source_url: string;
@@ -1551,6 +1568,7 @@ export interface ModelCatalogResult {
   cache_age_seconds?: number | null;
   stale?: boolean;
   providers?: ModelCatalogProvider[];
+  runtime_providers?: ModelRuntimeProvider[];
   error_code?: string | null;
   error_message?: string | null;
 }

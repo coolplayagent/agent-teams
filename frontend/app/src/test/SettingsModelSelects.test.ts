@@ -23,8 +23,9 @@ describe("model settings finite controls", () => {
     expect(source).toMatch(
       /name="provider"[\s\S]*?<Select[\s\S]*?options=\{providerOptions\}/,
     );
-    expect(source).toContain('"openai_compatible"');
-    expect(source).toContain('"codeagent"');
+    expect(source).toContain("catalog?.runtime_providers ?? []");
+    expect(source).not.toContain("MODEL_PROVIDER_OPTIONS");
+    expect(source).not.toContain("MODEL_PROVIDER_ADAPTERS");
     expect(source).toMatch(
       /name="fallback_policy_id"[\s\S]*?<Select[\s\S]*?options=\{fallbackPolicyOptions\}/,
     );

@@ -1346,6 +1346,26 @@ beforeEach(() => {
         runtime_provider: "openai_compatible",
       },
     ],
+    runtime_providers: [
+      {
+        auth_kind: "api_key",
+        credential_target: "api_key",
+        id: "openai_compatible",
+        name: "Openai Compatible",
+      },
+      {
+        auth_kind: "profile_password",
+        credential_target: "maas_auth",
+        id: "maas",
+        name: "Maas",
+      },
+      {
+        auth_kind: "sso_or_password",
+        credential_target: "codeagent_auth",
+        id: "codeagent",
+        name: "Codeagent",
+      },
+    ],
     source_url: "https://models.dev/api.json",
   });
   refreshModelCatalogMock.mockResolvedValue({
@@ -3787,7 +3807,7 @@ describe("SettingsDrawer", () => {
     fireEvent.click(within(visionRow as HTMLElement).getByRole("button", { name: /vision/ }));
 
     expect(await screen.findByLabelText("Profile ID")).toHaveValue("vision");
-    expectSelectedSelectOption("Provider", "openai_compatible");
+    await waitFor(() => expectSelectedSelectOption("Provider", "openai_compatible"));
     expect(screen.getByLabelText("Model")).toHaveValue("gpt-5-vision");
     expect(screen.getByLabelText("Base URL")).toHaveValue("https://models.example/v1");
     expect(screen.getByLabelText("Temperature")).toBeVisible();
@@ -3859,6 +3879,48 @@ describe("SettingsDrawer", () => {
     expect(saveModelProfileMock).not.toHaveBeenCalled();
   }, 25000);
 
+  it("loads runtime provider contracts for edit and disables an unavailable saved provider", async () => {
+    getModelProfilesMock.mockResolvedValue({
+      legacy: {
+        base_url: "https://legacy.example/v1",
+        model: "legacy-chat",
+        provider: "legacy_transport",
+      },
+    });
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "Model" }));
+    const profileRow = (await screen.findByText("legacy")).closest(
+      ".at-model-profile-row",
+    );
+    expect(profileRow).not.toBeNull();
+    expect(getModelCatalogMock).not.toHaveBeenCalled();
+
+    fireEvent.click(
+      within(profileRow as HTMLElement).getByRole("button", {
+        name: /legacy/,
+      }),
+    );
+
+    await waitFor(() => expect(getModelCatalogMock).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expectSelectedSelectOption(
+        "Provider",
+        "legacy_transport (saved provider; unavailable in catalog)",
+      ),
+    );
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "Provider" }));
+    const unavailable = await screen.findByText(
+      "legacy_transport (saved provider; unavailable in catalog)",
+    );
+    expect(unavailable.closest(".ant-select-item-option")).toHaveClass(
+      "ant-select-item-option-disabled",
+    );
+  }, 25000);
+
   it("creates a MaaS model profile with profile-owned credentials", async () => {
     getModelCatalogMock.mockResolvedValueOnce({
       ok: true,
@@ -3876,6 +3938,14 @@ describe("SettingsDrawer", () => {
           ],
           name: "MaaS",
           runtime_provider: "maas",
+        },
+      ],
+      runtime_providers: [
+        {
+          auth_kind: "profile_password",
+          credential_target: "maas_auth",
+          id: "maas",
+          name: "Maas",
         },
       ],
       source_url: "https://models.dev/api.json",
@@ -3896,18 +3966,18 @@ describe("SettingsDrawer", () => {
       target: { value: "maas-profile" },
     });
     expect(screen.getByLabelText("Profile ID")).toHaveValue("maas-profile");
-    expectSelectedSelectOption("Provider", "maas");
+    await waitFor(() => expectSelectedSelectOption("Provider", "maas"));
     expect(screen.getByLabelText("Model")).toHaveValue("maas-chat");
     expect(screen.getByLabelText("Base URL")).toHaveValue(
       "http://snapengine.cida.cce.prod-szv-g.dragon.tools.huawei.com/api/v2/",
     );
 
-    const maasUsername = await screen.findByLabelText("MaaS username");
+    const maasUsername = await screen.findByLabelText("Username");
     expect(screen.queryByLabelText("API Key")).toBeNull();
     fireEvent.change(maasUsername, {
       target: { value: "relay-user" },
     });
-    fireEvent.change(screen.getByLabelText("MaaS password"), {
+    fireEvent.change(screen.getByLabelText("Password"), {
       target: { value: "relay-password" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -3958,7 +4028,7 @@ describe("SettingsDrawer", () => {
       }),
     );
 
-    expect(await screen.findByLabelText("MaaS password")).toHaveAttribute(
+    expect(await screen.findByLabelText("Password")).toHaveAttribute(
       "placeholder",
       "Optional provider password",
     );
@@ -4004,7 +4074,7 @@ describe("SettingsDrawer", () => {
         name: /maas-profile/,
       }),
     );
-    fireEvent.change(await screen.findByLabelText("MaaS password"), {
+    fireEvent.change(await screen.findByLabelText("Password"), {
       target: { value: "************" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -4061,8 +4131,8 @@ describe("SettingsDrawer", () => {
     );
 
     expect(await screen.findByText("Username and password")).toBeVisible();
-    expect(screen.getByLabelText("CodeAgent username")).toHaveValue("saved-codeagent-user");
-    expect(screen.getByLabelText("CodeAgent password")).toHaveAttribute(
+    expect(screen.getByLabelText("Username")).toHaveValue("saved-codeagent-user");
+    expect(screen.getByLabelText("Password")).toHaveAttribute(
       "placeholder",
       "Leave blank to keep the saved password.",
     );
@@ -4120,7 +4190,7 @@ describe("SettingsDrawer", () => {
         name: /codeagent-profile/,
       }),
     );
-    fireEvent.change(await screen.findByLabelText("CodeAgent password"), {
+    fireEvent.change(await screen.findByLabelText("Password"), {
       target: { value: "replacement-codeagent-password" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));

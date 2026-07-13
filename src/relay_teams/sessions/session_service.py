@@ -3713,13 +3713,19 @@ class SessionService:
 
     @staticmethod
     def _agent_projection(record: AgentRuntimeRecord) -> dict[str, object]:
-        return record.model_dump(mode="json")
+        return record.model_dump(
+            mode="json",
+            exclude={"runtime_system_prompt", "runtime_tools_json"},
+        )
 
     @staticmethod
     async def _agent_projection_async(
         record: AgentRuntimeRecord,
     ) -> dict[str, object]:
-        return record.model_dump(mode="json")
+        return record.model_dump(
+            mode="json",
+            exclude={"runtime_system_prompt", "runtime_tools_json"},
+        )
 
     def _orchestration_subagent_projection(
         self,

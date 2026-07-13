@@ -821,6 +821,8 @@ def test_list_session_subagents_returns_orchestration_projection(
     assert subagents[0]["interactive"] is True
     assert subagents[0]["deletable"] is False
     assert subagents[0]["run_status"] == "running"
+    assert "runtime_system_prompt" not in subagents[0]
+    assert "runtime_tools_json" not in subagents[0]
 
 
 def test_list_session_subagents_projects_each_assigned_orchestration_task(

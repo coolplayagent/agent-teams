@@ -34,6 +34,8 @@ import {
   disableAutomationProject,
   enableAutomationProject,
   getAutomationProject,
+  getOrchestrationConfig,
+  getRoleConfigOptions,
   listAutomationDeliveryBindings,
   listAutomationProjects,
   listAutomationProjectSessions,
@@ -50,11 +52,25 @@ import type {
   AutomationIntervalUnit,
   AutomationProjectRecord,
   AutomationProjectSessionRecord,
+  OrchestrationPreset,
+  RoleOption,
+  ThinkingEffort,
   WorkspaceRecord,
 } from "../../api/contracts";
 import { ChoiceControlGroup } from "../../components/ChoiceControl";
 import { useTranslations, type Translate } from "../../i18n";
 import { GitHubSettingsSection } from "../settings/GitHubSettingsSection";
+import { readSavedThinkingState } from "../composer/runPreferences";
+import { AutomationRuntimeFields } from "./AutomationRuntimeFields";
+import {
+  automationRunConfigFromEditor,
+  automationRunConfigsEqual,
+  automationRuntimeEditorValuesFromConfig,
+  DEFAULT_RUNTIME_TARGET,
+  defaultAutomationRuntimeEditorValues,
+  effectiveAutomationRunConfig,
+  type AutomationRuntimeEditorValues,
+} from "./automationRunConfig";
 import { deliveryProviderAdapter } from "./deliveryProviderAdapters";
 
 interface AutomationViewProps {
@@ -71,7 +87,7 @@ type AutomationSchedulePreset =
   | "weekdays";
 const DISABLED_DELIVERY_TARGET = "none";
 
-interface AutomationEditorValues {
+interface AutomationEditorValues extends AutomationRuntimeEditorValues {
   cronExpression: string;
   deliveryEvents: AutomationDeliveryEvent[];
   deliveryTargetId: string;
@@ -120,6 +136,16 @@ export function AutomationView({
   const deliveryBindingsQuery = useQuery({
     queryKey: ["automation", "delivery-bindings"],
     queryFn: listAutomationDeliveryBindings,
+  });
+  const roleOptionsQuery = useQuery({
+    queryKey: ["roles", "options"],
+    queryFn: getRoleConfigOptions,
+    staleTime: 30000,
+  });
+  const orchestrationQuery = useQuery({
+    queryKey: ["orchestration", "config"],
+    queryFn: getOrchestrationConfig,
+    staleTime: 30000,
   });
 
   const projects = useMemo(() => projectsQuery.data ?? [], [projectsQuery.data]);
@@ -172,12 +198,17 @@ export function AutomationView({
   const openCreate = () => {
     setEditingProjectId(null);
     createForm.setFieldsValue(
-      defaultAutomationEditorValues(
-        workspacesQuery.data?.[0]?.workspace_id ??
+      defaultAutomationEditorValues({
+        normalRootRoleId: roleOptionsQuery.data?.main_agent_role_id ?? null,
+        orchestrationPresetId:
+          orchestrationQuery.data?.default_orchestration_preset_id ?? null,
+        thinking: readSavedThinkingState(),
+        workspaceId:
+          workspacesQuery.data?.[0]?.workspace_id ??
           selectedProject?.workspace_id ??
           projects[0]?.workspace_id ??
           "",
-      ),
+      }),
     );
     setCreateOpen(true);
   };
@@ -281,9 +312,23 @@ export function AutomationView({
       if (editingProjectId === null) {
         throw new Error(t("automationUpdateFailed"));
       }
+      const sourceProject =
+        projectQuery.data?.automation_project_id === editingProjectId
+          ? projectQuery.data
+          : projects.find(
+              (project) =>
+                project.automation_project_id === editingProjectId,
+            );
+      if (sourceProject === undefined) {
+        throw new Error(t("automationUpdateFailed"));
+      }
       return updateAutomationProject(
         editingProjectId,
-        automationUpdateRequest(values, deliveryBindingCandidates),
+        automationUpdateRequest(
+          values,
+          deliveryBindingCandidates,
+          sourceProject,
+        ),
       );
     },
     onSuccess: (project) => {
@@ -368,6 +413,11 @@ export function AutomationView({
           mode={editingProjectId === null ? "create" : "edit"}
           deliveryBindingCandidates={deliveryBindingCandidates}
           deliveryBindingsLoading={deliveryBindingsQuery.isLoading}
+          normalModeRoles={roleOptionsQuery.data?.normal_mode_roles ?? []}
+          orchestrationPresets={orchestrationQuery.data?.presets ?? []}
+          runtimeOptionsLoading={
+            roleOptionsQuery.isLoading || orchestrationQuery.isLoading
+          }
           onCancel={closeCreate}
           onSubmit={(values) =>
             editingProjectId === null
@@ -376,6 +426,10 @@ export function AutomationView({
           }
           open={createOpen}
           t={t}
+          defaultNormalRootRoleId={roleOptionsQuery.data?.main_agent_role_id ?? null}
+          defaultOrchestrationPresetId={
+            orchestrationQuery.data?.default_orchestration_preset_id ?? null
+          }
           workspaces={workspacesQuery.data ?? []}
         />
       </div>
@@ -426,6 +480,11 @@ export function AutomationView({
           mode={editingProjectId === null ? "create" : "edit"}
           deliveryBindingCandidates={deliveryBindingCandidates}
           deliveryBindingsLoading={deliveryBindingsQuery.isLoading}
+          normalModeRoles={roleOptionsQuery.data?.normal_mode_roles ?? []}
+          orchestrationPresets={orchestrationQuery.data?.presets ?? []}
+          runtimeOptionsLoading={
+            roleOptionsQuery.isLoading || orchestrationQuery.isLoading
+          }
           onCancel={closeCreate}
           onSubmit={(values) =>
             editingProjectId === null
@@ -434,6 +493,10 @@ export function AutomationView({
           }
           open={createOpen}
           t={t}
+          defaultNormalRootRoleId={roleOptionsQuery.data?.main_agent_role_id ?? null}
+          defaultOrchestrationPresetId={
+            orchestrationQuery.data?.default_orchestration_preset_id ?? null
+          }
           workspaces={workspacesQuery.data ?? []}
         />
       </div>
@@ -586,6 +649,11 @@ export function AutomationView({
         mode={editingProjectId === null ? "create" : "edit"}
         deliveryBindingCandidates={deliveryBindingCandidates}
         deliveryBindingsLoading={deliveryBindingsQuery.isLoading}
+        normalModeRoles={roleOptionsQuery.data?.normal_mode_roles ?? []}
+        orchestrationPresets={orchestrationQuery.data?.presets ?? []}
+        runtimeOptionsLoading={
+          roleOptionsQuery.isLoading || orchestrationQuery.isLoading
+        }
         onCancel={closeCreate}
         onSubmit={(values) =>
           editingProjectId === null
@@ -594,6 +662,10 @@ export function AutomationView({
         }
         open={createOpen}
         t={t}
+        defaultNormalRootRoleId={roleOptionsQuery.data?.main_agent_role_id ?? null}
+        defaultOrchestrationPresetId={
+          orchestrationQuery.data?.default_orchestration_preset_id ?? null
+        }
         workspaces={workspacesQuery.data ?? []}
       />
     </div>
@@ -786,14 +858,20 @@ function AutomationProjectDetail({
 
   const busy = Object.values(actionPending).some(Boolean);
 
+  const runConfig = effectiveAutomationRunConfig(project.run_config);
   const runMode =
-    project.run_config.session_mode === "orchestration"
+    runConfig.session_mode === "orchestration"
       ? t("composerOrchestration")
       : t("composerNormal");
   const roleOrPreset =
-    project.run_config.session_mode === "orchestration"
-      ? (project.run_config.orchestration_preset_id ?? t("automationNone"))
-      : (project.run_config.normal_root_role_id ?? t("automationNone"));
+    runConfig.session_mode === "orchestration"
+      ? (runConfig.orchestration_preset_id ?? t("automationNone"))
+      : (runConfig.normal_root_role_id ?? t("automationNone"));
+  const executionMode =
+    runConfig.execution_mode === "manual"
+      ? t("automationExecutionManual")
+      : t("automationExecutionAi");
+  const thinking = runConfig.thinking;
   const deliveryLabel = project.delivery_binding
     ? deliveryBindingLabel(project.delivery_binding)
     : t("automationDeliveryDisabled");
@@ -930,6 +1008,26 @@ function AutomationProjectDetail({
         <h4>{t("automationRuntime")}</h4>
         <PropertyRow label={t("composerSessionMode")} value={runMode} />
         <PropertyRow label={t("composerRootRole")} value={roleOrPreset} />
+        <PropertyRow label={t("automationExecutionMode")} value={executionMode} />
+        <PropertyRow
+          label={t("composerThinking")}
+          value={
+            thinking.enabled
+              ? t("automationThinkingEnabled", {
+                  effort:
+                    thinking.effort ?? t("automationRuntimeSystemDefault"),
+                })
+              : t("automationThinkingDisabled")
+          }
+        />
+        <PropertyRow
+          label={t("composerYolo")}
+          value={
+            runConfig.yolo
+              ? t("automationOptionEnabled")
+              : t("automationOptionDisabled")
+          }
+        />
         <PropertyRow label={t("automationDelivery")} value={deliveryLabel} />
         <h4>{t("automationWorkspace")}</h4>
         <PropertyRow label={t("automationWorkspaceId")} value={project.workspace_id} />
@@ -944,25 +1042,35 @@ function AutomationProjectDetail({
 }
 
 function AutomationCreateModal({
+  defaultNormalRootRoleId,
+  defaultOrchestrationPresetId,
   deliveryBindingCandidates,
   deliveryBindingsLoading,
   form,
   loading,
   mode,
+  normalModeRoles,
   onCancel,
   onSubmit,
   open,
+  orchestrationPresets,
+  runtimeOptionsLoading,
   t,
   workspaces,
 }: {
+  defaultNormalRootRoleId: string | null;
+  defaultOrchestrationPresetId: string | null;
   deliveryBindingCandidates: AutomationDeliveryBindingCandidate[];
   deliveryBindingsLoading: boolean;
   form: FormInstance<AutomationEditorValues>;
   loading: boolean;
   mode: "create" | "edit";
+  normalModeRoles: RoleOption[];
   onCancel: () => void;
   onSubmit: (values: AutomationEditorValues) => void;
   open: boolean;
+  orchestrationPresets: OrchestrationPreset[];
+  runtimeOptionsLoading: boolean;
   t: Translate;
   workspaces: WorkspaceRecord[];
 }) {
@@ -972,6 +1080,33 @@ function AutomationCreateModal({
     }
     form.setFieldValue("workspaceId", workspaces[0]?.workspace_id ?? "");
   }, [form, open, workspaces]);
+
+  useEffect(() => {
+    if (!open || mode !== "create") {
+      return;
+    }
+    if (
+      form.getFieldValue("normalRootRoleId") === DEFAULT_RUNTIME_TARGET &&
+      defaultNormalRootRoleId !== null
+    ) {
+      form.setFieldValue("normalRootRoleId", defaultNormalRootRoleId);
+    }
+    if (
+      form.getFieldValue("orchestrationPresetId") === DEFAULT_RUNTIME_TARGET &&
+      defaultOrchestrationPresetId !== null
+    ) {
+      form.setFieldValue(
+        "orchestrationPresetId",
+        defaultOrchestrationPresetId,
+      );
+    }
+  }, [
+    defaultNormalRootRoleId,
+    defaultOrchestrationPresetId,
+    form,
+    mode,
+    open,
+  ]);
 
   const deliveryOptions = [
     { label: t("automationDeliveryDisabled"), value: DISABLED_DELIVERY_TARGET },
@@ -1066,6 +1201,12 @@ function AutomationCreateModal({
         >
           <Input.TextArea rows={5} />
         </Form.Item>
+        <AutomationRuntimeFields
+          normalModeRoles={normalModeRoles}
+          orchestrationPresets={orchestrationPresets}
+          runtimeOptionsLoading={runtimeOptionsLoading}
+          t={t}
+        />
         <div className="at-automation-form-grid">
           <Form.Item
             label={t("automationSchedulePreset")}
@@ -1225,8 +1366,23 @@ function PropertyRow({
   );
 }
 
-function defaultAutomationEditorValues(workspaceId: string): AutomationEditorValues {
+function defaultAutomationEditorValues({
+  normalRootRoleId,
+  orchestrationPresetId,
+  thinking,
+  workspaceId,
+}: {
+  normalRootRoleId: string | null;
+  orchestrationPresetId: string | null;
+  thinking: { enabled: boolean; effort: ThinkingEffort | null };
+  workspaceId: string;
+}): AutomationEditorValues {
   return {
+    ...defaultAutomationRuntimeEditorValues({
+      normalRootRoleId,
+      orchestrationPresetId,
+      thinking,
+    }),
     cronExpression: "0 9 * * 1-5",
     deliveryEvents: ["completed"],
     deliveryTargetId: DISABLED_DELIVERY_TARGET,
@@ -1265,13 +1421,7 @@ function automationCreateRequest(
     enabled: true,
     name: values.name.trim() || automationNameFromDisplayName(displayName),
     prompt: values.prompt.trim(),
-    run_config: {
-      normal_root_role_id: null,
-      orchestration_preset_id: null,
-      session_mode: "normal",
-      thinking: { effort: "medium", enabled: true },
-      yolo: false,
-    },
+    run_config: automationRunConfigFromEditor(values),
     interval_every:
       values.schedulePreset === "interval" ? values.intervalEvery : null,
     interval_unit:
@@ -1286,9 +1436,10 @@ function automationCreateRequest(
 function automationUpdateRequest(
   values: AutomationEditorValues,
   deliveryBindingCandidates: AutomationDeliveryBindingCandidate[],
+  sourceProject: AutomationProjectRecord,
 ): AutomationProjectUpdateRequest {
   const request = automationCreateRequest(values, deliveryBindingCandidates);
-  return {
+  const update: AutomationProjectUpdateRequest = {
     cron_expression: request.cron_expression,
     delivery_binding: request.delivery_binding,
     delivery_events: request.delivery_events,
@@ -1302,6 +1453,10 @@ function automationUpdateRequest(
     timezone: request.timezone,
     workspace_id: request.workspace_id,
   };
+  if (!automationRunConfigsEqual(request.run_config, sourceProject.run_config)) {
+    update.run_config = request.run_config;
+  }
+  return update;
 }
 
 function automationEditorValuesFromProject(
@@ -1309,6 +1464,7 @@ function automationEditorValuesFromProject(
 ): AutomationEditorValues {
   const cronPreset = cronPresetFromProject(project);
   return {
+    ...automationRuntimeEditorValuesFromConfig(project.run_config),
     cronExpression: project.cron_expression?.trim() || "0 9 * * 1-5",
     deliveryEvents: project.delivery_events,
     deliveryTargetId: deliveryBindingValue(project.delivery_binding ?? null),
@@ -1611,6 +1767,8 @@ async function refreshAutomation(queryClient: QueryClient): Promise<void> {
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: ["automation", "delivery-bindings"] }),
     queryClient.invalidateQueries({ queryKey: ["automation", "projects"] }),
+    queryClient.invalidateQueries({ queryKey: ["orchestration", "config"] }),
+    queryClient.invalidateQueries({ queryKey: ["roles", "options"] }),
     queryClient.invalidateQueries({ queryKey: ["workspaces"] }),
   ]);
 }

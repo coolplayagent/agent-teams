@@ -1989,6 +1989,28 @@ body {
   padding-top: 4px;
 }
 
+.at-automation-form-section {
+  margin-bottom: 18px;
+  padding: 14px;
+  border: 1px solid var(--at-border);
+  border-radius: 10px;
+  background: var(--at-surface-muted);
+}
+
+.at-automation-form-section h4 {
+  margin: 0 0 12px;
+}
+
+.at-automation-runtime-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+}
+
+.at-automation-runtime-toggles .ant-form-item {
+  margin-bottom: 0;
+}
+
 .at-automation-create-modal .ant-modal-body {
   max-height: calc(100vh - 190px);
   overflow-y: auto;

@@ -962,12 +962,9 @@ export interface AutomationRunConfig {
   session_mode?: SessionMode;
   normal_root_role_id?: string | null;
   orchestration_preset_id?: string | null;
-  execution_mode?: string;
+  execution_mode?: "ai" | "manual";
   yolo?: boolean;
-  thinking?: {
-    enabled?: boolean;
-    effort?: string | null;
-  };
+  thinking?: Partial<RunThinkingConfig>;
 }
 
 export interface AutomationFeishuBinding {

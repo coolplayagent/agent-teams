@@ -16,6 +16,8 @@ import {
   disableAutomationProject,
   enableAutomationProject,
   getAutomationProject,
+  getOrchestrationConfig,
+  getRoleConfigOptions,
   listAutomationDeliveryBindings,
   listAutomationProjects,
   listAutomationProjectSessions,
@@ -36,6 +38,8 @@ vi.mock("../api/client", () => ({
   disableAutomationProject: vi.fn(),
   enableAutomationProject: vi.fn(),
   getAutomationProject: vi.fn(),
+  getOrchestrationConfig: vi.fn(),
+  getRoleConfigOptions: vi.fn(),
   listAutomationDeliveryBindings: vi.fn(),
   listAutomationProjectSessions: vi.fn(),
   listAutomationProjects: vi.fn(),
@@ -53,6 +57,8 @@ const deleteAutomationProjectMock = vi.mocked(deleteAutomationProject);
 const disableAutomationProjectMock = vi.mocked(disableAutomationProject);
 const enableAutomationProjectMock = vi.mocked(enableAutomationProject);
 const getAutomationProjectMock = vi.mocked(getAutomationProject);
+const getOrchestrationConfigMock = vi.mocked(getOrchestrationConfig);
+const getRoleConfigOptionsMock = vi.mocked(getRoleConfigOptions);
 const listAutomationDeliveryBindingsMock = vi.mocked(listAutomationDeliveryBindings);
 const listAutomationProjectSessionsMock = vi.mocked(listAutomationProjectSessions);
 const listAutomationProjectsMock = vi.mocked(listAutomationProjects);
@@ -61,7 +67,23 @@ const runAutomationProjectMock = vi.mocked(runAutomationProject);
 const updateAutomationProjectMock = vi.mocked(updateAutomationProject);
 
 beforeEach(() => {
+  localStorage.clear();
   useUiStore.setState({ language: "en" });
+  getRoleConfigOptionsMock.mockResolvedValue({
+    main_agent_role_id: "MainAgent",
+    normal_mode_roles: [
+      { name: "Main Agent", role_id: "MainAgent" },
+      { name: "Writer", role_id: "Writer" },
+    ],
+    subagent_roles: [],
+  });
+  getOrchestrationConfigMock.mockResolvedValue({
+    default_orchestration_preset_id: "default-orchestration",
+    presets: [
+      { name: "Default orchestration", preset_id: "default-orchestration" },
+      { name: "Release workflow", preset_id: "release-workflow" },
+    ],
+  });
   listAutomationProjectsMock.mockResolvedValue([
     automationProject({
       automation_project_id: "aut-daily",
@@ -137,6 +159,7 @@ beforeEach(() => {
         interval_every: request.interval_every ?? null,
         interval_unit: request.interval_unit ?? null,
         run_at: request.run_at ?? null,
+        run_config: request.run_config ?? automationProject({}).run_config,
         schedule_mode: request.schedule_mode ?? "cron",
       }),
     ),
@@ -336,7 +359,128 @@ describe("AutomationView", () => {
         }),
       ),
     );
+    const updateRequest = updateAutomationProjectMock.mock.calls.at(-1)?.[1];
+    expect(updateRequest).not.toHaveProperty("run_config");
   }, 20_000);
+
+  it("creates with visible saved runtime preferences instead of hidden overrides", async () => {
+    localStorage.setItem("agent_teams_thinking_enabled", "true");
+    localStorage.setItem("agent_teams_thinking_effort", "high");
+    renderAutomation();
+
+    fireEvent.click(await screen.findByRole("button", { name: "New automation" }));
+    const dialog = await screen.findByRole("dialog", { name: "New automation" });
+    expect(within(dialog).getByText("Main Agent")).toBeInTheDocument();
+    expect(within(dialog).getByText("AI execution")).toBeInTheDocument();
+    expect(within(dialog).getByText("high")).toBeInTheDocument();
+    expect(within(dialog).getByRole("checkbox", { name: "Thinking" })).toBeChecked();
+    expect(within(dialog).getByRole("checkbox", { name: "YOLO" })).toBeChecked();
+
+    fireEvent.change(within(dialog).getByLabelText("Display name"), {
+      target: { value: "Preference-aware run" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Project ID"), {
+      target: { value: "preference_aware" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Prompt"), {
+      target: { value: "Run with the selected preferences." },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Create" }));
+
+    await waitFor(() =>
+      expect(createAutomationProjectMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          run_config: {
+            execution_mode: "ai",
+            normal_root_role_id: "MainAgent",
+            orchestration_preset_id: null,
+            session_mode: "normal",
+            thinking: { effort: "high", enabled: true },
+            yolo: true,
+          },
+        }),
+      ),
+    );
+  });
+
+  it("reads back and explicitly updates the selected runtime contract", async () => {
+    getAutomationProjectMock.mockImplementation((projectId) =>
+      Promise.resolve(
+        automationProject({
+          automation_project_id: projectId,
+          run_config: {
+            execution_mode: "manual",
+            normal_root_role_id: null,
+            orchestration_preset_id: "release-workflow",
+            session_mode: "orchestration",
+            thinking: { effort: "high", enabled: true },
+            yolo: false,
+          },
+        }),
+      ),
+    );
+    renderAutomation();
+
+    expect(await screen.findByText("Manual execution")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const dialog = await screen.findByRole("dialog", { name: "Edit" });
+    expect(within(dialog).getByText("Orchestration")).toBeInTheDocument();
+    expect(within(dialog).getByText("Release workflow")).toBeInTheDocument();
+    expect(within(dialog).getByText("Manual execution")).toBeInTheDocument();
+    expect(within(dialog).getByRole("checkbox", { name: "Thinking" })).toBeChecked();
+    expect(within(dialog).getByRole("checkbox", { name: "YOLO" })).not.toBeChecked();
+
+    fireEvent.mouseDown(within(dialog).getByLabelText("Session mode"));
+    fireEvent.click(
+      await screen.findByText("Normal", {
+        selector: ".ant-select-item-option-content",
+      }),
+    );
+    fireEvent.mouseDown(within(dialog).getByLabelText("Root role"));
+    fireEvent.click(
+      await screen.findByText("Writer", {
+        selector: ".ant-select-item-option-content",
+      }),
+    );
+    fireEvent.mouseDown(within(dialog).getByLabelText("Execution mode"));
+    fireEvent.click(
+      await screen.findByText("AI execution", {
+        selector: ".ant-select-item-option-content",
+      }),
+    );
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Thinking" }));
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "YOLO" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() =>
+      expect(updateAutomationProjectMock).toHaveBeenCalledWith(
+        "aut-daily",
+        expect.objectContaining({
+          run_config: {
+            execution_mode: "ai",
+            normal_root_role_id: "Writer",
+            orchestration_preset_id: null,
+            session_mode: "normal",
+            thinking: { effort: "high", enabled: false },
+            yolo: true,
+          },
+        }),
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Edit" })).not.toBeInTheDocument(),
+    );
+    const properties = document.querySelector(".at-automation-properties");
+    expect(properties).not.toBeNull();
+    const executionRow = within(properties as HTMLElement)
+      .getByText("Execution mode")
+      .closest(".at-automation-property-row");
+    const roleRow = within(properties as HTMLElement)
+      .getByText("Root role")
+      .closest(".at-automation-property-row");
+    expect(executionRow).toHaveTextContent("AI execution");
+    expect(roleRow).toHaveTextContent("Writer");
+  });
 
   it("creates a one-shot project without leaking cron or interval fields", async () => {
     renderAutomation();

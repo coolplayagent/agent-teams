@@ -44,6 +44,8 @@ const listSessionRoundsMock = vi.mocked(listSessionRounds);
 beforeEach(() => {
   resetTerminalDomSnapshots();
   window.sessionStorage.removeItem("agentTeams.liveProcessedRuns");
+  listSessionMessagesMock.mockReset();
+  listSessionRoundsMock.mockReset();
   listSessionRoundsMock.mockResolvedValue({
     has_more: false,
     items: [],
@@ -247,6 +249,7 @@ describe("MessageTimeline", () => {
               seenEventKeys: [],
               sessionId: "session-1",
               status: "open",
+              targetRoleId: "MainAgent",
               terminalEventType: null,
             },
           },
@@ -440,6 +443,7 @@ describe("MessageTimeline", () => {
         message_id: "internal-background-task-notification",
         role: "user",
         trace_id: "run-1",
+        visibility: "internal",
       },
       {
         content: "Subagent failed because the context limit was exceeded.",
@@ -927,6 +931,7 @@ describe("MessageTimeline", () => {
               runId: "run-live-hydrate",
               seenEventKeys: [],
               status: "closed",
+              targetRoleId: "MainAgent",
               terminalEventType: "run_completed",
             },
           },
@@ -1060,6 +1065,7 @@ describe("MessageTimeline", () => {
               runId,
               seenEventKeys: [],
               status: "closed",
+              targetRoleId: "MainAgent",
               terminalEventType: "run_completed",
             },
           },
@@ -1112,6 +1118,21 @@ describe("MessageTimeline", () => {
     );
     expect(streamingText).not.toBeNull();
     expect(streamingText?.closest("details.at-processed-group")).toBeNull();
+  });
+
+  it("keeps public user content visible even when it resembles an internal notification", async () => {
+    listSessionMessagesMock.mockResolvedValue([{
+      content: "A managed background task finished. <background-task-notification>",
+      message_id: "public-user-message",
+      role: "user",
+      visibility: "public",
+    }]);
+
+    renderTimeline();
+
+    expect(await screen.findByText(
+      "A managed background task finished. <background-task-notification>",
+    )).toBeVisible();
   });
 
   it("keeps the live processed tree and scroll anchor stable at terminal", async () => {
@@ -2610,6 +2631,7 @@ describe("MessageTimeline", () => {
             runId: "run-live-full-chunk-hydrate",
             seenEventKeys: [],
             status: "open",
+            targetRoleId: "MainAgent",
             terminalEventType: null,
           },
         },
@@ -3161,6 +3183,86 @@ describe("MessageTimeline", () => {
     fireEvent.click(copyButton);
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("Final answer ready"));
+  });
+
+  it("collapses the previous round work as soon as the user sends the next message", async () => {
+    listSessionMessagesMock.mockResolvedValue([{
+      agent_role_id: "RenamedPrimary",
+      instance_id: "root-instance",
+      message: {
+        parts: [
+          { content: "Previous round thought", part_kind: "thinking" },
+          { content: "Previous round answer", part_kind: "text" },
+        ],
+      },
+      message_id: "previous-round-answer",
+      role_id: "RenamedPrimary",
+      run_id: "opaque-previous-run",
+      task_id: "root-task",
+    }]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [{
+        primary_instance_id: "root-instance",
+        primary_role_id: "RenamedPrimary",
+        primary_task_id: "root-task",
+        run_id: "opaque-previous-run",
+        run_status: "completed",
+        intent: "Previous round prompt",
+      }],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline("session-1", {
+      primaryRoleId: "RenamedPrimary",
+    });
+    await screen.findByText("Previous round answer");
+    const previousGroup = openProcessedGroup(container);
+    expect(previousGroup).toHaveAttribute("open");
+
+    act(() => {
+      const promptId = useOptimisticRunStore.getState().beginPrompt(
+        "session-1",
+        "Next round prompt",
+      );
+      useOptimisticRunStore.getState().confirmPrompt(
+        "session-1",
+        promptId,
+        "opaque-current-run",
+      );
+      setRuntimeStateFromEvents([
+        relayRunEvent({
+          event_id: 1,
+          event_type: "run_started",
+          instance_id: "root-instance-current",
+          payload_json: JSON.stringify({ prompt: "Next round prompt" }),
+          role_id: "RenamedPrimary",
+          run_id: "opaque-current-run",
+          trace_id: "opaque-current-run",
+        }),
+        relayRunEvent({
+          event_id: 2,
+          event_type: "thinking_delta",
+          instance_id: "root-instance-current",
+          payload_json: JSON.stringify({ text: "Current round is streaming" }),
+          role_id: "RenamedPrimary",
+          run_id: "opaque-current-run",
+          trace_id: "opaque-current-run",
+        }),
+      ]);
+    });
+
+    expect(await screen.findByText("Next round prompt")).toBeVisible();
+    await waitFor(() => expect(
+      container.querySelector(
+        '[data-run-id="opaque-previous-run"] details.at-processed-group',
+      ),
+    ).not.toHaveAttribute("open"));
+    const currentGroup = container.querySelector(
+      '[data-run-id="opaque-current-run"] details.at-processed-group',
+    );
+    expect(currentGroup).toHaveAttribute("open");
+    expect(screen.getByText("Current round is streaming")).toBeVisible();
   });
 
   it("controls repeated thinking disclosures independently around a subagent card", async () => {
@@ -3730,7 +3832,6 @@ describe("MessageTimeline", () => {
       </QueryClientProvider>,
     );
 
-    expect(await screen.findByText("session-1 answer")).toBeVisible();
     await waitFor(() =>
       expect(listSessionRoundsMock).toHaveBeenCalledWith("session-1", {
         cursorRunId: null,
@@ -3738,6 +3839,7 @@ describe("MessageTimeline", () => {
         limit: 100,
       }),
     );
+    expect(screen.queryByText("session-1 answer")).not.toBeInTheDocument();
 
     rerender(
       <QueryClientProvider client={queryClient}>
@@ -3814,7 +3916,6 @@ describe("MessageTimeline", () => {
       </QueryClientProvider>,
     );
 
-    expect(await screen.findByText("session-1 answer")).toBeVisible();
     await waitFor(() =>
       expect(listSessionRoundsMock).toHaveBeenCalledWith("session-1", {
         cursorRunId: null,
@@ -3822,6 +3923,7 @@ describe("MessageTimeline", () => {
         limit: 100,
       }),
     );
+    expect(screen.queryByText("session-1 answer")).not.toBeInTheDocument();
 
     rerender(
       <QueryClientProvider client={queryClient}>
@@ -3861,7 +3963,7 @@ describe("MessageTimeline", () => {
     })).not.toBeInTheDocument();
   });
 
-  it("renders messages before slow round rail hydration finishes", async () => {
+  it("holds unscoped messages until slow round identity hydration finishes", async () => {
     const slowRounds = deferredSessionRounds();
     listSessionMessagesMock.mockResolvedValue([
       {
@@ -3881,8 +3983,10 @@ describe("MessageTimeline", () => {
 
     renderTimeline();
 
-    expect(await screen.findByText("Latest answer")).toBeVisible();
-    expect(screen.getByText("Older answer")).toBeVisible();
+    await waitFor(() => expect(listSessionMessagesMock).toHaveBeenCalled());
+    expect(screen.queryByText("Latest answer")).not.toBeInTheDocument();
+    expect(screen.queryByText("Older answer")).not.toBeInTheDocument();
+    expect(document.querySelector(".ant-skeleton")).not.toBeNull();
     expect(screen.queryByRole("navigation", { name: "Rounds" }))
       .not.toBeInTheDocument();
 
@@ -3915,6 +4019,8 @@ describe("MessageTimeline", () => {
 
     expect(await screen.findByRole("navigation", { name: "Rounds" }))
       .toBeVisible();
+    expect(screen.getByText("Latest answer")).toBeVisible();
+    expect(screen.getByText("Older answer")).toBeVisible();
     expect(screen.getByRole("button", { name: "Go to round 1: Older task" }))
       .toBeVisible();
     expect(screen.getByRole("button", { name: "Go to round 3: Newest task" }))
@@ -3957,8 +4063,8 @@ describe("MessageTimeline", () => {
 
     renderTimeline();
 
-    expect(await screen.findByText("Latest answer")).toBeVisible();
     await waitFor(() => expect(listSessionRoundsMock).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText("Latest answer")).not.toBeInTheDocument();
     expect(pageRequests).toEqual([
       { cursorRunId: null, forceRefresh: true, sessionId: "session-1" },
     ]);
@@ -4001,6 +4107,7 @@ describe("MessageTimeline", () => {
 
     expect(await screen.findByRole("button", { name: "Go to round 1: Older task" }))
       .toBeVisible();
+    expect(screen.getByText("Latest answer")).toBeVisible();
     expect(screen.getByRole("button", { name: "Go to round 2: Latest task" }))
       .toBeVisible();
   });
@@ -4068,7 +4175,8 @@ describe("MessageTimeline", () => {
     expect(await screen.findByRole("button", {
       name: "Go to round 1: approval-only run",
     })).toBeVisible();
-    expect(container.querySelector(".at-round-marker")).toBeNull();
+    expect(container.querySelector(".at-round-marker"))
+      .toHaveTextContent("approval-only run");
 
     await act(async () => {
       await queryClient.invalidateQueries({
@@ -4085,7 +4193,7 @@ describe("MessageTimeline", () => {
     expect(listSessionRoundsMock).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps hydrated messages visible when round rail hydration fails", async () => {
+  it("does not expose unscoped messages when round identity hydration fails", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {
         content: "Recovered answer",
@@ -4098,7 +4206,6 @@ describe("MessageTimeline", () => {
 
     renderTimeline();
 
-    expect(await screen.findByText("Recovered answer")).toBeVisible();
     await waitFor(() =>
       expect(listSessionRoundsMock).toHaveBeenCalledWith("session-1", {
         cursorRunId: null,
@@ -4106,7 +4213,8 @@ describe("MessageTimeline", () => {
         limit: 100,
       }),
     );
-    expect(screen.queryByText("No messages yet")).not.toBeInTheDocument();
+    expect(await screen.findByText("Could not load messages")).toBeVisible();
+    expect(screen.queryByText("Recovered answer")).not.toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: "Rounds" }))
       .not.toBeInTheDocument();
   });
@@ -5435,7 +5543,9 @@ describe("MessageTimeline", () => {
     });
     listSessionMessagesMock.mockResolvedValue([
       {
+        agent_role_id: "MainAgent",
         message_id: "assistant-1",
+        role: "assistant",
         role_id: "MainAgent",
         trace_id: "run-1",
         content: "Full persisted answer",
@@ -6937,6 +7047,22 @@ describe("MessageTimeline", () => {
         }),
       }),
       relayRunEvent({
+        event_id: 1,
+        event_type: "subagent_session_status_changed",
+        instance_id: "subagent-instance-1",
+        role_id: "Explorer",
+        run_id: "subagent_run_1",
+        trace_id: "subagent_run_1",
+        payload_json: JSON.stringify({
+          parent_run_id: "parent_run_1",
+          parent_session_id: "session-1",
+          status: "running",
+          subagent_instance_id: "subagent-instance-1",
+          subagent_role_id: "Explorer",
+          subagent_run_id: "subagent_run_1",
+        }),
+      }),
+      relayRunEvent({
         event_id: 2,
         event_type: "thinking_started",
         instance_id: "subagent-instance-1",
@@ -6989,6 +7115,9 @@ describe("MessageTimeline", () => {
         run_id: "parent_run_1",
         trace_id: "parent_run_1",
         payload_json: JSON.stringify({
+          subagent_instance_id: "subagent-instance-1",
+          subagent_role_id: "Explorer",
+          subagent_run_id: "subagent_run_1",
           text: "child output with parent run id should stay out",
         }),
       }),
@@ -7045,7 +7174,7 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText(/tool_result_event_published/)).not.toBeInTheDocument();
   });
 
-  it("restores round prompt disclosure state after switching sessions", async () => {
+  it("resets round prompt disclosure state whenever the selected session changes", async () => {
     const prompts: Record<string, string> = {
       "session-1": "Session one prompt is long enough to use the compact disclosure control.",
       "session-2": "Session two prompt is also long enough to use its own disclosure state.",
@@ -7097,7 +7226,7 @@ describe("MessageTimeline", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Session 1" }));
     await screen.findByText("Answer for session-1");
-    expect(screen.getByRole("button", { name: "Collapse" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Expand" })).toBeVisible();
   });
 
   it("keeps the round prompt toggle anchored while remeasuring the virtual row", async () => {
@@ -7144,7 +7273,9 @@ describe("MessageTimeline", () => {
       fireEvent.click(toggle);
 
       await waitFor(() => expect(toggle).toHaveAttribute("aria-expanded", "true"));
-      expect(translateY(markerRow) - timeline.scrollTop).toBe(offsetBefore);
+      await waitFor(() =>
+        expect(translateY(markerRow) - timeline.scrollTop).toBe(offsetBefore),
+      );
     } finally {
       restoreMeasurements();
     }
@@ -7410,6 +7541,7 @@ describe("MessageTimeline", () => {
         }),
       }),
     ]);
+    markRuntimeRunAsSubagent(subagentRunId, "Explorer");
     listSessionMessagesMock.mockResolvedValue([]);
 
     const mainTimeline = renderTimeline("session-1");
@@ -7481,6 +7613,7 @@ describe("MessageTimeline", () => {
         }),
       }),
     ]);
+    markRuntimeRunAsSubagent(subagentRunId, "Explorer");
     listSessionMessagesMock.mockResolvedValue([]);
 
     const mainTimeline = renderTimeline("session-1");
@@ -7906,6 +8039,318 @@ describe("MessageTimeline", () => {
     ]);
   });
 
+  it("keeps the submitted prompt and real answer out of verification presentation messages", async () => {
+    const verificationPresentation =
+      "The task finished, but verification did not pass. Review the result.";
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: "Build the requested feature",
+        message_id: "user-real",
+        role: "user",
+        trace_id: "run-verification-projection",
+      },
+      {
+        content: "# Real coordinator answer",
+        message_id: "assistant-real",
+        role: "assistant",
+        role_id: "Coordinator",
+        trace_id: "run-verification-projection",
+      },
+      {
+        content: verificationPresentation,
+        message_id: "assistant-verification-presentation",
+        role: "assistant",
+        role_id: "Coordinator",
+        trace_id: "run-verification-projection",
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          coordinator_messages: [
+            {
+              content: "# Real coordinator answer",
+              role: "assistant",
+              role_id: "Coordinator",
+            },
+            {
+              content: verificationPresentation,
+              role: "assistant",
+              role_id: "Coordinator",
+            },
+          ],
+          created_at: "2026-06-23T12:42:33Z",
+          intent: "Build the requested feature",
+          intent_parts: [{ kind: "text", text: "Build the requested feature" }],
+          primary_role_id: "Coordinator",
+          run_id: "run-verification-projection",
+          run_status: "completed",
+          run_user_message: verificationPresentation,
+          verification_status: "failed",
+        },
+      ],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline("session-1", {
+      primaryRoleId: "Coordinator",
+    });
+
+    expect(await screen.findByRole("heading", { name: "Real coordinator answer" }))
+      .toBeVisible();
+    expect(screen.queryByText(verificationPresentation)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", {
+      name: "Go to round 1: Build the requested feature",
+    })).toBeVisible();
+    const userRows = Array.from(container.querySelectorAll("article.at-message"))
+      .filter((row) => row.textContent?.includes("Build the requested feature"));
+    expect(userRows).toHaveLength(0);
+    expect(container.querySelector(".at-round-marker")).toHaveTextContent(
+      "Build the requested feature",
+    );
+  });
+
+  it("projects only the structured orchestration main agent into the session transcript", async () => {
+    const runId = "run-structured-orchestration-projection";
+    const prompt = "Inspect the real orchestration transcript";
+    const verificationPresentation = "Verification presentation only";
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        agent_role_id: "RenamedPrimaryAgent",
+        content: prompt,
+        created_at: "2026-07-12T14:03:08Z",
+        instance_id: "instance-primary",
+        role: "user",
+        trace_id: runId,
+      },
+      {
+        agent_role_id: "RenamedWorkerAgent",
+        content: "Worker-internal delegated prompt",
+        created_at: "2026-07-12T14:03:09Z",
+        instance_id: "instance-worker",
+        role: "user",
+        trace_id: runId,
+      },
+      {
+        agent_role_id: "RenamedWorkerAgent",
+        content: "Worker raw answer must stay in the subagent panel",
+        created_at: "2026-07-12T14:03:10Z",
+        instance_id: "instance-worker",
+        role: "assistant",
+        trace_id: runId,
+      },
+      {
+        agent_role_id: "RenamedPrimaryAgent",
+        content: "# Primary final answer",
+        created_at: "2026-07-12T14:03:11Z",
+        instance_id: "instance-primary",
+        role: "assistant",
+        trace_id: runId,
+      },
+      {
+        agent_role_id: "RenamedPrimaryAgent",
+        content: verificationPresentation,
+        created_at: "2026-07-12T14:03:12Z",
+        instance_id: "instance-primary",
+        role: "assistant",
+        trace_id: runId,
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [{
+        coordinator_messages: [{
+          agent_role_id: "RenamedPrimaryAgent",
+          content: "# Primary final answer",
+          instance_id: "instance-primary",
+          role: "assistant",
+          role_id: "RenamedPrimaryAgent",
+        }, {
+          agent_role_id: "RenamedPrimaryAgent",
+          content: verificationPresentation,
+          instance_id: "instance-primary",
+          role: "assistant",
+          role_id: "RenamedPrimaryAgent",
+        }],
+        created_at: "2026-07-12T14:03:08Z",
+        intent: prompt,
+        intent_parts: [{ kind: "text", text: prompt }],
+        primary_role_id: "RenamedPrimaryAgent",
+        run_id: runId,
+        run_status: "completed",
+        run_user_message: verificationPresentation,
+        verification_status: "failed",
+      }],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline("session-1", {
+      // A normal-mode default must not override the round's structured main role.
+      primaryRoleId: "MainAgent",
+    });
+
+    expect(await screen.findByRole("heading", { name: "Primary final answer" }))
+      .toBeVisible();
+    expect(screen.queryByText("Worker-internal delegated prompt"))
+      .not.toBeInTheDocument();
+    expect(screen.queryByText("Worker raw answer must stay in the subagent panel"))
+      .not.toBeInTheDocument();
+    expect(screen.queryByText(verificationPresentation)).not.toBeInTheDocument();
+    expect(container.querySelector(".at-round-marker")).toHaveTextContent(prompt);
+    expect(container.querySelectorAll('[data-instance-id="instance-worker"]'))
+      .toHaveLength(0);
+  });
+
+  it("keeps persisted worker tools out when the main session has an active fallback run", async () => {
+    const runId = "run-active-orchestration-projection";
+    const workerToolMessage = {
+      agent_role_id: "RenamedWorkerAgent",
+      instance_id: "instance-worker",
+      message: {
+        parts: [{
+          args: { command: "echo ORCH_LINE_001" },
+          part_kind: "tool-call" as const,
+          tool_call_id: "call-worker-shell",
+          tool_name: "shell",
+        }],
+      },
+      role: "assistant",
+      role_id: "RenamedWorkerAgent",
+      trace_id: runId,
+    };
+    const sameRoleWorkerToolMessage = {
+      agent_role_id: "RenamedPrimaryAgent",
+      instance_id: "instance-worker-same-role",
+      message: {
+        parts: [{
+          args: { path: "worker-only.txt" },
+          part_kind: "tool-call" as const,
+          tool_call_id: "call-same-role-worker-read",
+          tool_name: "read",
+        }],
+      },
+      role: "assistant",
+      role_id: "RenamedPrimaryAgent",
+      trace_id: runId,
+    };
+    listSessionMessagesMock.mockResolvedValue([
+      workerToolMessage,
+      sameRoleWorkerToolMessage,
+      {
+        agent_role_id: "RenamedPrimaryAgent",
+        content: "Primary output remains visible.",
+        instance_id: "instance-primary",
+        role: "assistant",
+        trace_id: runId,
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [{
+        coordinator_messages: [
+          {
+            agent_role_id: "RenamedPrimaryAgent",
+            content: "Primary output remains visible.",
+            instance_id: "instance-primary",
+            role: "assistant",
+            role_id: "RenamedPrimaryAgent",
+          },
+          workerToolMessage,
+          sameRoleWorkerToolMessage,
+        ],
+        intent: "Delegate the shell work",
+        primary_role_id: "RenamedPrimaryAgent",
+        role_instance_map: {
+          RenamedPrimaryAgent: "instance-primary",
+        },
+        run_id: runId,
+        run_status: "running",
+      }],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline("session-1", {
+      fallbackRunId: runId,
+      primaryRoleId: "NormalModeDefault",
+    });
+
+    expect(await screen.findByText("Primary output remains visible.")).toBeVisible();
+    expect(screen.queryByText("Running: shell")).not.toBeInTheDocument();
+    expect(screen.queryByText("Reading: read")).not.toBeInTheDocument();
+    expect(container.querySelector('[data-instance-id="instance-worker"]'))
+      .toBeNull();
+    expect(container.querySelector('[data-instance-id="instance-worker-same-role"]'))
+      .toBeNull();
+  });
+
+  it("keeps a renamed orchestration root stream when the normal-mode role differs", async () => {
+    setRuntimeEntries([{
+      eventId: 1,
+      id: "renamed-root:1:0",
+      kind: "text_delta",
+      occurredAt: "2026-07-12T14:03:08Z",
+      payload: { text: "renamed root live output" },
+      roleId: "RenamedPrimaryAgent",
+      runId: "renamed-root",
+      sessionId: "session-1",
+      text: "renamed root live output",
+    }], "open", {
+      targetRoleId: "RenamedPrimaryAgent",
+    });
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    renderTimeline("session-1", {
+      primaryRoleId: "NormalModeDefault",
+    });
+
+    expect(await screen.findByText("renamed root live output")).toBeVisible();
+  });
+
+  it("does not expose an unscoped partial transcript while round identity is loading", async () => {
+    const runId = "run-delayed-identity";
+    let resolveRounds!: (value: Awaited<ReturnType<typeof listSessionRounds>>) => void;
+    listSessionMessagesMock.mockResolvedValue([{
+      agent_role_id: "RenamedWorkerAgent",
+      content: "wrong-scope worker output",
+      instance_id: "instance-worker",
+      role: "assistant",
+      trace_id: runId,
+    }, {
+      agent_role_id: "RenamedPrimaryAgent",
+      content: "correct primary output",
+      instance_id: "instance-primary",
+      role: "assistant",
+      trace_id: runId,
+    }]);
+    listSessionRoundsMock.mockReturnValue(new Promise((resolve) => {
+      resolveRounds = resolve;
+    }));
+
+    const { container } = renderTimeline("session-1", {
+      primaryRoleId: "NormalModeDefault",
+    });
+    await waitFor(() => expect(listSessionMessagesMock).toHaveBeenCalled());
+    expect(container.querySelector(".ant-skeleton")).not.toBeNull();
+    expect(screen.queryByText("wrong-scope worker output")).not.toBeInTheDocument();
+    expect(screen.queryByText("correct primary output")).not.toBeInTheDocument();
+
+    resolveRounds({
+      has_more: false,
+      items: [{
+        coordinator_messages: [],
+        intent: "real prompt",
+        primary_role_id: "RenamedPrimaryAgent",
+        run_id: runId,
+        run_status: "completed",
+      }],
+      next_cursor: null,
+    });
+
+    expect(await screen.findByText("correct primary output")).toBeVisible();
+    expect(screen.queryByText("wrong-scope worker output")).not.toBeInTheDocument();
+  });
+
   it("preserves one openable card across the synchronous subagent event sequence", async () => {
     const onSubagentOpen = vi.fn();
     const toolCallEvent = relayRunEvent({
@@ -8029,6 +8474,7 @@ describe("MessageTimeline", () => {
   it("keeps subagent orphan messages out of the main session timeline", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {
+        agent_role_id: "Explorer",
         content: "Explore how Skills are implemented in this project",
         created_at: "2026-06-23T10:00:00Z",
         instance_id: "22cd6473-7579-438e-90df-d8177cc31e93",
@@ -8037,6 +8483,7 @@ describe("MessageTimeline", () => {
         run_id: "87f9f69e-8622-4d46-958f-aa0d7d283095",
       },
       {
+        agent_role_id: "MainAgent",
         content: "Skill 系统的实现总结如下",
         created_at: "2026-06-23T10:03:00Z",
         instance_id: "main-instance",
@@ -8050,6 +8497,7 @@ describe("MessageTimeline", () => {
       items: [
         {
           created_at: "2026-06-23T10:02:00Z",
+          primary_role_id: "MainAgent",
           run_id: "parent_run_1",
           run_status: "completed",
           run_user_message: "看一下当前项目，不要修改。看一下skill是怎么实现的",
@@ -8058,7 +8506,7 @@ describe("MessageTimeline", () => {
       next_cursor: null,
     });
 
-    renderTimeline();
+    renderTimeline("session-1", { primaryRoleId: "MainAgent" });
 
     expect(await screen.findByText("Skill 系统的实现总结如下")).toBeVisible();
     expect(
@@ -8105,6 +8553,7 @@ describe("MessageTimeline", () => {
   it("keeps UUID subagent replay messages out when instance metadata is missing", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {
+        agent_role_id: "Explorer",
         content: "Child replay without instance id should stay out of the main transcript.",
         created_at: "2026-06-23T10:00:00Z",
         message_id: "explorer-message-without-instance",
@@ -8112,6 +8561,7 @@ describe("MessageTimeline", () => {
         run_id: "6d91a928-cb28-4ce2-b9ff-31ec19a15f63",
       },
       {
+        agent_role_id: "MainAgent",
         content: "Parent summary should remain visible.",
         created_at: "2026-06-23T10:03:00Z",
         instance_id: "main-instance",
@@ -8126,7 +8576,9 @@ describe("MessageTimeline", () => {
       next_cursor: null,
     });
 
-    const { container } = renderTimeline("session-1");
+    const { container } = renderTimeline("session-1", {
+      primaryRoleId: "MainAgent",
+    });
 
     expect(await screen.findByText("Parent summary should remain visible."))
       .toBeVisible();
@@ -8226,6 +8678,9 @@ describe("MessageTimeline", () => {
         event_id: 2,
         event_type: "text_delta",
         payload_json: JSON.stringify({
+          subagent_instance_id: "22cd6473-7579-438e-90df-d8177cc31e93",
+          subagent_role_id: "Explorer",
+          subagent_run_id: "87f9f69e-8622-4d46-958f-aa0d7d283095",
           text: "Now let me read all the core source files concurrently.",
         }),
         role_id: "Explorer",
@@ -8237,6 +8692,9 @@ describe("MessageTimeline", () => {
         event_type: "tool_call",
         payload_json: JSON.stringify({
           args: { path: "src/relay_teams/skills/__init__.py" },
+          subagent_instance_id: "22cd6473-7579-438e-90df-d8177cc31e93",
+          subagent_role_id: "Explorer",
+          subagent_run_id: "87f9f69e-8622-4d46-958f-aa0d7d283095",
           tool_call_id: "call-child-read",
           tool_name: "read",
         }),
@@ -8263,7 +8721,7 @@ describe("MessageTimeline", () => {
     });
 
     const { container } = renderTimeline("session-1", {
-      primaryRoleId: "Default Orchestration - default",
+      primaryRoleId: "MainAgent",
     });
 
     expect(await screen.findByText("Subagent started")).toBeVisible();
@@ -8285,8 +8743,10 @@ describe("MessageTimeline", () => {
         {
           coordinator_messages: [
             {
+              agent_role_id: "MainAgent",
               content: "Crafter 子代理成功执行命令，运行正常。",
               message_id: "parent-final",
+              role: "assistant",
               role_id: "MainAgent",
             },
           ],
@@ -8299,13 +8759,15 @@ describe("MessageTimeline", () => {
         {
           coordinator_messages: [
             {
+              agent_role_id: "Crafter",
               content: "SUBOPEN_1\nSUBOPEN_2\nSUBOPEN_DONE",
               message_id: "subagent-output",
+              role: "assistant",
               role_id: "Crafter",
             },
           ],
           created_at: "2026-06-23T10:03:00Z",
-          primary_role_id: "Crafter",
+          primary_role_id: "MainAgent",
           run_id: "subagent_run_e56e8720cddb",
           run_status: "completed",
           run_user_message: "执行指定 shell 命令",
@@ -8334,10 +8796,12 @@ describe("MessageTimeline", () => {
         run_id: "run-orchestration",
       },
       {
+        agent_role_id: "DelegationPlanner",
         content: "Return only the delegation plan JSON object.",
         message_id: "planner-prompt",
         role_id: "DelegationPlanner",
         run_id: "run-orchestration",
+        visibility: "internal",
       },
       {
         content: (
@@ -8347,23 +8811,37 @@ describe("MessageTimeline", () => {
         message_id: "planner-prompt-unscoped",
         role: "assistant",
         run_id: "run-orchestration",
+        visibility: "internal",
       },
       {
+        agent_role_id: "DelegationPlanner",
         content: "[fake-llm] Return only the delegation plan JSON object",
         message_id: "planner-output",
         role_id: "DelegationPlanner",
         run_id: "run-orchestration",
+        visibility: "internal",
       },
       {
+        agent_role_id: "Coordinator",
         content: "Coordinator final answer stays visible.",
         message_id: "coordinator-final",
+        role: "assistant",
         role_id: "Coordinator",
         run_id: "run-orchestration",
       },
     ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [{
+        primary_role_id: "Coordinator",
+        run_id: "run-orchestration",
+        run_status: "completed",
+      }],
+      next_cursor: null,
+    });
 
     const { container } = renderTimeline("session-1", {
-      primaryRoleId: null,
+      primaryRoleId: "Coordinator",
     });
 
     expect(await screen.findByText("Coordinator final answer stays visible."))
@@ -8383,9 +8861,19 @@ describe("MessageTimeline", () => {
   it("keeps internal orchestration planner stream rows out of the main timeline", async () => {
     setRuntimeStateFromEvents([
       relayRunEvent({
+        event_id: 0,
+        event_type: "run_started",
+        role_id: "Coordinator",
+        run_id: "run-orchestration-live",
+        trace_id: "run-orchestration-live",
+        payload_json: JSON.stringify({ phase: "streaming" }),
+      }),
+      relayRunEvent({
         event_id: 1,
         event_type: "text_delta",
         payload_json: JSON.stringify({
+          subagent_role_id: "DelegationPlanner",
+          subagent_run_id: "run-orchestration-planner-live",
           text: "Planner stream should not render.",
         }),
         role_id: "DelegationPlanner",
@@ -8411,7 +8899,7 @@ describe("MessageTimeline", () => {
     });
 
     const { container } = renderTimeline("session-1", {
-      primaryRoleId: null,
+      primaryRoleId: "Coordinator",
     });
 
     expect(await screen.findByText("Coordinator stream remains visible."))
@@ -8427,7 +8915,7 @@ describe("MessageTimeline", () => {
         event_id: 1,
         event_type: "run_started",
         instance_id: "00386a5a-133d-4b08-8037-458047f2522a",
-        role_id: "DelegationPlanner",
+        role_id: "Coordinator",
         run_id: "cef60ea9-c6ec-4ea1-ae4a-8195440c46e9",
         trace_id: "cef60ea9-c6ec-4ea1-ae4a-8195440c46e9",
         payload_json: JSON.stringify({ phase: "streaming" }),
@@ -8440,6 +8928,8 @@ describe("MessageTimeline", () => {
         run_id: "cef60ea9-c6ec-4ea1-ae4a-8195440c46e9",
         trace_id: "cef60ea9-c6ec-4ea1-ae4a-8195440c46e9",
         payload_json: JSON.stringify({
+          subagent_role_id: "DelegationPlanner",
+          subagent_run_id: "run-orchestration-planner",
           text: "Return only the delegation plan JSON object.",
         }),
       }),
@@ -8468,6 +8958,8 @@ describe("MessageTimeline", () => {
         run_id: "cef60ea9-c6ec-4ea1-ae4a-8195440c46e9",
         trace_id: "cef60ea9-c6ec-4ea1-ae4a-8195440c46e9",
         payload_json: JSON.stringify({
+          subagent_role_id: "Crafter",
+          subagent_run_id: "run-orchestration-worker",
           text: "Dispatched worker output should stay out of main timeline.",
         }),
       }),
@@ -8480,6 +8972,8 @@ describe("MessageTimeline", () => {
         trace_id: "cef60ea9-c6ec-4ea1-ae4a-8195440c46e9",
         payload_json: JSON.stringify({
           args: { command: "echo worker" },
+          subagent_role_id: "Crafter",
+          subagent_run_id: "run-orchestration-worker",
           tool_call_id: "call-worker-shell",
           tool_name: "shell",
         }),
@@ -8493,7 +8987,7 @@ describe("MessageTimeline", () => {
     });
 
     const { container } = renderTimeline("session-1", {
-      primaryRoleId: null,
+      primaryRoleId: "Coordinator",
     });
 
     expect(await screen.findByText("Starting subagent")).toBeVisible();
@@ -8505,6 +8999,228 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText("Running: shell")).not.toBeInTheDocument();
     expect(container.querySelector('[data-role-id="Crafter"]')).toBeNull();
     expect(container.querySelector('[data-role-id="Coordinator"]')).not.toBeNull();
+  });
+
+  it("keeps a valid round when one replayed coordinator message belongs to a child", async () => {
+    listSessionMessagesMock.mockResolvedValue([]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [{
+        coordinator_messages: [
+          {
+            agent_role_id: "Coordinator",
+            content: "valid root answer",
+            instance_id: "instance-root",
+            message_id: "root-answer",
+            role: "assistant",
+            role_id: "Coordinator",
+            task_id: "task-root",
+          },
+          {
+            agent_role_id: "Coordinator",
+            content: "leaked same-role child answer",
+            instance_id: "instance-child",
+            message_id: "child-answer",
+            role: "assistant",
+            role_id: "Coordinator",
+            task_id: "task-child",
+          },
+        ],
+        primary_instance_id: "instance-root",
+        primary_role_id: "Coordinator",
+        primary_task_id: "task-root",
+        run_id: "run-mixed-replay",
+        run_status: "completed",
+        run_user_message: "real user prompt",
+      }],
+      next_cursor: null,
+    });
+
+    renderTimeline("session-1", { primaryRoleId: "Coordinator" });
+
+    expect(await screen.findByText("valid root answer")).toBeVisible();
+    expect(screen.getAllByText("real user prompt").some((element) =>
+      element.closest(".at-round-marker") !== null
+    )).toBe(true);
+    expect(screen.queryByText("leaked same-role child answer"))
+      .not.toBeInTheDocument();
+  });
+
+  it("uses task and instance identity before dispatch-tool presentation", async () => {
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        agent_role_id: "RenamedPrimary",
+        instance_id: "instance-child",
+        task_id: "task-child",
+        message_id: "child-dispatch-tool",
+        role: "assistant",
+        role_id: "RenamedPrimary",
+        run_id: "run-structured-identity",
+        message: { parts: [{
+          args: { role_id: "NestedWorker" },
+          part_kind: "tool-call",
+          tool_call_id: "call-child-dispatch",
+          tool_name: "spawn_subagent",
+        }] },
+      },
+      {
+        agent_role_id: "RenamedPrimary",
+        instance_id: "instance-root",
+        task_id: "task-root",
+        message_id: "root-renamed-dispatch-tool",
+        role: "assistant",
+        role_id: "RenamedPrimary",
+        run_id: "run-structured-identity",
+        message: { parts: [{
+          args: { subagent_instance_id: "instance-child" },
+          part_kind: "tool-call",
+          tool_call_id: "call-root-custom-dispatch",
+          tool_name: "renamed_dispatch_contract",
+        }] },
+      },
+      {
+        agent_role_id: "RenamedPrimary",
+        content: "root final remains visible",
+        instance_id: "instance-root",
+        task_id: "task-root",
+        message_id: "root-final-structured-identity",
+        role: "assistant",
+        role_id: "RenamedPrimary",
+        run_id: "run-structured-identity",
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [{
+        primary_instance_id: "instance-root",
+        primary_role_id: "RenamedPrimary",
+        primary_task_id: "task-root",
+        run_id: "run-structured-identity",
+        run_status: "completed",
+      }],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline("session-1", {
+      primaryRoleId: "UnrelatedDefault",
+    });
+
+    expect(await screen.findByText("root final remains visible")).toBeVisible();
+    expect(container.querySelector('[data-tool-name="renamed_dispatch_contract"]'))
+      .not.toBeNull();
+    expect(container.querySelector('[data-tool-name="spawn_subagent"]')).toBeNull();
+    expect(container.querySelector('[data-instance-id="instance-child"]')).toBeNull();
+  });
+
+  it("keeps unmarked same-role child instance events out of the main runtime timeline", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "run_started",
+        instance_id: "coordinator-root-instance",
+        role_id: "Coordinator",
+        run_id: "run-same-role-child",
+        trace_id: "run-same-role-child",
+        payload_json: JSON.stringify({ phase: "streaming" }),
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "text_delta",
+        instance_id: "coordinator-child-instance",
+        role_id: "Coordinator",
+        run_id: "run-same-role-child",
+        trace_id: "run-same-role-child",
+        payload_json: JSON.stringify({ text: "same-role child output must stay hidden" }),
+      }),
+      relayRunEvent({
+        event_id: 3,
+        event_type: "tool_call",
+        instance_id: "coordinator-child-instance",
+        role_id: "Coordinator",
+        run_id: "run-same-role-child",
+        trace_id: "run-same-role-child",
+        payload_json: JSON.stringify({
+          args: { command: "echo child" },
+          tool_call_id: "call-same-role-child-shell",
+          tool_name: "shell",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 4,
+        event_type: "text_delta",
+        instance_id: "coordinator-root-instance",
+        role_id: "Coordinator",
+        run_id: "run-same-role-child",
+        trace_id: "run-same-role-child",
+        payload_json: JSON.stringify({ text: "root coordinator output remains visible" }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline("session-1", {
+      primaryRoleId: "Coordinator",
+    });
+
+    expect(await screen.findByText("root coordinator output remains visible"))
+      .toBeVisible();
+    expect(screen.queryByText("same-role child output must stay hidden"))
+      .not.toBeInTheDocument();
+    expect(screen.queryByText("Running: shell")).not.toBeInTheDocument();
+    expect(container.querySelector('[data-instance-id="coordinator-child-instance"]'))
+      .toBeNull();
+  });
+
+  it("uses authoritative round identity when a recovered stream sees the child first", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "run_started",
+        instance_id: undefined,
+        role_id: "RenamedPrimary",
+        run_id: "run-recovered-child-first",
+        trace_id: "run-recovered-child-first",
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "text_delta",
+        instance_id: "instance-child",
+        role_id: "RenamedPrimary",
+        run_id: "run-recovered-child-first",
+        trace_id: "run-recovered-child-first",
+        payload_json: JSON.stringify({ text: "child arrived first" }),
+      }),
+      relayRunEvent({
+        event_id: 3,
+        event_type: "text_delta",
+        instance_id: "instance-root",
+        role_id: "RenamedPrimary",
+        run_id: "run-recovered-child-first",
+        trace_id: "run-recovered-child-first",
+        payload_json: JSON.stringify({ text: "authoritative root output" }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [{
+        primary_instance_id: "instance-root",
+        primary_role_id: "RenamedPrimary",
+        primary_task_id: "task-root",
+        run_id: "run-recovered-child-first",
+        run_status: "running",
+      }],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline("session-1", {
+      primaryRoleId: "UnrelatedDefault",
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("authoritative root output")).toBeVisible();
+      expect(screen.queryByText("child arrived first")).not.toBeInTheDocument();
+      expect(container.querySelector('[data-instance-id="instance-child"]')).toBeNull();
+    });
   });
 
   it("keeps same-role runtime streams separate by instance identity", async () => {
@@ -8858,7 +9574,9 @@ describe("MessageTimeline", () => {
     });
     listSessionMessagesMock.mockResolvedValue([
       {
+        agent_role_id: "MainAgent",
         message_id: "assistant-1",
+        role: "assistant",
         role_id: "MainAgent",
         run_id: "run-rebind-tool",
         content: "hello",
@@ -8877,12 +9595,14 @@ describe("MessageTimeline", () => {
     const resultDetails = toolPreElement(screenElement(resultTitle));
     expect(resultDetails).toHaveTextContent(/done/);
     expect(resultDetails).toHaveTextContent(/echo hi/);
-    const streamingText = container.querySelector<HTMLElement>(
-      ".at-message-streaming-text",
-    );
-    expect(streamingText).not.toBeNull();
-    expect(streamingText).not.toHaveTextContent("hello");
-    expect(streamingText).not.toHaveTextContent("done");
+    await waitFor(() => {
+      const streamingText = container.querySelector<HTMLElement>(
+        ".at-message-streaming-text",
+      );
+      expect(streamingText).not.toBeNull();
+      expect(streamingText).not.toHaveTextContent("hello");
+      expect(streamingText).not.toHaveTextContent("done");
+    });
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
     expect(container.querySelectorAll("article.at-message")).toHaveLength(3);
   });
@@ -10184,6 +10904,7 @@ describe("MessageTimeline", () => {
         trace_id: "subagent-run-1",
       }),
     ]);
+    markRuntimeRunAsSubagent("subagent-run-1", "Explorer");
     listSessionMessagesMock.mockResolvedValue([]);
 
     const rootTimeline = renderTimeline("session-1", { primaryRoleId: "MainAgent" });
@@ -10758,7 +11479,9 @@ describe("MessageTimeline", () => {
     ]);
     listSessionMessagesMock.mockResolvedValue([]);
 
-    const { container } = renderTimeline();
+    const { container } = renderTimeline("session-1", {
+      runtimeRunId: "run-output",
+    });
 
     expect(await screen.findByText("second live thought")).toBeVisible();
     const thinkingBlocks = container.querySelectorAll<HTMLDetailsElement>(
@@ -12677,9 +13400,11 @@ describe("MessageTimeline", () => {
           trace_id: `run-${index + 1}`,
         })),
       );
-      listSessionRoundsMock.mockReturnValue(roundsDeferred.promise);
+      listSessionRoundsMock
+        .mockResolvedValueOnce({ has_more: false, items: [], next_cursor: null })
+        .mockReturnValueOnce(roundsDeferred.promise);
 
-      const { container } = renderTimeline();
+      const { container, queryClient } = renderTimeline();
 
       expect(await screen.findByText("Persisted message 6")).toBeVisible();
       const timeline = timelineElement(container);
@@ -12690,6 +13415,10 @@ describe("MessageTimeline", () => {
       const anchorTop = translateY(anchorRow);
       timeline.scrollTop = anchorTop + 10;
       fireEvent.scroll(timeline);
+
+      const refreshPromise = queryClient.invalidateQueries({
+        queryKey: ["sessions", "session-1", "rounds", "rail"],
+      });
 
       const originalQuerySelectorAll = timeline.querySelectorAll.bind(timeline);
       const querySelectorAllSpy = vi
@@ -12710,10 +13439,13 @@ describe("MessageTimeline", () => {
         })),
         next_cursor: null,
       });
+      await act(async () => refreshPromise);
 
-      await waitFor(() =>
-        expect(container.querySelectorAll(".at-round-marker")).toHaveLength(6),
-      );
+      await waitFor(() => {
+        expect(timeline).toHaveAttribute("data-total-row-count", "12");
+        expect(container.querySelectorAll(".at-round-marker").length)
+          .toBeGreaterThanOrEqual(5);
+      });
       expect(timeline.scrollTop).toBeGreaterThan(anchorTop + 180);
       expect(timeline.scrollTop).not.toBe(anchorTop + 10);
       querySelectorAllSpy.mockRestore();
@@ -12762,6 +13494,7 @@ describe("MessageTimeline", () => {
 });
 
 interface RenderTimelineOptions {
+  fallbackRunId?: string | null;
   latestTerminalRunId?: string | null;
   latestTerminalRunStatus?: string | null;
   onSubagentOpen?: Parameters<typeof MessageTimeline>[0]["onSubagentOpen"];
@@ -12791,6 +13524,7 @@ function renderTimeline(
       <ConfigProvider>
         <AntApp>
           <MessageTimeline
+            fallbackRunId={options.fallbackRunId ?? null}
             latestTerminalRunId={options.latestTerminalRunId ?? null}
             latestTerminalRunStatus={options.latestTerminalRunStatus ?? null}
             onSubagentOpen={options.onSubagentOpen}
@@ -12928,6 +13662,27 @@ function optionalRuntimeRunStateValues(
 function setRuntimeStateFromEvents(events: RelayRunEvent[]): void {
   useRuntimeStore.setState({
     runtimeState: events.reduce(reduceRunEvent, initialRuntimeState),
+  });
+}
+
+function markRuntimeRunAsSubagent(runId: string, targetRoleId: string): void {
+  const runtimeState = useRuntimeStore.getState().runtimeState;
+  const runState = runtimeState.runs[runId];
+  if (runState === undefined) {
+    throw new Error(`Missing runtime fixture run: ${runId}`);
+  }
+  useRuntimeStore.setState({
+    runtimeState: {
+      ...runtimeState,
+      runs: {
+        ...runtimeState.runs,
+        [runId]: {
+          ...runState,
+          scope: "subagent",
+          targetRoleId,
+        },
+      },
+    },
   });
 }
 

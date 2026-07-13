@@ -126,20 +126,6 @@ const INTERNAL_RUNTIME_STATUS_NOISE_EVENT_KINDS = new Set<string>([
   "spec_checkpoint_applied",
   "spec_checkpoint_evaluated",
 ]);
-const INTERNAL_ORCHESTRATION_TIMELINE_ROLES = new Set<string>([
-  "delegationplanner",
-  "llmsecurityevaluator",
-]);
-const MAIN_TIMELINE_AGENT_ROLES = new Set<string>([
-  "assistant",
-  "coordinator",
-  "mainagent",
-]);
-const runtimeRunStateDetachedRoleCache = new WeakMap<
-  RuntimeRunState,
-  ReadonlySet<string>
->();
-const runtimeRunStateMainRoleCache = new WeakMap<RuntimeRunState, boolean>();
 const firstNonEmptyLineCache = new Map<string, string>();
 const parsedJsonObjectCache = new Map<string, Record<string, JsonValue> | null>();
 const toolCallPreviewCache = new Map<string, string>();
@@ -236,9 +222,6 @@ export function MessageTimeline({
   const contentSignaturesByScrollScopeRef = useRef(
     new Map<string, TimelineContentSignature>(),
   );
-  const expandedDisclosureIdsBySessionRef = useRef(
-    new Map<string, ReadonlySet<string>>(),
-  );
   const persistedRowsByScopeRef = useRef(
     new Map<string, TimelineDerivationCacheEntry<TimelineRow[]>>(),
   );
@@ -263,6 +246,46 @@ export function MessageTimeline({
       scopeKey: scrollScopeKey,
     };
   }
+  const messagesQuery = useQuery({
+    queryKey: messageQueryKey ?? ["sessions", sessionId, "messages"],
+    queryFn: () => loadMessages(sessionId ?? ""),
+    enabled: visible && sessionId !== null,
+  });
+  const roundsQuery = useQuery({
+    queryKey: ["sessions", sessionId, "rounds", "rail"],
+    queryFn: () => collectRoundRailRounds(sessionId ?? ""),
+    enabled:
+      visible &&
+      roundsEnabled &&
+      sessionId !== null,
+    staleTime: 0,
+  });
+  const rounds = useMemo(
+    () => roundsQuery.data ?? [],
+    [roundsQuery.data],
+  );
+  const primaryInstancesByRunId = useMemo(
+    () => new Map(rounds.map((round) => [round.run_id, roundPrimaryInstanceId(round)])),
+    [rounds],
+  );
+  useEffect(() => {
+    const store = useRuntimeStore.getState();
+    let nextRuns: Record<string, RuntimeRunState> | null = null;
+    for (const [runId, primaryInstanceId] of primaryInstancesByRunId) {
+      if (primaryInstanceId.length === 0) {
+        continue;
+      }
+      const runState = store.runtimeState.runs[runId];
+      if (runState === undefined || runState.targetInstanceId === primaryInstanceId) {
+        continue;
+      }
+      nextRuns ??= { ...store.runtimeState.runs };
+      nextRuns[runId] = { ...runState, targetInstanceId: primaryInstanceId };
+    }
+    if (nextRuns !== null) {
+      store.setRuntimeState({ ...store.runtimeState, runs: nextRuns });
+    }
+  }, [primaryInstancesByRunId]);
   const runtimeRowSelectionCacheRef = useRef<RuntimeRowSelectionCache>({
     runs: [],
     runsById: new Map(),
@@ -271,6 +294,7 @@ export function MessageTimeline({
     (state) => selectRuntimeRowsForTimeline(
       state.runtimeState.runs,
       {
+        primaryInstancesByRunId,
         primaryRoleId,
         runtimeRunId,
         sessionId,
@@ -279,7 +303,7 @@ export function MessageTimeline({
       },
       runtimeRowSelectionCacheRef.current,
     ),
-    [primaryRoleId, runtimeRunId, sessionId, subagentScopeRoleId, variant],
+    [primaryInstancesByRunId, primaryRoleId, runtimeRunId, sessionId, subagentScopeRoleId, variant],
   ));
   const activeRunIds = useRuntimeStore(
     (state) => state.runtimeState.activeRunIds,
@@ -300,28 +324,7 @@ export function MessageTimeline({
     [runtimeRunList],
   );
   const visibleModelRequestPhase = latestModelRequestPhase(runtimeRunList);
-  const messagesQuery = useQuery({
-    queryKey: messageQueryKey ?? ["sessions", sessionId, "messages"],
-    queryFn: () => loadMessages(sessionId ?? ""),
-    enabled: visible && sessionId !== null,
-  });
-  const roundsQuery = useQuery({
-    queryKey: ["sessions", sessionId, "rounds", "rail"],
-    queryFn: () => collectRoundRailRounds(sessionId ?? ""),
-    enabled:
-      visible &&
-      roundsEnabled &&
-      sessionId !== null &&
-      !messagesQuery.isLoading &&
-      !messagesQuery.isError,
-    staleTime: 0,
-  });
-
   const messages = useMemo(() => messagesQuery.data ?? [], [messagesQuery.data]);
-  const rounds = useMemo(
-    () => roundsQuery.data ?? [],
-    [roundsQuery.data],
-  );
   const runtimeRunsForRows = useMemo(() => Object.fromEntries(
     Object.values(useRuntimeStore.getState().runtimeState.runs)
       .filter((runState) => runtimeRunStateMatchesScope(runState, {
@@ -379,6 +382,35 @@ export function MessageTimeline({
       variant,
     ],
   );
+  const optimisticPromptId = optimisticPrompt?.id.trim() ?? "";
+  const optimisticRunId = optimisticPrompt?.runId?.trim() ?? "";
+  const autoCollapsePreviousRunId = useMemo(() => {
+    if (!roundChromeEnabled || sessionId === null || optimisticPromptId.length === 0) {
+      return "";
+    }
+    return [...displayRounds]
+      .reverse()
+      .find((round) => {
+        const runId = round.run_id.trim();
+        return runId.length > 0 && (optimisticRunId.length === 0 || runId !== optimisticRunId);
+      })?.run_id.trim() ?? "";
+  }, [displayRounds, optimisticPromptId, optimisticRunId, roundChromeEnabled, sessionId]);
+  useEffect(() => {
+    if (autoCollapsePreviousRunId.length === 0) {
+      return;
+    }
+    const disclosureId = `processed:${autoCollapsePreviousRunId}`;
+    const collapseId = `collapsed:${disclosureId}`;
+    setExpandedDisclosureIds((current) => {
+      if (current.has(collapseId) && !current.has(disclosureId)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.delete(disclosureId);
+      next.add(collapseId);
+      return next;
+    });
+  }, [autoCollapsePreviousRunId]);
   const terminalRunIdOverrides = useMemo(
     () => terminalRunIdOverrideSet(latestTerminalRunId, latestTerminalRunStatus),
     [latestTerminalRunId, latestTerminalRunStatus],
@@ -397,17 +429,23 @@ export function MessageTimeline({
     () => timelineDerivedValue({
       cache: persistedRowsByScopeRef.current,
       derive: () => {
-        const messageRoundLookup = createMessageRoundLookup(persistedRounds);
+        const scopedRounds = roundsVisibleInTimelineScope(persistedRounds, {
+          primaryRoleId,
+          runtimeRunId,
+          sessionId,
+          subagentRoleId: subagentScopeRoleId,
+          variant,
+        });
+        const messageRoundLookup = createMessageRoundLookup(scopedRounds);
         const scopedMessages = messagesVisibleInTimelineScope(
           messages,
-          persistedRounds,
-          runtimeRunId,
-          fallbackRunId,
+          scopedRounds,
           primaryRoleId,
+          variant,
         );
         const persistedMessages = mergeTimelineMessages(
           scopedMessages,
-          persistedRounds,
+          scopedRounds,
         );
         return mergeToolRowsByCallId(
           dropRoundPromptDuplicateUserRows(
@@ -422,7 +460,7 @@ export function MessageTimeline({
                 ),
               )
               .filter(timelineRowHasRenderableContent),
-            persistedRounds,
+            scopedRounds,
           ),
         );
       },
@@ -432,6 +470,7 @@ export function MessageTimeline({
         primaryRoleId,
         runtimeRunId,
         sessionId,
+        subagentRoleId: subagentScopeRoleId,
         variant,
         workspaceId,
       }),
@@ -448,6 +487,7 @@ export function MessageTimeline({
       rounds,
       runtimeRunId,
       sessionId,
+      subagentScopeRoleId,
       variant,
       workspaceId,
     ],
@@ -460,8 +500,9 @@ export function MessageTimeline({
     () => persistedRowsWithOpenRoundStreaming(
       promptDedupedPersistedRows,
       displayRounds,
+      runtimeRunsForRows,
     ),
-    [displayRounds, promptDedupedPersistedRows],
+    [displayRounds, promptDedupedPersistedRows, runtimeRunsForRows],
   );
   const anchoredPersistedRows = useMemo(
     () =>
@@ -592,10 +633,88 @@ export function MessageTimeline({
       suppressExactText,
     ],
   );
+
+function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
+  const persistedTextByRunId = new Map<string, Set<string>>();
+  for (const row of rows) {
+    if (row.source !== "message" || !isAnswerRole(row.role)) {
+      continue;
+    }
+    const runId = row.runId?.trim() ?? "";
+    const text = normalizedTimelineText(row.text);
+    if (runId.length === 0 || text.length === 0) {
+      continue;
+    }
+    const texts = persistedTextByRunId.get(runId) ?? new Set<string>();
+    texts.add(text);
+    persistedTextByRunId.set(runId, texts);
+  }
+  const cursorsByRunId = new Map<string, TimelineRow[]>();
+  const remainingRows = rows.filter((row) => {
+    if (
+      row.source !== "runtime" ||
+      !timelineRowHasStreamingContent(row) ||
+      row.parts.some((part) => part.kind !== "text")
+    ) {
+      return true;
+    }
+    const runId = row.runId?.trim() ?? "";
+    const text = normalizedTimelineText(row.text);
+    if (runId.length === 0 || !persistedTextByRunId.get(runId)?.has(text)) {
+      return true;
+    }
+    const cursorParts = row.parts.map((part) => ({
+      ...part,
+      cursorOnly: true,
+      streaming: true,
+      text: "",
+    }));
+    const cursor: TimelineRow = {
+      ...row,
+      copyable: false,
+      parts: cursorParts,
+      text: "",
+    };
+    const cursors = cursorsByRunId.get(runId) ?? [];
+    cursors.push(cursor);
+    cursorsByRunId.set(runId, cursors);
+    return false;
+  });
+  if (cursorsByRunId.size === 0) {
+    return rows;
+  }
+  const lastRowIndexByRunId = new Map<string, number>();
+  for (let index = 0; index < remainingRows.length; index += 1) {
+    const runId = remainingRows[index]?.runId?.trim() ?? "";
+    if (runId.length > 0) {
+      lastRowIndexByRunId.set(runId, index);
+    }
+  }
+  const relocated: TimelineRow[] = [];
+  for (let index = 0; index < remainingRows.length; index += 1) {
+    const row = remainingRows[index];
+    if (row === undefined) {
+      continue;
+    }
+    relocated.push(row);
+    const runId = row.runId?.trim() ?? "";
+    if (
+      runId.length > 0 &&
+      lastRowIndexByRunId.get(runId) === index
+    ) {
+      relocated.push(...(cursorsByRunId.get(runId) ?? []));
+      cursorsByRunId.delete(runId);
+    }
+  }
+  for (const cursors of cursorsByRunId.values()) {
+    relocated.push(...cursors);
+  }
+  return relocated;
+}
   const rows = useMemo(
     () =>
       dedupeTimelineRowsByKey(
-        dropStrictPrefixAnswerRows(
+        relocateCoveredOpenRuntimeCursors(dropStrictPrefixAnswerRows(
           collapseProcessedRows(
             insertRoundMarkerRowsIfEnabled(
               timelineRowsBeforeGrouping,
@@ -608,7 +727,7 @@ export function MessageTimeline({
             terminalRunIdOverrides,
             liveProcessedRunIdsRef.current,
           ),
-        ),
+        )),
       ),
     [
       displayRounds,
@@ -848,12 +967,9 @@ export function MessageTimeline({
       } else {
         next.delete(disclosureId);
       }
-      if (sessionId !== null) {
-        expandedDisclosureIdsBySessionRef.current.set(sessionId, next);
-      }
       return next;
     });
-  }, [sessionId]);
+  }, []);
   const handleDisclosureToggle = useCallback((event: SyntheticEvent<HTMLDetailsElement>) => {
     const row = event.currentTarget.closest<HTMLElement>(
       ".at-timeline-row[data-row-key]",
@@ -877,6 +993,7 @@ export function MessageTimeline({
       handleReadAnswerAloud,
       handleToggleHistorySegment,
       expandedDisclosureIds,
+      autoCollapsePreviousRunId,
       handleDisclosureChange,
       handleDisclosureToggle,
       onSubagentOpen,
@@ -888,6 +1005,7 @@ export function MessageTimeline({
     ),
     [
       canReadAnswerAloud,
+      autoCollapsePreviousRunId,
       expandedDisclosureIds,
       handleCopyAnswer,
       handleDisclosureChange,
@@ -913,11 +1031,7 @@ export function MessageTimeline({
     pendingRoundRunIdRef.current = null;
     setActiveRunId(null);
     setExpandedHistorySegmentIds(new Set());
-    setExpandedDisclosureIds(
-      sessionId === null
-        ? new Set()
-        : expandedDisclosureIdsBySessionRef.current.get(sessionId) ?? new Set(),
-    );
+    setExpandedDisclosureIds(new Set());
   }, [sessionId]);
 
   useEffect(() => {
@@ -1077,7 +1191,11 @@ export function MessageTimeline({
     );
   }
 
-  if (messagesQuery.isLoading && rows.length === 0) {
+  const persistedProjectionLoading = roundsEnabled &&
+    roundsQuery.isLoading &&
+    optimisticPrompt === null &&
+    Object.keys(runtimeRunsForRows).length === 0;
+  if ((messagesQuery.isLoading && rows.length === 0) || persistedProjectionLoading) {
     return (
       <TimelineStateFrame variant={variant}>
         <Skeleton active paragraph={{ rows: 10 }} />
@@ -1085,7 +1203,10 @@ export function MessageTimeline({
     );
   }
 
-  if (messagesQuery.isError && rows.length === 0) {
+  if (
+    (messagesQuery.isError && rows.length === 0) ||
+    (roundsEnabled && roundsQuery.isError && !streamOpenForSession)
+  ) {
     return (
       <TimelineStateFrame variant={variant}>
         <Empty
@@ -1232,6 +1353,7 @@ interface PersistedRowsCacheKeyOptions {
   primaryRoleId: string | null;
   runtimeRunId: string | null;
   sessionId: string | null;
+  subagentRoleId: string | null;
   variant: "session" | "subagent-panel";
   workspaceId: string | null;
 }
@@ -1337,10 +1459,11 @@ function optimisticPromptRow(prompt: OptimisticRunPrompt): TimelineRow {
       index: 0,
       round: {
         created_at: prompt.createdAt,
+        intent: prompt.text,
+        intent_parts: [{ kind: "text", text: prompt.text }],
         run_id: runId,
         run_phase: "connecting",
         run_status: "running",
-        run_user_message: prompt.text,
       },
     },
     runId,
@@ -1440,6 +1563,7 @@ function persistedRowsCacheKey({
   primaryRoleId,
   runtimeRunId,
   sessionId,
+  subagentRoleId,
   variant,
   workspaceId,
 }: PersistedRowsCacheKeyOptions): string {
@@ -1449,6 +1573,7 @@ function persistedRowsCacheKey({
     runtimeRunId?.trim() ?? "",
     fallbackRunId?.trim() ?? "",
     primaryRoleId?.trim() ?? "",
+    subagentRoleId?.trim() ?? "",
     workspaceId?.trim() ?? "",
   ].join(":");
 }
@@ -1753,6 +1878,7 @@ function timelineRowElement(
   onReadAnswerAloud: (row: TimelineRow | undefined) => void,
   onToggleHistorySegment: (segmentId: string) => void,
   expandedDisclosureIds: ReadonlySet<string>,
+  autoCollapsePreviousRunId: string,
   onDisclosureChange: (disclosureId: string, expanded: boolean) => void,
   onDisclosureToggle: (event: SyntheticEvent<HTMLDetailsElement>) => void,
   onSubagentOpen: ((subagent: TimelineSubagentReference) => void) | undefined,
@@ -1766,15 +1892,16 @@ function timelineRowElement(
   if (row.processedGroup !== undefined) {
     const disclosureId = `processed:${row.runId ?? row.key}`;
     const collapsedDisclosureId = `collapsed:${disclosureId}`;
+    const automaticallyCollapsed = row.runId === autoCollapsePreviousRunId;
     return (
       <ProcessedGroupRow
         group={row.processedGroup}
-        expanded={row.processedGroup.continuity
+        expanded={!automaticallyCollapsed && (row.processedGroup.continuity
           ? !expandedDisclosureIds.has(collapsedDisclosureId)
-          : expandedDisclosureIds.has(disclosureId)}
+          : expandedDisclosureIds.has(disclosureId))}
         expandedDisclosureIds={expandedDisclosureIds}
         index={index}
-        key={row.key}
+        key={`${row.key}:${automaticallyCollapsed ? "auto-collapsed" : "controlled"}`}
         measureElement={measureElement}
         onSubagentOpen={onSubagentOpen}
         resizeTimelineRow={resizeTimelineRow}
@@ -1841,8 +1968,15 @@ function timelineRowElement(
             const markerRow = event.currentTarget.closest<HTMLElement>(
               ".at-timeline-row[data-row-key]",
             );
-            if (markerRow !== null) {
-              window.requestAnimationFrame(() => measureElement(markerRow));
+            const timeline = markerRow?.closest<HTMLElement>(".at-timeline") ?? null;
+            if (markerRow !== null && timeline !== null) {
+              const viewportOffset = timelineRowTop(markerRow) - timeline.scrollTop;
+              window.requestAnimationFrame(() => {
+                measureElement(markerRow);
+                window.requestAnimationFrame(() => {
+                  timeline.scrollTop = timelineRowTop(markerRow) - viewportOffset;
+                });
+              });
             }
           }}
           promptOpen={expandedDisclosureIds.has(disclosureId)}
@@ -2085,7 +2219,7 @@ function messageToRow(
 ): TimelineRow {
   const injection = timelineMessageInjectionRow(message);
   const role = injection === undefined
-    ? message.role_id ?? message.role ?? "agent"
+    ? message.role ?? "agent"
     : "user";
   const parts = messageParts(message, workspaceId);
   const text = rowCopyText(parts);
@@ -2527,23 +2661,13 @@ function timelineRowStaysOutsideProcessedGroup(
   }
   return (
     keepMainNarrationOutside &&
-    timelineRoleIsMainTimelineAgent(row.role) &&
+    isAnswerRole(row.role) &&
     !timelineRowHasWorkPart(row)
   );
 }
 
 function timelineRowHasInjectionNotice(row: TimelineRow): boolean {
-  const textParts = row.parts.filter((part): part is TimelineTextPart =>
-    part.kind === "text" && part.text.trim().length > 0
-  );
-  if (textParts.length === 0) {
-    return false;
-  }
-  return textParts.some((part) =>
-    part.text.trim().startsWith("Injection applied:") ||
-    part.text.trim().startsWith("Injection failed:") ||
-    part.text.trim().startsWith("Injection queued:")
-  );
+  return row.injection !== undefined;
 }
 
 function firstWorkPartLocation(
@@ -3012,6 +3136,7 @@ function persistedRowsWithRuntimeTextAnchors(
 function persistedRowsWithOpenRoundStreaming(
   persistedRows: TimelineRow[],
   rounds: SessionRound[],
+  runStates: Record<string, RuntimeRunState>,
 ): TimelineRow[] {
   const openRunIds = new Set(
     rounds.flatMap((round) => {
@@ -3036,6 +3161,17 @@ function persistedRowsWithOpenRoundStreaming(
   const streamedRows = persistedRows.map((row) => {
     const runId = row.runId?.trim() ?? "";
     if (!openRunIds.has(runId) || !persistedAnswerRowCanHydrateRuntimeText(row)) {
+      return row;
+    }
+    const runState = runStates[runId];
+    if (runState !== undefined) {
+      const openText = openRuntimeTextAnchorForHydration(runState.entries);
+      if (openText.hasVisibleContent && openText.key === null) {
+        return row;
+      }
+    }
+    const runtimeHydration = runtimeTextHydrationForPersistedRow(row, runStates);
+    if (runtimeHydration !== null && !runtimeHydration.streaming) {
       return row;
     }
     changed = true;
@@ -3081,6 +3217,13 @@ function runtimeTextHydrationForPersistedRow(
     runState.entries,
     hydratedText,
   );
+  if (
+    streaming &&
+    key !== null &&
+    runtimeHasContentBoundaryAfterHydratedText(runState.entries, hydratedText)
+  ) {
+    return { key, streaming: false };
+  }
   if (streaming) {
     const openText = openRuntimeTextAnchorForHydration(runState.entries);
     if (openText.key !== null) {
@@ -4975,12 +5118,14 @@ function roundsWithRuntimeRunState(
     const runtimePrompt = runState?.promptText?.trim() ?? "";
     if (
       runtimePrompt.length > 0 &&
-      (nextRound.run_user_message?.trim() ?? "").length === 0
+      (nextRound.intent?.trim() ?? "").length === 0 &&
+      (nextRound.intent_parts?.length ?? 0) === 0
     ) {
       changed = true;
       nextRound = {
         ...nextRound,
-        run_user_message: runtimePrompt,
+        intent: runtimePrompt,
+        intent_parts: [{ kind: "text", text: runtimePrompt }],
       };
     }
     const runtimeRetryEvents = runtimeRetryEventsForRound(runState);
@@ -5066,15 +5211,36 @@ function timelineRoundLooksDetachedSubagent(
   round: SessionRound,
   primaryRoleId: string | null,
 ): boolean {
-  if (round.run_id.toLowerCase().includes("subagent")) {
-    return true;
-  }
-  return roundMessages(round).some((message) =>
+  const roundPrimaryRoleId = round.primary_role_id ?? primaryRoleId;
+  const coordinatorMessages = round.coordinator_messages ?? [];
+  return coordinatorMessages.length > 0 && coordinatorMessages.every((message) =>
     timelineMessageLooksDetachedSubagent(
       roundMessageToTimelineMessage(message, round.run_id),
-      primaryRoleId,
+      roundPrimaryRoleId,
+      roundPrimaryInstanceId(round),
+      round.primary_task_id?.trim() ?? "",
     ),
   );
+}
+
+function runtimeHasContentBoundaryAfterHydratedText(
+  entries: TimelineEntry[],
+  hydratedText: string,
+): boolean {
+  let coveredTextSeen = false;
+  for (const entry of entries) {
+    if (entry.kind === "text_delta" || entry.kind === "output_delta") {
+      const entryCovered = runtimeHydrationComparisonTexts(entry).some((text) =>
+        hydratedText.includes(text)
+      );
+      coveredTextSeen = coveredTextSeen || entryCovered;
+      continue;
+    }
+    if (coveredTextSeen && runtimeEntryShouldRenderChatContent(entry)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function roundHasTerminalStatus(round: SessionRound): boolean {
@@ -5143,11 +5309,12 @@ function runtimeRoundFromRunState(
   const createdAt = runtimeRunCreatedAt(runState);
   return {
     ...(createdAt !== undefined ? { created_at: createdAt } : {}),
+    intent: promptText,
+    intent_parts: [{ kind: "text", text: promptText }],
     primary_role_id: runState.targetRoleId ?? null,
     run_id: runId,
     run_phase: runtimeRoundPhaseLabel(runState),
     run_status: runtimeOpenRoundStatusLabel(runState),
-    run_user_message: promptText.length > 0 ? promptText : null,
   };
 }
 
@@ -5869,6 +6036,7 @@ function runtimePendingCursorEntry(
 }
 
 interface RuntimeTimelineScope {
+  primaryInstancesByRunId?: ReadonlyMap<string, string>;
   primaryRoleId: string | null;
   runtimeRunId: string | null;
   sessionId: string | null;
@@ -5885,6 +6053,9 @@ function selectRuntimeRowsForTimeline(
     scope.sessionId ?? "",
     scope.runtimeRunId ?? "",
     scope.primaryRoleId ?? "",
+    Array.from(scope.primaryInstancesByRunId ?? [])
+      .map(([runId, instanceId]) => `${runId}:${instanceId}`)
+      .join(","),
     scope.subagentRoleId ?? "",
     scope.variant,
   ].join("|");
@@ -5895,6 +6066,11 @@ function selectRuntimeRowsForTimeline(
   }
   const nextRuns = Object.values(runtimeRuns)
     .filter((runState) => runtimeRunStateMatchesScope(runState, scope))
+    .map((runState) => scopedRuntimeRunSnapshot(
+      runState,
+      scope,
+      cache.runsById.get(runState.runId),
+    ))
     .map((runState) => stableRuntimeRowSnapshot(
       runState,
       cache.runsById.get(runState.runId),
@@ -5908,6 +6084,40 @@ function selectRuntimeRowsForTimeline(
   cache.runs = nextRuns;
   cache.runsById = new Map(nextRuns.map((runState) => [runState.runId, runState]));
   return nextRuns;
+}
+
+function scopedRuntimeRunSnapshot(
+  runState: RuntimeRunState,
+  scope: RuntimeTimelineScope,
+  previous: RuntimeRunState | undefined,
+): RuntimeRunState {
+  if (
+    scope.variant !== "session" ||
+    (scope.runtimeRunId?.trim() ?? "").length > 0
+  ) {
+    return runState;
+  }
+  const entries = runState.entries.filter((entry) =>
+    runtimeEntryMatchesScope(entry, runState, scope)
+  );
+  const entriesUnchanged = previous !== undefined &&
+    entries.length === previous.entries.length &&
+    entries.every((entry, index) => previous.entries[index] === entry);
+  if (
+    entriesUnchanged &&
+    previous.status === runState.status &&
+    previous.terminalEventType === runState.terminalEventType &&
+    previous.modelRequestPhase === runState.modelRequestPhase &&
+    previous.hadVisibleTextStream === runState.hadVisibleTextStream &&
+    previous.promptText === runState.promptText &&
+    previous.targetInstanceId === runState.targetInstanceId &&
+    previous.targetRoleId === runState.targetRoleId
+  ) {
+    return previous;
+  }
+  return entries.length === runState.entries.length
+    ? runState
+    : { ...runState, entries };
 }
 
 function stableRuntimeRowSnapshot(
@@ -5952,34 +6162,31 @@ function runtimeEntryMatchesScope(
   if (variant === "subagent-panel") {
     return false;
   }
-  return runtimeEntryBelongsToMainTimeline(entry, runState, primaryRoleId);
+  return runtimeEntryBelongsToMainTimeline(
+    entry,
+    runState,
+    primaryRoleId,
+    scope.primaryInstancesByRunId?.get(entry.runId) ?? "",
+  );
 }
 
 function runtimeEntryBelongsToMainTimeline(
   entry: TimelineEntry,
   runState: RuntimeRunState,
   primaryRoleId: string | null,
+  primaryInstanceId = "",
 ): boolean {
-  if (runtimeEntryLooksLikeDetachedSubagent(entry, runState, primaryRoleId)) {
+  if (
+    runtimeEntryLooksLikeDetachedSubagent(
+      entry,
+      runState,
+      primaryRoleId,
+      primaryInstanceId,
+    )
+  ) {
     return false;
   }
-  if (timelineRoleIsInternalOrchestration(entry.roleId)) {
-    return false;
-  }
-  const normalizedPrimaryRole = stableTimelineRole(primaryRoleId ?? "");
-  if (timelineRoleIsMainTimelineAgent(entry.roleId)) {
-    return true;
-  }
-  if (normalizedPrimaryRole.length === 0) {
-    return true;
-  }
-  const entryRole = stableTimelineRole(entry.roleId);
-  if (entryRole.length > 0) {
-    return entryRole === normalizedPrimaryRole;
-  }
-  return (
-    runtimeRunStateBelongsToMainTimeline(runState, primaryRoleId)
-  );
+  return true;
 }
 
 function runtimeRunStateBelongsToMainTimeline(
@@ -5989,69 +6196,21 @@ function runtimeRunStateBelongsToMainTimeline(
   if (runtimeRunStateIdentityLooksLikeDetachedSubagent(runState, primaryRoleId)) {
     return false;
   }
-  const normalizedPrimaryRole = stableTimelineRole(primaryRoleId ?? "");
-  if (normalizedPrimaryRole.length === 0) {
-    return true;
-  }
-  const runRole = stableTimelineRole(runState.targetRoleId ?? "");
-  if (timelineRoleIsMainTimelineAgent(runState.targetRoleId ?? "")) {
-    return true;
-  }
-  if (runRole === normalizedPrimaryRole) {
-    return true;
-  }
-  return runState.entries.some(
-    (entry) => stableTimelineRole(entry.roleId) === normalizedPrimaryRole,
-  );
+  return true;
 }
 
 function runtimeRunStateIdentityLooksLikeDetachedSubagent(
   runState: RuntimeRunState,
-  primaryRoleId: string | null,
+  _primaryRoleId: string | null,
 ): boolean {
-  if (runState.scope === "subagent") {
-    return true;
-  }
-  const identifiers = [
-    runState.runId,
-    runState.targetRoleId ?? "",
-  ].join(" ").toLowerCase();
-  if (identifiers.includes("subagent")) {
-    return true;
-  }
-  if (timelineRoleIsMainTimelineAgent(runState.targetRoleId ?? "")) {
-    return false;
-  }
-  if (timelineRoleIsInternalOrchestration(runState.targetRoleId ?? "")) {
-    return false;
-  }
-  if (runtimeRunStateHasMainTimelineAgentEntry(runState)) {
-    return false;
-  }
-  return (
-    timelineRoleCanBeDetachedAgent(runState.targetRoleId ?? "", primaryRoleId) &&
-    timelineIdentifiersIncludeGeneratedReference([runState.runId])
-  );
-}
-
-function runtimeRunStateHasMainTimelineAgentEntry(
-  runState: RuntimeRunState,
-): boolean {
-  const cached = runtimeRunStateMainRoleCache.get(runState);
-  if (cached !== undefined) {
-    return cached;
-  }
-  const hasMainRole = runState.entries.some((entry) =>
-    timelineRoleIsMainTimelineAgent(entry.roleId)
-  );
-  runtimeRunStateMainRoleCache.set(runState, hasMainRole);
-  return hasMainRole;
+  return runState.scope === "subagent";
 }
 
 function runtimeEntryLooksLikeDetachedSubagent(
   entry: TimelineEntry,
   runState: RuntimeRunState,
-  primaryRoleId: string | null,
+  _primaryRoleId: string | null,
+  primaryInstanceId = "",
 ): boolean {
   if (entry.kind === "subagent_session_status_changed") {
     return false;
@@ -6059,98 +6218,21 @@ function runtimeEntryLooksLikeDetachedSubagent(
   if (runState.scope === "subagent") {
     return true;
   }
+  const rootInstanceId = primaryInstanceId.trim() ||
+    runState.targetInstanceId?.trim() ||
+    "";
+  const entryInstanceId = entry.instanceId?.trim() ?? "";
+  if (
+    rootInstanceId.length > 0 &&
+    entryInstanceId.length > 0 &&
+    entryInstanceId !== rootInstanceId
+  ) {
+    return true;
+  }
   if (runtimeEntryHasDetachedSubagentPayload(entry)) {
     return true;
   }
-  const identifiers = [
-    entry.instanceId ?? "",
-    entry.runId,
-    runState.runId,
-    runState.targetRoleId ?? "",
-  ].join(" ").toLowerCase();
-  if (identifiers.includes("subagent")) {
-    return true;
-  }
-  const roleId = entry.roleId.trim().length > 0
-    ? entry.roleId
-    : (runState.targetRoleId ?? "");
-  if (timelineRoleIsMainTimelineAgent(roleId)) {
-    return false;
-  }
-  if (!timelineRoleCanBeDetachedAgent(roleId, primaryRoleId)) {
-    return false;
-  }
-  if (
-    runtimeRunStateReferencesDetachedSubagentRole(
-      runState,
-      roleId,
-      primaryRoleId,
-    )
-  ) {
-    return true;
-  }
-  const instanceId = (entry.instanceId ?? "").trim();
-  if (
-    instanceId.length > 0 &&
-    timelineIdentifierLooksGeneratedAgentInstance(instanceId)
-  ) {
-    return true;
-  }
-  return timelineIdentifiersIncludeGeneratedReference([
-    entry.runId,
-    runState.runId,
-  ]);
-}
-
-function runtimeRunStateReferencesDetachedSubagentRole(
-  runState: RuntimeRunState,
-  roleId: string,
-  primaryRoleId: string | null,
-): boolean {
-  const normalizedRole = stableTimelineRole(roleId);
-  if (normalizedRole.length === 0) {
-    return false;
-  }
-  const normalizedPrimaryRole = stableTimelineRole(primaryRoleId ?? "");
-  if (
-    normalizedPrimaryRole.length > 0 &&
-    normalizedPrimaryRole === normalizedRole
-  ) {
-    return false;
-  }
-  return runtimeRunStateDetachedSubagentRoles(runState).has(normalizedRole);
-}
-
-function runtimeRunStateDetachedSubagentRoles(
-  runState: RuntimeRunState,
-): ReadonlySet<string> {
-  const cached = runtimeRunStateDetachedRoleCache.get(runState);
-  if (cached !== undefined) {
-    return cached;
-  }
-  const roles = new Set<string>();
-  for (const entry of runState.entries) {
-    const role = runtimeEntrySubagentReferenceRole(entry);
-    if (role.length > 0) {
-      roles.add(role);
-    }
-  }
-  runtimeRunStateDetachedRoleCache.set(runState, roles);
-  return roles;
-}
-
-function runtimeEntrySubagentReferenceRole(entry: TimelineEntry): string {
-  const payload = jsonObject(entry.payload);
-  if (payload === null || payloadHasParseError(payload)) {
-    return "";
-  }
-  const toolName = objectString(payload, "tool_name") || entry.text;
-  const reference = subagentReferenceFromValues({
-    callId: runtimeEntryToolCallId(entry),
-    payload: entry.payload,
-    toolName,
-  });
-  return stableTimelineRole(reference?.roleId ?? "");
+  return false;
 }
 
 function runtimeEntryIsCoveredByHydratedOutput(
@@ -6526,71 +6608,72 @@ function createMessageRoundLookup(rounds: SessionRound[]): MessageRoundLookup {
 
 function roundMessages(round: SessionRound): SessionRoundMessage[] {
   return [
-    ...(round.coordinator_messages ?? []),
+    ...roundCoordinatorMessagesForConversation(round),
     ...(round.injection_messages ?? []),
   ];
 }
 
+function roundCoordinatorMessagesForConversation(
+  round: SessionRound,
+): SessionRoundMessage[] {
+  const primaryRole = stableTimelineRole(round.primary_role_id ?? "");
+  const primaryInstanceId = roundPrimaryInstanceId(round);
+  const primaryTaskId = round.primary_task_id?.trim() ?? "";
+  const messages = (round.coordinator_messages ?? []).filter((message) => {
+    const projected = roundMessageToTimelineMessage(message, round.run_id);
+    return !timelineMessageLooksDetachedSubagent(
+      projected,
+      primaryRole,
+      primaryInstanceId,
+      primaryTaskId,
+    );
+  });
+  const terminalPresentation = round.run_user_message?.trim() ?? "";
+  if (
+    (round.verification_status ?? "").trim().toLowerCase() !== "failed" ||
+    terminalPresentation.length === 0
+  ) {
+    return messages;
+  }
+  return messages.filter((message) => {
+    const projected = roundMessageToTimelineMessage(message, round.run_id);
+    return stableTimelineRole(projected.role ?? "") !== "assistant" ||
+      timelineMessagePrimaryText(projected) !== terminalPresentation;
+  });
+}
+
 function messagesVisibleInTimelineScope(
   messages: TimelineMessage[],
-  _rounds: SessionRound[],
-  runtimeRunId: string | null,
-  fallbackRunId: string | null,
+  rounds: SessionRound[],
   primaryRoleId: string | null,
+  variant: "session" | "subagent-panel",
 ): TimelineMessage[] {
   const transcriptMessages = messages.filter(
-    (message) => !timelineMessageIsInternalBackgroundTaskNotification(message),
+    (message) =>
+      !timelineMessageIsInternal(message) &&
+      !timelineMessageIsSupersededTerminalPresentation(message, rounds),
   );
-  if (!timelineScopeIsMainSession(runtimeRunId, fallbackRunId)) {
+  if (variant !== "session") {
     return transcriptMessages;
   }
   return transcriptMessages.filter(
-    (message) =>
-      !timelineMessageLooksDetachedSubagent(message, primaryRoleId) &&
-      !timelineMessageIsInternalOrchestrationNoise(message),
+    (message) => {
+      const messageRunId = explicitTimelineMessageRunId(message);
+      const round = rounds.find(
+        (candidate) => candidate.run_id.trim() === messageRunId,
+      );
+      return !timelineMessageLooksDetachedSubagent(
+        message,
+        round?.primary_role_id ?? primaryRoleId,
+        round === undefined ? "" : roundPrimaryInstanceId(round),
+        round?.primary_task_id?.trim() ?? "",
+      );
+    },
   );
 }
 
-function timelineMessageIsInternalBackgroundTaskNotification(
-  message: TimelineMessage,
-): boolean {
-  const text = timelineMessageSearchText(message);
-  return (
-    text.includes("<background-task-notification>") ||
-    (
-      text.includes("A managed background task finished.") &&
-      text.includes("wait_background_task(background_task_id)")
-    )
-  );
-}
-
-function timelineMessageSearchText(message: TimelineMessage): string {
-  return [
-    message.content ?? "",
-    message.message?.content ?? "",
-    ...messageContentParts(message).map(contentPartSearchText),
-  ].join("\n");
-}
-
-function contentPartSearchText(part: ContentPart): string {
-  const text = contentPartText(part);
-  if (text !== null) {
-    return text;
-  }
-  if ("content" in part) {
-    return jsonValueText(part.content);
-  }
-  return "";
-}
-
-function timelineScopeIsMainSession(
-  runtimeRunId: string | null,
-  fallbackRunId: string | null,
-): boolean {
-  return (
-    (runtimeRunId?.trim() ?? "").length === 0 &&
-    (fallbackRunId?.trim() ?? "").length === 0
-  );
+function timelineMessageIsInternal(message: TimelineMessage): boolean {
+  return (message.visibility ?? "public").trim().toLowerCase() === "internal";
 }
 
 function explicitTimelineMessageRunId(message: TimelineMessage): string {
@@ -6600,77 +6683,46 @@ function explicitTimelineMessageRunId(message: TimelineMessage): string {
 function timelineMessageLooksDetachedSubagent(
   message: TimelineMessage,
   primaryRoleId: string | null,
+  primaryInstanceId = "",
+  primaryTaskId = "",
 ): boolean {
-  const role = stableTimelineRole(message.role_id ?? message.role ?? "");
-  if (timelineMessageHasSubagentToolPart(message)) {
+  const agentRole = stableTimelineRole(timelineMessageAgentRoleId(message));
+  const primaryRole = stableTimelineRole(primaryRoleId ?? "");
+  if (
+    primaryRole.length === 0 &&
+    primaryInstanceId.length === 0 &&
+    primaryTaskId.length === 0
+  ) {
+    return false;
+  }
+  const taskId = message.task_id?.trim() ?? "";
+  if (primaryTaskId.length > 0 && taskId.length > 0) {
+    return taskId !== primaryTaskId;
+  }
+  const instanceId = message.instance_id?.trim() ?? "";
+  if (primaryInstanceId.length > 0 && instanceId.length > 0) {
+    return instanceId !== primaryInstanceId;
+  }
+  if (timelineRoleCanBeDetachedAgent(agentRole, primaryRoleId)) {
+    return true;
+  }
+  if (
+    (primaryInstanceId.length > 0 || primaryTaskId.length > 0) &&
+    instanceId.length === 0 &&
+    taskId.length === 0
+  ) {
+    const role = stableTimelineRole(message.role ?? "");
+    return role !== "user" || messageContentParts(message).some((part) =>
+      contentPartHasToolCallShape(part)
+    );
+  }
+  if (primaryRole.length > 0 && agentRole === primaryRole) {
     return false;
   }
   if (timelineMessageHasDetachedSubagentPayload(message)) {
     return true;
   }
-  const identifiers = [
-    message.instance_id ?? "",
-    message.run_id ?? "",
-    message.trace_id ?? "",
-    message.source ?? "",
-  ].join(" ").toLowerCase();
-  if (identifiers.includes("subagent")) {
-    return true;
-  }
-  if (!timelineRoleCanBeDetachedAgent(role, primaryRoleId)) {
-    return false;
-  }
-  const instanceId = (message.instance_id?.trim() ?? "");
-  if (
-    instanceId.length > 0 &&
-    timelineIdentifierLooksGeneratedAgentInstance(instanceId)
-  ) {
-    return true;
-  }
-  return timelineIdentifiersIncludeGeneratedReference([
-    message.run_id ?? "",
-    message.trace_id ?? "",
-  ]);
-}
-
-function timelineMessageIsInternalOrchestrationNoise(
-  message: TimelineMessage,
-): boolean {
-  return (
-    timelineRoleIsInternalOrchestration(message.role_id ?? message.role ?? "") ||
-    timelineMessageLooksInternalOrchestrationPrompt(message)
-  );
-}
-
-function timelineRoleIsInternalOrchestration(roleName: string): boolean {
-  return INTERNAL_ORCHESTRATION_TIMELINE_ROLES.has(stableTimelineRole(roleName));
-}
-
-function timelineRoleIsMainTimelineAgent(roleName: string): boolean {
-  return MAIN_TIMELINE_AGENT_ROLES.has(stableTimelineRole(roleName));
-}
-
-function timelineMessageLooksInternalOrchestrationPrompt(
-  message: TimelineMessage,
-): boolean {
-  const text = timelineMessageSearchText(message).trim().toLowerCase();
-  return (
-    text.includes("return only the delegation plan json object") ||
-    text.includes("[fake-llm] return only the delegation plan json object")
-  );
-}
-
-function timelineMessageHasSubagentToolPart(message: TimelineMessage): boolean {
-  return messageContentParts(message).some((part) => {
-    const kind = contentPartKind(part);
-    const toolName = "tool_name" in part ? part.tool_name ?? "" : "";
-    return (
-      (kind === "tool-call" ||
-        kind === "tool-return" ||
-        contentPartHasToolCallShape(part)) &&
-      toolActionCategory(toolName) === "subagent"
-    );
-  });
+  return false;
 }
 
 function runtimeEntryHasDetachedSubagentPayload(entry: TimelineEntry): boolean {
@@ -6757,24 +6809,52 @@ function timelineRoleCanBeDetachedAgent(
   primaryRoleId: string | null,
 ): boolean {
   const role = stableTimelineRole(roleName);
-  if (
-    role === "user" ||
-    role.length === 0 ||
-    MAIN_TIMELINE_AGENT_ROLES.has(role)
-  ) {
+  if (role.length === 0) {
     return false;
   }
   const primaryRole = stableTimelineRole(primaryRoleId ?? "");
-  return primaryRole.length === 0 || role !== primaryRole;
+  return primaryRole.length > 0 && role !== primaryRole;
 }
 
-function timelineIdentifierLooksGeneratedAgentInstance(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-    .test(value.trim());
+function roundPrimaryInstanceId(round: SessionRound): string {
+  const primaryInstanceId = round.primary_instance_id?.trim() ?? "";
+  if (primaryInstanceId.length > 0) {
+    return primaryInstanceId;
+  }
+  const primaryRoleId = round.primary_role_id?.trim() ?? "";
+  if (primaryRoleId.length === 0) {
+    return "";
+  }
+  const direct = round.role_instance_map?.[primaryRoleId]?.trim() ?? "";
+  if (direct.length > 0) {
+    return direct;
+  }
+  const primaryRole = stableTimelineRole(primaryRoleId);
+  for (const [instanceId, roleId] of Object.entries(round.instance_role_map ?? {})) {
+    if (stableTimelineRole(roleId) === primaryRole && instanceId.trim().length > 0) {
+      return instanceId.trim();
+    }
+  }
+  return "";
 }
 
-function timelineIdentifiersIncludeGeneratedReference(values: string[]): boolean {
-  return values.some((value) => timelineIdentifierLooksGeneratedAgentInstance(value));
+function timelineMessageIsSupersededTerminalPresentation(
+  message: TimelineMessage,
+  rounds: SessionRound[],
+): boolean {
+  const runId = explicitTimelineMessageRunId(message);
+  if (runId.length === 0 || stableTimelineRole(message.role ?? "") !== "assistant") {
+    return false;
+  }
+  const text = timelineMessagePrimaryText(message);
+  if (text.length === 0) {
+    return false;
+  }
+  return rounds.some((round) =>
+    round.run_id.trim() === runId &&
+    (round.verification_status ?? "").trim().toLowerCase() === "failed" &&
+    (round.run_user_message?.trim() ?? "") === text
+  );
 }
 
 function mergeTimelineMessages(
@@ -6870,6 +6950,9 @@ function mergeTimelineMessageData(
   const merged: TimelineMessage = { ...existing };
   mergeTimelineMessageStringField(merged, next, "run_id");
   mergeTimelineMessageStringField(merged, next, "trace_id");
+  mergeTimelineMessageStringField(merged, next, "agent_role_id");
+  mergeTimelineMessageStringField(merged, next, "conversation_id");
+  mergeTimelineMessageStringField(merged, next, "task_id");
   mergeTimelineMessageStringField(merged, next, "role_id");
   mergeTimelineMessageStringField(merged, next, "role");
   mergeTimelineMessageStringField(merged, next, "instance_id");
@@ -6904,7 +6987,9 @@ function mergeTimelineMessageData(
 }
 
 type TimelineMessageStringField =
+  | "agent_role_id"
   | "client_message_id"
+  | "conversation_id"
   | "created_at"
   | "entry_type"
   | "injection_id"
@@ -6915,6 +7000,7 @@ type TimelineMessageStringField =
   | "run_id"
   | "source"
   | "status"
+  | "task_id"
   | "trace_id"
   | "visibility";
 
@@ -7053,7 +7139,9 @@ function roundMessageToTimelineMessage(
   const bodyParts = roundMessageParts(message.message?.parts ?? []);
   const bodyContent = jsonValueText(message.message?.content ?? null);
   return {
+    agent_role_id: message.agent_role_id,
     client_message_id: message.client_message_id,
+    conversation_id: message.conversation_id,
     content: message.content,
     created_at: message.queued_at ?? message.created_at ?? message.occurred_at,
     entry_type: message.entry_type,
@@ -7072,6 +7160,7 @@ function roundMessageToTimelineMessage(
     run_id: runId,
     source: message.source,
     status: message.status,
+    task_id: message.task_id,
     superseded_client_message_ids: message.superseded_client_message_ids,
     superseded_injection_ids: message.superseded_injection_ids,
     visibility: message.visibility,
@@ -7180,7 +7269,9 @@ function timelineMessageFingerprintDedupeKey(message: TimelineMessage): string {
     message.run_id ?? message.trace_id ?? "",
     timelineMessageOccurredAt(message),
     message.entry_type ?? "",
-    message.role_id ?? message.role ?? "",
+    timelineMessageAgentRoleId(message),
+    message.instance_id ?? "",
+    message.role ?? "",
     timelineMessagePrimaryText(message),
   ].join(":");
 }
@@ -7195,18 +7286,38 @@ function timelineMessageContentDedupeKey(message: TimelineMessage): string | nul
     "content",
     runId,
     message.entry_type ?? "",
+    timelineMessageAgentRoleId(message),
+    message.instance_id ?? "",
     timelineMessageStableRole(message),
     text,
   ].join(":");
 }
 
 function timelineMessageStableRole(message: TimelineMessage): string {
-  return stableTimelineRole(message.role_id ?? message.role ?? "");
+  return stableTimelineRole(message.role ?? "");
+}
+
+function timelineMessageAgentRoleId(message: TimelineMessage): string {
+  const explicitRoleId = message.agent_role_id?.trim() ?? "";
+  if (explicitRoleId.length > 0) {
+    return explicitRoleId;
+  }
+  const legacyRoleId = message.role_id?.trim() ?? "";
+  switch (stableTimelineRole(legacyRoleId)) {
+    case "":
+    case "assistant":
+    case "system":
+    case "tool":
+    case "user":
+      return "";
+    default:
+      return legacyRoleId;
+  }
 }
 
 function stableTimelineRole(roleName: string): string {
   const role = roleName.trim().toLowerCase();
-  if (role === "agent" || role === "assistant" || role === "mainagent") {
+  if (role === "agent" || role === "assistant") {
     return "assistant";
   }
   return role;
@@ -9502,6 +9613,15 @@ function toolActionLabel(
   t: Translate,
 ): string {
   const category = toolActionCategory(toolName);
+  if (category === "orchestration") {
+    if (phase === "running") {
+      return t("timelineToolRunningOrchestration");
+    }
+    if (phase === "error") {
+      return t("timelineToolErrorOrchestration");
+    }
+    return t("timelineToolCompletedOrchestration");
+  }
   if (category === "subagent") {
     if (phase === "running") {
       return t("timelineToolRunningSubagent");
@@ -9558,7 +9678,7 @@ function toolActionLabel(
 
 function toolActionCategory(
   toolName: string,
-): "edit" | "generic" | "read" | "run" | "search" | "subagent" {
+): "edit" | "generic" | "orchestration" | "read" | "run" | "search" | "subagent" {
   return toolActionFamily(toolName);
 }
 
@@ -9582,7 +9702,6 @@ function subagentReferenceFromValues({
   if (!hasSubagentShape) {
     return null;
   }
-  const textReference = subagentReferenceFromText(jsonValueText(payload));
   const reference: TimelineSubagentReference = {
     createdAt: subagentStringField(candidateObjects, ["created_at", "createdAt"]),
     description: subagentStringField(candidateObjects, [
@@ -9626,10 +9745,7 @@ function subagentReferenceFromValues({
     title: subagentStringField(candidateObjects, ["title", "name", "label"]),
     updatedAt: subagentStringField(candidateObjects, ["updated_at", "updatedAt"]),
   };
-  const merged = mergeSubagentReference(reference, textReference);
-  if (merged === null) {
-    return null;
-  }
+  const merged = reference;
   const runId = merged.runId?.trim() ?? "";
   const instanceId = merged.instanceId?.trim() ?? "";
   if (runId.length === 0 && instanceId.length === 0) {
@@ -9768,30 +9884,6 @@ function subagentBooleanField(
     }
   }
   return undefined;
-}
-
-function subagentReferenceFromText(text: string): TimelineSubagentReference | null {
-  const runId = firstRegexGroup(
-    text,
-    /(?:subagent_run_id|subagentRunId)\s*[:=]\s*["']?([A-Za-z0-9_.:-]+)/i,
-  );
-  const instanceId = firstRegexGroup(
-    text,
-    /(?:subagent_instance_id|instance_id|instanceId)\s*[:=]\s*["']?([A-Za-z0-9_.:-]+)/i,
-  );
-  const roleId = firstRegexGroup(
-    text,
-    /(?:subagent_role_id|role_id|roleId)\s*[:=]\s*["']?([A-Za-z0-9_.:-]+)/i,
-  );
-  if (runId.length === 0 && instanceId.length === 0 && roleId.length === 0) {
-    return null;
-  }
-  return {
-    instanceId,
-    roleId,
-    runId,
-    sessionId: "",
-  };
 }
 
 function displayRole(role: string, t: Translate): string {

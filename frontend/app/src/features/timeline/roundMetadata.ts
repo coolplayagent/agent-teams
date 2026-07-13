@@ -104,9 +104,17 @@ export function sanitizeRoundDiagnosticText(value: string): string {
 }
 
 export function roundPromptText(round: SessionRound): string {
-  return rawText(round.run_user_message)
-    || rawText(roundIntentText(round))
-    || rawText(round.intent);
+  // Only the structured intent is user-authored conversation input.
+  // `run_user_message` belongs to terminal diagnostics/presentation and must
+  // never be projected as a user message for a failed verification. The final
+  // fallback keeps older non-verification round records readable.
+  const intent = rawText(roundIntentText(round)) || rawText(round.intent);
+  if (intent.length > 0) {
+    return intent;
+  }
+  return (round.verification_status ?? "").trim().toLowerCase() === "failed"
+    ? ""
+    : rawText(round.run_user_message);
 }
 
 export function roundTimeLabel(value: string | undefined, index: number): string {

@@ -96,6 +96,22 @@ describe("roundMetadata", () => {
     expect(summary.promptCollapsible).toBe(false);
   });
 
+  it("projects the submitted intent instead of a verification recovery message", () => {
+    const summary = roundSummary(
+      round({
+        intent: "Build the requested feature",
+        intent_parts: [{ kind: "text", text: "Build the requested feature" }],
+        run_user_message:
+          "The task finished, but verification did not pass. Review the result.",
+        verification_status: "failed",
+      }),
+      0,
+    );
+
+    expect(summary.promptText).toBe("Build the requested feature");
+    expect(summary.promptText).not.toContain("verification did not pass");
+  });
+
   it("formats round durations with seconds, minutes, and hours", () => {
     expect(
       roundSummary(

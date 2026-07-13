@@ -115,7 +115,7 @@ describe("useRunStreamController", () => {
     expect(controllers).toHaveLength(renderCount);
   });
 
-  it("refreshes recovery when a stream starts and while it stays active", () => {
+  it("does not poll recovery while an event stream stays active", () => {
     vi.useFakeTimers();
     const queryClient = new QueryClient({
       defaultOptions: {
@@ -142,7 +142,7 @@ describe("useRunStreamController", () => {
     act(() => {
       vi.advanceTimersByTime(10000);
     });
-    expect(recoveryRefreshCallCount(invalidateSpy)).toBe(1);
+    expect(recoveryRefreshCallCount(invalidateSpy)).toBe(0);
 
     const options = streamMocks.latestOptions as {
       onClosed: () => void;
@@ -218,7 +218,7 @@ describe("useRunStreamController", () => {
     expect(screen.getByTestId("tracked-run-ids")).toHaveTextContent("run-1");
   });
 
-  it("polls sidebar subagent discovery while a stream stays active", () => {
+  it("does not poll sidebar subagent discovery while a stream stays active", () => {
     vi.useFakeTimers();
     const queryClient = new QueryClient({
       defaultOptions: {
@@ -251,10 +251,10 @@ describe("useRunStreamController", () => {
       vi.advanceTimersByTime(10000);
     });
 
-    expect(invalidateSpy).toHaveBeenCalledWith({
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
       queryKey: ["sessions", "session-1", "subagents"],
     });
-    expect(invalidateSpy).toHaveBeenCalledWith({
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
       queryKey: ["sessions", "sidebar"],
     });
     expect(listSessionRoundsMock).not.toHaveBeenCalled();
@@ -683,7 +683,7 @@ describe("useRunStreamController", () => {
     });
   });
 
-  it("waits for terminal round history to include streamed tool calls before refreshing rounds", async () => {
+  it("refreshes hydrated rounds once from the terminal stream event", async () => {
     vi.useFakeTimers();
     listSessionRoundsMock
       .mockResolvedValueOnce({
@@ -731,13 +731,9 @@ describe("useRunStreamController", () => {
       await vi.advanceTimersByTimeAsync(0);
       await Promise.resolve();
     });
-    expect(listSessionRoundsMock).toHaveBeenCalledTimes(1);
-    expect(listSessionRoundsMock).toHaveBeenNthCalledWith(1, "session-1", {
-      forceRefresh: true,
-      limit: 100,
-    });
+    expect(listSessionRoundsMock).not.toHaveBeenCalled();
     expect(listSidebarSessionsMock).toHaveBeenCalledTimes(1);
-    expect(invalidateSpy).not.toHaveBeenCalledWith({
+    expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["sessions", "session-1", "rounds"],
     });
 
@@ -745,17 +741,13 @@ describe("useRunStreamController", () => {
       await vi.advanceTimersByTimeAsync(900);
     });
 
-    expect(listSessionRoundsMock).toHaveBeenCalledTimes(2);
-    expect(listSessionRoundsMock).toHaveBeenNthCalledWith(2, "session-1", {
-      forceRefresh: true,
-      limit: 100,
-    });
+    expect(listSessionRoundsMock).not.toHaveBeenCalled();
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["sessions", "session-1", "rounds"],
     });
   });
 
-  it("waits for terminal round status before refreshing hydrated rounds", async () => {
+  it("does not poll persisted round status after a terminal event", async () => {
     vi.useFakeTimers();
     listSessionRoundsMock
       .mockResolvedValueOnce({
@@ -804,8 +796,8 @@ describe("useRunStreamController", () => {
       await vi.advanceTimersByTimeAsync(0);
       await Promise.resolve();
     });
-    expect(listSessionRoundsMock).toHaveBeenCalledTimes(1);
-    expect(invalidateSpy).not.toHaveBeenCalledWith({
+    expect(listSessionRoundsMock).not.toHaveBeenCalled();
+    expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["sessions", "session-1", "rounds"],
     });
 
@@ -813,13 +805,13 @@ describe("useRunStreamController", () => {
       await vi.advanceTimersByTimeAsync(900);
     });
 
-    expect(listSessionRoundsMock).toHaveBeenCalledTimes(2);
+    expect(listSessionRoundsMock).not.toHaveBeenCalled();
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["sessions", "session-1", "rounds"],
     });
   });
 
-  it("retries transient terminal round history fetch errors until history is safe", async () => {
+  it("leaves later round persistence convergence to session activity events", async () => {
     vi.useFakeTimers();
     listSessionRoundsMock
       .mockRejectedValueOnce(new Error("round not indexed yet"))
@@ -860,27 +852,27 @@ describe("useRunStreamController", () => {
       await vi.advanceTimersByTimeAsync(0);
       await Promise.resolve();
     });
-    expect(listSessionRoundsMock).toHaveBeenCalledTimes(1);
-    expect(invalidateSpy).not.toHaveBeenCalledWith({
+    expect(listSessionRoundsMock).not.toHaveBeenCalled();
+    expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["sessions", "session-1", "rounds"],
     });
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(900);
     });
-    expect(listSessionRoundsMock).toHaveBeenCalledTimes(2);
+    expect(listSessionRoundsMock).not.toHaveBeenCalled();
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(900);
     });
-    expect(listSessionRoundsMock).toHaveBeenCalledTimes(3);
+    expect(listSessionRoundsMock).not.toHaveBeenCalled();
 
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["sessions", "session-1", "rounds"],
     });
   });
 
-  it("cancels terminal round history refresh when another session stream starts", async () => {
+  it("does not start stale terminal round polling when another session starts", async () => {
     const terminalHistory = createDeferred<SessionRoundPage>();
     listSessionRoundsMock.mockReturnValueOnce(terminalHistory.promise);
     const queryClient = new QueryClient({
@@ -909,7 +901,7 @@ describe("useRunStreamController", () => {
       firstStreamOptions.onState(closedState);
       firstStreamOptions.onClosed?.(closedState);
     });
-    await waitFor(() => expect(listSessionRoundsMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(listSidebarSessionsMock).toHaveBeenCalledTimes(1));
 
     fireEvent.click(screen.getByRole("button", { name: "Start other session stream" }));
     terminalHistory.resolve({
@@ -922,7 +914,8 @@ describe("useRunStreamController", () => {
       await Promise.resolve();
     });
 
-    expect(invalidateSpy).not.toHaveBeenCalledWith({
+    expect(listSessionRoundsMock).not.toHaveBeenCalled();
+    expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["sessions", "session-1", "rounds"],
     });
     expect(streamMocks.openRunStream).toHaveBeenCalledTimes(2);
@@ -930,7 +923,7 @@ describe("useRunStreamController", () => {
     expect(secondStreamOptions.runId).toBe("run-2");
   });
 
-  it("falls back to refreshing rounds when terminal history stays incomplete", async () => {
+  it("never polls incomplete terminal history", async () => {
     vi.useFakeTimers();
     listSessionRoundsMock.mockResolvedValue({
       has_more: false,
@@ -968,7 +961,7 @@ describe("useRunStreamController", () => {
       await vi.advanceTimersByTimeAsync(0);
       await Promise.resolve();
     });
-    expect(listSessionRoundsMock).toHaveBeenCalledTimes(1);
+    expect(listSessionRoundsMock).not.toHaveBeenCalled();
 
     for (let attempt = 1; attempt < 24; attempt += 1) {
       await act(async () => {
@@ -976,11 +969,11 @@ describe("useRunStreamController", () => {
       });
     }
 
-    expect(listSessionRoundsMock).toHaveBeenCalledTimes(24);
+    expect(listSessionRoundsMock).not.toHaveBeenCalled();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(900);
     });
-    expect(listSessionRoundsMock).toHaveBeenCalledTimes(24);
+    expect(listSessionRoundsMock).not.toHaveBeenCalled();
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["sessions", "session-1", "rounds"],
     });
@@ -1439,12 +1432,9 @@ describe("useRunStreamController", () => {
       ]));
     });
 
-    await act(async () => {
-      await Promise.resolve();
-    });
-    expect(invalidateSpy).toHaveBeenCalledWith({
+    await waitFor(() => expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: ["sessions", "session-1", "messages"],
-    });
+    }));
     expect(streamMocks.handles[0]?.close).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId("active-run-ids")).toBeEmptyDOMElement();
     expect(screen.getByTestId("tracked-run-ids")).toBeEmptyDOMElement();

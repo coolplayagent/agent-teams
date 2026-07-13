@@ -43,6 +43,9 @@ export function useSessionActivityMonitor({
       void queryClient.invalidateQueries({
         queryKey: ["sessions", sessionId, "subagents"],
       });
+      void queryClient.invalidateQueries({
+        queryKey: ["sessions", sessionId, "agents"],
+      });
     };
     const invalidateExternalRunViews = () => {
       void queryClient.invalidateQueries({
@@ -193,8 +196,26 @@ function activityEventRefreshScope(
   ) {
     return "subagent";
   }
+  if (
+    locallyKnownRunIds.has(event.run_id.trim()) &&
+    isTerminalRunActivityEvent(event.event_type)
+  ) {
+    return "external";
+  }
   if (locallyKnownRunIds.has(event.run_id.trim())) {
     return "none";
   }
   return "external";
+}
+
+function isTerminalRunActivityEvent(eventType: string): boolean {
+  switch (eventType.trim().toLowerCase()) {
+    case "run_completed":
+    case "run_failed":
+    case "run_paused":
+    case "run_stopped":
+      return true;
+    default:
+      return false;
+  }
 }

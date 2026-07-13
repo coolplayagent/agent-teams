@@ -105,7 +105,7 @@ describe("useSessionActivityMonitor", () => {
     expect(getRecoverySnapshotMock).not.toHaveBeenCalled();
   });
 
-  it("does not invalidate a known local run after it reaches terminal state", async () => {
+  it("converges authoritative views when a known local run reaches terminal state", async () => {
     vi.useFakeTimers();
     openSessionActivityStreamMock.mockReturnValue({ close: vi.fn() });
     useRuntimeStore.setState({
@@ -140,8 +140,19 @@ describe("useSessionActivityMonitor", () => {
     });
     await act(async () => vi.advanceTimersByTime(250));
 
-    expect(getRecoverySnapshotMock).not.toHaveBeenCalled();
-    expect(invalidateQueriesSpy).not.toHaveBeenCalled();
+    expect(getRecoverySnapshotMock).toHaveBeenCalledWith("session-1", true);
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "sidebar"],
+    });
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "detail", "session-1"],
+    });
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-1", "messages"],
+    });
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-1", "rounds"],
+    });
   });
 
   it("still invalidates session views for a genuinely external run", async () => {
@@ -171,6 +182,33 @@ describe("useSessionActivityMonitor", () => {
     });
     expect(invalidateQueriesSpy).toHaveBeenCalledWith({
       queryKey: ["sessions", "session-1", "messages"],
+    });
+  });
+
+  it("refreshes visible subagent records and messages from subagent activity", async () => {
+    vi.useFakeTimers();
+    openSessionActivityStreamMock.mockReturnValue({ close: vi.fn() });
+    const queryClient = testQueryClient();
+    const invalidateQueriesSpy = vi.spyOn(queryClient, "invalidateQueries");
+    render(<MonitorHarness queryClient={queryClient} sessionId="session-1" />);
+    const options = openSessionActivityStreamMock.mock.calls[0]?.[0];
+    if (options === undefined) {
+      throw new Error("Expected session activity stream options.");
+    }
+
+    act(() => {
+      options.onActivity({
+        event_type: "subagent_session_status_changed",
+        run_id: "subagent-run-1",
+      });
+    });
+    await act(async () => vi.advanceTimersByTime(250));
+
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-1", "subagents"],
+    });
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-1", "agents"],
     });
   });
 

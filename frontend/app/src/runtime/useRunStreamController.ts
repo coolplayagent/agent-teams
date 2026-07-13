@@ -2,8 +2,8 @@ import { App } from "antd";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { listSessionRounds, listSidebarSessions } from "../api/client";
-import type { JsonValue, SessionRound, SessionSidebarRecord } from "../api/contracts";
+import { listSidebarSessions } from "../api/client";
+import type { JsonValue, SessionSidebarRecord } from "../api/contracts";
 import {
   openMultiplexedRunStream,
   openRunStream,
@@ -14,12 +14,8 @@ import {
 import { useRuntimeStore } from "./runtimeStore";
 import type { RuntimeRunState, RuntimeState, TimelineEntry } from "./reducers";
 
-const RECOVERY_CONTINUITY_REFRESH_MS = 10000;
 const RUN_STREAM_MANUAL_RECONNECT_GRACE_MS = 3500;
 const RUN_STREAM_RECONNECT_MAX_ATTEMPTS = 3;
-const TERMINAL_ROUND_SETTLE_DELAY_MS = 900;
-const TERMINAL_ROUND_SETTLE_MAX_ATTEMPTS = 24;
-const TERMINAL_ROUND_SETTLE_PAGE_LIMIT = 100;
 const TERMINAL_SETTLEMENT_GUARD_LIMIT = 4096;
 
 export interface StartRunStreamOptions {
@@ -82,7 +78,6 @@ export function useRunStreamController(): RunStreamController {
   const setRuntimeState = useRuntimeStore((state) => state.setRuntimeState);
   const runtimeStateRef = useRef(useRuntimeStore.getState().runtimeState);
   const streamHandleRef = useRef<RunStreamHandle | null>(null);
-  const continuityRefreshTimerRef = useRef<number | null>(null);
   const terminalBackgroundTimersRef = useRef(new Set<number>());
   const foregroundRunIdsRef = useRef<string[]>([]);
   const foregroundSessionIdRef = useRef<string | null>(null);
@@ -110,7 +105,6 @@ export function useRunStreamController(): RunStreamController {
 
   useEffect(
     () => () => {
-      stopContinuityRefresh();
       clearReconnectTimer();
       for (const timerId of terminalBackgroundTimersRef.current) {
         window.clearTimeout(timerId);
@@ -134,21 +128,19 @@ export function useRunStreamController(): RunStreamController {
     void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
   };
 
-  const refreshSidebarSessions = () => {
-    void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
-    void queryClient.refetchQueries({
-      queryKey: ["sessions", "sidebar"],
-      type: "active",
-    });
-  };
-
   const refreshSubagentDiscoveryForNewEvents = (
     sessionId: string,
     nextRuntimeState: RuntimeState,
+    previousRuntimeState: RuntimeState,
   ) => {
     let hasNewSubagentDiscoveryEvent = false;
     for (const run of Object.values(nextRuntimeState.runs)) {
-      for (const entry of run.entries) {
+      const previousEntries = previousRuntimeState.runs[run.runId]?.entries ?? [];
+      for (let index = 0; index < run.entries.length; index += 1) {
+        const entry = run.entries[index];
+        if (entry === undefined || previousEntries[index] === entry) {
+          continue;
+        }
         if (!isSubagentDiscoveryEvent(entry)) {
           continue;
         }
@@ -168,10 +160,16 @@ export function useRunStreamController(): RunStreamController {
   const refreshRecoveryForNewInteractionEvents = (
     sessionId: string,
     nextRuntimeState: RuntimeState,
+    previousRuntimeState: RuntimeState,
   ) => {
     let hasNewInteractionEvent = false;
     for (const run of Object.values(nextRuntimeState.runs)) {
-      for (const entry of run.entries) {
+      const previousEntries = previousRuntimeState.runs[run.runId]?.entries ?? [];
+      for (let index = 0; index < run.entries.length; index += 1) {
+        const entry = run.entries[index];
+        if (entry === undefined || previousEntries[index] === entry) {
+          continue;
+        }
         if (
           entry.kind !== "user_question_requested" &&
           entry.kind !== "user_question_answered"
@@ -189,13 +187,6 @@ export function useRunStreamController(): RunStreamController {
     if (hasNewInteractionEvent) {
       refreshRecoverySnapshot(sessionId);
       void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
-    }
-  };
-
-  const stopContinuityRefresh = () => {
-    if (continuityRefreshTimerRef.current !== null) {
-      window.clearInterval(continuityRefreshTimerRef.current);
-      continuityRefreshTimerRef.current = null;
     }
   };
 
@@ -220,18 +211,9 @@ export function useRunStreamController(): RunStreamController {
     terminalBackgroundTimersRef.current.add(timerId);
   };
 
-  const startContinuityRefresh = (sessionId: string) => {
-    stopContinuityRefresh();
-    continuityRefreshTimerRef.current = window.setInterval(() => {
-      refreshRecoverySnapshot(sessionId);
-      refreshSubagentDiscovery(sessionId);
-    }, RECOVERY_CONTINUITY_REFRESH_MS);
-  };
-
   const stopActiveRunStream = () => {
     reconnectAttemptRef.current = 0;
     clearReconnectTimer();
-    stopContinuityRefresh();
     streamHandleRef.current?.close();
     streamHandleRef.current = null;
     streamGenerationRef.current += 1;
@@ -323,14 +305,9 @@ export function useRunStreamController(): RunStreamController {
     const streamGeneration = streamGenerationRef.current;
     clearReconnectTimer();
     reconnectAttemptRef.current = 0;
-    stopContinuityRefresh();
     streamHandleRef.current?.close();
     streamHandleRef.current = null;
 
-    const roundSettleTargets = terminalRoundSettleTargets(
-      unsettledTargets,
-      runtimeStateRef.current,
-    );
     const closedRuntimeState = runtimeStateWithClosedTargets(
       runtimeStateRef.current,
       unsettledTargets,
@@ -364,7 +341,6 @@ export function useRunStreamController(): RunStreamController {
     );
     setTrackedRunIds(remainingRunTargets.map((target) => target.runId));
     if (remainingRunTargets.length > 0) {
-      startContinuityRefresh(sessionId);
       openTrackedRunStream(
         {
           foregroundRunIds: foregroundRunIdsRef.current,
@@ -386,51 +362,25 @@ export function useRunStreamController(): RunStreamController {
           queryKey: ["sessions", sessionId, "rounds"],
         });
       };
-      const refreshSidebarSessionsFromServer = async () => {
-        const sessions = await listSidebarSessions(true);
-        const terminalSessions = sidebarSessionsWithLocalTerminalRuns(
-          sessions,
-          sessionId,
-          unsettledTargets,
-          closedRuntimeState,
-        );
-        queryClient.setQueryData(["sessions", "sidebar"], terminalSessions);
-        return terminalSessions;
-      };
-      let roundHistoryReady = roundSettleTargets.length === 0;
-      let terminalSessionReady = unsettledTargets.length === 0;
-      let hydrationRefreshed = false;
-      const refreshHydratedSessionWhenReady = () => {
-        if (hydrationRefreshed || !roundHistoryReady || !terminalSessionReady) {
+      // The terminal stream event is authoritative for the local timeline. Refresh
+      // each hydrated view once, then let the session-activity stream deliver any
+      // later persistence convergence instead of polling round history.
+      refreshHydratedSession();
+      void Promise.resolve(listSidebarSessions(true)).then((sessions) => {
+        if (streamGenerationRef.current !== streamGeneration) {
           return;
         }
-        hydrationRefreshed = true;
-        refreshHydratedSession();
-      };
-      if (roundSettleTargets.length > 0) {
-        void settleTerminalRoundsFromHistory({
-          currentStreamGeneration: () => streamGenerationRef.current,
-          onReady: () => {
-            roundHistoryReady = true;
-            refreshHydratedSessionWhenReady();
-          },
-          sessionId,
-          streamGeneration,
-          targets: roundSettleTargets,
-        });
-      } else {
-        refreshHydratedSessionWhenReady();
-      }
-      void settleTerminalSessionFromSidebar({
-        currentStreamGeneration: () => streamGenerationRef.current,
-        onReady: () => {
-          terminalSessionReady = true;
-          refreshHydratedSessionWhenReady();
-        },
-        refreshSidebarSessions: refreshSidebarSessionsFromServer,
-        sessionId,
-        streamGeneration,
-        targets: unsettledTargets,
+        queryClient.setQueryData(
+          ["sessions", "sidebar"],
+          sidebarSessionsWithLocalTerminalRuns(
+            sessions,
+            sessionId,
+            unsettledTargets,
+            closedRuntimeState,
+          ),
+        );
+      }).catch(() => {
+        // The session activity stream will deliver a later authoritative refresh.
       });
       refreshRecoverySnapshot(sessionId);
       void queryClient.invalidateQueries({
@@ -467,6 +417,7 @@ export function useRunStreamController(): RunStreamController {
         }
         clearReconnectTimer();
         reconnectAttemptRef.current = 0;
+        const previousRuntimeState = runtimeStateRef.current;
         runtimeStateRef.current = nextRuntimeState;
         markNewRuntimeTerminals(
           nextRuntimeState,
@@ -487,8 +438,16 @@ export function useRunStreamController(): RunStreamController {
             foregroundSessionIdRef.current,
           ),
         );
-        refreshSubagentDiscoveryForNewEvents(options.sessionId, nextRuntimeState);
-        refreshRecoveryForNewInteractionEvents(options.sessionId, nextRuntimeState);
+        refreshSubagentDiscoveryForNewEvents(
+          options.sessionId,
+          nextRuntimeState,
+          previousRuntimeState,
+        );
+        refreshRecoveryForNewInteractionEvents(
+          options.sessionId,
+          nextRuntimeState,
+          previousRuntimeState,
+        );
       },
       onClosed: () => {
         if (streamGeneration !== streamGenerationRef.current) {
@@ -586,7 +545,6 @@ export function useRunStreamController(): RunStreamController {
     foregroundSessionIdRef.current = options.sessionId;
     reconnectAttemptRef.current = 0;
     clearReconnectTimer();
-    stopContinuityRefresh();
     streamHandleRef.current?.close();
     streamHandleRef.current = null;
     streamGenerationRef.current += 1;
@@ -613,7 +571,6 @@ export function useRunStreamController(): RunStreamController {
     );
     setTrackedRunIds(runs.map((run) => run.runId));
     setTrackedSessionId(options.sessionId);
-    startContinuityRefresh(options.sessionId);
     openTrackedRunStream(
       {
         foregroundRunIds,
@@ -1148,205 +1105,6 @@ function stringArraysEqual(left: string[], right: string[]): boolean {
     left.length === right.length &&
     left.every((value, index) => value === right[index])
   );
-}
-
-interface TerminalRoundSettleTarget {
-  expectedToolCallIds: string[];
-  runId: string;
-}
-
-interface TerminalRoundSettleOptions {
-  currentStreamGeneration: () => number;
-  onReady: () => void;
-  sessionId: string;
-  streamGeneration: number;
-  targets: TerminalRoundSettleTarget[];
-}
-
-interface TerminalSessionSettleOptions {
-  currentStreamGeneration: () => number;
-  onReady: () => void;
-  refreshSidebarSessions: () => Promise<SessionSidebarRecord[]>;
-  sessionId: string;
-  streamGeneration: number;
-  targets: StartRunStreamTarget[];
-}
-
-function terminalRoundSettleTargets(
-  runs: StartRunStreamTarget[],
-  runtimeState: RuntimeState,
-): TerminalRoundSettleTarget[] {
-  return normalizeRunTargets(runs)
-    .map((run) => ({
-      expectedToolCallIds: runtimeToolCallIds(runtimeState.runs[run.runId]),
-      runId: run.runId,
-    }))
-    .filter((target) => target.expectedToolCallIds.length > 0);
-}
-
-async function settleTerminalRoundsFromHistory({
-  currentStreamGeneration,
-  onReady,
-  sessionId,
-  streamGeneration,
-  targets,
-}: TerminalRoundSettleOptions): Promise<void> {
-  const isCurrentGeneration = () => currentStreamGeneration() === streamGeneration;
-  for (let attempt = 0; attempt < TERMINAL_ROUND_SETTLE_MAX_ATTEMPTS; attempt += 1) {
-    if (!isCurrentGeneration()) {
-      return;
-    }
-    try {
-      const page = await listSessionRounds(sessionId, {
-        forceRefresh: true,
-        limit: TERMINAL_ROUND_SETTLE_PAGE_LIMIT,
-      });
-      if (!isCurrentGeneration()) {
-        return;
-      }
-      if (terminalRoundsHaveExpectedToolCalls(page.items, targets)) {
-        onReady();
-        return;
-      }
-    } catch {
-      if (!isCurrentGeneration()) {
-        return;
-      }
-    }
-    if (attempt + 1 < TERMINAL_ROUND_SETTLE_MAX_ATTEMPTS) {
-      await terminalRoundSettleDelay();
-    }
-  }
-  if (isCurrentGeneration()) {
-    onReady();
-  }
-}
-
-async function settleTerminalSessionFromSidebar({
-  currentStreamGeneration,
-  onReady,
-  refreshSidebarSessions,
-  streamGeneration,
-  targets,
-}: TerminalSessionSettleOptions): Promise<void> {
-  const targetRunIds = normalizedRunIds(targets);
-  if (targetRunIds.length === 0) {
-    return;
-  }
-  const isCurrentGeneration = () => currentStreamGeneration() === streamGeneration;
-  if (!isCurrentGeneration()) {
-    return;
-  }
-  try {
-    await refreshSidebarSessions();
-  } catch {
-    // The session activity stream will deliver a later authoritative refresh.
-  }
-  if (isCurrentGeneration()) {
-    onReady();
-  }
-}
-
-function terminalRoundSettleDelay(): Promise<void> {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, TERMINAL_ROUND_SETTLE_DELAY_MS);
-  });
-}
-
-function terminalRoundsHaveExpectedToolCalls(
-  rounds: SessionRound[],
-  targets: TerminalRoundSettleTarget[],
-): boolean {
-  const roundsByRunId = new Map(rounds.map((round) => [round.run_id, round]));
-  return targets.every((target) => {
-    const round = roundsByRunId.get(target.runId);
-    if (round === undefined) {
-      return false;
-    }
-    if (!roundHasTerminalStatus(round)) {
-      return false;
-    }
-    const toolCallIds = persistedRoundToolCallIds(round);
-    return target.expectedToolCallIds.every((toolCallId) =>
-      toolCallIds.has(toolCallId),
-    );
-  });
-}
-
-function roundHasTerminalStatus(round: SessionRound): boolean {
-  return isTerminalStatus(round.run_status) || isTerminalStatus(round.run_phase);
-}
-
-function isTerminalStatus(value: string | null | undefined): boolean {
-  switch ((value ?? "").trim().toLowerCase()) {
-    case "completed":
-    case "failed":
-    case "stopped":
-    case "paused":
-    case "cancelled":
-    case "canceled":
-      return true;
-    default:
-      return false;
-  }
-}
-
-function runtimeToolCallIds(runState: RuntimeRunState | undefined): string[] {
-  if (runState === undefined) {
-    return [];
-  }
-  const toolCallIds: string[] = [];
-  for (const entry of runState.entries) {
-    if (entry.kind !== "tool_call") {
-      continue;
-    }
-    const toolCallId = timelineEntryToolCallId(entry);
-    if (toolCallId !== null && !toolCallIds.includes(toolCallId)) {
-      toolCallIds.push(toolCallId);
-    }
-  }
-  return toolCallIds;
-}
-
-function timelineEntryToolCallId(entry: TimelineEntry): string | null {
-  const payload = jsonObject(entry.payload);
-  if (payload === null) {
-    return null;
-  }
-  return jsonString(payload.tool_call_id);
-}
-
-function persistedRoundToolCallIds(round: SessionRound | undefined): ReadonlySet<string> {
-  const toolCallIds = new Set<string>();
-  if (round === undefined) {
-    return toolCallIds;
-  }
-  for (const message of round.coordinator_messages ?? []) {
-    for (const part of message.message?.parts ?? []) {
-      const toolCallId = jsonString(part.tool_call_id ?? null);
-      if (toolCallId !== null && roundPartIsToolCall(part.kind, part.part_kind)) {
-        toolCallIds.add(toolCallId);
-      }
-    }
-    for (const part of message.content_parts ?? []) {
-      const toolCallId = "tool_call_id" in part
-        ? jsonString(part.tool_call_id ?? null)
-        : null;
-      const kind = "kind" in part ? part.kind : undefined;
-      const partKind = "part_kind" in part ? part.part_kind : undefined;
-      if (toolCallId !== null && roundPartIsToolCall(kind, partKind)) {
-        toolCallIds.add(toolCallId);
-      }
-    }
-  }
-  return toolCallIds;
-}
-
-function roundPartIsToolCall(
-  kind: string | undefined,
-  partKind: string | undefined,
-): boolean {
-  return kind === "tool-call" || kind === "tool_call" || partKind === "tool-call";
 }
 
 function jsonObject(value: JsonValue): Record<string, JsonValue> | null {

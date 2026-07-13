@@ -4,7 +4,6 @@ import type {
   SessionSubagentRecord,
   TimelineMessage,
 } from "../../api/contracts";
-import { contentPartText } from "../../api/contracts";
 
 export interface CorrelatedSubagentRecord {
   instanceId: string;
@@ -24,8 +23,6 @@ export interface CorrelatedSubagentRecord {
 
 interface ToolCallSite {
   callId: string;
-  prompt: string;
-  roleId: string;
   runId: string;
   taskId: string;
 }
@@ -40,11 +37,7 @@ export function correlateSessionSubagents(
     const taskScoped = explicit === null
       ? taskSourceCallSite(record, callSites)
       : null;
-    const callSite = explicit ?? taskScoped ?? legacySourceCallSite(
-      record,
-      messages,
-      callSites,
-    );
+    const callSite = explicit ?? taskScoped;
     if (callSite === null) {
       return [];
     }
@@ -81,11 +74,9 @@ function taskSourceCallSite(
     return null;
   }
   const sourceRunId = normalized(record.source_run_id);
-  const roleId = recordIdentity(record, "role");
   const matches = callSites.filter((callSite) =>
     callSite.taskId === taskId &&
-    (sourceRunId.length === 0 || callSite.runId === sourceRunId) &&
-    (roleId.length === 0 || callSite.roleId === roleId)
+    (sourceRunId.length === 0 || callSite.runId === sourceRunId)
   );
   return matches.length === 1 ? matches[0] ?? null : null;
 }
@@ -108,56 +99,6 @@ function explicitSourceCallSite(
   return matches.length === 1 ? matches[0] ?? null : null;
 }
 
-function legacySourceCallSite(
-  record: SessionSubagentRecord,
-  messages: readonly TimelineMessage[],
-  callSites: readonly ToolCallSite[],
-): ToolCallSite | null {
-  if (normalized(record.source_tool_call_id).length > 0) {
-    return null;
-  }
-  const roleId = recordIdentity(record, "role");
-  const prompt = childPrompt(record, messages);
-  if (roleId.length === 0 || prompt.length === 0) {
-    return null;
-  }
-  const matches = callSites.filter((callSite) =>
-    callSite.roleId === roleId && callSite.prompt === prompt
-  );
-  return matches.length === 1 ? matches[0] ?? null : null;
-}
-
-function childPrompt(
-  record: SessionSubagentRecord,
-  messages: readonly TimelineMessage[],
-): string {
-  const instanceId = recordIdentity(record, "instance");
-  const taskId = recordIdentity(record, "task");
-  const runId = recordIdentity(record, "run");
-  const candidates = messages.filter((message) => {
-    if (normalized(message.role).toLowerCase() !== "user") {
-      return false;
-    }
-    const messageInstanceId = normalized(message.instance_id);
-    const messageTaskId = normalized(message.task_id);
-    const messageRunId = messageRunIdentity(message);
-    if (instanceId.length > 0 && messageInstanceId !== instanceId) {
-      return false;
-    }
-    if (taskId.length > 0 && messageTaskId.length > 0 && messageTaskId !== taskId) {
-      return false;
-    }
-    if (runId.length > 0 && messageRunId.length > 0 && messageRunId !== runId) {
-      return false;
-    }
-    return instanceId.length > 0 || taskId.length > 0 || runId.length > 0;
-  });
-  if (candidates.length !== 1) {
-    return "";
-  }
-  return messageText(candidates[0] ?? {});
-}
-
 function messageToolCallSites(message: TimelineMessage): ToolCallSite[] {
   const runId = messageRunIdentity(message);
   return messageParts(message).flatMap((part) => {
@@ -169,8 +110,6 @@ function messageToolCallSites(message: TimelineMessage): ToolCallSite[] {
     }
     const callId = normalized(part.tool_call_id);
     const args = jsonObject(part.args);
-    const roleId = jsonString(args, "role_id");
-    const prompt = jsonString(args, "prompt");
     const taskId = jsonString(args, "task_id") || normalized(message.task_id);
     const actionFamily = normalized(part.action_family);
     const semanticCategory = normalized(part.semantic_category);
@@ -191,29 +130,15 @@ function messageToolCallSites(message: TimelineMessage): ToolCallSite[] {
     ) {
       return [];
     }
-    if (callId.length === 0 || roleId.length === 0 || prompt.length === 0) {
+    if (callId.length === 0) {
       return [];
     }
-    return [{ callId, prompt, roleId, runId, taskId }];
+    return [{ callId, runId, taskId }];
   });
 }
 
 function messageParts(message: TimelineMessage): ContentPart[] {
   return message.message?.parts ?? message.parts ?? [];
-}
-
-function messageText(message: TimelineMessage): string {
-  const direct = normalized(message.content ?? message.message?.content);
-  if (direct.length > 0) {
-    return direct;
-  }
-  for (const part of messageParts(message)) {
-    const text = normalized(contentPartText(part));
-    if (text.length > 0) {
-      return text;
-    }
-  }
-  return "";
 }
 
 function messageRunIdentity(message: TimelineMessage): string {

@@ -8664,6 +8664,9 @@ describe("MessageTimeline", () => {
       role_id: "Explorer",
       run_id: "child-run",
       run_status: "completed",
+      source_run_id: "parent-run",
+      source_task_id: "parent-task",
+      source_tool_call_id: "call-child",
       status: "completed",
       task_id: "child-task",
       title: "Timeline inspection",
@@ -8800,6 +8803,58 @@ describe("MessageTimeline", () => {
       sourceToolCallId: "call-dispatch-task",
       taskId: "dispatch-task",
       title: "Composer regression fix",
+    }));
+  });
+
+  it("opens a structured orchestration dispatch without prompt or role arguments", async () => {
+    const onSubagentOpen = vi.fn();
+    listSessionSubagentsMock.mockResolvedValue([{
+      instance_id: "structured-instance",
+      role_id: "Crafter",
+      run_id: "structured-child-run",
+      source_run_id: "structured-parent-run",
+      source_tool_call_id: "structured-dispatch-call",
+      status: "completed",
+      subagent_task_id: "structured-child-task",
+      title: "Structured child",
+    }]);
+    listSessionMessagesMock.mockResolvedValue([{
+      message: { parts: [{
+        action_family: "orchestration",
+        args: {
+          task_id: "structured-child-task",
+        },
+        kind: "tool-call",
+        semantic_category: "orchestration",
+        tool_call_id: "structured-dispatch-call",
+        tool_name: "orch_dispatch_task",
+      }] },
+      message_id: "structured-dispatch-message",
+      role: "assistant",
+      trace_id: "structured-parent-run",
+    }]);
+
+    const { container } = renderTimeline("session-1", { onSubagentOpen });
+
+    const tool = await waitFor(() => {
+      const candidate = container.querySelector<HTMLElement>(
+        '[data-tool-call-id="structured-dispatch-call"]',
+      );
+      expect(candidate).toHaveClass("is-openable-subagent");
+      return candidate as HTMLElement;
+    });
+    expect(tool).toHaveAttribute("data-subagent-instance-id", "structured-instance");
+    expect(tool).toHaveAttribute("data-subagent-run-id", "structured-child-run");
+    expect(tool).toHaveAttribute("data-subagent-task-id", "structured-child-task");
+
+    fireEvent.click(tool.querySelector("summary") as HTMLElement);
+
+    expect(onSubagentOpen).toHaveBeenCalledWith(expect.objectContaining({
+      instanceId: "structured-instance",
+      runId: "structured-child-run",
+      sourceRunId: "structured-parent-run",
+      sourceToolCallId: "structured-dispatch-call",
+      taskId: "structured-child-task",
     }));
   });
 

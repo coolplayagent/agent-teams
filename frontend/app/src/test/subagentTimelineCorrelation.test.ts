@@ -4,6 +4,40 @@ import type { SessionSubagentRecord, TimelineMessage } from "../api/contracts";
 import { correlateSessionSubagents } from "../features/timeline/subagentTimelineCorrelation";
 
 describe("subagent timeline correlation", () => {
+  it("correlates a structured dispatch without prompt or role arguments", () => {
+    const messages: TimelineMessage[] = [{
+      message: { parts: [{
+        action_family: "orchestration",
+        args: {
+          task_id: "structured-task",
+        },
+        kind: "tool-call",
+        semantic_category: "orchestration",
+        tool_call_id: "structured-call",
+        tool_name: "orch_dispatch_task",
+      }] },
+      role: "assistant",
+      task_id: "root-task",
+      trace_id: "root-run",
+    }];
+
+    expect(correlateSessionSubagents(messages, [{
+      instance_id: "structured-instance",
+      role_id: "Crafter",
+      run_id: "structured-run",
+      source_run_id: "root-run",
+      source_tool_call_id: "structured-call",
+      subagent_task_id: "structured-task",
+    }])).toEqual([
+      expect.objectContaining({
+        instanceId: "structured-instance",
+        sourceRunId: "root-run",
+        sourceToolCallId: "structured-call",
+        taskId: "structured-task",
+      }),
+    ]);
+  });
+
   it("correlates legacy orchestration dispatches by their assigned task", () => {
     const messages: TimelineMessage[] = [{
       message: { parts: [{

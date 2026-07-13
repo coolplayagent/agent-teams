@@ -56,7 +56,7 @@ from relay_teams.persistence.shared_state_repo import SharedStateRepository
 from relay_teams.reminders import ReminderStateRepository
 from relay_teams.reminders.service import SystemReminderService
 from relay_teams.retrieval import RetrievalService, SqliteFts5RetrievalStore
-from relay_teams.roles.role_models import RoleDefinition
+from relay_teams.roles.role_models import RoleDefinition, SystemRoleIdentity
 from relay_teams.roles.role_registry import RoleRegistry
 from relay_teams.sessions.runs.run_models import (
     IntentInput,
@@ -1709,6 +1709,7 @@ async def test_execute_coordinator_receives_task_runtime_contract(
             name="Coordinator Agent",
             description="Coordinates delegated work.",
             version="1",
+            system_role=SystemRoleIdentity.COORDINATOR,
             tools=("orch_create_tasks", "orch_update_task", "orch_dispatch_task"),
             system_prompt="Coordinate tasks.",
         )
@@ -1809,7 +1810,7 @@ async def test_execute_coordinator_receives_task_runtime_contract(
 
 
 @pytest.mark.asyncio
-async def test_build_runtime_tools_snapshot_uses_external_tool_descriptions(
+async def test_build_runtime_tools_snapshot_preserves_explicit_role_tools(
     tmp_path: Path,
 ) -> None:
     role_registry = RoleRegistry()
@@ -1819,6 +1820,7 @@ async def test_build_runtime_tools_snapshot_uses_external_tool_descriptions(
             name="Coordinator Agent",
             description="Coordinates delegated work.",
             version="1",
+            system_role=SystemRoleIdentity.COORDINATOR,
             tools=("orch_create_tasks", "orch_update_task", "orch_dispatch_task"),
             system_prompt="Coordinate tasks.",
         )
@@ -1882,7 +1884,9 @@ async def test_build_runtime_tools_snapshot_uses_external_tool_descriptions(
     assert writer_tools["write"].startswith(
         "Write full file contents to the workspace."
     )
-    assert "orch_dispatch_task" not in writer_tools
+    assert writer_tools["orch_dispatch_task"].startswith(
+        "Dispatch a task contract to a role for execution during orchestration."
+    )
 
 
 @pytest.mark.asyncio

@@ -18,7 +18,7 @@ from relay_teams.plugins.plugin_models import (
     PluginSettings,
     PluginSettingsSource,
 )
-from relay_teams.roles.role_models import RoleDefinition
+from relay_teams.roles.role_models import RoleDefinition, SystemRoleIdentity
 from relay_teams.roles.role_registry import RoleRegistry
 from relay_teams.sessions.session_models import SessionMode
 from relay_teams.sessions.session_repository import SessionRepository
@@ -153,6 +153,7 @@ def _build_role_registry() -> RoleRegistry:
             name="Coordinator",
             description="Coordinates work.",
             version="1",
+            system_role=SystemRoleIdentity.COORDINATOR,
             system_prompt="Coordinate.",
         )
     )
@@ -162,6 +163,7 @@ def _build_role_registry() -> RoleRegistry:
             name="Main Agent",
             description="Handles normal runs.",
             version="1",
+            system_role=SystemRoleIdentity.MAIN_AGENT,
             system_prompt="Handle requests.",
         )
     )

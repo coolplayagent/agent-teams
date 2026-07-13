@@ -30,7 +30,7 @@ from relay_teams.roles.role_contracts import (
     RoleContractPostcondition,
     RoleContractPostconditionType,
 )
-from relay_teams.roles.role_models import RoleDefinition
+from relay_teams.roles.role_models import RoleDefinition, SystemRoleIdentity
 from relay_teams.roles.role_registry import RoleRegistry
 from relay_teams.roles.runtime_role_resolver import RuntimeRoleResolver
 from relay_teams.roles.temporary_role_models import TemporaryRoleSpec
@@ -375,6 +375,7 @@ def _build_coordinator(
             name="Coordinator Agent",
             description="Coordinates delegated work.",
             version="1",
+            system_role=SystemRoleIdentity.COORDINATOR,
             tools=(
                 "orch_create_tasks",
                 "orch_update_task",

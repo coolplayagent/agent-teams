@@ -47,22 +47,37 @@ interface KnownSemanticDebt {
 // prohibited special case. Removing one requires deleting its ledger entry; adding
 // or moving a special case to another file fails the gate. Provider-specific UI
 // dispatch must ultimately move behind typed adapter/registry boundaries.
-const KNOWN_SEMANTIC_DEBT: Readonly<Record<string, KnownSemanticDebt>> = {};
+const KNOWN_SEMANTIC_DEBT: Readonly<Record<string, KnownSemanticDebt>> = {
+  "api/client.ts|Do not replace a missing model profile with the literal \"default\".": {
+    count: 1,
+    reason: "Role saves still invent a profile ID instead of preserving the missing selection.",
+  },
+};
 
 const SENSITIVE_RECEIVER_PARTS = new Set([
+  "connectorid",
   "content",
   "error.message",
   "model",
   "modelid",
   "modelname",
+  "modelprofile",
   "prompt",
   "prompttext",
   "provider",
   "providerid",
   "providername",
+  "roleid",
+  "sessionid",
   "title",
   "toolid",
   "toolname",
+]);
+const SENSITIVE_FALLBACK_RECEIVER_PARTS = new Set([
+  "model id",
+  "model profile",
+  "provider id",
+  "tool id",
 ]);
 const PROHIBITED_ROLE_NAMES = new Set([
   "coordinator",
@@ -132,8 +147,12 @@ describe("V2 frontend semantic fidelity", () => {
         const HIDDEN_TOOL_IDS = ["shell"];
         const shouldSkip = promptText.includes("hello");
         const isCoordinator = roleIds.includes("Coordinator");
+        const forcedProfile = config.model_profile ?? "default";
+        const guessedFailure = /quota|limit/.test(error.message.trim().toLowerCase());
+        const pinnedSession = sessionId === "session-special";
         const dynamicSearch = title.includes(query);
         const displayCopy = { coordinator: "Coordinator" };
+        const protocolRegistry = { failed: "danger", completed: "success" };
       `,
     );
     expect(violations.map((violation) => violation.message)).toEqual([
@@ -141,6 +160,9 @@ describe("V2 frontend semantic fidelity", () => {
       "Do not filter backend API inventory through HIDDEN_*_IDS lists.",
       "Do not use prompt includes(\"hello\") as product logic.",
       "Do not special-case the built-in role name \"coordinator\".",
+      "Do not replace a missing model profile with the literal \"default\".",
+      "Do not infer error.message semantics with /quota|limit/.",
+      "Do not branch on session id === \"session-special\".",
     ]);
   });
 });
@@ -202,6 +224,16 @@ function scanSourceText(path: string, sourceText: string): Violation[] {
           violation(sourceFile, node, `Do not special-case the built-in role name \"${roleName}\".`),
         );
       }
+      const regexPredicate = semanticRegexPredicate(node);
+      if (regexPredicate !== null) {
+        violations.push(
+          violation(
+            sourceFile,
+            node,
+            `Do not infer ${regexPredicate.receiver} semantics with ${regexPredicate.pattern}.`,
+          ),
+        );
+      }
     }
     if (ts.isBinaryExpression(node)) {
       const roleName = prohibitedRoleComparison(node, constants);
@@ -217,6 +249,16 @@ function scanSourceText(path: string, sourceText: string): Violation[] {
             sourceFile,
             node,
             `Do not branch on ${semanticComparison.receiver} ${semanticComparison.operator} \"${semanticComparison.literal}\".`,
+          ),
+        );
+      }
+      const semanticFallback = semanticLiteralFallback(node, constants);
+      if (semanticFallback !== null) {
+        violations.push(
+          violation(
+            sourceFile,
+            node,
+            `Do not replace a missing ${semanticFallback.receiver} with the literal \"${semanticFallback.literal}\".`,
           ),
         );
       }
@@ -307,7 +349,7 @@ function semanticLiteralPredicate(
   }
   const receiver = sensitiveReceiver(node.expression.expression);
   const literal = literalText(node.arguments[0], constants);
-  if (receiver === null || literal === null) {
+  if (receiver === null || literal === null || literal.length === 0) {
     return null;
   }
   return { literal, method: method as LiteralPredicate["method"], receiver };
@@ -365,12 +407,12 @@ function semanticLiteralComparison(
   }
   const leftReceiver = sensitiveReceiver(node.left);
   const rightLiteral = literalText(node.right, constants);
-  if (leftReceiver !== null && rightLiteral !== null) {
+  if (leftReceiver !== null && rightLiteral !== null && rightLiteral.length > 0) {
     return { literal: rightLiteral, operator: node.operatorToken.getText(), receiver: leftReceiver };
   }
   const rightReceiver = sensitiveReceiver(node.right);
   const leftLiteral = literalText(node.left, constants);
-  if (rightReceiver !== null && leftLiteral !== null) {
+  if (rightReceiver !== null && leftLiteral !== null && leftLiteral.length > 0) {
     return { literal: leftLiteral, operator: node.operatorToken.getText(), receiver: rightReceiver };
   }
   return null;
@@ -384,7 +426,16 @@ function isEqualityOperator(kind: ts.SyntaxKind): boolean {
 }
 
 function sensitiveReceiver(node: ts.Expression): string | null {
-  const normalized = node.getText().replaceAll(/[^a-zA-Z0-9_.]/g, "").toLocaleLowerCase();
+  if (ts.isParenthesizedExpression(node) || ts.isAsExpression(node)) {
+    return sensitiveReceiver(node.expression);
+  }
+  if (ts.isNonNullExpression(node)) {
+    return sensitiveReceiver(node.expression);
+  }
+  if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+    return sensitiveReceiver(node.expression.expression);
+  }
+  const normalized = node.getText().replaceAll(/[^a-zA-Z0-9.]/g, "").toLocaleLowerCase();
   for (const part of SENSITIVE_RECEIVER_PARTS) {
     if (
       normalized === part
@@ -400,7 +451,62 @@ function sensitiveReceiver(node: ts.Expression): string | null {
   return null;
 }
 
+interface RegexPredicate {
+  pattern: string;
+  receiver: string;
+}
+
+function semanticRegexPredicate(node: ts.CallExpression): RegexPredicate | null {
+  if (
+    !ts.isPropertyAccessExpression(node.expression)
+    || node.expression.name.text !== "test"
+    || !ts.isRegularExpressionLiteral(node.expression.expression)
+    || node.arguments.length !== 1
+  ) {
+    return null;
+  }
+  const receiver = sensitiveReceiver(node.arguments[0]);
+  return receiver === null
+    ? null
+    : { pattern: node.expression.expression.text, receiver };
+}
+
+interface LiteralFallback {
+  literal: string;
+  receiver: string;
+}
+
+function semanticLiteralFallback(
+  node: ts.BinaryExpression,
+  constants: ReadonlyMap<string, string>,
+): LiteralFallback | null {
+  if (
+    node.operatorToken.kind !== ts.SyntaxKind.QuestionQuestionToken
+    && node.operatorToken.kind !== ts.SyntaxKind.BarBarToken
+  ) {
+    return null;
+  }
+  const receiver = sensitiveReceiver(node.left);
+  const literal = literalText(node.right, constants);
+  if (
+    receiver === null
+    || !SENSITIVE_FALLBACK_RECEIVER_PARTS.has(receiver)
+    || literal === null
+    || literal.length === 0
+  ) {
+    return null;
+  }
+  return { literal, receiver };
+}
+
 function semanticReceiverGroup(part: string): string {
+  if (part === "modelid") return "model id";
+  if (part === "modelprofile") return "model profile";
+  if (part === "providerid") return "provider id";
+  if (part === "toolid") return "tool id";
+  if (part === "connectorid") return "connector id";
+  if (part === "roleid") return "role id";
+  if (part === "sessionid") return "session id";
   if (part.startsWith("prompt")) return "prompt";
   if (part.startsWith("model")) return "model";
   if (part.startsWith("provider")) return "provider";

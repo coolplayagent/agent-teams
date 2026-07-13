@@ -2253,6 +2253,24 @@ tool-call UI that has not yet received a tool result for that run turn.
 Session round projections expose public user/subagent injections as
 `injection_messages`. Internal system reminders remain hidden or redacted.
 
+### Tool presentation semantics
+
+`tool_call`, `tool_result`, `tool_input_validation_failed`,
+`tool_approval_requested`, and `tool_approval_resolved` event payloads include
+registry-owned presentation semantics when a tool is known:
+
+- `semantic_category`: `execution | file-edit | file-read | interactive |
+  memory-artifact | orchestration | planning | unknown | web`
+- `action_family`: `edit | generic | orchestration | read | run | search |
+  subagent`
+
+The same fields are preserved on `tool-call`, `tool-return`, and
+`retry-prompt` parts in session message and round replay projections. Clients
+must use these fields instead of inferring behavior from `tool_name`. Unknown
+or plugin-provided tools without declared semantics use
+`semantic_category="unknown"` and `action_family="generic"`. Tool display
+semantics therefore remain stable when a registered tool is renamed.
+
 ### `GET /runs/{run_id}/tool-approvals`
 
 Lists pending tool approvals.

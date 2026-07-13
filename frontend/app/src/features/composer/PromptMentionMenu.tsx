@@ -148,21 +148,18 @@ export function PromptMentionMenu({
                   <span aria-hidden className="at-prompt-mention-icon">
                     {promptMentionIcon(option)}
                   </span>
-                  <span className="at-prompt-mention-copy">
-                    <span className="at-prompt-mention-name-row">
-                      <span className="at-prompt-mention-name">
-                        {promptMentionPrefix(option)}
-                        {option.displayName}
-                      </span>
-                      <span className="at-prompt-mention-kind">
-                        {promptMentionKindLabel(option, t)}
-                      </span>
-                    </span>
-                    {option.description ? (
-                      <span className="at-prompt-mention-description">
-                        {option.description}
-                      </span>
-                    ) : null}
+                  <span className="at-prompt-mention-name">
+                    {promptMentionPrefix(option)}
+                    {option.displayName}
+                  </span>
+                  <span
+                    className="at-prompt-mention-description"
+                    title={option.description}
+                  >
+                    {option.description}
+                  </span>
+                  <span className="at-prompt-mention-kind">
+                    {promptMentionKindLabel(option, t)}
                   </span>
                 </button>
               </div>

@@ -100,6 +100,17 @@ describe("PromptMentionMenu", () => {
     expect(screen.getAllByText("Actions")).not.toHaveLength(0);
     expect(screen.getByText("File")).toBeVisible();
     expect(screen.getAllByText("Role")).not.toHaveLength(0);
+    const commandOption = screen.getByRole("option", { name: /review/ });
+    expect(commandOption.children).toHaveLength(4);
+    expect(commandOption.querySelector(".at-prompt-mention-name"))
+      .toHaveTextContent("/review");
+    expect(commandOption.querySelector(".at-prompt-mention-description"))
+      .toHaveAttribute(
+        "title",
+        "Review the current changes without expanding the full prompt.",
+      );
+    expect(commandOption.querySelector(".at-prompt-mention-kind"))
+      .toHaveTextContent("Command");
 
     view.rerender(
       <MenuHarness activeIndex={3} onSelect={onSelect} options={options} />,

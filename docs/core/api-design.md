@@ -414,8 +414,10 @@ For API-created shared credentials, the `.env` file stores proxy URLs without th
 Returns the saved web tool configuration.
 Fields:
 - `provider`: always `exa`
+- `provider_options`: backend-advertised primary providers with display names and optional website URLs
 - `exa_api_key_configured`: whether an Exa key is stored; the read endpoint never returns the key
 - `fallback_provider`: `searxng` by default, or `disabled` when automatic fallback is explicitly turned off
+- `fallback_provider_options`: backend-advertised fallback choices; `uses_instance_url` tells clients whether to show the instance URL controls
 - `searxng_instance_url`: the SearXNG base URL used for fallback, defaulting to `https://search.mdosch.de/`
 - `searxng_instance_seeds`: the built-in SearXNG seed instances exposed read-only for the settings UI
 
@@ -429,6 +431,7 @@ Saves the web tool configuration.
 When `preserve_exa_api_key: true` and `exa_api_key` is `null`, the backend retains the existing saved key. Sending an explicit replacement updates it; sending `preserve_exa_api_key: false` with a null or blank value clears it.
 `fallback_provider` defaults to `searxng`. Set it to `disabled` to opt out of automatic retry after Exa quota and rate-limit failures.
 `searxng_instance_url` defaults to `https://search.mdosch.de/`.
+Settings clients must render provider choices, labels, website links, and provider-specific fields from the capability descriptors returned by `GET /system/configs/web`; they must not maintain their own provider registry.
 The backend persists the Exa API key only through the unified secret store and does not write it back to `.env`.
 
 ### `GET /system/configs/github`

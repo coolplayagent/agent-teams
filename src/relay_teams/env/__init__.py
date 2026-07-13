@@ -22,6 +22,10 @@ from relay_teams.env.runtime_env import (
     load_merged_env_vars,
     sync_app_env_to_process_env,
 )
+from relay_teams.env.web_config_models import (
+    WebFallbackProviderDescriptor,
+    WebProviderDescriptor,
+)
 
 __all__ = [
     "ProxyEnvConfig",
@@ -41,4 +45,6 @@ __all__ = [
     "resolve_proxy_env_config",
     "sync_app_env_to_process_env",
     "sync_proxy_env_to_process_env",
+    "WebFallbackProviderDescriptor",
+    "WebProviderDescriptor",
 ]

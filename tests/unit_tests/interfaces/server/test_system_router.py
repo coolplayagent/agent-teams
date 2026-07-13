@@ -3578,8 +3578,27 @@ def test_get_web_config() -> None:
     assert response.status_code == 200
     assert response.json() == {
         "provider": "exa",
+        "provider_options": [
+            {
+                "display_name": "Exa",
+                "provider": "exa",
+                "website_url": "https://exa.ai",
+            }
+        ],
         "exa_api_key_configured": False,
         "fallback_provider": "searxng",
+        "fallback_provider_options": [
+            {
+                "display_name": "SearXNG",
+                "provider": "searxng",
+                "uses_instance_url": True,
+            },
+            {
+                "display_name": "Disabled",
+                "provider": "disabled",
+                "uses_instance_url": False,
+            },
+        ],
         "searxng_instance_url": DEFAULT_SEARXNG_INSTANCE_URL,
         "searxng_instance_seeds": list(DEFAULT_SEARXNG_INSTANCE_SEEDS),
     }

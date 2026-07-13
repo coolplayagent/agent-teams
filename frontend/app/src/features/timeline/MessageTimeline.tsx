@@ -555,8 +555,11 @@ export function MessageTimeline({
   );
   const anchoredPersistedRows = useMemo(
     () =>
-      persistedRowsWithRuntimeTextAnchors(
-        roundStreamedPersistedRows,
+      persistedRowsWithRuntimeThinkingAnchors(
+        persistedRowsWithRuntimeTextAnchors(
+          roundStreamedPersistedRows,
+          runtimeRunsForRows,
+        ),
         runtimeRunsForRows,
       ),
     [roundStreamedPersistedRows, runtimeRunsForRows],
@@ -2891,7 +2894,9 @@ function mergeRuntimeThinkingRowsIntoHydratedRows(
     return changed
       ? {
           ...row,
-          key: `${row.key}:runtime-thinking`,
+          key: row.parts.every((part) => part.kind === "thinking")
+            ? row.key
+            : `${row.key}:runtime-thinking`,
           parts: nextParts,
           text: rowCopyText(nextParts),
         }
@@ -3174,6 +3179,108 @@ function persistedRowsWithRuntimeTextAnchors(
       : rowWithoutTextReveal(anchoredRow);
   });
   return changed ? nextRows : persistedRows;
+}
+
+function persistedRowsWithRuntimeThinkingAnchors(
+  persistedRows: TimelineRow[],
+  runStates: Record<string, RuntimeRunState>,
+): TimelineRow[] {
+  let changed = false;
+  const nextRows = persistedRows.map((row) => {
+    const anchorKey = runtimeThinkingAnchorForPersistedRow(row, runStates);
+    if (anchorKey === null || anchorKey === row.key) {
+      return row;
+    }
+    changed = true;
+    return {
+      ...row,
+      key: anchorKey,
+    };
+  });
+  return changed ? nextRows : persistedRows;
+}
+
+function runtimeThinkingAnchorForPersistedRow(
+  row: TimelineRow,
+  runStates: Record<string, RuntimeRunState>,
+): string | null {
+  const thinkingParts = row.parts.filter(
+    (part): part is TimelineThinkingPart => part.kind === "thinking",
+  );
+  if (thinkingParts.length !== 1 || row.parts.length !== 1) {
+    return null;
+  }
+  const runId = row.runId?.trim() ?? "";
+  const runState = runStates[runId];
+  const persistedThinking = thinkingParts[0];
+  if (runId.length === 0 || runState === undefined || persistedThinking === undefined) {
+    return null;
+  }
+  const persistedText = normalizedTimelineText(persistedThinking.text);
+  if (persistedText.length === 0) {
+    return null;
+  }
+  const candidates = runtimeThinkingCycles(runState.entries).filter((cycle) => {
+    if (cycle.partIndex !== persistedThinking.partIndex) {
+      return false;
+    }
+    const runtimeText = normalizedTimelineText(cycle.text);
+    return runtimeText.length > 0 &&
+      (persistedText.includes(runtimeText) || runtimeText.includes(persistedText));
+  });
+  return candidates.length === 1 ? candidates[0]?.key ?? null : null;
+}
+
+interface RuntimeThinkingCycle {
+  key: string;
+  partIndex: string;
+  text: string;
+}
+
+function runtimeThinkingCycles(entries: readonly TimelineEntry[]): RuntimeThinkingCycle[] {
+  const activeCycles = new Map<string, RuntimeThinkingCycle>();
+  const completedCycles: RuntimeThinkingCycle[] = [];
+  for (const entry of entries) {
+    if (!isThinkingEvent(entry.kind)) {
+      continue;
+    }
+    const payload = jsonObject(entry.payload);
+    if (payload === null || payloadHasParseError(payload)) {
+      continue;
+    }
+    const partIndex = thinkingPartIndex(payload);
+    const groupKey = runtimeThinkingGroupKey(entry, partIndex);
+    if (entry.kind === "thinking_started") {
+      if (!activeCycles.has(groupKey)) {
+        activeCycles.set(groupKey, {
+          key: runtimeThinkingRow(entry, partIndex).key,
+          partIndex,
+          text: "",
+        });
+      }
+      continue;
+    }
+    if (entry.kind === "thinking_delta") {
+      let cycle = activeCycles.get(groupKey);
+      if (cycle === undefined) {
+        cycle = {
+          key: runtimeThinkingRow(entry, partIndex).key,
+          partIndex,
+          text: "",
+        };
+        activeCycles.set(groupKey, cycle);
+      }
+      cycle.text += thinkingDeltaText(entry);
+      continue;
+    }
+    const cycle = activeCycles.get(groupKey);
+    if (cycle !== undefined) {
+      completedCycles.push(cycle);
+      activeCycles.delete(groupKey);
+    }
+  }
+  completedCycles.push(...activeCycles.values());
+  return completedCycles;
 }
 
 function persistedRowsWithCorrelatedSubagents(

@@ -1294,6 +1294,94 @@ describe("MessageTimeline", () => {
     expect(timeline.scrollTop).toBe(120);
   });
 
+  it("keeps a live thinking disclosure mounted when partial persistence hydrates it", async () => {
+    const runId = "run-live-thinking-hydration";
+    const initialEvents = [
+      relayRunEvent({
+        event_id: 1,
+        event_type: "thinking_started",
+        payload_json: JSON.stringify({ part_index: 0 }),
+        run_id: runId,
+        trace_id: runId,
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "thinking_delta",
+        payload_json: JSON.stringify({ part_index: 0, text: "Stable live thought" }),
+        run_id: runId,
+        trace_id: runId,
+      }),
+    ];
+    setRuntimeStateFromEvents(initialEvents);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container, queryClient } = renderTimeline();
+
+    await waitFor(() => {
+      expect(container.querySelector(`[data-row-key="processed:${runId}"]`))
+        .not.toBeNull();
+    });
+    const group = container.querySelector<HTMLElement>(
+      `[data-row-key="processed:${runId}"]`,
+    );
+    if (group === null) {
+      throw new Error("Expected the live processed group.");
+    }
+    const thinkingBefore = group.querySelector<HTMLDetailsElement>(
+      "details.at-message-thinking",
+    );
+    const bodyBefore = thinkingBefore?.querySelector<HTMLElement>(
+      ".at-message-streaming-plain",
+    ) ?? null;
+    const textNodeBefore = bodyBefore?.firstChild ?? null;
+    expect(thinkingBefore).not.toBeNull();
+    expect(bodyBefore).not.toBeNull();
+    expect(textNodeBefore).not.toBeNull();
+
+    act(() => {
+      queryClient.setQueryData(["sessions", "session-1", "messages"], [
+        {
+          message: {
+            parts: [{
+              content: "Stable live thought",
+              part_index: 0,
+              part_kind: "thinking",
+            }],
+          },
+          message_id: "assistant-live-thinking-hydration",
+          role_id: "MainAgent",
+          run_id: runId,
+        },
+      ]);
+    });
+
+    await waitFor(() => {
+      expect(group.querySelector("details.at-message-thinking"))
+        .toBe(thinkingBefore);
+      expect(thinkingBefore?.querySelector(".at-message-streaming-plain"))
+        .toBe(bodyBefore);
+      expect(bodyBefore?.firstChild).toBe(textNodeBefore);
+    });
+
+    act(() => {
+      setRuntimeStateFromEvents([
+        ...initialEvents,
+        relayRunEvent({
+          event_id: 3,
+          event_type: "thinking_delta",
+          payload_json: JSON.stringify({ part_index: 0, text: " continues" }),
+          run_id: runId,
+          trace_id: runId,
+        }),
+      ]);
+    });
+
+    expect(group.querySelector("details.at-message-thinking"))
+      .toBe(thinkingBefore);
+    expect(thinkingBefore).toHaveTextContent("Stable live thought continues");
+    expect(bodyBefore?.firstChild).toBe(textNodeBefore);
+  });
+
   it("preserves event order when narration separates two live tool calls", async () => {
     const runId = "run-interleaved-live-work";
     const liveEvents = [

@@ -43,6 +43,37 @@ describe("subagent timeline correlation", () => {
     ]);
   });
 
+  it("correlates persisted dispatches whose arguments are serialized JSON", () => {
+    const messages: TimelineMessage[] = [{
+      message: { parts: [{
+        args: JSON.stringify({
+          prompt: "Inspect the replay.",
+          role_id: "Explorer",
+          task_id: "serialized-task",
+        }),
+        kind: "tool-call",
+        tool_call_id: "serialized-call",
+        tool_name: "persisted-dispatch",
+      }] },
+      role: "assistant",
+      task_id: "root-task",
+      trace_id: "root-run",
+    }];
+
+    expect(correlateSessionSubagents(messages, [{
+      instance_id: "explorer-instance",
+      role_id: "Explorer",
+      run_id: "root-run",
+      source_run_id: "root-run",
+      subagent_task_id: "serialized-task",
+    }])).toEqual([
+      expect.objectContaining({
+        sourceToolCallId: "serialized-call",
+        taskId: "serialized-task",
+      }),
+    ]);
+  });
+
   it("does not reinterpret an ordinary orchestration tool as a subagent", () => {
     const messages: TimelineMessage[] = [{
       message: { parts: [{

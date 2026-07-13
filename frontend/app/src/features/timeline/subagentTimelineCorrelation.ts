@@ -172,19 +172,21 @@ function messageToolCallSites(message: TimelineMessage): ToolCallSite[] {
     const roleId = jsonString(args, "role_id");
     const prompt = jsonString(args, "prompt");
     const taskId = jsonString(args, "task_id") || normalized(message.task_id);
+    const actionFamily = normalized(part.action_family);
+    const semanticCategory = normalized(part.semantic_category);
     const isLegacyOrchestrationDispatch =
-      part.action_family === "orchestration" &&
-      part.semantic_category === "orchestration" &&
+      actionFamily === "orchestration" &&
+      semanticCategory === "orchestration" &&
       jsonString(args, "task_id").length > 0;
     if (
       (
-        part.action_family !== undefined &&
-        part.action_family !== "subagent" &&
+        actionFamily.length > 0 &&
+        actionFamily !== "subagent" &&
         !isLegacyOrchestrationDispatch
       ) ||
       (
-        part.semantic_category !== undefined &&
-        part.semantic_category !== "orchestration"
+        semanticCategory.length > 0 &&
+        semanticCategory !== "orchestration"
       )
     ) {
       return [];
@@ -232,9 +234,20 @@ function recordIdentity(
 }
 
 function jsonObject(value: JsonValue | undefined): Record<string, JsonValue> | null {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value
-    : null;
+  if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+    return value;
+  }
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return null;
+  }
+  try {
+    const parsed: JsonValue = JSON.parse(value) as JsonValue;
+    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function jsonString(

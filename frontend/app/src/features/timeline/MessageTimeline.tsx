@@ -77,6 +77,7 @@ import {
   immediateTimelineHydrationRowKeys,
   rememberHydratedTimelineRow,
 } from "./timelineRowHydration";
+import { normalizedInjectionStatus } from "./timelineEventContracts";
 import {
   recordTerminalDomSnapshot,
   stabilizeTerminalDomLayout,
@@ -2365,19 +2366,6 @@ function timelineInjectionRowKey(
       ? `id:${injection.injectionId}`
       : `fallback:${fallback}`;
   return `injection:${runId ?? ""}:${identity}`;
-}
-
-function normalizedInjectionStatus(
-  status: string | null | undefined,
-): TimelineInjectionRow["status"] {
-  const normalized = (status ?? "").trim().toLowerCase();
-  if (normalized.includes("fail") || normalized.includes("error")) {
-    return "failed";
-  }
-  if (normalized.includes("appl") || normalized.includes("deliver")) {
-    return "applied";
-  }
-  return "queued";
 }
 
 function insertRoundMarkerRows(

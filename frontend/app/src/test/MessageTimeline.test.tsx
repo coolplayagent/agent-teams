@@ -11637,6 +11637,70 @@ describe("MessageTimeline", () => {
       .toHaveLength(1);
   });
 
+  it("classifies injection statuses only from the exact status contract", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 21,
+        event_type: "injection_enqueued",
+        payload_json: JSON.stringify({
+          content: "Near failed status",
+          injection_id: "inj-near-failed",
+          source: "user",
+          status: "failed_validation_pending",
+          visibility: "public",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 22,
+        event_type: "injection_enqueued",
+        payload_json: JSON.stringify({
+          content: "Near applied status",
+          injection_id: "inj-near-applied",
+          source: "user",
+          status: "application_pending",
+          visibility: "public",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 23,
+        event_type: "injection_enqueued",
+        payload_json: JSON.stringify({
+          content: "Exact failed status",
+          injection_id: "inj-exact-failed",
+          source: "user",
+          status: "failed",
+          visibility: "public",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 24,
+        event_type: "injection_enqueued",
+        payload_json: JSON.stringify({
+          content: "Exact delivered status",
+          injection_id: "inj-exact-delivered",
+          source: "user",
+          status: "delivered",
+          visibility: "public",
+        }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText(/Injection queued: Near failed status/))
+      .toBeVisible();
+    expect(screen.getByText(/Injection queued: Near applied status/)).toBeVisible();
+    expect(screen.getByText(/Injection failed: Exact failed status/)).toBeVisible();
+    expect(screen.getByText(/Injection applied: Exact delivered status/)).toBeVisible();
+    expect(
+      container.querySelector('[data-injection-id="inj-near-failed"]'),
+    ).toHaveAttribute("data-injection-status", "queued");
+    expect(
+      container.querySelector('[data-injection-id="inj-near-applied"]'),
+    ).toHaveAttribute("data-injection-status", "queued");
+  });
+
   it("applies persisted supersession and visibility rules during final replay", async () => {
     listSessionMessagesMock.mockResolvedValue([]);
     listSessionRoundsMock.mockResolvedValue({

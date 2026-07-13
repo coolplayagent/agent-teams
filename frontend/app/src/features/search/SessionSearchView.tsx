@@ -6,7 +6,8 @@ import type { KeyboardEvent, PointerEvent, ReactNode } from "react";
 
 import type { SessionSidebarRecord, WorkspaceRecord } from "../../api/contracts";
 import { useTranslations } from "../../i18n";
-import { useUiStore, type Language } from "../../runtime/uiStore";
+import { formatCompactRelativeTime } from "../../runtime/relativeTime";
+import { useUiStore } from "../../runtime/uiStore";
 import { sessionDisplayLabel } from "../sessions/sessionLabels";
 
 const maxSearchResults = 20;
@@ -179,7 +180,7 @@ export function SessionSearchView({
                           className="at-session-search-result-time at-session-search-result-time-compact"
                           title={row.session.updated_at}
                         >
-                          {formatRelativeTime(row.session.updated_at, language)}
+                          {formatCompactRelativeTime(row.session.updated_at, language)}
                         </span>
                       ) : null}
                     </span>
@@ -196,7 +197,7 @@ export function SessionSearchView({
                       className="at-session-search-result-time at-session-search-result-time-wide"
                       title={row.session.updated_at}
                     >
-                      {formatRelativeTime(row.session.updated_at, language)}
+                      {formatCompactRelativeTime(row.session.updated_at, language)}
                     </span>
                   ) : null}
                 </button>
@@ -446,37 +447,4 @@ function sessionTimestampValue(value: string | undefined): number {
   }
   const timestamp = Date.parse(value);
   return Number.isFinite(timestamp) ? timestamp : 0;
-}
-
-function formatRelativeTime(value: string, language: Language): string {
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) {
-    return "";
-  }
-  const elapsedMs = Math.max(0, Date.now() - timestamp);
-  const minuteMs = 60 * 1000;
-  const hourMs = 60 * minuteMs;
-  const dayMs = 24 * hourMs;
-  if (elapsedMs < minuteMs) {
-    return language === "zh-CN" ? "现在" : "now";
-  }
-  if (elapsedMs < hourMs) {
-    return language === "zh-CN"
-      ? `${Math.floor(elapsedMs / minuteMs)}分`
-      : `${Math.floor(elapsedMs / minuteMs)}m`;
-  }
-  if (elapsedMs < dayMs) {
-    return language === "zh-CN"
-      ? `${Math.floor(elapsedMs / hourMs)}时`
-      : `${Math.floor(elapsedMs / hourMs)}h`;
-  }
-  if (elapsedMs < 7 * dayMs) {
-    return language === "zh-CN"
-      ? `${Math.floor(elapsedMs / dayMs)}天`
-      : `${Math.floor(elapsedMs / dayMs)}d`;
-  }
-  return new Intl.DateTimeFormat(language, {
-    day: "numeric",
-    month: "short",
-  }).format(new Date(timestamp));
 }

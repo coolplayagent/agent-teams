@@ -92,6 +92,38 @@ interface WorkspaceMountFormValues {
   ssh_profile_id?: string;
 }
 
+interface WorkspaceMountTransportCapabilities {
+  canBeDefault: boolean;
+  order: number;
+  preserveWorkspaceLineage: boolean;
+  usesRemoteConnection: boolean;
+}
+
+const workspaceMountTransportCapabilities: Readonly<
+  Record<WorkspaceMountProvider, WorkspaceMountTransportCapabilities>
+> = {
+  local: {
+    canBeDefault: true,
+    order: 0,
+    preserveWorkspaceLineage: true,
+    usesRemoteConnection: false,
+  },
+  ssh: {
+    canBeDefault: false,
+    order: 1,
+    preserveWorkspaceLineage: false,
+    usesRemoteConnection: true,
+  },
+};
+
+const unknownWorkspaceMountTransportCapabilities: WorkspaceMountTransportCapabilities =
+  {
+    canBeDefault: false,
+    order: Number.MAX_SAFE_INTEGER,
+    preserveWorkspaceLineage: false,
+    usesRemoteConnection: false,
+  };
+
 interface WorkspaceMountUpdateInput {
   preferredMountName: string;
   request: WorkspaceUpdateRequest;
@@ -106,12 +138,17 @@ export function WorkspaceProjectView({
   const queryClient = useQueryClient();
   const t = useTranslations();
   const [mountForm] = Form.useForm<WorkspaceMountFormValues>();
-  const [modeOverride, setModeOverride] = useState<WorkspaceProjectMode | null>(null);
-  const [activeMountNameOverride, setActiveMountNameOverride] = useState<string | null>(null);
+  const [modeOverride, setModeOverride] = useState<WorkspaceProjectMode | null>(
+    null,
+  );
+  const [activeMountNameOverride, setActiveMountNameOverride] = useState<
+    string | null
+  >(null);
   const [selectedDiffPath, setSelectedDiffPath] = useState<string | null>(null);
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [treeFilter, setTreeFilter] = useState("");
-  const [mountDialog, setMountDialog] = useState<WorkspaceMountDialogState | null>(null);
+  const [mountDialog, setMountDialog] =
+    useState<WorkspaceMountDialogState | null>(null);
   const [sshProfilesOpen, setSshProfilesOpen] = useState(false);
 
   const workspacesQuery = useQuery({
@@ -143,7 +180,11 @@ export function WorkspaceProjectView({
     workspace?.default_mount_name?.trim() ||
     snapshot?.default_mount_name?.trim() ||
     "default";
-  const workspaceMounts = resolveWorkspaceMounts(workspace, snapshot, defaultMountName);
+  const workspaceMounts = resolveWorkspaceMounts(
+    workspace,
+    snapshot,
+    defaultMountName,
+  );
   const mountNames = uniqueValues([
     defaultMountName,
     ...workspaceMounts
@@ -169,12 +210,12 @@ export function WorkspaceProjectView({
     modeOverride ?? (diffFiles.length > 0 ? "changes" : "files");
   const selectedDiff =
     selectedDiffPath === null
-      ? diffFiles[0] ?? null
-      : diffFiles.find((file) => file.path === selectedDiffPath) ?? diffFiles[0] ?? null;
+      ? (diffFiles[0] ?? null)
+      : (diffFiles.find((file) => file.path === selectedDiffPath) ??
+        diffFiles[0] ??
+        null);
   const effectiveSelectedDiffPath = selectedDiff?.path ?? null;
-  const mountName =
-    diffsQuery.data?.mount_name?.trim() ||
-    activeMountName;
+  const mountName = diffsQuery.data?.mount_name?.trim() || activeMountName;
 
   const rootTreeQuery = useQuery({
     queryKey: ["workspaces", "tree", workspaceId, activeMountName, "."],
@@ -191,7 +232,12 @@ export function WorkspaceProjectView({
       normalizedTreeFilter,
     ],
     queryFn: () =>
-      searchWorkspacePaths(workspaceId, normalizedTreeFilter, 80, activeMountName),
+      searchWorkspacePaths(
+        workspaceId,
+        normalizedTreeFilter,
+        80,
+        activeMountName,
+      ),
     enabled:
       workspaceId.length > 0 &&
       activeMountName.length > 0 &&
@@ -200,16 +246,26 @@ export function WorkspaceProjectView({
   const rootTreeEntries = rootTreeQuery.data?.children ?? [];
   const filePaneEntries =
     normalizedTreeFilter.length > 0
-      ? fileSearchQuery.data?.results ?? []
+      ? (fileSearchQuery.data?.results ?? [])
       : rootTreeEntries;
 
   const diffFileQuery = useQuery({
-    queryKey: ["workspaces", "diff", workspaceId, mountName, effectiveSelectedDiffPath],
+    queryKey: [
+      "workspaces",
+      "diff",
+      workspaceId,
+      mountName,
+      effectiveSelectedDiffPath,
+    ],
     queryFn: () => {
       if (effectiveSelectedDiffPath === null) {
         throw new Error("Diff path is required.");
       }
-      return getWorkspaceDiffFile(workspaceId, effectiveSelectedDiffPath, mountName);
+      return getWorkspaceDiffFile(
+        workspaceId,
+        effectiveSelectedDiffPath,
+        mountName,
+      );
     },
     enabled:
       activeMode === "changes" &&
@@ -218,12 +274,22 @@ export function WorkspaceProjectView({
   });
 
   const fileContentQuery = useQuery({
-    queryKey: ["workspaces", "file", workspaceId, activeMountName, selectedFilePath],
+    queryKey: [
+      "workspaces",
+      "file",
+      workspaceId,
+      activeMountName,
+      selectedFilePath,
+    ],
     queryFn: () => {
       if (selectedFilePath === null) {
         throw new Error("File path is required.");
       }
-      return getWorkspaceFileContent(workspaceId, selectedFilePath, activeMountName);
+      return getWorkspaceFileContent(
+        workspaceId,
+        selectedFilePath,
+        activeMountName,
+      );
     },
     enabled:
       activeMode === "files" &&
@@ -270,7 +336,10 @@ export function WorkspaceProjectView({
 
   if (workspacesQuery.isLoading) {
     return (
-      <section aria-label={t("workspaceProjectView")} className="at-project-view">
+      <section
+        aria-label={t("workspaceProjectView")}
+        className="at-project-view"
+      >
         <Skeleton active paragraph={{ rows: 12 }} />
       </section>
     );
@@ -278,8 +347,14 @@ export function WorkspaceProjectView({
 
   if (workspace === null) {
     return (
-      <section aria-label={t("workspaceProjectView")} className="at-project-view">
-        <Empty description={t("workspaceNoSelected")} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+      <section
+        aria-label={t("workspaceProjectView")}
+        className="at-project-view"
+      >
+        <Empty
+          description={t("workspaceNoSelected")}
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+        />
       </section>
     );
   }
@@ -354,10 +429,15 @@ export function WorkspaceProjectView({
               type="button"
             >
               <span>{t("workspaceChanges")}</span>
-              <span className="at-workspace-mode-count">{diffFiles.length}</span>
+              <span className="at-workspace-mode-count">
+                {diffFiles.length}
+              </span>
             </button>
           </div>
-          <div className="at-workspace-mount-menu" aria-label={t("workspaceMount")}>
+          <div
+            className="at-workspace-mount-menu"
+            aria-label={t("workspaceMount")}
+          >
             <span>{t("workspaceMount")}</span>
             {mountNames.map((name) => (
               <button
@@ -391,7 +471,9 @@ export function WorkspaceProjectView({
                 aria-label={t("workspaceMountEdit")}
                 disabled={activeMount === null}
                 icon={<Pencil size={14} />}
-                onClick={() => setMountDialog({ mode: "edit", mount: activeMount })}
+                onClick={() =>
+                  setMountDialog({ mode: "edit", mount: activeMount })
+                }
                 size="small"
                 type="text"
               />
@@ -463,10 +545,15 @@ export function WorkspaceProjectView({
               aria-label={t("workspaceChangesListLabel")}
               className="at-workspace-diff-list"
             >
-              {diffsQuery.isLoading ? <Skeleton active paragraph={{ rows: 8 }} /> : null}
+              {diffsQuery.isLoading ? (
+                <Skeleton active paragraph={{ rows: 8 }} />
+              ) : null}
               {diffsQuery.isError ? (
                 <div className="at-project-state is-error">
-                  {errorMessage(diffsQuery.error, t("workspaceLoadChangesError"))}
+                  {errorMessage(
+                    diffsQuery.error,
+                    t("workspaceLoadChangesError"),
+                  )}
                 </div>
               ) : null}
               {diffsQuery.data !== undefined && diffFiles.length === 0 ? (
@@ -576,7 +663,8 @@ export function WorkspaceProjectView({
         removedMountName: mode === "edit" ? sourceMountName : "",
         replacementMountName: nextMount.mount_name,
         requestedDefaultMountName:
-          values.set_default === true && nextMount.provider === "local"
+          values.set_default === true &&
+          workspaceMountTransport(nextMount.provider).canBeDefault
             ? nextMount.mount_name
             : defaultMountName,
       });
@@ -609,7 +697,9 @@ export function WorkspaceProjectView({
     }
     modal.confirm({
       cancelText: t("sidebarDeleteCancel"),
-      content: t("workspaceMountRemoveConfirm", { mount: activeMount.mount_name }),
+      content: t("workspaceMountRemoveConfirm", {
+        mount: activeMount.mount_name,
+      }),
       okButtonProps: { danger: true },
       okText: t("sidebarDeleteConfirm"),
       onOk: () => removeWorkspaceMount(activeMount),
@@ -637,7 +727,9 @@ export function WorkspaceProjectView({
       });
     } catch (error) {
       void message.error(
-        error instanceof Error ? error.message : t("workspaceMountRemoveFailed"),
+        error instanceof Error
+          ? error.message
+          : t("workspaceMountRemoveFailed"),
       );
       throw error;
     }
@@ -697,6 +789,7 @@ function WorkspaceMountDialog({
   t: Translate;
 }) {
   const provider = Form.useWatch("provider", form) ?? "local";
+  const transport = workspaceMountTransport(provider);
   const sshOptions = sshProfiles.map((profile) => ({
     label: profile.ssh_profile_id,
     value: profile.ssh_profile_id,
@@ -728,7 +821,9 @@ function WorkspaceMountDialog({
         <Form.Item
           label={t("workspaceMountName")}
           name="mount_name"
-          rules={[{ required: true, message: t("workspaceMountValidationName") }]}
+          rules={[
+            { required: true, message: t("workspaceMountValidationName") },
+          ]}
         >
           <Input placeholder={t("workspaceMountNamePlaceholder")} />
         </Form.Item>
@@ -744,7 +839,7 @@ function WorkspaceMountDialog({
             ]}
           />
         </Form.Item>
-        {provider === "ssh" ? (
+        {transport.usesRemoteConnection ? (
           <>
             <Form.Item
               label={t("workspaceMountSshProfile")}
@@ -764,10 +859,15 @@ function WorkspaceMountDialog({
             </Form.Item>
             {sshProfilesError !== null ? (
               <div className="at-project-state is-error">
-                {errorMessage(sshProfilesError, t("workspaceSshProfilesLoadError"))}
+                {errorMessage(
+                  sshProfilesError,
+                  t("workspaceSshProfilesLoadError"),
+                )}
               </div>
             ) : null}
-            {!sshProfilesLoading && sshProfilesError === null && sshProfiles.length === 0 ? (
+            {!sshProfilesLoading &&
+            sshProfilesError === null &&
+            sshProfiles.length === 0 ? (
               <div className="at-project-state">
                 {t("workspaceNoSshProfiles")}
               </div>
@@ -873,7 +973,9 @@ function WorkspaceFilePreview({
   t: Translate;
 }) {
   if (selectedPath === null) {
-    return <div className="at-project-state">{t("workspaceNoFileSelected")}</div>;
+    return (
+      <div className="at-project-state">{t("workspaceNoFileSelected")}</div>
+    );
   }
   if (loading && fileContent === undefined) {
     return <Skeleton active paragraph={{ rows: 14 }} />;
@@ -890,10 +992,16 @@ function WorkspaceFilePreview({
   }
   const lines = splitFileLines(fileContent?.content ?? "");
   return (
-    <div className={loading ? "at-workspace-file-body is-loading" : "at-workspace-file-body"}>
+    <div
+      className={
+        loading ? "at-workspace-file-body is-loading" : "at-workspace-file-body"
+      }
+    >
       {fileContent?.truncated === true ? (
         <div className="at-workspace-file-notice">
-          {t("workspaceFileTruncated", { size: formatBytes(fileContent.size_bytes) })}
+          {t("workspaceFileTruncated", {
+            size: formatBytes(fileContent.size_bytes),
+          })}
         </div>
       ) : null}
       {lines.map((line, index) => (
@@ -963,13 +1071,21 @@ function WorkspaceFileExplorer({
         />
       </div>
       {loading && entries.length === 0 ? (
-        <div aria-live="polite" className="at-workspace-tree-loading" role="status">
+        <div
+          aria-live="polite"
+          className="at-workspace-tree-loading"
+          role="status"
+        >
           <span className="at-sr-only">{t("workspaceLoadingDirectory")}</span>
           <Skeleton active paragraph={{ rows: 10 }} />
         </div>
       ) : null}
       {loading && entries.length > 0 ? (
-        <div aria-live="polite" className="at-workspace-inline-loading" role="status">
+        <div
+          aria-live="polite"
+          className="at-workspace-inline-loading"
+          role="status"
+        >
           <span aria-hidden="true" className="at-workspace-loading-dot" />
           <span>{t("workspaceLoadingDirectory")}</span>
         </div>
@@ -1078,14 +1194,20 @@ function WorkspaceDirectoryNode({
   const childrenQuery = useQuery({
     queryKey: ["workspaces", "tree", workspaceId, mountName, entry.path],
     queryFn: () => getWorkspaceTree(workspaceId, entry.path, mountName),
-    enabled: expanded && canLoadChildren && workspaceId.length > 0 && mountName.length > 0,
+    enabled:
+      expanded &&
+      canLoadChildren &&
+      workspaceId.length > 0 &&
+      mountName.length > 0,
   });
-  const inlineChildren = "children" in entry && Array.isArray(entry.children)
-    ? entry.children
-    : [];
+  const inlineChildren =
+    "children" in entry && Array.isArray(entry.children) ? entry.children : [];
   const children = childrenQuery.data?.children ?? inlineChildren;
   return (
-    <div aria-busy={childrenQuery.isFetching} className="at-workspace-tree-node">
+    <div
+      aria-busy={childrenQuery.isFetching}
+      className="at-workspace-tree-node"
+    >
       <button
         aria-busy={childrenQuery.isFetching}
         aria-expanded={expanded}
@@ -1248,7 +1370,9 @@ function WorkspaceDiffPreview({
   t: Translate;
 }) {
   if (selectedPath === null) {
-    return <div className="at-project-state">{t("workspaceNoDiffSelected")}</div>;
+    return (
+      <div className="at-project-state">{t("workspaceNoDiffSelected")}</div>
+    );
   }
   if (loading && diffFile === undefined) {
     return <Skeleton active paragraph={{ rows: 14 }} />;
@@ -1268,14 +1392,20 @@ function WorkspaceDiffPreview({
     return <div className="at-project-state">{t("workspaceNoChanges")}</div>;
   }
   return (
-    <div className={loading ? "at-workspace-diff-body is-loading" : "at-workspace-diff-body"}>
+    <div
+      className={
+        loading ? "at-workspace-diff-body is-loading" : "at-workspace-diff-body"
+      }
+    >
       <div className="at-workspace-diff-canvas">
         {lines.map((line) => (
           <div
             className={`at-workspace-diff-line is-${line.kind}`}
             key={`${line.lineNumber}:${line.text}`}
           >
-            <span className="at-workspace-diff-line-number">{line.lineNumber}</span>
+            <span className="at-workspace-diff-line-number">
+              {line.lineNumber}
+            </span>
             <span className="at-workspace-diff-line-text">{line.text}</span>
           </div>
         ))}
@@ -1335,7 +1465,8 @@ function compareWorkspaceMountRecords(
   left: WorkspaceMountRecord,
   right: WorkspaceMountRecord,
 ): number {
-  const providerDelta = mountProviderOrder(left.provider) - mountProviderOrder(right.provider);
+  const providerDelta =
+    mountProviderOrder(left.provider) - mountProviderOrder(right.provider);
   if (providerDelta !== 0) {
     return providerDelta;
   }
@@ -1343,7 +1474,7 @@ function compareWorkspaceMountRecords(
 }
 
 function mountProviderOrder(provider: WorkspaceMountProvider): number {
-  return provider === "local" ? 0 : 1;
+  return workspaceMountTransport(provider).order;
 }
 
 function mountDialogValues({
@@ -1392,13 +1523,13 @@ function buildWorkspaceMountRecordFromValues(
   },
 ): WorkspaceMountRecord {
   const mountName = values.mount_name?.trim() ?? "";
-  const provider = values.provider === "ssh" ? "ssh" : "local";
+  const provider = values.provider ?? "local";
   const baseRecord = buildWorkspaceMountBaseRecord({
     existingMount,
     mode,
     nextProvider: provider,
   });
-  if (provider === "ssh") {
+  if (workspaceMountTransport(provider).usesRemoteConnection) {
     return {
       ...baseRecord,
       mount_name: mountName,
@@ -1461,10 +1592,11 @@ function buildWorkspaceMountBaseRecord({
   if (providerUnchanged && existingMount.capabilities !== undefined) {
     nextRecord.capabilities = existingMount.capabilities;
   }
-  if (nextProvider === "local") {
+  if (workspaceMountTransport(nextProvider).preserveWorkspaceLineage) {
     nextRecord.branch_name = existingMount.branch_name;
     nextRecord.source_root_path = existingMount.source_root_path;
-    nextRecord.forked_from_workspace_id = existingMount.forked_from_workspace_id;
+    nextRecord.forked_from_workspace_id =
+      existingMount.forked_from_workspace_id;
   }
   return nextRecord;
 }
@@ -1493,9 +1625,11 @@ function validateWorkspaceMountSubmission({
     return existingMount.mount_name === mountName;
   });
   if (duplicateMount !== undefined) {
-    throw new Error(t("workspaceMountValidationDuplicate", { mount: mountName }));
+    throw new Error(
+      t("workspaceMountValidationDuplicate", { mount: mountName }),
+    );
   }
-  if (mount.provider === "ssh") {
+  if (workspaceMountTransport(mount.provider).usesRemoteConnection) {
     const config = mount.provider_config;
     if (!isWorkspaceSshMountConfig(config) || !config.ssh_profile_id.trim()) {
       throw new Error(t("workspaceMountValidationSshProfile"));
@@ -1522,11 +1656,17 @@ function resolveUpdatedDefaultMountName({
   replacementMountName?: string;
   requestedDefaultMountName: string;
 }): string {
-  const requestedMount = findWorkspaceMountByName(nextMounts, requestedDefaultMountName);
+  const requestedMount = findWorkspaceMountByName(
+    nextMounts,
+    requestedDefaultMountName,
+  );
   if (requestedMount !== null) {
     return requestedMount.mount_name;
   }
-  const replacementMount = findWorkspaceMountByName(nextMounts, replacementMountName);
+  const replacementMount = findWorkspaceMountByName(
+    nextMounts,
+    replacementMountName,
+  );
   if (
     requestedDefaultMountName.trim() &&
     removedMountName.trim() &&
@@ -1535,8 +1675,23 @@ function resolveUpdatedDefaultMountName({
   ) {
     return replacementMount.mount_name;
   }
-  const firstLocalMount = nextMounts.find((mount) => mount.provider === "local");
-  return firstLocalMount?.mount_name ?? nextMounts[0]?.mount_name ?? "default";
+  const firstDefaultCapableMount = nextMounts.find(
+    (mount) => workspaceMountTransport(mount.provider).canBeDefault,
+  );
+  return (
+    firstDefaultCapableMount?.mount_name ??
+    nextMounts[0]?.mount_name ??
+    "default"
+  );
+}
+
+function workspaceMountTransport(
+  provider: string,
+): WorkspaceMountTransportCapabilities {
+  return (
+    workspaceMountTransportCapabilities[provider as WorkspaceMountProvider] ??
+    unknownWorkspaceMountTransportCapabilities
+  );
 }
 
 function findWorkspaceMountByName(
@@ -1547,7 +1702,9 @@ function findWorkspaceMountByName(
   if (!normalizedMountName) {
     return null;
   }
-  return mounts.find((mount) => mount.mount_name === normalizedMountName) ?? null;
+  return (
+    mounts.find((mount) => mount.mount_name === normalizedMountName) ?? null
+  );
 }
 
 function isWorkspaceLocalMountConfig(
@@ -1562,19 +1719,29 @@ function isWorkspaceSshMountConfig(
   return "ssh_profile_id" in config;
 }
 
-function sshProfileDescription(profile: SshProfileRecord, t: Translate): string {
-  const auth = [
-    profile.has_password === true ? t("workspaceSshProfilePassword") : "",
-    profile.has_private_key === true
-      ? profile.private_key_name?.trim() || t("workspaceSshProfilePrivateKey")
-      : "",
-  ].filter(Boolean).join(" / ") || t("workspaceSshProfileSystemAuth");
+function sshProfileDescription(
+  profile: SshProfileRecord,
+  t: Translate,
+): string {
+  const auth =
+    [
+      profile.has_password === true ? t("workspaceSshProfilePassword") : "",
+      profile.has_private_key === true
+        ? profile.private_key_name?.trim() || t("workspaceSshProfilePrivateKey")
+        : "",
+    ]
+      .filter(Boolean)
+      .join(" / ") || t("workspaceSshProfileSystemAuth");
   return [
     profile.host,
-    profile.username?.trim() ? `${profile.username}${profile.port ? `:${profile.port}` : ""}` : "",
+    profile.username?.trim()
+      ? `${profile.username}${profile.port ? `:${profile.port}` : ""}`
+      : "",
     profile.remote_shell?.trim() || "",
     auth,
-  ].filter(Boolean).join(" · ");
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function formatBytes(sizeBytes: number): string {

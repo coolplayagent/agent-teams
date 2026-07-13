@@ -245,6 +245,38 @@ describe("ConnectorsView", () => {
     expect(screen.getAllByText("Missing credentials").length).toBeGreaterThan(0);
   });
 
+  it("keeps filtering and connector detail keyboard-operable without a detail pane", async () => {
+    renderView();
+
+    const openDetails = await screen.findByRole("button", {
+      name: "Open GitHub details",
+    });
+    expect(openDetails.tagName).toBe("BUTTON");
+    fireEvent.click(openDetails);
+
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() =>
+      expect(within(dialog).getByTestId("connector-detail-github")).toBeVisible(),
+    );
+    fireEvent.keyDown(dialog.parentElement ?? dialog, {
+      code: "Escape",
+      key: "Escape",
+      keyCode: 27,
+    });
+    await waitFor(() =>
+      expect(screen.queryByTestId("connector-detail-github")).not.toBeInTheDocument(),
+    );
+
+    fireEvent.click(
+      screen.getByRole("radio", { name: "Needs config" }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByTestId("connector-card-github")).not.toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("connector-card-w3")).toBeVisible();
+    expect(screen.queryByTestId("connector-detail-w3")).not.toBeInTheDocument();
+  });
+
   it("renders every connector returned by the API without product-id exceptions", async () => {
     const response = defaultConnectorsResponse();
     listConnectorsMock.mockResolvedValue({

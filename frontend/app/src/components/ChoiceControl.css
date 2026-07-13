@@ -41,8 +41,8 @@
   min-height: 44px;
   grid-template-columns: minmax(0, 1fr) var(--at-choice-size);
   padding: 8px 10px;
-  border-color: var(--at-divider);
-  background: var(--at-surface);
+  border-color: transparent;
+  background: transparent;
 }
 
 .at-choice-control.is-row .at-choice-control-indicator {
@@ -56,7 +56,7 @@
 }
 
 .at-choice-control.is-row:hover {
-  background: color-mix(in srgb, var(--at-primary) 5%, var(--at-surface));
+  background: var(--at-surface-hover);
 }
 
 .at-choice-control-input {
@@ -68,6 +68,10 @@
   clip: rect(0 0 0 0);
   clip-path: inset(50%);
   white-space: nowrap;
+}
+
+.at-choice-control-input:focus-visible {
+  outline: none;
 }
 
 .at-choice-control-indicator {

@@ -17,11 +17,20 @@ describe("choice control styling", () => {
   });
 
   it("does not draw a full-row frame for mouse selection", () => {
+    expect(css).toMatch(
+      /\.at-choice-control\.is-row\s*\{[^}]*border-color:\s*transparent;[^}]*background:\s*transparent;/s,
+    );
+    expect(css).toMatch(
+      /\.at-choice-control\.is-row:hover\s*\{[^}]*background:\s*var\(--at-surface-hover\);/s,
+    );
     expect(css).not.toMatch(
       /\.at-choice-control\.is-row\.is-checked\s*\{[^}]*border-color/s,
     );
     expect(css).toMatch(
       /:has\(\.at-choice-control-input:focus-visible\)\s*\{[^}]*box-shadow:\s*inset 0 0 0 1px var\(--at-primary\)/s,
+    );
+    expect(css).toMatch(
+      /\.at-choice-control-input:focus-visible\s*\{[^}]*outline:\s*none;/s,
     );
   });
 });

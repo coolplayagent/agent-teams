@@ -332,14 +332,13 @@ describe("shell layout CSS", () => {
     );
   });
 
-  it("keeps fast session switch loading inside the timeline row", () => {
+  it("does not hide the timeline behind a staged session switch frame", () => {
     expect(themeCss).toMatch(
       /\.at-chat-view\s*{[\s\S]*?position:\s*relative;[\s\S]*?overflow:\s*hidden;/,
     );
-    expect(themeCss).toMatch(
-      /\.at-session-switch-loading\s*{[\s\S]*?grid-column:\s*1;[\s\S]*?grid-row:\s*1;[\s\S]*?z-index:\s*5;[\s\S]*?min-height:\s*0;[\s\S]*?pointer-events:\s*none;/,
-    );
-    expect(themeCss).toMatch(/@keyframes at-session-switch-spin/);
+    expect(themeCss).not.toContain("at-session-switch-loading");
+    expect(themeCss).not.toContain("at-session-switch-prompt");
+    expect(themeCss).not.toContain("is-session-switching");
   });
 
   it("keeps sidebar session motion limited to status and switch affordances", () => {
@@ -347,7 +346,7 @@ describe("shell layout CSS", () => {
     expect(themeCss).toMatch(
       /\.at-session-run-indicator\.is-running \.at-session-run-indicator-glyph\s*{[\s\S]*?animation:\s*at-session-run-indicator-spin 0\.82s linear infinite;/,
     );
-    expect(themeCss).toMatch(/@keyframes at-session-switch-spin/);
+    expect(themeCss).not.toContain("at-session-switch-spin");
     expect(themeCss).not.toContain("session-item-entering");
     expect(themeCss).not.toContain("session-item-removing");
     expect(themeCss).not.toContain("session-item-switch-target");

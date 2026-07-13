@@ -1190,40 +1190,6 @@ body {
   }
 }
 
-.at-session-switch-loading {
-  grid-column: 1;
-  grid-row: 1;
-  z-index: 5;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-width: 0;
-  min-height: 0;
-  padding: 18px 26px;
-  background: color-mix(in srgb, var(--at-bg) 92%, transparent);
-  color: var(--at-text-muted);
-  font-size: 13px;
-  line-height: 1.4;
-  pointer-events: none;
-}
-
-.at-session-switch-loading::before {
-  width: 14px;
-  height: 14px;
-  border: 2px solid color-mix(in srgb, var(--at-primary) 24%, var(--at-border));
-  border-top-color: var(--at-primary);
-  border-radius: 50%;
-  animation: at-session-switch-spin 0.7s linear infinite;
-  content: "";
-}
-
-@keyframes at-session-switch-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 .at-subagent-session-view {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -1479,37 +1445,6 @@ body {
   background: var(--at-surface-elevated);
   box-shadow: 0 6px 18px var(--at-shadow-color);
   color: var(--at-primary);
-}
-
-.at-chat-view.is-session-switching > .at-timeline-frame {
-  visibility: hidden;
-}
-
-.at-session-switch-loading.has-optimistic-prompt {
-  align-items: flex-start;
-  justify-content: center;
-  padding-top: clamp(24px, 6vh, 72px);
-}
-
-.at-session-switch-loading.has-optimistic-prompt::before {
-  display: none;
-}
-
-.at-session-switch-prompt {
-  position: relative;
-  display: grid;
-  gap: 12px;
-  width: min(100%, 960px);
-  pointer-events: none;
-}
-
-.at-session-switch-prompt > .at-message {
-  width: 100%;
-}
-
-.at-session-switch-prompt > .at-model-request-status {
-  position: static;
-  justify-self: start;
 }
 
 .at-model-request-status {

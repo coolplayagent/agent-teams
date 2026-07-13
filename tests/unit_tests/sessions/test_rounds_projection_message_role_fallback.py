@@ -719,6 +719,7 @@ def test_build_session_rounds_maps_role_by_instance_across_runs(tmp_path: Path) 
             session_id=session_id,
             parent_task_id=None,
             trace_id=old_run_id,
+            role_id="Coordinator",
             objective="old objective",
             verification=VerificationPlan(checklist=("non_empty_response",)),
         )
@@ -729,6 +730,7 @@ def test_build_session_rounds_maps_role_by_instance_across_runs(tmp_path: Path) 
             session_id=session_id,
             parent_task_id=None,
             trace_id=new_run_id,
+            role_id="Coordinator",
             objective="new objective",
             verification=VerificationPlan(checklist=("non_empty_response",)),
         )

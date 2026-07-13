@@ -826,6 +826,7 @@ async def test_resume_reactivates_stopped_delegated_task_before_verification(
         session_id="session-1",
         parent_task_id=None,
         trace_id="run-1",
+        role_id="Coordinator",
         objective="do work",
         verification=VerificationPlan(checklist=("non_empty_response",)),
     )
@@ -834,6 +835,7 @@ async def test_resume_reactivates_stopped_delegated_task_before_verification(
         session_id="session-1",
         parent_task_id=root_task.task_id,
         trace_id="run-1",
+        role_id="time",
         objective="query time",
         verification=VerificationPlan(checklist=("non_empty_response",)),
     )

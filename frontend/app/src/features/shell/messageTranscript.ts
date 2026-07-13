@@ -13,7 +13,7 @@ import {
 } from "../../api/contracts";
 
 export const MESSAGE_TRANSCRIPT_SCHEMA = "relay-teams.session-transcript";
-export const MESSAGE_TRANSCRIPT_VERSION = 1;
+export const MESSAGE_TRANSCRIPT_VERSION = 2;
 
 export type TranscriptEntryKind =
   | "user"
@@ -25,22 +25,29 @@ export type TranscriptEntryKind =
   | "subagent"
   | "status";
 
+export type TranscriptActorKind = "assistant" | "subagent" | "unknown" | "user";
+
 export interface TranscriptToolMetadata {
+  actionFamily?: SessionRoundMessagePart["action_family"];
   args?: JsonValue;
   callId?: string;
   isError?: boolean;
   name: string;
   result?: JsonValue;
+  semanticCategory?: SessionRoundMessagePart["semantic_category"];
   stage: "call" | "return";
 }
 
 export interface TranscriptEntryMetadata {
+  actor: TranscriptActorKind;
   entryType?: string;
   injectionId?: string;
   instanceId?: string;
   messageId?: string;
   role?: string;
   roleId?: string;
+  senderInstanceId?: string;
+  senderRoleId?: string;
   source?: string;
   status?: string;
   tool?: TranscriptToolMetadata;
@@ -78,6 +85,7 @@ export interface MessageTranscript {
 interface SortableMessage {
   fallbackOrder: number;
   message: SessionRoundMessage;
+  origin: "coordinator" | "injection";
 }
 
 export function buildMessageTranscript(
@@ -95,7 +103,7 @@ export function buildMessageTranscript(
         id: `${round.run_id}:prompt`,
         kind: "user",
         label: "User",
-        metadata: { role: "user" },
+        metadata: { actor: "user", role: "user" },
         roundIndex,
         runId: round.run_id,
         sequence: sequence++,
@@ -104,8 +112,15 @@ export function buildMessageTranscript(
     }
 
     const messages = mergeRoundMessages(round);
-    messages.forEach((message, messageIndex) => {
-      const projected = projectMessage(message, round, roundIndex, messageIndex, sequence);
+    messages.forEach(({ message, origin }, messageIndex) => {
+      const projected = projectMessage(
+        message,
+        origin,
+        round,
+        roundIndex,
+        messageIndex,
+        sequence,
+      );
       sequence += projected.length;
       entries.push(...projected);
     });
@@ -135,24 +150,27 @@ export function serializeMessageTranscript(transcript: MessageTranscript): strin
   return JSON.stringify(transcript, null, 2);
 }
 
-function mergeRoundMessages(round: SessionRound): SessionRoundMessage[] {
+function mergeRoundMessages(round: SessionRound): SortableMessage[] {
   const coordinator = (round.coordinator_messages ?? []).map(
-    (message, index): SortableMessage => ({ fallbackOrder: index, message }),
+    (message, index): SortableMessage => ({
+      fallbackOrder: index,
+      message,
+      origin: "coordinator",
+    }),
   );
   const injections = (round.injection_messages ?? []).map(
     (message, index): SortableMessage => ({
       fallbackOrder: coordinator.length + index,
-      message: { ...message, entry_type: "injection" },
+      message,
+      origin: "injection",
     }),
   );
-  return [...coordinator, ...injections]
-    .sort(compareMessages)
-    .map((item) => item.message);
+  return [...coordinator, ...injections].sort(compareMessages);
 }
 
 function compareMessages(left: SortableMessage, right: SortableMessage): number {
-  const leftTime = parsedTime(left.message.created_at);
-  const rightTime = parsedTime(right.message.created_at);
+  const leftTime = parsedTime(messageOccurredAt(left.message));
+  const rightTime = parsedTime(messageOccurredAt(right.message));
   if (leftTime !== null && rightTime !== null && leftTime !== rightTime) {
     return leftTime - rightTime;
   }
@@ -167,6 +185,7 @@ function compareMessages(left: SortableMessage, right: SortableMessage): number 
 
 function projectMessage(
   message: SessionRoundMessage,
+  origin: SortableMessage["origin"],
   round: SessionRound,
   roundIndex: number,
   messageIndex: number,
@@ -174,7 +193,15 @@ function projectMessage(
 ): TranscriptEntry[] {
   const parts = message.message?.parts ?? [];
   const partEntries = parts.flatMap((part, partIndex) => {
-    const entry = projectPart(message, part, round, roundIndex, messageIndex, partIndex);
+    const entry = projectPart(
+      message,
+      origin,
+      part,
+      round,
+      roundIndex,
+      messageIndex,
+      partIndex,
+    );
     return entry === null ? [] : [entry];
   });
   if (partEntries.length > 0) {
@@ -185,9 +212,9 @@ function projectMessage(
     return [];
   }
   return [{
-    ...baseEntry(message, round, roundIndex, messageIndex, 0),
-    kind: messageKind(message),
-    label: messageLabel(message),
+    ...baseEntry(message, origin, round, roundIndex, messageIndex, 0),
+    kind: messageKind(message, origin, round),
+    label: messageLabel(message, origin, round),
     sequence: firstSequence,
     text,
   }];
@@ -195,6 +222,7 @@ function projectMessage(
 
 function projectPart(
   message: SessionRoundMessage,
+  origin: SortableMessage["origin"],
   part: SessionRoundMessagePart,
   round: SessionRound,
   roundIndex: number,
@@ -202,7 +230,7 @@ function projectPart(
   partIndex: number,
 ): Omit<TranscriptEntry, "sequence"> | null {
   const kind = normalizedText(part.part_kind || part.kind).toLowerCase();
-  const base = baseEntry(message, round, roundIndex, messageIndex, partIndex);
+  const base = baseEntry(message, origin, round, roundIndex, messageIndex, partIndex);
   if (kind === "thinking") {
     return { ...base, kind: "thinking", label: "Thinking", text: jsonText(part.content) };
   }
@@ -210,14 +238,16 @@ function projectPart(
     const tool = toolName(part);
     return {
       ...base,
-      kind: isQuestionTool(tool) ? "question" : "tool",
-      label: isQuestionTool(tool) ? "Question" : tool,
+      kind: "tool",
+      label: tool,
       metadata: {
         ...base.metadata,
         tool: {
+          actionFamily: part.action_family,
           args: part.args,
           callId: part.tool_call_id,
           name: tool,
+          semanticCategory: part.semantic_category,
           stage: "call",
         },
       },
@@ -228,15 +258,17 @@ function projectPart(
     const tool = toolName(part);
     return {
       ...base,
-      kind: isQuestionTool(tool) ? "question" : "tool",
+      kind: "tool",
       label: part.is_error === true ? `${tool} error` : `${tool} result`,
       metadata: {
         ...base.metadata,
         tool: {
+          actionFamily: part.action_family,
           callId: part.tool_call_id,
           isError: part.is_error,
           name: tool,
           result: part.content,
+          semanticCategory: part.semantic_category,
           stage: "return",
         },
       },
@@ -245,28 +277,37 @@ function projectPart(
   }
   if (kind === "text" || kind === "user-prompt" || kind === "") {
     const text = normalizedText(part.text) || jsonText(part.content);
-    return text ? { ...base, kind: messageKind(message), label: messageLabel(message), text } : null;
+    return text ? {
+      ...base,
+      kind: messageKind(message, origin, round),
+      label: messageLabel(message, origin, round),
+      text,
+    } : null;
   }
   return null;
 }
 
 function baseEntry(
   message: SessionRoundMessage,
+  origin: SortableMessage["origin"],
   round: SessionRound,
   roundIndex: number,
   messageIndex: number,
   partIndex: number,
 ): Omit<TranscriptEntry, "kind" | "label" | "sequence" | "text"> {
   return {
-    createdAt: message.created_at,
+    createdAt: messageOccurredAt(message),
     id: message.message_id || `${round.run_id}:message:${messageIndex}:part:${partIndex}`,
     metadata: {
+      actor: messageActor(message, origin, round),
       entryType: message.entry_type,
       injectionId: message.injection_id,
       instanceId: message.instance_id,
       messageId: message.message_id,
       role: message.role,
       roleId: message.role_id,
+      senderInstanceId: message.sender_instance_id,
+      senderRoleId: message.sender_role_id,
       source: message.source,
       status: message.status,
     },
@@ -296,7 +337,7 @@ function projectRoundStatus(
       id: `${round.run_id}:status`,
       kind: "status",
       label: "Run status",
-      metadata: { status: round.run_status ?? undefined },
+      metadata: { actor: "unknown", status: round.run_status ?? undefined },
       roundIndex,
       runId: round.run_id,
       sequence: firstSequence,
@@ -308,7 +349,7 @@ function projectRoundStatus(
       id: `${round.run_id}:retry:${index}`,
       kind: "status",
       label: `Retry ${index + 1}`,
-      metadata: { entryType: "retry" },
+      metadata: { actor: "unknown", entryType: "retry" },
       roundIndex,
       runId: round.run_id,
       sequence: firstSequence + entries.length,
@@ -318,32 +359,89 @@ function projectRoundStatus(
   return entries;
 }
 
-function messageKind(message: SessionRoundMessage): TranscriptEntryKind {
-  if (normalizedText(message.entry_type).toLowerCase() === "injection") {
+function messageKind(
+  message: SessionRoundMessage,
+  origin: SortableMessage["origin"],
+  round: SessionRound,
+): TranscriptEntryKind {
+  if (origin === "injection") {
     return "injection";
   }
-  if (normalizedText(message.source).toLowerCase() === "subagent" || message.instance_id) {
+  const actor = messageActor(message, origin, round);
+  if (actor === "subagent") {
     return "subagent";
   }
-  if (normalizedText(message.entry_type).toLowerCase().includes("question")) {
-    return "question";
-  }
-  return normalizedText(message.role).toLowerCase() === "user" ? "user" : "assistant";
+  return actor === "user" ? "user" : "assistant";
 }
 
-function messageLabel(message: SessionRoundMessage): string {
+function messageLabel(
+  message: SessionRoundMessage,
+  origin: SortableMessage["origin"],
+  round: SessionRound,
+): string {
+  const actor = messageActor(message, origin, round);
+  if (origin === "injection") {
+    return actor === "subagent" ? "Subagent injection" : "Inserted message";
+  }
   const explicit = normalizedText(message.label) || normalizedText(message.role_id);
   if (explicit) {
     return explicit;
   }
-  const kind = messageKind(message);
-  if (kind === "injection") {
-    return message.source === "subagent" ? "Subagent injection" : "Inserted message";
-  }
+  const kind = messageKind(message, origin, round);
   if (kind === "subagent") {
     return "Subagent";
   }
   return kind === "user" ? "User" : "Assistant";
+}
+
+function messageActor(
+  message: SessionRoundMessage,
+  origin: SortableMessage["origin"],
+  round: SessionRound,
+): TranscriptActorKind {
+  if (origin === "injection") {
+    return injectionActor(message, round);
+  }
+  if (normalizedText(message.role).toLowerCase() === "user") {
+    return "user";
+  }
+  const instanceId = normalizedText(message.instance_id);
+  const primaryInstanceId = normalizedText(round.primary_instance_id);
+  if (instanceId && primaryInstanceId && instanceId === primaryInstanceId) {
+    return "assistant";
+  }
+  if (isKnownNonPrimaryInstance(instanceId, primaryInstanceId, round)) {
+    return "subagent";
+  }
+  return "assistant";
+}
+
+function injectionActor(
+  message: SessionRoundMessage,
+  round: SessionRound,
+): TranscriptActorKind {
+  const senderInstanceId = normalizedText(message.sender_instance_id);
+  const primaryInstanceId = normalizedText(round.primary_instance_id);
+  if (senderInstanceId && primaryInstanceId && senderInstanceId === primaryInstanceId) {
+    return "assistant";
+  }
+  if (isKnownNonPrimaryInstance(senderInstanceId, primaryInstanceId, round)) {
+    return "subagent";
+  }
+  return "unknown";
+}
+
+function isKnownNonPrimaryInstance(
+  instanceId: string,
+  primaryInstanceId: string,
+  round: SessionRound,
+): boolean {
+  return Boolean(
+    instanceId
+    && primaryInstanceId
+    && instanceId !== primaryInstanceId
+    && Object.prototype.hasOwnProperty.call(round.instance_role_map ?? {}, instanceId),
+  );
 }
 
 function messageText(message: SessionRoundMessage): string {
@@ -432,11 +530,6 @@ function isUrlMediaPart(part: ContentPart): part is UrlMediaPart {
     && (part.kind === "image-url" || part.kind === "audio-url" || part.kind === "video-url");
 }
 
-function isQuestionTool(name: string): boolean {
-  const normalized = name.toLowerCase();
-  return normalized === "ask_question" || normalized === "request_user_input";
-}
-
 function toolName(part: SessionRoundMessagePart): string {
   return normalizedText(part.tool_name) || "Tool";
 }
@@ -452,6 +545,13 @@ function joinedStatus(round: SessionRound): string | undefined {
 function parsedTime(value: string | undefined): number | null {
   const parsed = Date.parse(value ?? "");
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function messageOccurredAt(message: SessionRoundMessage): string | undefined {
+  return message.applied_at
+    ?? message.occurred_at
+    ?? message.created_at
+    ?? message.queued_at;
 }
 
 function normalizedText(value: string | null | undefined): string {

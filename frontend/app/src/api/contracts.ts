@@ -2042,6 +2042,8 @@ export interface SessionRoundMessage {
   message_id?: string;
   role?: string;
   role_id?: string;
+  sender_instance_id?: string;
+  sender_role_id?: string;
   source?: string;
   status?: string;
   task_id?: string;

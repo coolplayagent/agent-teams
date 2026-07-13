@@ -31,7 +31,7 @@ describe("messageExport", () => {
     expect(transcript).toMatchObject({
       schema: "relay-teams.session-transcript",
       sessionId: "session-1",
-      version: 1,
+      version: 2,
     });
     expect(transcript.entries).toEqual([
       expect.objectContaining({ kind: "user", text: "Review export" }),
@@ -67,9 +67,8 @@ describe("messageExport", () => {
         has_final_output: true,
         injection_messages: [
           {
+            applied_at: "2026-06-23T01:00:01Z",
             content: "Injected note",
-            created_at: "2026-06-23T01:00:01Z",
-            source: "user",
           },
         ],
         intent_parts: [{ kind: "text", text: "User prompt" }],
@@ -230,9 +229,12 @@ describe("messageExport", () => {
                 name: "render.png",
               },
             ],
-            source: "subagent",
+            sender_instance_id: "worker-1",
+            sender_role_id: "Worker",
           },
         ],
+        instance_role_map: { "main-1": "Main Agent", "worker-1": "Worker" },
+        primary_instance_id: "main-1",
         run_id: "run-1",
       },
     ]);
@@ -240,6 +242,82 @@ describe("messageExport", () => {
     expect(html).toContain("Subagent injection");
     expect(html).toContain("Inspect this output");
     expect(html).toContain("[image: render.png]");
+  });
+
+  it("keeps inserted messages between the surrounding assistant output in HTML", () => {
+    const html = buildMessagesHtml("session-1", [{
+      coordinator_messages: [
+        {
+          content: "Before insertion",
+          created_at: "2026-07-11T00:00:01Z",
+          instance_id: "main-1",
+          role: "assistant",
+        },
+        {
+          content: "After insertion",
+          created_at: "2026-07-11T00:00:03Z",
+          instance_id: "main-1",
+          role: "assistant",
+        },
+      ],
+      injection_messages: [{
+        applied_at: "2026-07-11T00:00:02Z",
+        content: "Inserted between messages",
+      }],
+      primary_instance_id: "main-1",
+      run_id: "run-1",
+    }]);
+
+    expect(html.indexOf("Before insertion")).toBeLessThan(
+      html.indexOf("Inserted between messages"),
+    );
+    expect(html.indexOf("Inserted between messages")).toBeLessThan(
+      html.indexOf("After insertion"),
+    );
+    expect(html).toContain("data-kind=\"injection\"");
+    expect(html).toContain("Inserted message");
+  });
+
+  it("exports main and subagent interactive tools without tool-name classification", () => {
+    const html = buildMessagesHtml("session-1", [{
+      coordinator_messages: [
+        {
+          created_at: "2026-07-11T00:00:01Z",
+          instance_id: "main-1",
+          message: { parts: [{
+            action_family: "generic",
+            args: { question: "Continue?" },
+            part_kind: "tool-call",
+            semantic_category: "interactive",
+            tool_name: "ask_question",
+          }] },
+          role: "assistant",
+        },
+        {
+          created_at: "2026-07-11T00:00:02Z",
+          instance_id: "worker-1",
+          message: { parts: [{
+            action_family: "generic",
+            args: { question: "Select a direction" },
+            part_kind: "tool-call",
+            semantic_category: "interactive",
+            tool_name: "request_user_input",
+          }] },
+          role: "assistant",
+        },
+      ],
+      instance_role_map: { "main-1": "Main Agent", "worker-1": "Worker" },
+      primary_instance_id: "main-1",
+      run_id: "run-1",
+    }]);
+
+    const document = new DOMParser().parseFromString(html, "text/html");
+    expect(document.querySelectorAll("article[data-kind='tool']")).toHaveLength(2);
+    expect(document.querySelectorAll("article[data-kind='question']")).toHaveLength(0);
+    expect(document.querySelector("article[data-actor='assistant']")?.textContent)
+      .toContain("ask_question");
+    expect(document.querySelector("article[data-actor='subagent']")?.textContent)
+      .toContain("request_user_input");
   });
 
   it("exports round pending question and retry details", () => {

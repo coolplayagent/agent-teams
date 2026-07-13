@@ -171,7 +171,7 @@ function transcriptEntryHtml(entry: TranscriptEntry): string {
   const content = entry.kind === "tool" || entry.kind === "question" || entry.kind === "status"
     ? `<pre><code>${escapeHtml(entry.text)}</code></pre>`
     : renderSafeMarkdown(entry.text);
-  return `<article class="entry" data-kind="${entry.kind}" data-sequence="${entry.sequence}">
+  return `<article class="entry" data-actor="${entry.metadata.actor}" data-kind="${entry.kind}" data-sequence="${entry.sequence}">
     <header class="entry-head">
       <span class="entry-label">${escapeHtml(entry.label)}</span>
       <time>${escapeHtml(time)}</time>
@@ -485,7 +485,7 @@ function injectionToMessage(message: SessionRoundMessage): SessionRoundMessage {
     ...message,
     content,
     entry_type: "injection",
-    label: message.source === "subagent" ? "Subagent injection" : "User injection",
+    label: "Inserted message",
     message: {
       parts: [
         {

@@ -109,27 +109,22 @@ describe("PromptMentions", () => {
     });
   });
 
-  it("keeps Main Agent aliases available before role options load", () => {
+  it("does not invent a fixed root role before role options load", () => {
     const roleOptionsForQuery = findLeadingRoleMentionOptions("@Main", undefined);
-    expect(roleOptionsForQuery[0]).toMatchObject({
-      displayName: "Main Agent",
-      insertTerm: "Main Agent",
-      kind: "role",
-      roleId: "MainAgent",
-    });
+    expect(roleOptionsForQuery).toEqual([]);
     expect(parseLeadingRoleMention("@Main Agent Draft an update", undefined))
       .toEqual({
         error: "",
         hasTrigger: true,
-        promptText: "Draft an update",
-        roleId: "MainAgent",
+        promptText: "@Main Agent Draft an update",
+        roleId: null,
       });
     expect(parseLeadingRoleMention("@main_agent Draft an update", undefined))
       .toEqual({
         error: "",
         hasTrigger: true,
-        promptText: "Draft an update",
-        roleId: "MainAgent",
+        promptText: "@main_agent Draft an update",
+        roleId: null,
       });
     expect(parseLeadingRoleMention("@Worker Draft an update", undefined))
       .toEqual({
@@ -138,6 +133,33 @@ describe("PromptMentions", () => {
         promptText: "@Worker Draft an update",
         roleId: null,
       });
+  });
+
+  it("uses configured root role identities and display names", () => {
+    const options = roleOptions();
+    options.coordinator_role_id = "FlowDirectorRole";
+    options.coordinator_role = {
+      description: "Coordinates the configured workflow.",
+      name: "Flow Director",
+      role_id: "FlowDirectorRole",
+    };
+    options.main_agent_role_id = "PrimaryWriterRole";
+    options.main_agent_role = {
+      description: "Handles configured primary work.",
+      name: "Primary Writer",
+      role_id: "PrimaryWriterRole",
+    };
+
+    expect(findLeadingRoleMentionOptions("@Flow", options)[0]).toMatchObject({
+      displayName: "Flow Director",
+      roleId: "FlowDirectorRole",
+    });
+    expect(findLeadingRoleMentionOptions("@Primary", options)[0]).toMatchObject({
+      displayName: "Primary Writer",
+      roleId: "PrimaryWriterRole",
+    });
+    expect(findLeadingRoleMentionOptions("@Coordinator", options)).toEqual([]);
+    expect(findLeadingRoleMentionOptions("@Main Agent", options)).toEqual([]);
   });
 
   it("humanizes fallback role ids without dropping skill team prefixes", () => {

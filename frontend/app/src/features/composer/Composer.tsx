@@ -2007,7 +2007,7 @@ function resolvePrimaryRoleId(
     normalizeProfileName(selectedNormalRootRoleId) ||
     normalizeProfileName(roleOptions?.main_agent_role_id) ||
     normalizeProfileName(roleOptions?.main_agent_role?.role_id) ||
-    "MainAgent"
+    normalizeProfileName(roleOptions?.normal_mode_roles?.[0]?.role_id)
   );
 }
 

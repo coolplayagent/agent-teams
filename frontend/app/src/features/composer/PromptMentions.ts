@@ -172,10 +172,12 @@ function listMentionableRoleCandidates(
     normalizeRoleId(roleOptions?.coordinator_role?.role_id);
   const mainAgentRoleId =
     normalizeRoleId(roleOptions?.main_agent_role_id) ||
-    normalizeRoleId(roleOptions?.main_agent_role?.role_id) ||
-    "MainAgent";
+    normalizeRoleId(roleOptions?.main_agent_role?.role_id);
   if (coordinatorRoleId) {
-    for (const term of roleMentionTerms(coordinatorRoleId, "Coordinator")) {
+    for (const term of roleMentionTerms(
+      coordinatorRoleId,
+      roleDisplayName(roleOptions?.coordinator_role, coordinatorRoleId),
+    )) {
       pushCandidate(coordinatorRoleId, term);
     }
   }
@@ -434,10 +436,12 @@ function listMentionableRoleOptions(
     normalizeRoleId(roleOptions?.coordinator_role?.role_id);
   const mainAgentRoleId =
     normalizeRoleId(roleOptions?.main_agent_role_id) ||
-    normalizeRoleId(roleOptions?.main_agent_role?.role_id) ||
-    "MainAgent";
+    normalizeRoleId(roleOptions?.main_agent_role?.role_id);
   if (coordinatorRoleId) {
-    upsertOption(coordinatorRoleId, "Coordinator");
+    upsertOption(
+      coordinatorRoleId,
+      roleDisplayName(roleOptions?.coordinator_role, coordinatorRoleId),
+    );
   }
   if (mainAgentRoleId) {
     upsertOption(
@@ -641,20 +645,11 @@ function humanizeRoleId(roleId: string): string {
   if (!safeRoleId) {
     return "";
   }
-  if (isMainAgentRoleIdentifier(safeRoleId)) {
-    return "Main Agent";
-  }
-  return (
-    safeRoleId
-      .split(/[_\s-]+/)
-      .filter(Boolean)
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(" ") || safeRoleId
-  );
-}
-
-function isMainAgentRoleIdentifier(roleId: string): boolean {
-  return normalizeRoleId(roleId).toLowerCase().replace(/[\s_-]+/g, "") === "mainagent";
+  return separatedRoleAlias(safeRoleId, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ") || safeRoleId;
 }
 
 function normalizePromptMentionSource(value: string): string {

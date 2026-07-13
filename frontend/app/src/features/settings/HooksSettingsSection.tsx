@@ -84,7 +84,7 @@ const MATCHER_PLACEHOLDERS: Record<string, string> = {
   SessionStart: "resume",
   StopFailure: "tool_timeout",
   SubagentStart: "verifier",
-  SubagentStop: "Reviewer",
+  SubagentStop: "subagent_role_id",
 };
 
 const HOOK_NAME_PLACEHOLDERS: Record<string, string> = {

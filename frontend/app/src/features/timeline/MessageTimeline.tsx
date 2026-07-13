@@ -73,7 +73,6 @@ import { fileReadResultText } from "./toolResultPresentation";
 import { roundPromptText, roundTitle } from "./roundMetadata";
 import {
   boundedStringCacheValue,
-  indexesWithLongerStrictPrefix,
   timelineDerivedValue,
   timelineFallbackVirtualItems,
   type TimelineDerivationCacheEntry,
@@ -656,20 +655,17 @@ export function MessageTimeline({
   }, [optimisticPrompt, optimisticPromptConfirmed]);
   const timelineRowsBeforeGrouping = useMemo(
     () => {
-      const mergedRows = dropStrictPrefixAnswerRows(
-          mergeTerminalRuntimeTextRowsIntoPersistedAnswers(
-            dropDuplicateFinalPartsFromWorkRows(
-              dropDuplicateWorkRowsAfterToolMerge(
-                mergeToolRowsByCallId(
-                mergeRuntimeRowsIntoHydratedRows(
-                  displayPersistedRows,
-                    runtimeRows.filter(timelineRowHasRenderableContent),
-                  ),
-                  { dedupeNonToolRows: false },
-                ),
+      const mergedRows = mergeTerminalRuntimeTextRowsIntoPersistedAnswers(
+        dropDuplicateFinalPartsFromWorkRows(
+          dropDuplicateWorkRowsAfterToolMerge(
+            mergeToolRowsByCallId(
+              mergeRuntimeRowsIntoHydratedRows(
+                displayPersistedRows,
+                runtimeRows.filter(timelineRowHasRenderableContent),
               ),
             ),
           ),
+        ),
       );
       return optimisticPrompt === null || optimisticPromptConfirmed
         ? mergedRows
@@ -763,8 +759,8 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
 }
   const rows = useMemo(
     () =>
-      dedupeTimelineRowsByKey(
-        relocateCoveredOpenRuntimeCursors(dropStrictPrefixAnswerRows(
+      stabilizeTimelineRowKeys(
+        relocateCoveredOpenRuntimeCursors(
           collapseProcessedRows(
             insertRoundMarkerRowsIfEnabled(
               timelineRowsBeforeGrouping,
@@ -777,7 +773,7 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
             terminalRunIdOverrides,
             liveProcessedRunIdsRef.current,
           ),
-        )),
+        ),
       ),
     [
       displayRounds,
@@ -3032,78 +3028,11 @@ function mergeTerminalRuntimeTextRowsIntoPersistedAnswers(
   return mergedRows.filter((_, index) => !consumedRuntimeIndexes.has(index));
 }
 
-function dropStrictPrefixAnswerRows(rows: TimelineRow[]): TimelineRow[] {
-  const answerRows = rows
-    .flatMap((row) => row.processedGroup?.rows ?? [row])
-    .filter(textOnlyAnswerRow)
-    .map((row, index) => ({
-      groupKey: strictPrefixAnswerGroupKey(row),
-      index,
-      row,
-      text: normalizedTimelineText(rowCopyText(row.parts)),
-    }))
-    .filter((candidate) => candidate.text.length > 0);
-  if (answerRows.length < 2) {
-    return rows;
-  }
-  const rowsToDrop = indexesWithLongerStrictPrefix(answerRows);
-  const rowIndexes = new Map(
-    answerRows.map((candidate) => [candidate.row, candidate.index]),
-  );
-  const rowShouldRemain = (row: TimelineRow): boolean => {
-    const index = rowIndexes.get(row);
-    return index === undefined || !rowsToDrop.has(index);
-  };
-  return rows.flatMap((row) => {
-    if (row.processedGroup === undefined) {
-      return rowShouldRemain(row) ? [row] : [];
-    }
-    const groupedRows = row.processedGroup.rows.filter(rowShouldRemain);
-    if (groupedRows.length === 0) {
-      return [];
-    }
-    return [{
-      ...row,
-      processedGroup: {
-        ...row.processedGroup,
-        rows: groupedRows,
-      },
-    }];
-  });
-}
-
-function strictPrefixAnswerGroupKey(row: TimelineRow): string {
-  const runId = row.runId?.trim() ?? "";
-  if (runId.length > 0) {
-    return `run:${runId}`;
-  }
-  return `role:${stableTimelineRole(row.role)}`;
-}
-
-function dedupeTimelineRowsByKey(rows: TimelineRow[]): TimelineRow[] {
-  const candidates = rows.flatMap((row) => row.processedGroup?.rows ?? [row]);
-  const prefixCandidates = candidates.flatMap((candidate, index) => {
-    if (candidate.parts.some((part) => part.kind !== "text")) {
-      return [];
-    }
-    const text = normalizedTimelineText(rowCopyText(candidate.parts));
-    return text.length === 0
-      ? []
-      : [{ groupKey: timelineRowRenderIdentity(candidate), index, text }];
-  });
-  const indexesToDrop = indexesWithLongerStrictPrefix(prefixCandidates);
-  const rowsToDrop = new Set(
-    Array.from(indexesToDrop).flatMap((index) => {
-      const row = candidates[index];
-      return row === undefined ? [] : [row];
-    }),
-  );
-
+function stabilizeTimelineRowKeys(rows: TimelineRow[]): TimelineRow[] {
+  // Rows that survive structured hydration/tool/message merging are distinct
+  // timeline events even when their visible text is equal or prefix-related.
   const emittedCounts = new Map<string, number>();
-  const stabilizeRow = (row: TimelineRow): TimelineRow | null => {
-    if (rowsToDrop.has(row)) {
-      return null;
-    }
+  const stabilizeRow = (row: TimelineRow): TimelineRow => {
     const identity = timelineRowRenderIdentity(row);
     const occurrence = emittedCounts.get(identity) ?? 0;
     emittedCounts.set(identity, occurrence + 1);
@@ -3118,16 +3047,9 @@ function dedupeTimelineRowsByKey(rows: TimelineRow[]): TimelineRow[] {
 
   return rows.flatMap((row) => {
     if (row.processedGroup === undefined) {
-      const stabilized = stabilizeRow(row);
-      return stabilized === null ? [] : [stabilized];
+      return [stabilizeRow(row)];
     }
-    const groupedRows = row.processedGroup.rows.flatMap((groupedRow) => {
-      const stabilized = stabilizeRow(groupedRow);
-      return stabilized === null ? [] : [stabilized];
-    });
-    if (groupedRows.length === 0) {
-      return [];
-    }
+    const groupedRows = row.processedGroup.rows.map(stabilizeRow);
     return [{
       ...row,
       processedGroup: {
@@ -3140,10 +3062,6 @@ function dedupeTimelineRowsByKey(rows: TimelineRow[]): TimelineRow[] {
 
 function timelineRowRenderIdentity(row: TimelineRow): string {
   return `${row.runId?.trim() ?? ""}\u0000${row.key}`;
-}
-
-function textOnlyAnswerRow(row: TimelineRow): boolean {
-  return isAnswerRole(row.role) && row.parts.every((part) => part.kind === "text");
 }
 
 function persistedRowsWithRuntimeTextAnchors(
@@ -4084,11 +4002,7 @@ function historyDividerRow(
   };
 }
 
-function mergeToolRowsByCallId(
-  rows: TimelineRow[],
-  options: { dedupeNonToolRows?: boolean } = {},
-): TimelineRow[] {
-  const dedupeNonToolRows = options.dedupeNonToolRows ?? true;
+function mergeToolRowsByCallId(rows: TimelineRow[]): TimelineRow[] {
   const mergedRows: TimelineRow[] = [];
   const toolRowsByKey = new Map<string, { row: TimelineRow; tool: TimelineToolPart }>();
   for (const originalRow of rows) {
@@ -4132,9 +4046,7 @@ function mergeToolRowsByCallId(
       toolRowsByKey.set(key, { row: nextRow, tool });
     }
   }
-  return dedupeNonToolRows
-    ? dropDuplicateRowsAfterToolMerge(mergedRows)
-    : mergedRows;
+  return mergedRows;
 }
 
 function mergeToolPartsWithinRow(row: TimelineRow): TimelineRow {
@@ -4174,23 +4086,6 @@ function mergeableToolPart(part: TimelineRenderPart): part is TimelineToolPart {
     part.phase !== "approval-requested" &&
     part.phase !== "approval-resolved"
   );
-}
-
-function dropDuplicateRowsAfterToolMerge(rows: TimelineRow[]): TimelineRow[] {
-  const seenNonToolContent = new Set<string>();
-  const dedupedRows: TimelineRow[] = [];
-  for (const row of rows) {
-    const dedupeKey = timelineRowNonToolContentDedupeKey(row);
-    const hasTool = row.parts.some((part) => part.kind === "tool");
-    if (!hasTool && dedupeKey !== null && seenNonToolContent.has(dedupeKey)) {
-      continue;
-    }
-    dedupedRows.push(row);
-    if (dedupeKey !== null) {
-      seenNonToolContent.add(dedupeKey);
-    }
-  }
-  return dedupedRows;
 }
 
 function dropDuplicateWorkRowsAfterToolMerge(rows: TimelineRow[]): TimelineRow[] {
@@ -4249,33 +4144,6 @@ function dropDuplicateFinalPartsFromWorkRows(rows: TimelineRow[]): TimelineRow[]
     const dedupedRow = rowWithParts(row, remainingParts, "deduped-final");
     return timelineRowHasRenderableContent(dedupedRow) ? [dedupedRow] : [];
   });
-}
-
-function timelineRowNonToolContentDedupeKey(row: TimelineRow): string | null {
-  // Injection rows are user-visible events. Their stable delivery identities,
-  // not their text, decide whether two rows describe the same event.
-  if (row.injection !== undefined) {
-    return null;
-  }
-  const runId = row.runId?.trim() ?? "";
-  if (runId.length === 0) {
-    return null;
-  }
-  const text = normalizedTimelineText(
-    row.parts
-      .map(timelineNonToolPartDedupeText)
-      .filter((partText) => partText.length > 0)
-      .join("\n\n"),
-  );
-  if (text.length === 0) {
-    return null;
-  }
-  return [
-    runId,
-    stableTimelineRole(row.role),
-    row.instanceId ?? "",
-    text,
-  ].join(":");
 }
 
 function timelineRowFinalTextDedupeKeys(row: TimelineRow): string[] {
@@ -4479,16 +4347,6 @@ function openRuntimeRunHasPersistedTextPrefix(
     }
   }
   return false;
-}
-
-function timelineNonToolPartDedupeText(part: TimelineRenderPart): string {
-  if (part.kind === "text" || part.kind === "thinking") {
-    return part.text;
-  }
-  if (part.kind === "media") {
-    return part.url;
-  }
-  return "";
 }
 
 function timelineWorkPartDedupeText(part: TimelineRenderPart): string {

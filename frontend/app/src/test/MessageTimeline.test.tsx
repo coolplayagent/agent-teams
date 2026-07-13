@@ -689,7 +689,7 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText("Cra")).not.toBeInTheDocument();
   });
 
-  it("drops a persisted strict-prefix answer when the same run has its final answer", async () => {
+  it("keeps persisted prefix-related answers with distinct message identities", async () => {
     const prefix = "流式证据 SAMPLE。第一段仍在输出";
     const finalAnswer = `${prefix}，现在已经完整收敛。`;
     listSessionMessagesMock.mockResolvedValue([
@@ -710,11 +710,11 @@ describe("MessageTimeline", () => {
     const { container } = renderTimeline();
 
     await waitFor(() => expect(screen.getByText(finalAnswer)).toBeVisible());
-    expect(screen.queryByText(prefix, { exact: true })).not.toBeInTheDocument();
-    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+    expect(screen.getByText(prefix, { exact: true })).toBeVisible();
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(2);
   });
 
-  it("drops a pre-work streamed prefix after processed grouping exposes the final text", async () => {
+  it("keeps distinct text segments after processed grouping", async () => {
     const prefix = "流式证据 SAMPLE。实时文本仍在拼接";
     const finalAnswer = `${prefix}，现在已经完整收敛。`;
     listSessionMessagesMock.mockResolvedValue([
@@ -747,9 +747,33 @@ describe("MessageTimeline", () => {
     const { container } = renderTimeline();
 
     await waitFor(() => expect(screen.getByText(finalAnswer)).toBeVisible());
-    expect(screen.queryByText(prefix, { exact: true })).not.toBeInTheDocument();
-    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+    expect(screen.getByText(prefix, { exact: true })).toBeVisible();
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(2);
     expect(container.querySelector("details.at-processed-group")).not.toBeNull();
+  });
+
+  it("keeps equal assistant text with distinct persisted message identities", async () => {
+    const repeatedText = "重复内容也可能是用户要求的合法输出。";
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: repeatedText,
+        message_id: "assistant-repeat-a",
+        role_id: "MainAgent",
+        run_id: "run-repeated-answer",
+      },
+      {
+        content: repeatedText,
+        message_id: "assistant-repeat-b",
+        role_id: "MainAgent",
+        run_id: "run-repeated-answer",
+      },
+    ]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findAllByText(repeatedText, { exact: true }))
+      .toHaveLength(2);
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(2);
   });
 
   it("keeps prefix-related answers when both rows belong to different runs", async () => {
@@ -4384,6 +4408,7 @@ describe("MessageTimeline", () => {
               message: {
                 parts: [{ content: "Persisted shared answer", part_kind: "text" }],
               },
+              message_id: "message-shared-answer",
               role_id: "MainAgent",
             },
           ],

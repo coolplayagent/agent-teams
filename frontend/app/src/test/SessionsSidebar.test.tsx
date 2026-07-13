@@ -23,6 +23,7 @@ import {
   updateSession,
 } from "../api/client";
 import {
+  normalizeSessionSubagent,
   SessionsSidebar,
   type ActiveSubagentSession,
   type SidebarBackendStatus,
@@ -62,6 +63,38 @@ afterEach(() => {
 });
 
 describe("SessionsSidebar", () => {
+  it("derives missing subagent kind from explicit interaction metadata, not run ids", () => {
+    const baseRecord = {
+      instance_id: "instance-1",
+      role_id: "explorer",
+      run_id: "custom-run-id",
+      session_id: "session-1",
+    };
+
+    expect(normalizeSessionSubagent(baseRecord, "session-1"))
+      .toMatchObject({ interactive: false, subagentKind: "normal" });
+    expect(normalizeSessionSubagent(
+      { ...baseRecord, interactive: true, run_id: "another-custom-id" },
+      "session-1",
+    )).toMatchObject({ interactive: true, subagentKind: "orchestration" });
+  });
+
+  it("keeps structurally valid subagents regardless of their configurable role name", () => {
+    const record = normalizeSessionSubagent({
+      instance_id: "instance-primary-named",
+      role_id: "MainAgent",
+      run_id: "opaque-run-id",
+      session_id: "session-1",
+      subagent_kind: "normal",
+    }, "session-1");
+
+    expect(record).toMatchObject({
+      instanceId: "instance-primary-named",
+      roleId: "MainAgent",
+      runId: "opaque-run-id",
+    });
+  });
+
   it("does not recompute session timestamps for an unrelated parent update", async () => {
     listWorkspacesMock.mockResolvedValue([
       {

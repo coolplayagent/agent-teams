@@ -1468,9 +1468,6 @@ export function normalizeSessionSubagent(
   if (!sessionId || !instanceId || !roleId || !runId) {
     return null;
   }
-  if (isReservedRootRoleId(roleId)) {
-    return null;
-  }
   const status = normalizeSubagentStatus(record.status);
   return {
     createdAt: firstTrimmed(record.created_at),
@@ -1506,8 +1503,7 @@ function normalizeSubagentKind(record: SessionSubagentRecord): string {
   if (explicit === "normal" || explicit === "session") {
     return "normal";
   }
-  const runId = firstTrimmed(record.subagent_run_id, record.run_id);
-  return runId.startsWith("subagent_run_") ? "normal" : "orchestration";
+  return record.interactive === true ? "orchestration" : "normal";
 }
 
 function normalizeSubagentStatus(
@@ -1519,11 +1515,6 @@ function normalizeSubagentStatus(
     return "running";
   }
   return safeStatus || "idle";
-}
-
-function isReservedRootRoleId(roleId: string): boolean {
-  const normalizedRoleId = roleId.trim().toLowerCase();
-  return normalizedRoleId === "coordinator" || normalizedRoleId === "mainagent";
 }
 
 function subagentSessionLabel(subagent: ActiveSubagentSession): string {

@@ -23,6 +23,7 @@ import {
   buildWorkspaceImagePreviewUrl,
   listSessionMessages,
   listSessionRounds,
+  listSessionSubagents,
 } from "../../api/client";
 import {
   contentPartText,
@@ -48,6 +49,10 @@ import { RoundMarker } from "./RoundMarker";
 import { RoundRail } from "./RoundRail";
 import { TimelineDisclosure } from "./TimelineDisclosure";
 import { ToolCallDetails } from "./ToolCallDetails";
+import {
+  correlateSessionSubagents,
+  type CorrelatedSubagentRecord,
+} from "./subagentTimelineCorrelation";
 import {
   formatToolDuration,
   toolActionFamily,
@@ -273,6 +278,15 @@ export function MessageTimeline({
       roundsEnabled &&
       sessionId !== null,
     staleTime: 0,
+  });
+  const subagentsQuery = useQuery({
+    queryKey: ["sessions", sessionId, "subagents", "timeline"],
+    queryFn: () => listSessionSubagents(sessionId ?? "", false),
+    enabled:
+      visible &&
+      variant === "session" &&
+      sessionId !== null &&
+      onSubagentOpen !== undefined,
   });
   const rounds = useMemo(
     () => roundsQuery.data ?? [],
@@ -551,21 +565,29 @@ export function MessageTimeline({
       ),
     [roundStreamedPersistedRows, runtimeRunsForRows],
   );
+  const correlatedPersistedRows = useMemo(
+    () => persistedRowsWithCorrelatedSubagents(
+      anchoredPersistedRows,
+      correlateSessionSubagents(messages, subagentsQuery.data ?? []),
+      sessionId,
+    ),
+    [anchoredPersistedRows, messages, sessionId, subagentsQuery.data],
+  );
   const hydratedOutputTextByRunId = useMemo(
-    () => timelineOutputTextByRunId(anchoredPersistedRows),
-    [anchoredPersistedRows],
+    () => timelineOutputTextByRunId(correlatedPersistedRows),
+    [correlatedPersistedRows],
   );
   const hydratedOutputSourcesByRunId = useMemo(
-    () => timelineOutputSourcesByRunId(anchoredPersistedRows),
-    [anchoredPersistedRows],
+    () => timelineOutputSourcesByRunId(correlatedPersistedRows),
+    [correlatedPersistedRows],
   );
   const hydratedThinkingTextByRunId = useMemo(
-    () => timelineThinkingTextByRunId(anchoredPersistedRows),
-    [anchoredPersistedRows],
+    () => timelineThinkingTextByRunId(correlatedPersistedRows),
+    [correlatedPersistedRows],
   );
   const hydratedToolStatesByRunId = useMemo(
-    () => timelineToolStatesByRunId(anchoredPersistedRows),
-    [anchoredPersistedRows],
+    () => timelineToolStatesByRunId(correlatedPersistedRows),
+    [correlatedPersistedRows],
   );
   const runtimeEntries = useMemo(
     () =>
@@ -623,11 +645,11 @@ export function MessageTimeline({
   const displayPersistedRows = useMemo(
     () =>
       dropPersistedRowsCoveredByTerminalRuntime(
-        anchoredPersistedRows,
+        correlatedPersistedRows,
         runtimeRows,
         runtimeRunsForRows,
       ),
-    [anchoredPersistedRows, runtimeRows, runtimeRunsForRows],
+    [correlatedPersistedRows, runtimeRows, runtimeRunsForRows],
   );
   const optimisticPromptConfirmed = visible &&
     optimisticPrompt?.runId !== undefined &&
@@ -3180,6 +3202,69 @@ function persistedRowsWithRuntimeTextAnchors(
       : rowWithoutTextReveal(anchoredRow);
   });
   return changed ? nextRows : persistedRows;
+}
+
+function persistedRowsWithCorrelatedSubagents(
+  rows: TimelineRow[],
+  correlations: readonly CorrelatedSubagentRecord[],
+  sessionId: string | null,
+): TimelineRow[] {
+  if (sessionId === null || correlations.length === 0) {
+    return rows;
+  }
+  const correlationsBySource = new Map<string, CorrelatedSubagentRecord[]>();
+  for (const correlation of correlations) {
+    const key = `${correlation.sourceRunId}:${correlation.sourceToolCallId}`;
+    const matches = correlationsBySource.get(key) ?? [];
+    matches.push(correlation);
+    correlationsBySource.set(key, matches);
+  }
+  let changed = false;
+  const nextRows = rows.map((row) => {
+    const rowRunId = row.runId?.trim() ?? "";
+    let rowChanged = false;
+    const parts = row.parts.map((part) => {
+      if (part.kind !== "tool" || part.subagent !== null) {
+        return part;
+      }
+      const callId = part.callId.trim();
+      if (rowRunId.length === 0 || callId.length === 0) {
+        return part;
+      }
+      const matches = correlationsBySource.get(`${rowRunId}:${callId}`) ?? [];
+      if (matches.length !== 1) {
+        return part;
+      }
+      const match = matches[0];
+      if (match === undefined) {
+        return part;
+      }
+      rowChanged = true;
+      changed = true;
+      return {
+        ...part,
+        actionFamily: "subagent" as const,
+        sourceRunId: match.sourceRunId,
+        subagent: {
+          instanceId: match.instanceId,
+          interactive: match.interactive,
+          roleId: match.roleId,
+          runId: match.runId,
+          runPhase: match.runPhase,
+          runStatus: match.runStatus,
+          sessionId,
+          sourceRunId: match.sourceRunId,
+          sourceToolCallId: match.sourceToolCallId,
+          status: match.status,
+          subagentKind: match.subagentKind,
+          taskId: match.taskId,
+          title: match.title,
+        },
+      };
+    });
+    return rowChanged ? { ...row, parts } : row;
+  });
+  return changed ? nextRows : rows;
 }
 
 function persistedRowsWithOpenRoundStreaming(

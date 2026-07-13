@@ -1673,6 +1673,9 @@ export interface SessionSubagentRecord {
   run_phase?: string;
   run_status?: string;
   session_id?: string;
+  source_run_id?: string;
+  source_task_id?: string;
+  source_tool_call_id?: string;
   status?: string;
   stream_connected?: boolean;
   subagent_instance_id?: string;

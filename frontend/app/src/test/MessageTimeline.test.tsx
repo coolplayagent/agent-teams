@@ -12,7 +12,11 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
 
-import { listSessionMessages, listSessionRounds } from "../api/client";
+import {
+  listSessionMessages,
+  listSessionRounds,
+  listSessionSubagents,
+} from "../api/client";
 import { MessageTimeline } from "../features/timeline/MessageTimeline";
 import {
   recordTerminalDomSnapshot,
@@ -36,16 +40,20 @@ vi.mock("../api/client", () => ({
   }),
   listSessionMessages: vi.fn(),
   listSessionRounds: vi.fn(),
+  listSessionSubagents: vi.fn(),
 }));
 
 const listSessionMessagesMock = vi.mocked(listSessionMessages);
 const listSessionRoundsMock = vi.mocked(listSessionRounds);
+const listSessionSubagentsMock = vi.mocked(listSessionSubagents);
 
 beforeEach(() => {
   resetTerminalDomSnapshots();
   window.sessionStorage.removeItem("agentTeams.liveProcessedRuns");
   listSessionMessagesMock.mockReset();
   listSessionRoundsMock.mockReset();
+  listSessionSubagentsMock.mockReset();
+  listSessionSubagentsMock.mockResolvedValue([]);
   listSessionRoundsMock.mockResolvedValue({
     has_more: false,
     items: [],
@@ -8236,6 +8244,138 @@ describe("MessageTimeline", () => {
     expect(toolPreviewTexts(container)).toEqual([
       "Explore how Skills are implemented in this project",
     ]);
+  });
+
+  it("correlates a terminal persisted tool return without embedded subagent ids", async () => {
+    const onSubagentOpen = vi.fn();
+    const prompt = "Inspect the timeline without editing files.";
+    listSessionSubagentsMock.mockResolvedValue([{
+      instance_id: "child-instance",
+      role_id: "Explorer",
+      run_id: "child-run",
+      run_status: "completed",
+      status: "completed",
+      task_id: "child-task",
+      title: "Timeline inspection",
+    }]);
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message: { parts: [{
+          args: { prompt, role_id: "Explorer" },
+          kind: "tool-call",
+          tool_call_id: "call-child",
+          tool_name: "delegate_worker",
+        }] },
+        message_id: "parent-call",
+        role: "assistant",
+        task_id: "parent-task",
+        trace_id: "parent-run",
+      },
+      {
+        message: { parts: [{
+          content: "The child completed successfully.",
+          kind: "tool-return",
+          tool_call_id: "call-child",
+          tool_name: "delegate_worker",
+        }] },
+        message_id: "parent-return",
+        role: "assistant",
+        task_id: "parent-task",
+        trace_id: "parent-run",
+      },
+      {
+        content: prompt,
+        instance_id: "child-instance",
+        message_id: "child-prompt",
+        role: "user",
+        task_id: "child-task",
+        trace_id: "child-run",
+      },
+    ]);
+
+    const { container } = renderTimeline("session-1", { onSubagentOpen });
+
+    const tool = await waitFor(() => {
+      const candidate = container.querySelector<HTMLElement>(
+        '[data-tool-call-id="call-child"]',
+      );
+      expect(candidate).toHaveClass("is-openable-subagent");
+      return candidate as HTMLElement;
+    });
+    expect(tool).toHaveAttribute("data-subagent-instance-id", "child-instance");
+    expect(within(tool).getAllByText("Timeline inspection")).toHaveLength(2);
+
+    fireEvent.click(tool.querySelector("summary") as HTMLElement);
+
+    expect(onSubagentOpen).toHaveBeenCalledWith(expect.objectContaining({
+      instanceId: "child-instance",
+      roleId: "Explorer",
+      runId: "child-run",
+      sourceRunId: "parent-run",
+      sourceToolCallId: "call-child",
+      taskId: "child-task",
+    }));
+  });
+
+  it("uses the source run to disambiguate identical persisted tool call ids", async () => {
+    const onSubagentOpen = vi.fn();
+    const prompt = "Inspect the selected run.";
+    listSessionSubagentsMock.mockResolvedValue([{
+      instance_id: "selected-instance",
+      role_id: "Explorer",
+      run_id: "selected-child-run",
+      source_run_id: "parent-run-b",
+      source_task_id: "parent-task-b",
+      source_tool_call_id: "shared-call-id",
+      task_id: "selected-child-task",
+      title: "Selected child",
+    }]);
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message: { parts: [{
+          args: { prompt, role_id: "Explorer" },
+          kind: "tool-call",
+          tool_call_id: "shared-call-id",
+          tool_name: "delegate_worker",
+        }] },
+        message_id: "call-a",
+        role: "assistant",
+        task_id: "parent-task-a",
+        trace_id: "parent-run-a",
+      },
+      {
+        message: { parts: [{
+          args: { prompt, role_id: "Explorer" },
+          kind: "tool-call",
+          tool_call_id: "shared-call-id",
+          tool_name: "delegate_worker",
+        }] },
+        message_id: "call-b",
+        role: "assistant",
+        task_id: "parent-task-b",
+        trace_id: "parent-run-b",
+      },
+    ]);
+
+    const { container } = renderTimeline("session-1", { onSubagentOpen });
+
+    await waitFor(() => expect(
+      container.querySelectorAll('[data-tool-call-id="shared-call-id"]'),
+    ).toHaveLength(2));
+    const tools = Array.from(container.querySelectorAll<HTMLElement>(
+      '[data-tool-call-id="shared-call-id"]',
+    ));
+    expect(tools[0]).not.toHaveClass("is-openable-subagent");
+    expect(tools[1]).toHaveClass("is-openable-subagent");
+
+    fireEvent.click(tools[1]?.querySelector("summary") as HTMLElement);
+
+    expect(onSubagentOpen).toHaveBeenCalledTimes(1);
+    expect(onSubagentOpen).toHaveBeenCalledWith(expect.objectContaining({
+      instanceId: "selected-instance",
+      sourceRunId: "parent-run-b",
+      sourceToolCallId: "shared-call-id",
+    }));
   });
 
   it("keeps the submitted prompt and real answer out of verification presentation messages", async () => {

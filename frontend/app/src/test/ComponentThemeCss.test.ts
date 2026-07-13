@@ -7,9 +7,12 @@ const componentTheme = readFileSync("src/styles/componentTheme.css", "utf8");
 
 describe("component semantic theme CSS", () => {
   it("loads after the base theme so semantic component rules win", () => {
-    expect(mainSource).toMatch(
-      /import "\.\/styles\/theme\.css";\s*import "\.\/styles\/componentTheme\.css";/,
+    const baseThemeIndex = mainSource.indexOf('import "./styles/theme.css";');
+    const componentThemeIndex = mainSource.indexOf(
+      'import "./styles/componentTheme.css";',
     );
+    expect(baseThemeIndex).toBeGreaterThanOrEqual(0);
+    expect(componentThemeIndex).toBeGreaterThan(baseThemeIndex);
   });
 
   it("themes high-risk Ant surfaces and composer controls with semantic tokens", () => {

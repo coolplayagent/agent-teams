@@ -8943,6 +8943,10 @@ function MessageToolBlock({
       pausedToolSubagent.prompt,
       toolSummaryPreview(tool),
     ]));
+  const visiblePreview = isSubagentTool &&
+    normalizedTimelineText(preview) === normalizedTimelineText(title)
+    ? ""
+    : preview;
   const canOpenSubagent =
     onSubagentOpen !== undefined &&
     openSubagentReference !== null;
@@ -8987,8 +8991,10 @@ function MessageToolBlock({
           <Wrench aria-hidden="true" size={14} />
           <span title={title}>{title}</span>
         </span>
-        {preview ? (
-          <span className="at-message-tool-preview" title={preview}>{preview}</span>
+        {visiblePreview ? (
+          <span className="at-message-tool-preview" title={visiblePreview}>
+            {visiblePreview}
+          </span>
         ) : null}
         {tool.durationMs !== undefined ? (
           <span className="at-message-tool-duration">

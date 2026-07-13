@@ -8499,9 +8499,8 @@ describe("MessageTimeline", () => {
     });
 
     fireEvent.click(await screen.findByText("Subagent started"));
-    expect(toolPreviewTexts(container)).toEqual([
-      "Explore skills implementation",
-    ]);
+    expect(toolPreviewTexts(container)).toEqual([]);
+    expect(screen.getAllByText("Explore skills implementation")).toHaveLength(1);
     expect(container.textContent).not.toContain(
       "SUBAGENT_OUTPUT_SHOULD_STAY_IN_PANEL",
     );

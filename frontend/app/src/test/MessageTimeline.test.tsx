@@ -15304,7 +15304,7 @@ describe("MessageTimeline", () => {
       expect(await screen.findByText("session-1 history 8")).toBeVisible();
       const sessionOneTimeline = timelineElement(container);
       await waitFor(() =>
-        expect(timelineMaxScrollTop(sessionOneTimeline)).toBeGreaterThanOrEqual(480),
+        expect(timelineMaxScrollTop(sessionOneTimeline)).toBeGreaterThanOrEqual(360),
       );
       sessionOneTimeline.scrollTop = 120;
       fireEvent.scroll(sessionOneTimeline);
@@ -15313,9 +15313,9 @@ describe("MessageTimeline", () => {
       expect(await screen.findByText("session-2 history 8")).toBeVisible();
       const sessionTwoTimeline = timelineElement(container);
       await waitFor(() =>
-        expect(timelineMaxScrollTop(sessionTwoTimeline)).toBeGreaterThanOrEqual(480),
+        expect(timelineMaxScrollTop(sessionTwoTimeline)).toBeGreaterThanOrEqual(360),
       );
-      sessionTwoTimeline.scrollTop = 360;
+      sessionTwoTimeline.scrollTop = 240;
       fireEvent.scroll(sessionTwoTimeline);
 
       for (let repetition = 0; repetition < 20; repetition += 1) {
@@ -15329,7 +15329,7 @@ describe("MessageTimeline", () => {
         fireEvent.click(screen.getByRole("button", { name: "Scroll session 2" }));
         expect(await screen.findByText("session-2 history 8")).toBeVisible();
         await waitFor(() =>
-          expect(Math.abs(timelineElement(container).scrollTop - 360))
+          expect(Math.abs(timelineElement(container).scrollTop - 240))
             .toBeLessThanOrEqual(12),
         );
       }

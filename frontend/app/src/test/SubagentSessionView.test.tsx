@@ -145,6 +145,10 @@ describe("SubagentSessionView", () => {
       100,
     );
 
+    Object.defineProperties(panelTimeline, {
+      clientHeight: { configurable: true, value: 480 },
+      scrollHeight: { configurable: true, value: 9_600 },
+    });
     panelTimeline.scrollTop = 320;
     fireEvent.scroll(panelTimeline);
     expect(panelTimeline.scrollTop).toBe(320);

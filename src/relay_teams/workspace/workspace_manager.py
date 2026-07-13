@@ -331,6 +331,8 @@ class WorkspaceManager(BaseModel):
         )
         return WorkspaceRecord(
             workspace_id=workspace_id,
+            display_name="Agent Teams",
+            system_workspace=True,
             default_mount_name="default",
             mounts=(mount,),
         )

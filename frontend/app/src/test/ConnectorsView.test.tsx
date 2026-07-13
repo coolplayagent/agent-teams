@@ -245,7 +245,7 @@ describe("ConnectorsView", () => {
     expect(screen.getAllByText("Missing credentials").length).toBeGreaterThan(0);
   });
 
-  it("hides the internal Relay Knowledge connector while keeping its CLI card", async () => {
+  it("renders every connector returned by the API without product-id exceptions", async () => {
     const response = defaultConnectorsResponse();
     listConnectorsMock.mockResolvedValue({
       summary: {
@@ -278,8 +278,7 @@ describe("ConnectorsView", () => {
 
     expect(await screen.findByTestId("connector-card-github")).toBeVisible();
     expect(screen.getByTestId("connector-card-w3")).toBeVisible();
-    expect(screen.queryByTestId("connector-card-relay-knowledge")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("connector-detail-relay-knowledge")).not.toBeInTheDocument();
+    expect(screen.getByTestId("connector-card-relay-knowledge")).toBeVisible();
     expect(screen.getAllByText("1/2").length).toBeGreaterThan(0);
     fireEvent.click(screen.getByText("CLI tools"));
     expect(await screen.findByTestId("runtime-tool-card-relay-knowledge")).toBeVisible();

@@ -62,7 +62,6 @@ const defaultSummary: ConnectorSummary = {
   needs_config: 0,
   total: 0,
 };
-const HIDDEN_CONNECTOR_IDS = new Set(["relay-knowledge"]);
 
 interface ConnectorsViewProps {
   onOpenSettings: (page: SystemSettingsPage) => void;
@@ -115,10 +114,7 @@ export function ConnectorsView({ onOpenSettings }: ConnectorsViewProps) {
     },
   });
 
-  const items = useMemo(
-    () => visibleConnectorItems(connectorsQuery.data?.items ?? []),
-    [connectorsQuery.data?.items],
-  );
+  const items = connectorsQuery.data?.items ?? [];
   const summary = useMemo(
     () =>
       connectorsQuery.data === undefined
@@ -818,14 +814,6 @@ function filterConnectors(
       }
       return connectorSearchText(item).includes(normalizedQuery);
     });
-}
-
-function visibleConnectorItems(items: ConnectorItem[]): ConnectorItem[] {
-  return items.filter(
-    (item) =>
-      !HIDDEN_CONNECTOR_IDS.has(normalizeSearchText(item.connector_id)) &&
-      !HIDDEN_CONNECTOR_IDS.has(normalizeSearchText(item.provider)),
-  );
 }
 
 function connectorSummaryForItems(items: ConnectorItem[]): ConnectorSummary {

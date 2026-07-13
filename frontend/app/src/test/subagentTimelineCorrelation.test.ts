@@ -108,6 +108,47 @@ describe("subagent timeline correlation", () => {
     ]);
   });
 
+  it("does not let task maintenance calls make a legacy dispatch ambiguous", () => {
+    const messages: TimelineMessage[] = [{
+      message: { parts: [
+        {
+          args: JSON.stringify({
+            prompt: "Inspect the real browser replay.",
+            role_id: "Explorer",
+            task_id: "shared-task",
+          }),
+          kind: "tool-call",
+          tool_call_id: "dispatch-call",
+          tool_name: "legacy-dispatch",
+        },
+        {
+          action_family: "orchestration",
+          args: { task_id: "shared-task" },
+          kind: "tool-call",
+          semantic_category: "orchestration",
+          tool_call_id: "maintenance-call",
+          tool_name: "task-maintenance",
+        },
+      ] },
+      role: "assistant",
+      task_id: "root-task",
+      trace_id: "root-run",
+    }];
+
+    expect(correlateSessionSubagents(messages, [{
+      instance_id: "explorer-instance",
+      role_id: "Explorer",
+      run_id: "child-run",
+      source_run_id: "root-run",
+      subagent_task_id: "shared-task",
+    }])).toEqual([
+      expect.objectContaining({
+        sourceToolCallId: "dispatch-call",
+        taskId: "shared-task",
+      }),
+    ]);
+  });
+
   it("does not reinterpret an ordinary orchestration tool as a subagent", () => {
     const messages: TimelineMessage[] = [{
       message: { parts: [{

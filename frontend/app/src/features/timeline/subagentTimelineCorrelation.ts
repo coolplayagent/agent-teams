@@ -24,6 +24,7 @@ export interface CorrelatedSubagentRecord {
 interface ToolCallSite {
   callId: string;
   runId: string;
+  taskScopedCandidate: boolean;
   taskId: string;
 }
 
@@ -75,6 +76,7 @@ function taskSourceCallSite(
   }
   const sourceRunId = normalized(record.source_run_id);
   const matches = callSites.filter((callSite) =>
+    callSite.taskScopedCandidate &&
     callSite.taskId === taskId &&
     (sourceRunId.length === 0 || callSite.runId === sourceRunId)
   );
@@ -113,27 +115,25 @@ function messageToolCallSites(message: TimelineMessage): ToolCallSite[] {
     const taskId = jsonString(args, "task_id") || normalized(message.task_id);
     const actionFamily = normalized(part.action_family);
     const semanticCategory = normalized(part.semantic_category);
-    const isLegacyOrchestrationDispatch =
-      actionFamily === "orchestration" &&
-      semanticCategory === "orchestration" &&
-      jsonString(args, "task_id").length > 0;
-    if (
-      (
-        actionFamily.length > 0 &&
-        actionFamily !== "subagent" &&
-        !isLegacyOrchestrationDispatch
-      ) ||
-      (
-        semanticCategory.length > 0 &&
-        semanticCategory !== "orchestration"
-      )
-    ) {
-      return [];
-    }
     if (callId.length === 0) {
       return [];
     }
-    return [{ callId, runId, taskId }];
+    const hasLegacyDelegationArguments =
+      jsonString(args, "prompt").length > 0 ||
+      jsonString(args, "role_id").length > 0;
+    const taskScopedCandidate =
+      actionFamily === "subagent" && semanticCategory === "orchestration" ||
+      (
+        actionFamily.length === 0 &&
+        semanticCategory.length === 0 &&
+        hasLegacyDelegationArguments
+      ) ||
+      (
+        actionFamily === "orchestration" &&
+        semanticCategory === "orchestration" &&
+        hasLegacyDelegationArguments
+      );
+    return [{ callId, runId, taskId, taskScopedCandidate }];
   });
 }
 

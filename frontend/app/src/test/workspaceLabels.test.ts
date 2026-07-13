@@ -18,6 +18,16 @@ describe("workspace labels", () => {
     expect(workspaceFallbackLabel("default")).toBe("default");
   });
 
+  it("prefers the root folder over a generic backend name", () => {
+    expect(
+      workspaceDisplayLabel({
+        name: "default",
+        root_path: "C:/projects/agent-teams",
+        workspace_id: "default",
+      }),
+    ).toBe("agent-teams");
+  });
+
   it("uses the backend display name for the system workspace", () => {
     expect(
       workspaceDisplayLabel({

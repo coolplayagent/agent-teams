@@ -556,7 +556,7 @@ export function AppShell() {
   );
   const topbarWorkspaceLabel = workspaceDisplayLabel(
     selectedWorkspace,
-    topbarWorkspaceId,
+    workspacesQuery.data === undefined ? null : topbarWorkspaceId,
   );
   const sidebarNavigationItems = useMemo<SidebarNavigationItem[]>(
     () => [

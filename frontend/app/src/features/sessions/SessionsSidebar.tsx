@@ -492,12 +492,14 @@ function SessionsSidebarView({
         workspaceOptions,
         filteredSessions,
         includeEmptyWorkspaces,
+        workspacesQuery.data !== undefined,
         workspaceSortMode,
         t("sidebarUnassignedWorkspace"),
       ),
     [
       filteredSessions,
       includeEmptyWorkspaces,
+      workspacesQuery.data,
       workspaceOptions,
       workspaceSortMode,
       t,
@@ -1636,6 +1638,7 @@ function buildSessionGroups(
   workspaces: WorkspaceRecord[],
   sessions: SessionSidebarRecord[],
   includeEmptyWorkspaces: boolean,
+  workspaceInventoryLoaded: boolean,
   sortMode: WorkspaceSortMode,
   unassignedWorkspaceLabel: string,
 ): SessionGroup[] {
@@ -1679,7 +1682,7 @@ function buildSessionGroups(
         workspaceId === null
           ? unassignedWorkspaceLabel
           : workspace === undefined
-          ? workspaceFallbackLabel(workspaceId)
+          ? workspaceFallbackLabel(workspaceInventoryLoaded ? workspaceId : null)
           : workspaceLabel(workspace),
       pathHint: workspace?.root_path ?? "",
       sessions: [],

@@ -7,15 +7,19 @@ export function workspaceDisplayLabel(
   fallbackLabel: string | null | undefined = defaultWorkspaceLabel,
 ): string {
   if (workspace !== null) {
-    const explicitLabel = firstTrimmed(workspace.display_name, workspace.name);
+    const explicitLabel = firstTrimmed(workspace.display_name);
     if (explicitLabel) {
       return explicitLabel;
     }
-    const workspaceId = workspace.workspace_id.trim();
     const rootLabel = rootPathLabel(workspace.root_path);
     if (rootLabel) {
       return rootLabel;
     }
+    const workspaceName = firstTrimmed(workspace.name);
+    if (workspaceName) {
+      return workspaceName;
+    }
+    const workspaceId = workspace.workspace_id.trim();
     if (workspaceId) {
       return workspaceId;
     }

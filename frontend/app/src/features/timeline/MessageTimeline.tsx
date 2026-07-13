@@ -7808,7 +7808,7 @@ function runtimeMessageRenderParts(entry: TimelineEntry): TimelineRenderPart[] |
     objectRawString(payload, "content") ||
     objectRawString(payload, "message") ||
     runtimeNestedMessageText(payload);
-  if (text.trim().length === 0 || runtimeMessageTextIsProtocolPlaceholder(payload, text)) {
+  if (text.trim().length === 0) {
     return [];
   }
   return textRenderParts(timelineDisplayText(text), null);
@@ -7820,19 +7820,6 @@ function runtimeNestedMessageText(payload: Record<string, JsonValue>): string {
     return "";
   }
   return objectRawString(message, "text") || objectRawString(message, "content");
-}
-
-function runtimeMessageTextIsProtocolPlaceholder(
-  payload: Record<string, JsonValue>,
-  text: string,
-): boolean {
-  const directMessage = objectRawString(payload, "message");
-  return (
-    directMessage.trim().toLowerCase() === "message" &&
-    objectRawString(payload, "text").trim().length === 0 &&
-    objectRawString(payload, "content").trim().length === 0 &&
-    text.trim().toLowerCase() === "message"
-  );
 }
 
 function runtimeMessageContentParts(payload: Record<string, JsonValue>): ContentPart[] {
@@ -7875,7 +7862,7 @@ function jsonObjectLooksLikeContentPart(object: Record<string, JsonValue>): bool
 }
 
 function runtimeFallbackText(entry: TimelineEntry): string {
-  if (entry.kind === "message" && entry.text.trim().toLowerCase() === "message") {
+  if (entry.kind === "message") {
     return "";
   }
   if (
@@ -8240,6 +8227,9 @@ function runtimeCoordinationEventSummary(
   if (kind === "awaiting_manual_action") {
     return runtimeManualActionSummary(payload);
   }
+  if (kind === "run_failed") {
+    return runtimeRunFailureSummary(payload);
+  }
   if (isRunLifecycleEventType(kind)) {
     return runtimeRunLifecycleSummary(payload);
   }
@@ -8349,6 +8339,25 @@ function runtimeRunLifecycleSummary(payload: Record<string, JsonValue>): string 
     hasPrimarySummary || Object.keys(payload).length === 0
       ? ""
       : runtimePayloadSummary(payload),
+  ].filter(Boolean).join(" · ");
+}
+
+function runtimeRunFailureSummary(payload: Record<string, JsonValue>): string {
+  const status = objectString(payload, "status");
+  const errorCode = objectString(payload, "error_code")
+    || objectString(payload, "code");
+  const statusCode = objectNumber(payload, "status_code");
+  const modelName = objectString(payload, "model_name");
+  const detail = toolErrorSummary(payload);
+  const rootTaskId = objectString(payload, "root_task_id")
+    || objectString(payload, "root_task");
+  return [
+    status.length > 0 ? `status ${status}` : "",
+    errorCode.length > 0 ? `code ${errorCode}` : "",
+    statusCode > 0 ? `HTTP ${formatRuntimeCount(statusCode)}` : "",
+    modelName.length > 0 ? `model ${modelName}` : "",
+    detail.length > 0 ? truncatePreview(detail) : "",
+    rootTaskId.length > 0 ? `root task ${rootTaskId}` : "",
   ].filter(Boolean).join(" · ");
 }
 
@@ -9165,37 +9174,11 @@ function contentPartDisplayText(part: ContentPart): string | null {
 }
 
 function userPromptDisplayText(text: string): string {
-  const marker = "\n\n## Skill Candidates";
-  const markerIndex = text.indexOf(marker);
-  const displayText = markerIndex >= 0 ? text.slice(0, markerIndex) : text;
-  return displayText.trim();
+  return text.trim();
 }
 
 function timelineDisplayText(text: string): string {
-  return compactApiErrorText(text) ?? text;
-}
-
-function compactApiErrorText(text: string): string | null {
-  const prefix = "The request could not be completed because of an API or execution error.";
-  if (!text.includes(prefix)) {
-    return null;
-  }
-  const status = text.match(/status_code:\s*(\d+)/)?.[1]?.trim() ?? "";
-  const model = text.match(/model_name:\s*([^,\n]+)/)?.[1]?.trim() ?? "";
-  const errorMessage =
-    firstRegexGroup(text, /body:\s*\{\s*'message':\s*'([^']+)'/) ||
-    firstRegexGroup(text, /'error':\s*\{\s*'message':\s*'([^']+)'/) ||
-    firstRegexGroup(text, /"error":\s*\{\s*"message":\s*"([^"]+)"/);
-  const title = [
-    "API request failed",
-    status.length > 0 ? `(${status})` : "",
-    model.length > 0 ? `- ${model}` : "",
-  ].filter(Boolean).join(" ");
-  return [title, errorMessage].filter((line) => line.trim().length > 0).join("\n\n");
-}
-
-function firstRegexGroup(text: string, pattern: RegExp): string {
-  return pattern.exec(text)?.[1]?.trim() ?? "";
+  return text;
 }
 
 function contentPartThinking(part: ContentPart): TimelineThinkingPart | null {

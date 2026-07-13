@@ -496,7 +496,7 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText("User")).not.toBeInTheDocument();
   });
 
-  it("does not render protocol placeholder text from replayed message payloads", async () => {
+  it("renders a legitimate runtime message whose complete content is message", async () => {
     setRuntimeEntries([
       {
         eventId: 1,
@@ -514,8 +514,8 @@ describe("MessageTimeline", () => {
 
     renderTimeline();
 
-    expect(await screen.findByText("No messages yet")).toBeVisible();
-    expect(screen.queryByText("message")).not.toBeInTheDocument();
+    expect(await screen.findByText("message")).toBeVisible();
+    expect(screen.queryByText("No messages yet")).not.toBeInTheDocument();
     expect(screen.queryByText("User")).not.toBeInTheDocument();
   });
 
@@ -6816,7 +6816,7 @@ describe("MessageTimeline", () => {
     );
   });
 
-  it("renders user prompt parts without injected skill candidate text", async () => {
+  it("does not truncate legitimate replay content at a skill candidates heading", async () => {
     listSessionMessagesMock.mockResolvedValue([
       {
         message: {
@@ -6841,32 +6841,64 @@ describe("MessageTimeline", () => {
     const { container } = renderTimeline();
 
     expect(await screen.findByText("Actual user prompt")).toBeVisible();
-    expect(screen.queryByText("## Skill Candidates")).not.toBeInTheDocument();
-    expect(screen.queryByText(/hidden: internal routing text/)).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Skill Candidates" }),
+    ).toBeVisible();
+    expect(screen.getByText(/hidden: internal routing text/)).toBeVisible();
     expect(screen.queryByText("message")).not.toBeInTheDocument();
     expect(screen.queryByText("writer")).not.toBeInTheDocument();
     expect(container.querySelector(".at-message-role")).toBeNull();
   });
 
-  it("compacts provider API error bodies in assistant messages", async () => {
+  it("preserves replayed assistant text instead of parsing English error prose", async () => {
+    const replayedText = [
+      "The request could not be completed because of an API or execution error.",
+      "Details: status_code: 400, model_name: deepseek-v4-flash, body: {'message': 'The reasoning_content in the thinking mode must be passed back to the API.', 'type': 'invalid_request_error'}",
+      "Root cause: Error code: 400 - {'error': {'message': 'The reasoning_content in the thinking mode must be passed back to the API.'}}",
+    ].join(" ");
     listSessionMessagesMock.mockResolvedValue([
       {
-        content: [
-          "The request could not be completed because of an API or execution error.",
-          "Details: status_code: 400, model_name: deepseek-v4-flash, body: {'message': 'The reasoning_content in the thinking mode must be passed back to the API.', 'type': 'invalid_request_error'}",
-          "Root cause: Error code: 400 - {'error': {'message': 'The reasoning_content in the thinking mode must be passed back to the API.'}}",
-        ].join(" "),
+        content: replayedText,
         message_id: "assistant-api-error",
         role_id: "MainAgent",
       },
     ]);
 
+    const { container } = renderTimeline();
+
+    await waitFor(() => expect(container).toHaveTextContent(replayedText));
+    expect(screen.queryByText(/API request failed \(400\)/)).not.toBeInTheDocument();
+  });
+
+  it("renders live run failures from structured fields without parsing prose", async () => {
+    setRuntimeEntries([
+      runtimeGenericEntry({
+        eventId: 1,
+        id: "run-structured-error:1:0",
+        kind: "run_failed",
+        payload: {
+          error: {
+            message: "Provider rejected the configured credential",
+            type: "authentication_error",
+          },
+          error_code: "auth_invalid",
+          model_name: "configured-model",
+          root_task_id: "root-1",
+          status: "failed",
+          status_code: 401,
+        },
+        text: "run failed",
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
     renderTimeline();
 
-    expect(await screen.findByText(/API request failed \(400\) - deepseek-v4-flash/)).toBeVisible();
-    expect(screen.getByText(/reasoning_content in the thinking mode/)).toBeVisible();
-    expect(screen.queryByText(/Root cause/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/invalid_request_error/)).not.toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        "Run failed: status failed · code auth_invalid · HTTP 401 · model configured-model · Provider rejected the configured credential Type: authentication_error · root task root-1",
+      ),
+    ).toBeVisible();
   });
 
   it("renders tool calls, results, and validation failures from message parts", async () => {

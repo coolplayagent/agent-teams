@@ -1708,7 +1708,26 @@ function webConfig(): Record<string, unknown> {
   return {
     exa_api_key_configured: true,
     fallback_provider: "searxng",
+    fallback_provider_options: [
+      {
+        display_name: "SearXNG",
+        provider: "searxng",
+        uses_instance_url: true,
+      },
+      {
+        display_name: "Disabled",
+        provider: "disabled",
+        uses_instance_url: false,
+      },
+    ],
     provider: "exa",
+    provider_options: [
+      {
+        display_name: "Exa",
+        provider: "exa",
+        website_url: "https://exa.ai",
+      },
+    ],
     searxng_instance_seeds: ["https://searx.space"],
     searxng_instance_url: "https://search.example/",
   };

@@ -2440,13 +2440,27 @@ export interface EnvironmentVariableSaveRequest {
   value: string;
 }
 
-export type WebProvider = "exa";
-export type WebFallbackProvider = "disabled" | "searxng";
+export type WebProvider = string;
+export type WebFallbackProvider = string;
+
+export interface WebProviderDescriptor {
+  display_name: string;
+  provider: WebProvider;
+  website_url?: string | null;
+}
+
+export interface WebFallbackProviderDescriptor {
+  display_name: string;
+  provider: WebFallbackProvider;
+  uses_instance_url: boolean;
+}
 
 export interface WebConfig {
   exa_api_key_configured: boolean;
   fallback_provider?: WebFallbackProvider | null;
+  fallback_provider_options?: WebFallbackProviderDescriptor[];
   provider: WebProvider;
+  provider_options?: WebProviderDescriptor[];
   searxng_instance_seeds?: string[];
   searxng_instance_url?: string | null;
 }

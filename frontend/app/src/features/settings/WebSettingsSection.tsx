@@ -6,6 +6,12 @@ import { getWebConfig, saveWebConfig } from "../../api/client";
 import type { WebConfigSaveRequest, WebFallbackProvider } from "../../api/contracts";
 import { useTranslations } from "../../i18n";
 import { SettingsQueryState, SettingsSection } from "./SettingsShared";
+import {
+  defaultWebFallbackProvider,
+  webFallbackProviderDescriptor,
+  webFallbackProviderOptions,
+  webProviderDescriptor,
+} from "./webProviderCapabilities";
 
 interface WebFormValues {
   exa_api_key: string;
@@ -40,7 +46,7 @@ export function WebSettingsSection() {
     }
     form.setFieldsValue({
       exa_api_key: "",
-      fallback_provider: webQuery.data.fallback_provider ?? "searxng",
+      fallback_provider: defaultWebFallbackProvider(webQuery.data),
       searxng_instance_url:
         webQuery.data.searxng_instance_url ??
         webQuery.data.searxng_instance_seeds?.[0] ??
@@ -52,6 +58,10 @@ export function WebSettingsSection() {
   const seeds = webQuery.data?.searxng_instance_seeds ?? [];
   const hasSavedApiKey = webQuery.data?.exa_api_key_configured === true;
   const preservingSavedApiKey = hasSavedApiKey && !apiKeyDirty;
+  const provider =
+    webQuery.data === undefined ? undefined : webProviderDescriptor(webQuery.data);
+  const fallbackOptions =
+    webQuery.data === undefined ? [] : webFallbackProviderOptions(webQuery.data);
   let saveError: string | null = null;
   if (saveMutation.error instanceof Error) {
     saveError = saveMutation.error.message;
@@ -60,6 +70,9 @@ export function WebSettingsSection() {
   }
 
   function submit(values: WebFormValues) {
+    if (webQuery.data === undefined) {
+      return;
+    }
     const typedApiKey = values.exa_api_key.trim();
     const effectiveApiKey = apiKeyDirty ? typedApiKey || null : null;
     const searxngInstanceUrl = (
@@ -68,7 +81,7 @@ export function WebSettingsSection() {
       ""
     ).trim();
     saveMutation.mutate({
-      provider: "exa",
+      provider: webQuery.data.provider,
       exa_api_key: effectiveApiKey,
       preserve_exa_api_key: hasSavedApiKey && !apiKeyDirty,
       fallback_provider: values.fallback_provider,
@@ -101,7 +114,7 @@ export function WebSettingsSection() {
           <div className="at-settings-form-layout">
             <div className="at-settings-form-card-layout">
               <Form.Item label={t("settingsWebProvider")}>
-                <Input readOnly value="Exa" />
+                <Input readOnly value={provider?.display_name ?? webQuery.data.provider} />
               </Form.Item>
               <Form.Item label={t("settingsWebExaApiKey")} name="exa_api_key">
                 <Input.Password
@@ -126,10 +139,7 @@ export function WebSettingsSection() {
             <div className="at-settings-form-card-layout">
               <Form.Item label={t("settingsWebFallbackProvider")} name="fallback_provider">
                 <Select
-                  options={[
-                    { label: "SearXNG", value: "searxng" },
-                    { label: t("settingsDisabled"), value: "disabled" },
-                  ]}
+                  options={fallbackOptions}
                 />
               </Form.Item>
               <Form.Item
@@ -142,7 +152,11 @@ export function WebSettingsSection() {
                   const currentFallback = getFieldValue(
                     "fallback_provider",
                   ) as WebFallbackProvider | undefined;
-                  if (currentFallback === "disabled") {
+                  const fallback = webFallbackProviderDescriptor(
+                    webQuery.data,
+                    currentFallback,
+                  );
+                  if (fallback?.uses_instance_url !== true) {
                     return null;
                   }
                   return (
@@ -195,15 +209,17 @@ export function WebSettingsSection() {
                 }}
               </Form.Item>
             </div>
-            <a
-              className="at-settings-provider-link"
-              href="https://exa.ai"
-              rel="noreferrer"
-              target="_blank"
-            >
-              <span>{t("settingsWebProviderSite")}</span>
-              <strong>https://exa.ai</strong>
-            </a>
+            {provider?.website_url ? (
+              <a
+                className="at-settings-provider-link"
+                href={provider.website_url}
+                rel="noreferrer"
+                target="_blank"
+              >
+                <span>{t("settingsWebProviderSite")}</span>
+                <strong>{provider.website_url}</strong>
+              </a>
+            ) : null}
           </div>
           <Button htmlType="submit" loading={saveMutation.isPending} type="primary">
             {t("settingsSave")}

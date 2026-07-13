@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { getRecoverySnapshot } from "../api/client";
 import { openSessionActivityStream } from "./sessionActivityClient";
 import type { SessionActivityEvent } from "./sessionActivityClient";
+import { isTerminalRunEvent } from "./events";
 import { useOptimisticRunStore } from "./optimisticRunStore";
 import { useRuntimeStore } from "./runtimeStore";
 
@@ -174,48 +175,65 @@ function sessionHasLocalActivity(
 
 type SessionActivityRefreshScope = "external" | "none" | "recovery" | "subagent";
 
+const SESSION_ACTIVITY_EVENT_KINDS = {
+  background_task_completed: "subagent",
+  background_task_started: "subagent",
+  background_task_stopped: "subagent",
+  background_task_updated: "subagent",
+  run_completed: "run",
+  run_failed: "run",
+  run_paused: "run",
+  run_resumed: "run",
+  run_started: "run",
+  run_stopped: "run",
+  subagent_resumed: "subagent",
+  subagent_session_status_changed: "subagent",
+  subagent_stopped: "subagent",
+  tool_approval_requested: "recovery",
+  tool_approval_resolved: "recovery",
+  user_question_answered: "recovery",
+  user_question_requested: "recovery",
+} as const;
+
+type SessionActivityEventKind =
+  (typeof SESSION_ACTIVITY_EVENT_KINDS)[keyof typeof SESSION_ACTIVITY_EVENT_KINDS];
+type SessionRunActivityEventType = {
+  [EventType in keyof typeof SESSION_ACTIVITY_EVENT_KINDS]:
+    (typeof SESSION_ACTIVITY_EVENT_KINDS)[EventType] extends "run"
+      ? EventType
+      : never;
+}[keyof typeof SESSION_ACTIVITY_EVENT_KINDS];
+
 function activityEventRefreshScope(
   event: SessionActivityEvent,
   locallyKnownRunIds: ReadonlySet<string>,
   localSubmissionActive: boolean,
 ): SessionActivityRefreshScope {
+  const eventKind = sessionActivityEventKind(event.event_type);
+  if (eventKind === null) {
+    return "none";
+  }
+  if (eventKind !== "run") {
+    return eventKind;
+  }
   if (event.event_type === "run_started" && localSubmissionActive) {
     return "none";
   }
-  if (
-    event.event_type === "tool_approval_requested" ||
-    event.event_type === "tool_approval_resolved" ||
-    event.event_type === "user_question_requested" ||
-    event.event_type === "user_question_answered"
-  ) {
-    return "recovery";
-  }
-  if (
-    event.event_type.startsWith("background_task_") ||
-    event.event_type.startsWith("subagent_")
-  ) {
-    return "subagent";
-  }
-  if (
-    locallyKnownRunIds.has(event.run_id.trim()) &&
-    isTerminalRunActivityEvent(event.event_type)
-  ) {
+  if (!locallyKnownRunIds.has(event.run_id.trim())) {
     return "external";
   }
-  if (locallyKnownRunIds.has(event.run_id.trim())) {
-    return "none";
-  }
-  return "external";
+  return isTerminalRunEvent(event.event_type as SessionRunActivityEventType)
+    ? "external"
+    : "none";
 }
 
-function isTerminalRunActivityEvent(eventType: string): boolean {
-  switch (eventType.trim().toLowerCase()) {
-    case "run_completed":
-    case "run_failed":
-    case "run_paused":
-    case "run_stopped":
-      return true;
-    default:
-      return false;
+function sessionActivityEventKind(
+  eventType: string,
+): SessionActivityEventKind | null {
+  if (!Object.hasOwn(SESSION_ACTIVITY_EVENT_KINDS, eventType)) {
+    return null;
   }
+  return SESSION_ACTIVITY_EVENT_KINDS[
+    eventType as keyof typeof SESSION_ACTIVITY_EVENT_KINDS
+  ];
 }

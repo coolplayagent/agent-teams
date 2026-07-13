@@ -212,6 +212,111 @@ describe("useSessionActivityMonitor", () => {
     });
   });
 
+  it("ignores unknown events and names that only resemble registered activity", async () => {
+    vi.useFakeTimers();
+    openSessionActivityStreamMock.mockReturnValue({ close: vi.fn() });
+    const queryClient = testQueryClient();
+    const invalidateQueriesSpy = vi.spyOn(queryClient, "invalidateQueries");
+    render(<MonitorHarness queryClient={queryClient} sessionId="session-1" />);
+    const options = openSessionActivityStreamMock.mock.calls[0]?.[0];
+    if (options === undefined) {
+      throw new Error("Expected session activity stream options.");
+    }
+
+    act(() => {
+      options.onActivity({
+        event_type: "background_task_started_legacy",
+        run_id: "external-run",
+      });
+      options.onActivity({
+        event_type: "subagent_session_status_changed_extra",
+        run_id: "external-run",
+      });
+      options.onActivity({
+        event_type: "run_completed_but_not_really",
+        run_id: "external-run",
+      });
+      options.onActivity({
+        event_type: "future_activity_event",
+        run_id: "external-run",
+      });
+    });
+    await act(async () => vi.advanceTimersByTime(250));
+
+    expect(getRecoverySnapshotMock).not.toHaveBeenCalled();
+    expect(invalidateQueriesSpy).not.toHaveBeenCalled();
+  });
+
+  it("converges a local terminal status even when a stale lifecycle event arrives later", async () => {
+    vi.useFakeTimers();
+    openSessionActivityStreamMock.mockReturnValue({ close: vi.fn() });
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: ["local-run"],
+        runs: {
+          "local-run": {
+            entries: [],
+            lastEventId: 9,
+            runId: "local-run",
+            seenEventKeys: [],
+            sessionId: "session-1",
+            status: "open",
+            terminalEventType: null,
+          },
+        },
+      },
+    });
+    const queryClient = testQueryClient();
+    const invalidateQueriesSpy = vi.spyOn(queryClient, "invalidateQueries");
+    render(<MonitorHarness queryClient={queryClient} sessionId="session-1" />);
+    const options = openSessionActivityStreamMock.mock.calls[0]?.[0];
+    if (options === undefined) {
+      throw new Error("Expected session activity stream options.");
+    }
+
+    act(() => {
+      options.onActivity({ event_type: "run_completed", run_id: "local-run" });
+      options.onActivity({ event_type: "run_started", run_id: "local-run" });
+    });
+    await act(async () => vi.advanceTimersByTime(250));
+
+    expect(getRecoverySnapshotMock).toHaveBeenCalledTimes(1);
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "detail", "session-1"],
+    });
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-1", "messages"],
+    });
+  });
+
+  it.each(["run_paused", "run_resumed"])(
+    "refreshes authoritative views for an external %s status change",
+    async (eventType) => {
+      vi.useFakeTimers();
+      openSessionActivityStreamMock.mockReturnValue({ close: vi.fn() });
+      const queryClient = testQueryClient();
+      const invalidateQueriesSpy = vi.spyOn(queryClient, "invalidateQueries");
+      render(<MonitorHarness queryClient={queryClient} sessionId="session-1" />);
+      const options = openSessionActivityStreamMock.mock.calls[0]?.[0];
+      if (options === undefined) {
+        throw new Error("Expected session activity stream options.");
+      }
+
+      act(() => {
+        options.onActivity({ event_type: eventType, run_id: "external-run" });
+      });
+      await act(async () => vi.advanceTimersByTime(250));
+
+      expect(getRecoverySnapshotMock).toHaveBeenCalledWith("session-1", true);
+      expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+        queryKey: ["sessions", "detail", "session-1"],
+      });
+      expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+        queryKey: ["sessions", "session-1", "rounds"],
+      });
+    },
+  );
+
   it("does not force recovery while a local create request is still pending", async () => {
     vi.useFakeTimers();
     openSessionActivityStreamMock.mockReturnValue({ close: vi.fn() });

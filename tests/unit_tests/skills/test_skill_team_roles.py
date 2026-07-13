@@ -31,7 +31,7 @@ def test_list_skill_team_roles_summarizes_roles_without_system_prompt(
     assert summary.effective_role_id.startswith("skill_team_team_review_analyst_")
     assert summary.name == "Research Analyst"
     assert summary.description == "Collects evidence for review."
-    assert summary.tools == ("read", "office_read_markdown")
+    assert summary.tools == ("read",)
     assert summary.source_path == "contributors/analyst.md"
     assert "SYSTEM PROMPT" not in summary.model_dump_json()
 
@@ -45,7 +45,7 @@ def test_build_skill_team_role_spec_forces_subagent_mode(tmp_path: Path) -> None
     assert spec.role_id == role_entry.summary.effective_role_id
     assert spec.mode == RoleMode.SUBAGENT
     assert spec.system_prompt == "SYSTEM PROMPT FOR ANALYST."
-    assert spec.tools == ("read", "office_read_markdown")
+    assert spec.tools == ("read",)
 
 
 def test_list_skill_team_roles_loads_agents_directory_subagents(
@@ -88,8 +88,7 @@ def test_list_skill_team_roles_loads_agents_directory_subagents(
     assert role_entry.summary.role_id == "ci-analyzer"
     assert role_entry.summary.name == "CI Pipeline Analyzer"
     assert role_entry.summary.source_path == "agents/ci-analyzer.md"
-    assert {"read", "edit", "shell"}.issubset(set(role_entry.summary.tools))
-    assert "office_read_markdown" in role_entry.summary.tools
+    assert role_entry.summary.tools == ("read", "edit", "shell")
     assert role_entry.role.version == "1"
     assert role_entry.role.mode == RoleMode.SUBAGENT
 
@@ -136,15 +135,15 @@ def test_list_skill_team_roles_accepts_blank_optional_lists(
     assert role_entry.summary.skills == ()
 
 
-def test_list_skill_team_roles_reports_activation_effective_tools(
+def test_list_skill_team_roles_preserves_explicit_tools_across_activation(
     tmp_path: Path,
 ) -> None:
     skill = _write_team_skill(tmp_path, role_mode=RoleMode.PRIMARY)
 
     role_entry = list_skill_team_roles(skill)[0]
 
-    assert "todo_write" in role_entry.role.tools
-    assert role_entry.summary.tools == ("read", "office_read_markdown")
+    assert role_entry.role.tools == ("read",)
+    assert role_entry.summary.tools == ("read",)
 
 
 def test_list_skill_team_roles_ignores_invalid_and_duplicate_roles(

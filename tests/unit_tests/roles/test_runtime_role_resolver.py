@@ -65,7 +65,7 @@ def test_runtime_role_resolver_prefers_run_temporary_roles(tmp_path: Path) -> No
 
     role = resolver.get_effective_role(run_id="run-1", role_id="tmp_writer")
     assert role.role_id == "tmp_writer"
-    assert role.tools == ("write", "office_read_markdown")
+    assert role.tools == ("write",)
 
 
 @pytest.mark.asyncio
@@ -98,7 +98,7 @@ async def test_runtime_role_resolver_async_prefers_temporary_roles(
     )
 
     assert role.role_id == "tmp_writer"
-    assert role.tools == ("write", "office_read_markdown")
+    assert role.tools == ("write",)
     assert fallback_role.role_id == "Analyst"
 
 
@@ -183,11 +183,11 @@ def test_runtime_role_resolver_applies_template_defaults(tmp_path: Path) -> None
     )
 
     role = resolver.get_effective_role(run_id="run-1", role_id="tmp_researcher")
-    assert role.tools == ("read", "office_read_markdown")
+    assert role.tools == ("read",)
     assert role.model_profile == "default"
 
 
-def test_runtime_role_resolver_strips_coordinator_tools_from_temporary_role(
+def test_runtime_role_resolver_preserves_explicit_temporary_role_tools(
     tmp_path: Path,
 ) -> None:
     resolver = RuntimeRoleResolver(
@@ -208,7 +208,11 @@ def test_runtime_role_resolver_strips_coordinator_tools_from_temporary_role(
     )
 
     role = resolver.get_effective_role(run_id="run-1", role_id="dispatch_lead")
-    assert role.tools == ("office_read_markdown",)
+    assert role.tools == (
+        "orch_create_tasks",
+        "orch_update_task",
+        "orch_dispatch_task",
+    )
 
 
 def test_runtime_role_resolver_rejects_coordinator_template_for_temporary_role(

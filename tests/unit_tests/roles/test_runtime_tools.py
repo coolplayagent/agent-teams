@@ -12,7 +12,6 @@ from relay_teams.roles.runtime_tools import (
     role_with_runtime_tools,
     runtime_denied_tools_for_role,
     runtime_tools_for_role,
-    strip_coordinator_only_tools,
     strip_contract_denied_tools,
 )
 
@@ -36,7 +35,7 @@ def test_runtime_tools_keep_orchestration_tools_for_coordinator() -> None:
     ) == ("orch_create_tasks", "orch_dispatch_task")
 
 
-def test_runtime_tools_filter_orchestration_tools_for_non_coordinator() -> None:
+def test_runtime_tools_preserve_explicit_tools_for_non_coordinator() -> None:
     registry = RoleRegistry()
     registry.register(
         RoleDefinition(
@@ -61,7 +60,7 @@ def test_runtime_tools_filter_orchestration_tools_for_non_coordinator() -> None:
         role_registry=registry,
         role=crafter,
         consumer="test",
-    ) == ("read", "shell")
+    ) == ("read", "orch_dispatch_task", "shell")
 
 
 def test_role_with_runtime_tools_returns_same_role_when_tools_are_unchanged() -> None:
@@ -85,7 +84,7 @@ def test_role_with_runtime_tools_returns_same_role_when_tools_are_unchanged() ->
     assert role is coordinator
 
 
-def test_role_with_runtime_tools_returns_filtered_role_for_non_coordinator() -> None:
+def test_role_with_runtime_tools_returns_same_role_for_explicit_tools() -> None:
     registry = RoleRegistry()
     registry.register(
         RoleDefinition(
@@ -112,15 +111,7 @@ def test_role_with_runtime_tools_returns_filtered_role_for_non_coordinator() -> 
         consumer="test",
     )
 
-    assert role is not crafter
-    assert role.tools == ("read", "shell")
-
-
-def test_strip_coordinator_only_tools_removes_orchestration_tools() -> None:
-    assert strip_coordinator_only_tools(("read", "orch_dispatch_task", "shell")) == (
-        "read",
-        "shell",
-    )
+    assert role is crafter
 
 
 def test_runtime_tools_filter_contract_denied_tools() -> None:

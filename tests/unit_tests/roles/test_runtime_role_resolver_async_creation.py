@@ -69,7 +69,7 @@ async def test_runtime_role_resolver_async_creates_role_from_template(
     )
 
     assert role.role_id == "tmp_async_researcher"
-    assert role.tools == ("read", "office_read_markdown")
+    assert role.tools == ("read",)
     assert role.model_profile == "default"
     assert await resolver.list_temporary_role_ids_async(run_id="run-1") == (
         "tmp_async_researcher",

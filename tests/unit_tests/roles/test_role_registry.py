@@ -89,7 +89,7 @@ def test_role_loader_loads_role_contract_from_front_matter(tmp_path: Path) -> No
     assert role.contract.invariants[0].tools == ("edit",)
 
 
-def test_role_loader_adds_office_markdown_tool_to_non_coordinator_roles(
+def test_role_loader_preserves_explicit_tools_for_non_coordinator_roles(
     tmp_path: Path,
 ) -> None:
     role_file = tmp_path / "writer.md"
@@ -108,12 +108,7 @@ def test_role_loader_adds_office_markdown_tool_to_non_coordinator_roles(
 
     role = RoleLoader().load_one(role_file)
 
-    assert role.tools == (
-        "orch_dispatch_task",
-        "office_read_markdown",
-        "todo_write",
-        "todo_read",
-    )
+    assert role.tools == ("orch_dispatch_task",)
 
 
 def test_role_loader_keeps_coordinator_tools_unchanged(tmp_path: Path) -> None:

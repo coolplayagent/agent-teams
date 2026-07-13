@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 import yaml
 
 from relay_teams.mcp.mcp_registry import McpRegistry
-from relay_teams.roles.default_role_tools import apply_default_role_tools
 from relay_teams.roles.role_models import (
     RoleConfigSource,
     RoleDefinition,
@@ -344,12 +343,7 @@ class RoleSettingsService:
                 "model_profile": draft.model_profile.strip(),
                 "bound_agent_id": _normalize_optional_text(draft.bound_agent_id),
                 "system_prompt": draft.system_prompt.strip(),
-                "tools": apply_default_role_tools(
-                    role_id=normalized_role_id,
-                    role_name=draft.name,
-                    mode=draft.mode.value,
-                    tools=tuple(item.strip() for item in draft.tools if item.strip()),
-                ),
+                "tools": _normalize_capability_references(draft.tools),
                 "mcp_servers": _normalize_capability_references(draft.mcp_servers),
                 "skills": _normalize_capability_references(draft.skills),
             }

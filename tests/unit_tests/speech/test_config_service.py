@@ -280,7 +280,8 @@ def test_speech_config_payload_exposes_structured_profile_eligibility(
     )
 
     entries = {
-        entry.profile_name: entry for entry in service.get_config_payload().profile_eligibility
+        entry.profile_name: entry
+        for entry in service.get_config_payload().profile_eligibility
     }
 
     assert entries["renamed-transcriber"].eligible is True

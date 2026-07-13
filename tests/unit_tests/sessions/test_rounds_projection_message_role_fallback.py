@@ -47,7 +47,9 @@ from relay_teams.agents.tasks.models import TaskEnvelope, TaskStatus, Verificati
 from relay_teams.workspace import build_conversation_id
 
 
-def test_round_coordinator_message_projection_uses_structured_instance_identity() -> None:
+def test_round_coordinator_message_projection_uses_structured_instance_identity() -> (
+    None
+):
     coordinator_message: dict[str, object] = {
         "agent_role_id": "RenamedPrimaryAgent",
         "instance_id": "instance-primary",
@@ -65,24 +67,35 @@ def test_round_coordinator_message_projection_uses_structured_instance_identity(
         "instance_id": "instance-worker",
     }
 
-    assert _round_coordinator_message_projection(
-        coordinator_message,
-        "RenamedPrimaryAgent",
-        "instance-primary",
-    ) is coordinator_message
-    assert _round_coordinator_message_projection(
-        same_role_child,
-        "RenamedPrimaryAgent",
-        "instance-primary",
-    ) is None
-    assert _round_coordinator_message_projection(
-        renamed_child,
-        "RenamedPrimaryAgent",
-        "instance-primary",
-    ) is None
+    assert (
+        _round_coordinator_message_projection(
+            coordinator_message,
+            "RenamedPrimaryAgent",
+            "instance-primary",
+        )
+        is coordinator_message
+    )
+    assert (
+        _round_coordinator_message_projection(
+            same_role_child,
+            "RenamedPrimaryAgent",
+            "instance-primary",
+        )
+        is None
+    )
+    assert (
+        _round_coordinator_message_projection(
+            renamed_child,
+            "RenamedPrimaryAgent",
+            "instance-primary",
+        )
+        is None
+    )
 
 
-def test_round_coordinator_message_projection_rejects_ambiguous_same_role_child() -> None:
+def test_round_coordinator_message_projection_rejects_ambiguous_same_role_child() -> (
+    None
+):
     root_message: dict[str, object] = {
         "agent_role_id": "RenamedPrimaryAgent",
         "instance_id": "",
@@ -94,24 +107,33 @@ def test_round_coordinator_message_projection_rejects_ambiguous_same_role_child(
     same_role_child = {**root_message, "task_id": "task-child"}
     missing_identity = {**root_message, "task_id": ""}
 
-    assert _round_coordinator_message_projection(
-        root_message,
-        "RenamedPrimaryAgent",
-        "instance-primary",
-        "task-root",
-    ) is root_message
-    assert _round_coordinator_message_projection(
-        same_role_child,
-        "RenamedPrimaryAgent",
-        "instance-primary",
-        "task-root",
-    ) is None
-    assert _round_coordinator_message_projection(
-        missing_identity,
-        "RenamedPrimaryAgent",
-        "instance-primary",
-        "task-root",
-    ) is None
+    assert (
+        _round_coordinator_message_projection(
+            root_message,
+            "RenamedPrimaryAgent",
+            "instance-primary",
+            "task-root",
+        )
+        is root_message
+    )
+    assert (
+        _round_coordinator_message_projection(
+            same_role_child,
+            "RenamedPrimaryAgent",
+            "instance-primary",
+            "task-root",
+        )
+        is None
+    )
+    assert (
+        _round_coordinator_message_projection(
+            missing_identity,
+            "RenamedPrimaryAgent",
+            "instance-primary",
+            "task-root",
+        )
+        is None
+    )
 
 
 def _tool_message(
@@ -2173,24 +2195,28 @@ def test_build_session_rounds_keeps_root_identity_for_same_role_child(
     agent_repo = AgentInstanceRepository(db_path)
     run_runtime_repo = RunRuntimeRepository(db_path)
 
-    _ = task_repo.create(TaskEnvelope(
-        task_id="task-root",
-        session_id=session_id,
-        parent_task_id=None,
-        trace_id=run_id,
-        role_id="RenamedPrimary",
-        objective="coordinate",
-        verification=VerificationPlan(checklist=("non_empty_response",)),
-    ))
-    _ = task_repo.create(TaskEnvelope(
-        task_id="task-child",
-        session_id=session_id,
-        parent_task_id="task-root",
-        trace_id=run_id,
-        role_id="RenamedPrimary",
-        objective="delegated same-role work",
-        verification=VerificationPlan(checklist=("non_empty_response",)),
-    ))
+    _ = task_repo.create(
+        TaskEnvelope(
+            task_id="task-root",
+            session_id=session_id,
+            parent_task_id=None,
+            trace_id=run_id,
+            role_id="RenamedPrimary",
+            objective="coordinate",
+            verification=VerificationPlan(checklist=("non_empty_response",)),
+        )
+    )
+    _ = task_repo.create(
+        TaskEnvelope(
+            task_id="task-child",
+            session_id=session_id,
+            parent_task_id="task-root",
+            trace_id=run_id,
+            role_id="RenamedPrimary",
+            objective="delegated same-role work",
+            verification=VerificationPlan(checklist=("non_empty_response",)),
+        )
+    )
     task_repo.update_status(
         "task-root",
         TaskStatus.COMPLETED,
@@ -2209,12 +2235,14 @@ def test_build_session_rounds_keeps_root_identity_for_same_role_child(
         approval_tickets_by_run={},
         run_runtime_repo=run_runtime_repo,
         get_session_messages=lambda _sid: [],
-        get_session_events=lambda _sid: [{
-            "event_type": "run_completed",
-            "trace_id": run_id,
-            "payload_json": json.dumps({"output": "root final"}),
-            "occurred_at": "2026-07-12T00:00:00+00:00",
-        }],
+        get_session_events=lambda _sid: [
+            {
+                "event_type": "run_completed",
+                "trace_id": run_id,
+                "payload_json": json.dumps({"output": "root final"}),
+                "occurred_at": "2026-07-12T00:00:00+00:00",
+            }
+        ],
     )
 
     round_item = next(item for item in rounds if item["run_id"] == run_id)
@@ -2225,9 +2253,10 @@ def test_build_session_rounds_keeps_root_identity_for_same_role_child(
     assert round_item["primary_role_id"] == "RenamedPrimary"
     assert round_item["primary_instance_id"] == "instance-root"
     assert round_item["primary_task_id"] == "task-root"
-    assert cast(dict[str, str], round_item["role_instance_map"])[
-        "RenamedPrimary"
-    ] == "instance-root"
+    assert (
+        cast(dict[str, str], round_item["role_instance_map"])["RenamedPrimary"]
+        == "instance-root"
+    )
     assert coordinator_messages[0]["instance_id"] == "instance-root"
     assert coordinator_messages[0]["task_id"] == "task-root"
 

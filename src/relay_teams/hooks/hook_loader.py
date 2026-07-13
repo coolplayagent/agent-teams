@@ -48,6 +48,8 @@ class HookConfigReferenceError(ValueError):
         self.code = code
         self.loc = loc
         self.role_id = role_id
+
+
 _CAPABILITY_WILDCARD = "*"
 
 

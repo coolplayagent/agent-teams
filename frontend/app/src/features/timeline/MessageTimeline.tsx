@@ -52,7 +52,9 @@ import {
   formatToolDuration,
   toolActionFamily,
   toolDurationMs,
+  toolSemanticCategory,
   type ToolActionFamily,
+  type ToolSemanticCategory,
 } from "./toolPresentation";
 import { roundPromptText, roundTitle } from "./roundMetadata";
 import {
@@ -1428,6 +1430,7 @@ interface TimelineToolPart {
     | "validation";
   subagent: TimelineSubagentReference | null;
   sourceRunId?: string;
+  semanticCategory?: ToolSemanticCategory;
   toolName: string;
 }
 
@@ -7178,26 +7181,32 @@ function roundMessagePart(part: SessionRoundMessagePart): ContentPart | null {
   }
   if (kind === "tool-call") {
     return {
+      action_family: part.action_family,
       part_kind: "tool-call",
       args: part.args,
+      semantic_category: part.semantic_category,
       tool_call_id: part.tool_call_id,
       tool_name: part.tool_name,
     };
   }
   if (kind === "tool-return") {
     return {
+      action_family: part.action_family,
       part_kind: "tool-return",
       content: part.content,
       is_error: part.is_error,
       outcome: part.outcome,
+      semantic_category: part.semantic_category,
       tool_call_id: part.tool_call_id,
       tool_name: part.tool_name,
     };
   }
   if (kind === "retry-prompt") {
     return {
+      action_family: part.action_family,
       part_kind: "retry-prompt",
       content: part.content,
+      semantic_category: part.semantic_category,
       tool_call_id: part.tool_call_id,
       tool_name: part.tool_name,
     };
@@ -9007,8 +9016,10 @@ function contentPartTool(part: ContentPart): TimelineToolPart | null {
   const kind = contentPartKind(part);
   if (kind === "tool-call" || contentPartHasToolCallShape(part)) {
     const inputBody = toolArgsBody("args" in part ? part.args ?? null : null);
+    const semantics = contentPartToolSemantics(part);
     return {
       action: "",
+      ...semantics,
       body: inputBody,
       callId: "tool_call_id" in part ? part.tool_call_id ?? "" : "",
       error: false,
@@ -9027,9 +9038,11 @@ function contentPartTool(part: ContentPart): TimelineToolPart | null {
     const content = "content" in part ? part.content ?? null : null;
     const error = toolReturnIsError(part, content);
     const toolName = "tool_name" in part ? part.tool_name ?? "" : "";
-    const outputBody = toolReturnBody(content, error, toolName);
+    const semantics = contentPartToolSemantics(part);
+    const outputBody = toolReturnBody(content, error, semantics.semanticCategory);
     return {
       action: "",
+      ...semantics,
       body: outputBody,
       callId: "tool_call_id" in part ? part.tool_call_id ?? "" : "",
       durationMs: toolDurationMs(jsonValueText(content)) ?? undefined,
@@ -9047,8 +9060,10 @@ function contentPartTool(part: ContentPart): TimelineToolPart | null {
   }
   if (kind === "retry-prompt") {
     const outputBody = jsonValueText("content" in part ? part.content ?? null : null);
+    const semantics = contentPartToolSemantics(part);
     return {
       action: "",
+      ...semantics,
       body: outputBody,
       callId: "tool_call_id" in part ? part.tool_call_id ?? "" : "",
       error: true,
@@ -9061,6 +9076,20 @@ function contentPartTool(part: ContentPart): TimelineToolPart | null {
     };
   }
   return null;
+}
+
+function contentPartToolSemantics(part: ContentPart): Pick<
+  TimelineToolPart,
+  "actionFamily" | "semanticCategory"
+> {
+  const actionFamily = "action_family" in part ? part.action_family : undefined;
+  const semanticCategory = "semantic_category" in part
+    ? part.semantic_category
+    : undefined;
+  return {
+    actionFamily: toolActionFamily({ actionFamily, semanticCategory }),
+    semanticCategory: toolSemanticCategory({ semanticCategory }),
+  };
 }
 
 function runtimeApprovalPart(entry: TimelineEntry): TimelineToolPart | null {
@@ -9085,6 +9114,7 @@ function runtimeApprovalPart(entry: TimelineEntry): TimelineToolPart | null {
   }
   return {
     action,
+    ...runtimeToolSemantics(payload),
     body: approvalBody({
       action,
       argsPreview,
@@ -9241,6 +9271,7 @@ function runtimeToolPart(entry: TimelineEntry): TimelineToolPart | null {
     const inputBody = toolArgsBody(payload.args ?? null);
     return {
       action: "",
+      ...runtimeToolSemantics(payload),
       body: inputBody,
       callId,
       error: false,
@@ -9267,6 +9298,7 @@ function runtimeToolPart(entry: TimelineEntry): TimelineToolPart | null {
     }
     return {
       action: "",
+      ...runtimeToolSemantics(payload),
       body,
       callId,
       error: true,
@@ -9283,9 +9315,11 @@ function runtimeToolPart(entry: TimelineEntry): TimelineToolPart | null {
     return null;
   }
   const error = objectBoolean(payload, "error") || toolResultIndicatesError(result);
-  const outputBody = toolReturnBody(result, error, toolName);
+  const semantics = runtimeToolSemantics(payload);
+  const outputBody = toolReturnBody(result, error, semantics.semanticCategory);
   return {
     action: "",
+    ...semantics,
     body: outputBody,
     callId,
     durationMs: toolDurationMs(jsonValueText(result)) ?? undefined,
@@ -9304,6 +9338,17 @@ function runtimeToolPart(entry: TimelineEntry): TimelineToolPart | null {
     ),
     sourceRunId: entry.runId,
     toolName,
+  };
+}
+
+function runtimeToolSemantics(
+  payload: Record<string, JsonValue>,
+): Pick<TimelineToolPart, "actionFamily" | "semanticCategory"> {
+  const actionFamily = objectString(payload, "action_family");
+  const semanticCategory = objectString(payload, "semantic_category");
+  return {
+    actionFamily: toolActionFamily({ actionFamily, semanticCategory }),
+    semanticCategory: toolSemanticCategory({ semanticCategory }),
   };
 }
 
@@ -9657,7 +9702,10 @@ function toolActionCategory(
   if (tool.subagent !== null) {
     return "subagent";
   }
-  return toolActionFamily(tool.toolName, { actionFamily: tool.actionFamily });
+  return toolActionFamily({
+    actionFamily: tool.actionFamily,
+    semanticCategory: tool.semanticCategory,
+  });
 }
 
 function toolDisplayName(tool: TimelineToolPart): string | null {
@@ -9982,12 +10030,16 @@ function approvalDeniedLabel(action: string): string {
   return "Approval denied";
 }
 
-function toolReturnBody(value: unknown, error: boolean, toolName = ""): string {
+function toolReturnBody(
+  value: unknown,
+  error: boolean,
+  semanticCategory: ToolSemanticCategory = "unknown",
+): string {
   if (error) {
     const summary = toolErrorSummary(value);
     return boundedToolBody(summary || jsonValueText(value));
   }
-  const summary = toolSuccessSummary(value, toolName);
+  const summary = toolSuccessSummary(value, semanticCategory);
   return boundedToolBody(summary || jsonValueText(value));
 }
 
@@ -10034,8 +10086,11 @@ function toolErrorSummary(value: unknown): string {
   return lines.join("\n");
 }
 
-function toolSuccessSummary(value: unknown, toolName = ""): string {
-  if (toolName === "read") {
+function toolSuccessSummary(
+  value: unknown,
+  semanticCategory: ToolSemanticCategory,
+): string {
+  if (semanticCategory === "file-read") {
     const readSummary = readToolPayloadSummary(value);
     if (readSummary.length > 0) {
       return readSummary;

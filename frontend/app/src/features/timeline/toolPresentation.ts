@@ -1,22 +1,9 @@
-export type ToolSemanticCategory =
-  | "execution"
-  | "file-edit"
-  | "file-read"
-  | "interactive"
-  | "memory-artifact"
-  | "orchestration"
-  | "planning"
-  | "unknown"
-  | "web";
+import type {
+  ToolActionFamily,
+  ToolSemanticCategory,
+} from "../../api/contracts";
 
-export type ToolActionFamily =
-  | "edit"
-  | "generic"
-  | "orchestration"
-  | "read"
-  | "run"
-  | "search"
-  | "subagent";
+export type { ToolActionFamily, ToolSemanticCategory } from "../../api/contracts";
 
 export interface ToolPresentationSemantics {
   actionFamily?: string | null;
@@ -24,7 +11,6 @@ export interface ToolPresentationSemantics {
 }
 
 export function toolSemanticCategory(
-  _toolName: string,
   semantics?: ToolPresentationSemantics,
 ): ToolSemanticCategory {
   return isToolSemanticCategory(semantics?.semanticCategory)
@@ -33,13 +19,12 @@ export function toolSemanticCategory(
 }
 
 export function toolActionFamily(
-  _toolName: string,
   semantics?: ToolPresentationSemantics,
 ): ToolActionFamily {
   if (isToolActionFamily(semantics?.actionFamily)) {
     return semantics.actionFamily;
   }
-  const category = toolSemanticCategory(_toolName, semantics);
+  const category = toolSemanticCategory(semantics);
   if (category === "orchestration") return "orchestration";
   if (category === "execution") {
     return "run";
@@ -56,7 +41,7 @@ export function toolActionFamily(
   return "generic";
 }
 
-export function humanReadableToolText(toolName: string, text: string): string {
+export function humanReadableToolText(_toolName: string, text: string): string {
   const parsed = parseStructuredText(text);
   if (parsed === null) {
     return text;
@@ -78,7 +63,7 @@ export function humanReadableToolText(toolName: string, text: string): string {
     return "(empty)";
   }
   const concise = entries.every(([, value]) => isReadableScalar(value));
-  if (concise || toolSemanticCategory(toolName) !== "unknown") {
+  if (concise) {
     return entries.map(([key, value]) => readableObjectLine(key, value)).join("\n");
   }
   return JSON.stringify(parsed, null, 2);

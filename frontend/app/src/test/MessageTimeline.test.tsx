@@ -9751,7 +9751,7 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText(/duration_ms/)).not.toBeInTheDocument();
   });
 
-  it("parses tagged read payloads and bounds large tool output previews", async () => {
+  it("uses registry semantics to parse renamed file reads and bound output previews", async () => {
     const longDiff = Array.from({ length: 240 }, (_value, index) =>
       `+ generated diff line ${index}`,
     ).join("\n");
@@ -9768,16 +9768,20 @@ describe("MessageTimeline", () => {
                 "    return 'ok'",
                 "</content>",
               ].join("\n"),
+              action_family: "read",
               part_kind: "tool-return",
+              semantic_category: "file-read",
               tool_call_id: "tool-read-tagged",
-              tool_name: "read",
+              tool_name: "renamed_reader",
             },
             {
               content: {
                 data: { output: longDiff },
                 ok: true,
               },
+              action_family: "edit",
               part_kind: "tool-return",
+              semantic_category: "file-edit",
               tool_call_id: "tool-write-large",
               tool_name: "write",
             },
@@ -9790,7 +9794,7 @@ describe("MessageTimeline", () => {
 
     const { container } = renderTimeline();
 
-    const readTitle = await screen.findByText("Read: read");
+    const readTitle = await screen.findByText("Read: renamed_reader");
     const writeTitle = screen.getByText("Edited: write");
     expect(toolPreviewTexts(container)).toEqual([
       "Path: src/main.py",

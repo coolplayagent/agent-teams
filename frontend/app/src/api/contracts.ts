@@ -1788,48 +1788,80 @@ export type ToolReturnOutcome =
   | "succeeded"
   | (string & {});
 
+export type ToolSemanticCategory =
+  | "execution"
+  | "file-edit"
+  | "file-read"
+  | "interactive"
+  | "memory-artifact"
+  | "orchestration"
+  | "planning"
+  | "unknown"
+  | "web";
+
+export type ToolActionFamily =
+  | "edit"
+  | "generic"
+  | "orchestration"
+  | "read"
+  | "run"
+  | "search"
+  | "subagent";
+
 export interface ToolCallContentPart {
+  action_family?: ToolActionFamily;
   args?: JsonValue;
   kind: "tool-call";
+  semantic_category?: ToolSemanticCategory;
   tool_call_id?: string;
   tool_name?: string;
 }
 
 export interface LegacyToolCallContentPart {
+  action_family?: ToolActionFamily;
   args?: JsonValue;
   part_kind: "tool-call";
+  semantic_category?: ToolSemanticCategory;
   tool_call_id?: string;
   tool_name?: string;
 }
 
 export interface ToolReturnContentPart {
+  action_family?: ToolActionFamily;
   content?: JsonValue;
   is_error?: boolean;
   kind: "tool-return";
+  semantic_category?: ToolSemanticCategory;
   outcome?: ToolReturnOutcome;
   tool_call_id?: string;
   tool_name?: string;
 }
 
 export interface LegacyToolReturnContentPart {
+  action_family?: ToolActionFamily;
   content?: JsonValue;
   is_error?: boolean;
   outcome?: ToolReturnOutcome;
   part_kind: "tool-return";
+  semantic_category?: ToolSemanticCategory;
   tool_call_id?: string;
   tool_name?: string;
 }
 
 export interface ToolValidationContentPart {
+  action_family?: ToolActionFamily;
   content?: JsonValue;
   kind: "retry-prompt";
+  semantic_category?: ToolSemanticCategory;
   tool_call_id?: string;
   tool_name?: string;
 }
 
 export interface LegacyToolValidationContentPart {
+  action_family?: ToolActionFamily;
   content?: JsonValue;
   part_kind: "retry-prompt";
+  semantic_category?: ToolSemanticCategory;
   tool_call_id?: string;
   tool_name?: string;
 }
@@ -1947,6 +1979,7 @@ export interface TimelineMessage {
 }
 
 export interface SessionRoundMessagePart {
+  action_family?: ToolActionFamily;
   args?: JsonValue;
   content?: JsonValue;
   is_error?: boolean;
@@ -1956,6 +1989,7 @@ export interface SessionRoundMessagePart {
   name?: string;
   outcome?: ToolReturnOutcome;
   part_kind?: string;
+  semantic_category?: ToolSemanticCategory;
   text?: string;
   tool_call_id?: string;
   tool_name?: string;

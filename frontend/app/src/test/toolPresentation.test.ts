@@ -10,24 +10,23 @@ import {
 
 describe("toolPresentation", () => {
   it("does not infer presentation semantics from a tool name", () => {
-    expect(toolSemanticCategory("spawn_subagent")).toBe("unknown");
-    expect(toolSemanticCategory("ask_question")).toBe("unknown");
-    expect(toolActionFamily("spawn_subagent")).toBe("generic");
+    expect(toolSemanticCategory()).toBe("unknown");
+    expect(toolActionFamily()).toBe("generic");
   });
 
   it("uses explicit presentation semantics from the transport contract", () => {
-    expect(toolSemanticCategory("opaque", { semanticCategory: "interactive" }))
+    expect(toolSemanticCategory({ semanticCategory: "interactive" }))
       .toBe("interactive");
-    expect(toolActionFamily("opaque", { actionFamily: "subagent" }))
+    expect(toolActionFamily({ actionFamily: "subagent" }))
       .toBe("subagent");
-    expect(toolActionFamily("opaque", { semanticCategory: "file-read" }))
+    expect(toolActionFamily({ semanticCategory: "file-read" }))
       .toBe("read");
   });
 
   it("rejects unsupported semantic values instead of guessing", () => {
-    expect(toolSemanticCategory("shell", { semanticCategory: "commandish" }))
+    expect(toolSemanticCategory({ semanticCategory: "commandish" }))
       .toBe("unknown");
-    expect(toolActionFamily("shell", { actionFamily: "execute-ish" }))
+    expect(toolActionFamily({ actionFamily: "execute-ish" }))
       .toBe("generic");
   });
 

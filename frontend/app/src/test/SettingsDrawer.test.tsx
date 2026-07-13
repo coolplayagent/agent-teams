@@ -3913,10 +3913,14 @@ describe("SettingsDrawer", () => {
       ),
     );
     fireEvent.mouseDown(screen.getByRole("combobox", { name: "Provider" }));
-    const unavailable = await screen.findByText(
+    const unavailableOptions = await screen.findAllByText(
       "legacy_transport (saved provider; unavailable in catalog)",
     );
-    expect(unavailable.closest(".ant-select-item-option")).toHaveClass(
+    const unavailableOption = unavailableOptions.find(
+      (element) => element.closest(".ant-select-item-option") !== null,
+    );
+    expect(unavailableOption).toBeDefined();
+    expect(unavailableOption?.closest(".ant-select-item-option")).toHaveClass(
       "ant-select-item-option-disabled",
     );
   }, 25000);

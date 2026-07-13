@@ -499,6 +499,9 @@ describe("ConnectorsView", () => {
         }),
       ),
     );
+    expect(createXiaolubanGatewayAccountMock.mock.calls[0]?.[0]).not.toHaveProperty(
+      "base_url",
+    );
   });
 
   it("updates, toggles, and deletes an existing Discord account", async () => {

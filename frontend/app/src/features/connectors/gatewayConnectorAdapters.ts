@@ -75,8 +75,9 @@ const GATEWAY_CONNECTOR_ADAPTERS: Readonly<Record<GatewayConnectorProvider, Gate
     list: listXiaolubanGatewayAccounts,
     remove: deleteXiaolubanGatewayAccount,
     save: async (account, values) => {
+      const baseUrl = values.baseUrl.trim();
       const body = {
-        base_url: values.baseUrl.trim(),
+        ...(baseUrl ? { base_url: baseUrl } : {}),
         display_name: values.displayName.trim(),
         enabled: values.enabled,
         im_config: { workspace_id: values.workspaceId },
@@ -113,7 +114,7 @@ export function gatewayAccountFormValues(
       account !== null && "allowed_channel_ids" in account ? account.allowed_channel_ids.join(", ") : "",
     applicationId:
       account !== null && "application_id" in account ? account.application_id ?? "" : "",
-    baseUrl: account !== null && "base_url" in account ? account.base_url : "https://api.xiaoluban.com",
+    baseUrl: account !== null && "base_url" in account ? account.base_url : "",
     displayName: account?.display_name ?? adapter.defaultDisplayName,
     enabled: account?.status !== "disabled",
     token: "",

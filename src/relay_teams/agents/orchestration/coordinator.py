@@ -2516,14 +2516,19 @@ class CoordinatorGraph(BaseModel):
             error_code="verification_failed",
             error_message=failure_message,
         )
+        # Verification is terminal metadata about the coordinator's answer, not a
+        # second assistant turn. Preserve the real answer whenever one exists;
+        # only synthesize a user-facing response when the run produced no output.
+        terminal_output = output if output.strip() else assistant_message
+        needs_fallback_message = not output.strip()
         await self.task_repo.update_status_async(
             root_task.task_id,
             TaskStatus.COMPLETED,
             assigned_instance_id=current.assigned_instance_id,
-            result=assistant_message,
+            result=terminal_output,
             error_message=failure_message,
         )
-        if root_instance_id is not None:
+        if root_instance_id is not None and needs_fallback_message:
             instance = await self.agent_repo.get_instance_async(root_instance_id)
             await self.task_execution_service.message_repo.prune_conversation_history_to_safe_boundary_async(
                 instance.conversation_id
@@ -2554,7 +2559,7 @@ class CoordinatorGraph(BaseModel):
                     },
                 )
         return TaskExecutionResult(
-            output=assistant_message,
+            output=terminal_output,
             completion_reason=RunCompletionReason.ASSISTANT_RESPONSE,
             error_code="verification_failed",
             error_message=failure_message,

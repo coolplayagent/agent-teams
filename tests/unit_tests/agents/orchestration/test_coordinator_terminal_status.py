@@ -702,6 +702,56 @@ async def test_terminal_status_from_verification_completes_with_verification_war
 
 
 @pytest.mark.asyncio
+async def test_terminal_verification_warning_preserves_real_coordinator_output(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "coordinator_terminal_output.db"
+    task_repo = TaskRepository(db_path)
+    event_log = EventLog(db_path)
+    root_task = TaskEnvelope(
+        task_id="task-root-output",
+        session_id="session-output",
+        parent_task_id=None,
+        trace_id="run-output",
+        objective="do work",
+        verification=VerificationPlan(checklist=("non_empty_response",)),
+    )
+    _ = task_repo.create(root_task)
+    task_repo.update_status(
+        root_task.task_id,
+        TaskStatus.ASSIGNED,
+        assigned_instance_id="inst-output",
+    )
+    coordinator = CoordinatorGraph.model_construct(
+        task_repo=task_repo,
+        event_bus=event_log,
+    )
+    real_output = "# Final answer\n\nThe requested work is complete."
+
+    result = await coordinator._terminal_status_from_verification_async(
+        trace_id="run-output",
+        root_task=root_task,
+        verification=VerificationResult(
+            task_id=root_task.task_id,
+            passed=False,
+            details=("Evidence citation missing",),
+        ),
+        output=real_output,
+        root_instance_id=None,
+        root_role_id="Coordinator",
+    )
+
+    assert result.output == real_output
+    assert result.error_code == "verification_failed"
+    assert "Evidence citation missing" in (result.error_message or "")
+    record = task_repo.get(root_task.task_id)
+    assert record.status == TaskStatus.COMPLETED
+    assert record.result == real_output
+    assert "Evidence citation missing" in (record.error_message or "")
+    assert event_log.list_by_session("session-output") == ()
+
+
+@pytest.mark.asyncio
 async def test_root_task_created_hook_is_not_emitted_for_normal_run(
     tmp_path: Path,
 ) -> None:

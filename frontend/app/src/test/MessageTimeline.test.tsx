@@ -2935,6 +2935,104 @@ describe("MessageTimeline", () => {
     expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
   });
 
+  it("keeps the active runtime row mounted when terminal output rewrites the draft", async () => {
+    const runId = "run-terminal-output-rewrite";
+    const draftEvent = relayRunEvent({
+      event_id: 1,
+      event_type: "text_delta",
+      payload_json: JSON.stringify({ text: "Draft wording that will be replaced." }),
+      run_id: runId,
+      trace_id: runId,
+    });
+    setRuntimeStateFromEvents([draftEvent]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("Draft wording that will be replaced.")).toBeVisible();
+    const rowBefore = container.querySelector<HTMLElement>(
+      `[data-row-key="runtime-text:${runId}:MainAgent:0"]`,
+    );
+    expect(rowBefore).not.toBeNull();
+
+    act(() => {
+      setRuntimeStateFromEvents([
+        draftEvent,
+        relayRunEvent({
+          event_id: 2,
+          event_type: "run_completed",
+          payload_json: JSON.stringify({
+            output: [{ kind: "text", text: "A completely revised final answer." }],
+            status: "completed",
+          }),
+          run_id: runId,
+          trace_id: runId,
+        }),
+      ]);
+    });
+
+    expect(await screen.findByText("A completely revised final answer.")).toBeVisible();
+    expect(screen.queryByText("Draft wording that will be replaced."))
+      .not.toBeInTheDocument();
+    expect(container.querySelector(`[data-row-key="runtime-text:${runId}:MainAgent:0"]`))
+      .toBe(rowBefore);
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
+  });
+
+  it("replaces the latest closed runtime answer segment by terminal event identity", async () => {
+    const runId = "run-terminal-output-after-tool";
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "text_delta",
+        payload_json: JSON.stringify({ text: "Draft before the tool call." }),
+        run_id: runId,
+        trace_id: runId,
+      }),
+      relayRunEvent({
+        event_id: 2,
+        event_type: "tool_call",
+        payload_json: JSON.stringify({
+          args: { path: "README.md" },
+          tool_call_id: "call-terminal-output-after-tool",
+          tool_name: "read",
+        }),
+        run_id: runId,
+        trace_id: runId,
+      }),
+      relayRunEvent({
+        event_id: 3,
+        event_type: "tool_result",
+        payload_json: JSON.stringify({
+          content: "done",
+          tool_call_id: "call-terminal-output-after-tool",
+          tool_name: "read",
+        }),
+        run_id: runId,
+        trace_id: runId,
+      }),
+      relayRunEvent({
+        event_id: 4,
+        event_type: "run_completed",
+        payload_json: JSON.stringify({
+          output: [{ kind: "text", text: "Final answer after the tool call." }],
+          status: "completed",
+        }),
+        run_id: runId,
+        trace_id: runId,
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText("Final answer after the tool call.")).toBeVisible();
+    expect(screen.queryByText("Draft before the tool call.")).not.toBeInTheDocument();
+    expect(container.querySelectorAll(
+      `[data-row-key="runtime-text:${runId}:MainAgent:0"]`,
+    )).toHaveLength(1);
+  });
+
   it("consumes terminal runtime prefixes after a persisted answer row arrives", async () => {
     useRuntimeStore.setState({
       runtimeState: {

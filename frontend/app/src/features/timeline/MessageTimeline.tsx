@@ -4672,14 +4672,6 @@ function mergeRuntimeCompletedOutputIntoActiveText(
   if (outputText.length === 0) {
     return false;
   }
-  const currentText = normalizedTimelineText(existing.part.text);
-  const normalizedOutputText = normalizedTimelineText(outputText);
-  if (
-    currentText.length > 0 &&
-    !normalizedOutputText.includes(currentText)
-  ) {
-    return false;
-  }
   existing.part.text = outputText;
   delete existing.part.reveal;
   existing.row.text = outputText;
@@ -4700,7 +4692,6 @@ function mergeRuntimeCompletedOutputIntoPreviousTextRow(
   if (outputText.length === 0) {
     return false;
   }
-  const outputComparisonText = normalizedTimelineText(outputText);
   for (let rowIndex = rows.length - 1; rowIndex >= 0; rowIndex -= 1) {
     const row = rows[rowIndex];
     if (
@@ -4715,11 +4706,7 @@ function mergeRuntimeCompletedOutputIntoPreviousTextRow(
       (part): part is TimelineTextPart => part.kind === "text",
     );
     if (textParts.length !== row.parts.length || textParts.length !== 1) {
-      return false;
-    }
-    const currentText = normalizedTimelineText(rowCopyText(row.parts));
-    if (currentText.length === 0 || !outputComparisonText.includes(currentText)) {
-      return false;
+      continue;
     }
     textParts[0].text = outputText;
     delete textParts[0].reveal;
@@ -6054,11 +6041,7 @@ function closedRuntimeVisibleText(entries: TimelineEntry[]): string {
     if (outputText.length === 0) {
       continue;
     }
-    const currentText = normalizedTimelineText(text);
-    const normalizedOutputText = normalizedTimelineText(outputText);
-    if (currentText.length === 0 || normalizedOutputText.includes(currentText)) {
-      text = outputText;
-    }
+    text = outputText;
   }
   return text;
 }

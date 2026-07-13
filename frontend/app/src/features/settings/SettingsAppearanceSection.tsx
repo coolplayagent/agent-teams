@@ -164,6 +164,7 @@ export function SettingsAppearanceSection({
   const importInputRef = useRef<HTMLInputElement>(null);
   const presetMenuRef = useRef<HTMLDivElement>(null);
   const [appearance, setAppearance] = useState(readAppearanceSettings);
+  const appearanceRef = useRef(appearance);
   const [presetMenuOpen, setPresetMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -171,7 +172,11 @@ export function SettingsAppearanceSection({
   }, [appearance]);
 
   useEffect(() => {
-    const syncAppearance = () => setAppearance(readAppearanceSettings());
+    const syncAppearance = () => {
+      const next = readAppearanceSettings();
+      appearanceRef.current = next;
+      setAppearance(next);
+    };
     window.addEventListener(appearanceChangedEvent, syncAppearance);
     window.addEventListener("storage", syncAppearance);
     return () => {
@@ -200,11 +205,7 @@ export function SettingsAppearanceSection({
     key: K,
     value: AppearanceSettings[K],
   ): void {
-    setAppearance((current) => {
-      const next = { ...current, [key]: value };
-      saveAppearanceSettings(next);
-      return next;
-    });
+    commitAppearance({ ...appearanceRef.current, [key]: value });
     setPresetMenuOpen(false);
   }
 
@@ -213,20 +214,22 @@ export function SettingsAppearanceSection({
     if (preset === undefined) {
       return;
     }
-    setAppearance((current) => {
-      const next: AppearanceSettings = {
-        ...current,
-        accent: preset.accent,
-        background: preset.background,
-        codeFont: preset.codeFont,
-        foreground: preset.foreground,
-        themePreset: preset.key,
-        uiFont: preset.uiFont,
-      };
-      saveAppearanceSettings(next);
-      return next;
+    commitAppearance({
+      ...appearanceRef.current,
+      accent: preset.accent,
+      background: preset.background,
+      codeFont: preset.codeFont,
+      foreground: preset.foreground,
+      themePreset: preset.key,
+      uiFont: preset.uiFont,
     });
     setPresetMenuOpen(false);
+  }
+
+  function commitAppearance(next: AppearanceSettings): void {
+    appearanceRef.current = next;
+    setAppearance(next);
+    saveAppearanceSettings(next);
   }
 
   function selectThemeMode(nextThemeMode: ThemeMode): void {
@@ -254,9 +257,8 @@ export function SettingsAppearanceSection({
     try {
       const text = await file.text();
       const parsed = JSON.parse(text) as unknown;
-      const next = importedAppearanceSettings(parsed, appearance);
-      setAppearance(next);
-      saveAppearanceSettings(next);
+      const next = importedAppearanceSettings(parsed, appearanceRef.current);
+      commitAppearance(next);
       void message.success(t("settingsAppearanceImported"));
     } catch {
       void message.error(t("settingsAppearanceImportFailed"));
@@ -265,7 +267,9 @@ export function SettingsAppearanceSection({
 
   function resetAppearance(): void {
     resetAppearanceSettings();
-    setAppearance(readAppearanceSettings());
+    const next = readAppearanceSettings();
+    appearanceRef.current = next;
+    setAppearance(next);
     void message.success(t("settingsAppearanceReset"));
   }
 

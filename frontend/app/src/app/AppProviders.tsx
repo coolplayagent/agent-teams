@@ -24,6 +24,8 @@ const queryClient = new QueryClient({
   },
 });
 
+const antButtonConfig = { autoInsertSpace: false } as const;
+
 interface AppProvidersProps {
   children: ReactNode;
 }
@@ -64,40 +66,58 @@ export function AppProviders({ children }: AppProvidersProps) {
     appearanceSettings.motion === "full" ||
     (appearanceSettings.motion === "system" && !systemPrefersReducedMotion);
 
+  const semanticAppearance = useMemo(
+    () => ({
+      accent: appearanceSettings.accent,
+      background: appearanceSettings.background,
+      foreground: appearanceSettings.foreground,
+    }),
+    [
+      appearanceSettings.accent,
+      appearanceSettings.background,
+      appearanceSettings.foreground,
+    ],
+  );
+
   const tokens = useMemo(
     () => ({
-      ...antSemanticTokens(resolvedThemeMode, appearanceSettings),
+      ...antSemanticTokens(resolvedThemeMode, semanticAppearance),
       borderRadius: 8,
       fontFamily:
         appearanceSettings.uiFont.trim()
         || '"Aptos", "Helvetica Neue", ui-sans-serif, system-ui, -apple-system, sans-serif',
       motion: motionEnabled,
     }),
-    [appearanceSettings, motionEnabled, resolvedThemeMode],
+    [appearanceSettings.uiFont, motionEnabled, resolvedThemeMode, semanticAppearance],
+  );
+
+  const antTheme = useMemo(
+    () => ({
+      algorithm,
+      token: tokens,
+      components: {
+        Layout: {
+          bodyBg: "var(--at-bg)",
+          headerBg: "var(--at-topbar)",
+          siderBg: "var(--at-sidebar)",
+        },
+        Button: {
+          borderRadius: 8,
+          controlHeight: 32,
+        },
+        Card: {
+          borderRadiusLG: 8,
+        },
+      },
+    }),
+    [algorithm, tokens],
   );
 
   return (
     <QueryClientProvider client={queryClient}>
       <ConfigProvider
-        button={{ autoInsertSpace: false }}
-        theme={{
-          algorithm,
-          token: tokens,
-          components: {
-            Layout: {
-              bodyBg: "var(--at-bg)",
-              headerBg: "var(--at-topbar)",
-              siderBg: "var(--at-sidebar)",
-            },
-            Button: {
-              borderRadius: 8,
-              controlHeight: 32,
-            },
-            Card: {
-              borderRadiusLG: 8,
-            },
-          },
-        }}
+        button={antButtonConfig}
+        theme={antTheme}
       >
         <XProvider>
           <AntApp>{children}</AntApp>

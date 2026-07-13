@@ -29,6 +29,8 @@ describe("ChoiceControl", () => {
     fireEvent.click(screen.getByText("Allow shell"));
 
     expect(input).toBeChecked();
+    expect(input.closest("label")).toHaveClass("is-checked");
+    expect(input.closest("label")).not.toHaveAttribute("style");
   });
 
   it("exposes descriptions, invalid state, and switch semantics to the input", () => {

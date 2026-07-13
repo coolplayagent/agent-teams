@@ -152,7 +152,7 @@ export function applyAppearanceSettings(
 }
 
 export function resolveAppearanceColors(
-  settings: AppearanceSettings,
+  settings: Pick<AppearanceSettings, "background" | "foreground">,
   resolvedThemeMode: ResolvedThemeMode,
 ): ResolvedAppearanceColors {
   const background = normalizeHexColor(settings.background);

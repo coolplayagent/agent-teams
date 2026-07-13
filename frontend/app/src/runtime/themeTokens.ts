@@ -55,7 +55,10 @@ const darkPalette: SemanticThemePalette = {
 
 export function antSemanticTokens(
   resolvedThemeMode: ResolvedThemeMode,
-  appearance: AppearanceSettings,
+  appearance: Pick<
+    AppearanceSettings,
+    "accent" | "background" | "foreground"
+  >,
 ) {
   const palette = resolvedThemeMode === "dark" ? darkPalette : lightPalette;
   const customColors = resolveAppearanceColors(appearance, resolvedThemeMode);

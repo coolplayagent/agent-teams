@@ -14,6 +14,10 @@ const themeCss = readFileSync("src/styles/theme.css", "utf8");
 
 describe("theme infrastructure", () => {
   afterEach(() => {
+    document.documentElement.removeAttribute("data-diagnostics-visible");
+    document.documentElement.removeAttribute("data-diff-marker");
+    document.documentElement.removeAttribute("data-motion");
+    document.documentElement.removeAttribute("data-pointer-cursor");
     document.documentElement.removeAttribute("data-theme");
     document.documentElement.removeAttribute("data-theme-mode");
     document.documentElement.removeAttribute("style");
@@ -61,6 +65,22 @@ describe("theme infrastructure", () => {
     expect(tokens.colorBgContainer).toBe("#ffffff");
     expect(tokens.colorText).toBe("#20231f");
     expect(tokens.controlItemBgActive).toBe("#e7e8e1");
+  });
+
+  it("changes only cursor behavior when pointer cursors are enabled", () => {
+    applyAppearanceSettings(defaultAppearanceSettings, "light");
+    const rootStyle = document.documentElement.getAttribute("style");
+
+    applyAppearanceSettings(
+      { ...defaultAppearanceSettings, pointerCursor: true },
+      "light",
+    );
+
+    expect(document.documentElement.dataset.pointerCursor).toBe("true");
+    expect(document.documentElement.getAttribute("style")).toBe(rootStyle);
+    expect(themeCss).toMatch(
+      /:root\[data-pointer-cursor="true"\][\s\S]*?\{\s*cursor:\s*pointer !important;\s*\}/,
+    );
   });
 
   it("declares semantic surface, control, text, code, and feedback tokens", () => {

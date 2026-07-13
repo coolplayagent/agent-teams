@@ -1,8 +1,9 @@
-import { render, waitFor } from "@testing-library/react";
+import { act, cleanup, render, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const configProviderMotion = vi.hoisted(() => vi.fn<(enabled: boolean) => void>());
+const configProviderTheme = vi.hoisted(() => vi.fn<(themeConfig: object) => void>());
 
 vi.mock("antd", () => ({
   App: ({ children }: { children: ReactNode }) => children,
@@ -14,6 +15,7 @@ vi.mock("antd", () => ({
     theme: { token: { motion: boolean } };
   }) => {
     configProviderMotion(themeConfig.token.motion);
+    configProviderTheme(themeConfig);
     return children;
   },
   theme: {
@@ -36,8 +38,10 @@ import { appearanceStorageKey } from "../runtime/appearance";
 
 describe("AppProviders motion", () => {
   afterEach(() => {
+    cleanup();
     window.localStorage.clear();
     configProviderMotion.mockClear();
+    configProviderTheme.mockClear();
     vi.mocked(window.matchMedia).mockImplementation(defaultMatchMedia);
   });
 
@@ -69,6 +73,28 @@ describe("AppProviders motion", () => {
     render(<AppProviders>content</AppProviders>);
 
     await waitFor(() => expect(configProviderMotion).toHaveBeenLastCalledWith(true));
+  });
+
+  it("keeps the Ant theme context stable for cursor-only appearance changes", async () => {
+    setAppearanceMotion("full");
+    render(<AppProviders>content</AppProviders>);
+    await act(async () => undefined);
+    const initialTheme = configProviderTheme.mock.lastCall?.[0];
+    configProviderTheme.mockClear();
+
+    window.localStorage.setItem(
+      appearanceStorageKey,
+      JSON.stringify({ motion: "full", pointerCursor: true }),
+    );
+    window.dispatchEvent(new Event("agent-teams-appearance-changed"));
+
+    await waitFor(() =>
+      expect(document.documentElement.dataset.pointerCursor).toBe("true"),
+    );
+    expect(configProviderTheme).toHaveBeenCalled();
+    for (const [themeConfig] of configProviderTheme.mock.calls) {
+      expect(themeConfig).toBe(initialTheme);
+    }
   });
 });
 

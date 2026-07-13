@@ -40,7 +40,11 @@ import {
   isRunLifecycleEventType,
   type RunEventType,
 } from "../../runtime/events";
-import type { RuntimeRunState, TimelineEntry } from "../../runtime/reducers";
+import {
+  timelineEntryActorIdentity,
+  type RuntimeRunState,
+  type TimelineEntry,
+} from "../../runtime/reducers";
 import {
   useOptimisticRunStore,
   type OptimisticRunPrompt,
@@ -4522,6 +4526,12 @@ function runtimeEntriesToRows(
     return sequence;
   };
   for (const entry of entries) {
+    if (
+      runtimeEntryCarriesActorOutput(entry) &&
+      timelineEntryActorIdentity(entry).kind !== "role"
+    ) {
+      continue;
+    }
     rememberResolvedRuntimeToolCall(entry, resolvedToolCallIds);
     if (
       entry.kind === "background_task_updated" &&
@@ -4612,6 +4622,15 @@ function runtimeEntriesToRows(
     terminalScopeOverride,
   );
   return rows;
+}
+
+function runtimeEntryCarriesActorOutput(entry: TimelineEntry): boolean {
+  return (
+    entry.kind === "message" ||
+    entry.kind === "text_delta" ||
+    entry.kind === "output_delta" ||
+    (entry.kind === "run_completed" && runtimeEntryHasStructuredOutput(entry))
+  );
 }
 
 function applyRuntimeToolOutputDeltaEvent(

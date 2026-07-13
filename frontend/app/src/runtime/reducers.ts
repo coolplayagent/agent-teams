@@ -21,7 +21,28 @@ export interface TimelineEntry {
   eventId: number;
   lastMergedEventId?: number;
   occurredAt: string;
+  actorIdentity?: RuntimeActorIdentity;
 }
+
+export type RuntimeActorIdentity =
+  | {
+      kind: "role";
+      source: "event" | "event_with_run_target" | "run_target";
+      roleId: string;
+      instanceId: string | null;
+    }
+  | {
+      kind: "instance";
+      source: "event" | "run_target";
+      roleId: null;
+      instanceId: string;
+    }
+  | {
+      kind: "unknown";
+      source: "missing";
+      roleId: null;
+      instanceId: null;
+    };
 
 export interface RuntimeRunState {
   runId: string;
@@ -117,18 +138,20 @@ export function reduceRunEvent(
     hasPositiveEventId
       ? rawEventId
       : existing.lastEventId;
+  const actorIdentity = runtimeActorIdentityFromEvent(event, existing);
   const nextEntry = {
     id: `${runId}:${eventId}:${existing.entries.length}`,
     sessionId: event.session_id,
     runId,
-    instanceId: event.instance_id ?? "",
+    instanceId: actorIdentity.instanceId ?? undefined,
     taskId: event.task_id ?? "",
-    roleId: event.role_id ?? event.instance_id ?? "agent",
+    roleId: actorIdentity.roleId ?? "",
     kind: event.event_type,
     text: eventText(event.payload, event.event_type),
     payload: event.payload,
     eventId,
     occurredAt: event.occurred_at ?? "",
+    actorIdentity,
   } satisfies TimelineEntry;
   const entries = appendTimelineEntry(
     existing.entries,
@@ -149,7 +172,10 @@ export function reduceRunEvent(
     status,
     lastEventId: Math.max(existing.lastEventId, eventId),
     hadVisibleTextStream: existing.hadVisibleTextStream === true ||
-      eventHasVisibleTextStream(event.event_type, event.payload),
+      (
+        actorIdentity.kind === "role" &&
+        eventHasVisibleTextStream(event.event_type, event.payload)
+      ),
     seenEventKeys: dedupeKey === null
       ? existing.seenEventKeys
       : rememberSeenEventKey(existing.seenEventKeys, dedupeKey),
@@ -178,6 +204,93 @@ export function reduceRunEvent(
     runs: nextRuns,
     activeRunIds,
   };
+}
+
+export function timelineEntryActorIdentity(
+  entry: TimelineEntry,
+): RuntimeActorIdentity {
+  return entry.actorIdentity ?? runtimeActorIdentity(
+    entry.roleId,
+    entry.instanceId,
+    "event",
+  );
+}
+
+function runtimeActorIdentityFromEvent(
+  event: ReturnType<typeof parseRunEvent>,
+  existing: RuntimeRunState,
+): RuntimeActorIdentity {
+  const eventRoleId = normalizedActorIdentifier(event.role_id);
+  const eventInstanceId = normalizedActorIdentifier(event.instance_id);
+  if (eventRoleId !== null) {
+    return {
+      kind: "role",
+      source: "event",
+      roleId: eventRoleId,
+      instanceId: eventInstanceId,
+    };
+  }
+  if (eventInstanceId !== null) {
+    const targetRoleId = normalizedActorIdentifier(existing.targetRoleId);
+    const targetInstanceId = normalizedActorIdentifier(existing.targetInstanceId);
+    if (targetRoleId !== null && targetInstanceId === eventInstanceId) {
+      return {
+        kind: "role",
+        source: "event_with_run_target",
+        roleId: targetRoleId,
+        instanceId: eventInstanceId,
+      };
+    }
+    return {
+      kind: "instance",
+      source: "event",
+      roleId: null,
+      instanceId: eventInstanceId,
+    };
+  }
+  return runtimeActorIdentity(
+    existing.targetRoleId,
+    existing.targetInstanceId,
+    "run_target",
+  );
+}
+
+function runtimeActorIdentity(
+  roleId: string | null | undefined,
+  instanceId: string | null | undefined,
+  source: "event" | "run_target",
+): RuntimeActorIdentity {
+  const normalizedRoleId = normalizedActorIdentifier(roleId);
+  const normalizedInstanceId = normalizedActorIdentifier(instanceId);
+  if (normalizedRoleId !== null) {
+    return {
+      kind: "role",
+      source,
+      roleId: normalizedRoleId,
+      instanceId: normalizedInstanceId,
+    };
+  }
+  if (normalizedInstanceId !== null) {
+    return {
+      kind: "instance",
+      source,
+      roleId: null,
+      instanceId: normalizedInstanceId,
+    };
+  }
+  return {
+    kind: "unknown",
+    source: "missing",
+    roleId: null,
+    instanceId: null,
+  };
+}
+
+function normalizedActorIdentifier(
+  value: string | null | undefined,
+): string | null {
+  const normalized = value?.trim() ?? "";
+  return normalized.length > 0 ? normalized : null;
 }
 
 function nextActiveRunIds(

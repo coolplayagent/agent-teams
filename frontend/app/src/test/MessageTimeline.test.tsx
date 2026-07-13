@@ -4520,6 +4520,123 @@ describe("MessageTimeline", () => {
     expect(container.querySelectorAll("article.at-message")).toHaveLength(0);
   });
 
+  it("does not render an unattributed live delta as assistant output", async () => {
+    listSessionMessagesMock.mockResolvedValue([]);
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        instance_id: null,
+        payload_json: JSON.stringify({ text: "unattributed live delta" }),
+        role_id: null,
+      }),
+    ]);
+
+    const { container } = renderTimeline();
+
+    await waitFor(() => expect(listSessionMessagesMock).toHaveBeenCalled());
+    expect(screen.queryByText("unattributed live delta")).not.toBeInTheDocument();
+    expect(container.querySelectorAll("article.at-message")).toHaveLength(0);
+  });
+
+  it("streams a delta through the actor established by run lifecycle", async () => {
+    listSessionMessagesMock.mockResolvedValue([]);
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "run_started",
+        instance_id: "root-instance",
+        payload_json: "{}",
+        role_id: "RenamedPrimary",
+      }),
+    ]);
+    const { container } = renderTimeline();
+
+    act(() => {
+      const current = useRuntimeStore.getState().runtimeState;
+      useRuntimeStore.setState({
+        runtimeState: reduceRunEvent(
+          current,
+          relayRunEvent({
+            event_id: 2,
+            instance_id: null,
+            payload_json: JSON.stringify({ text: "attributed live delta" }),
+            role_id: null,
+          }),
+        ),
+      });
+    });
+
+    expect(await screen.findByText("attributed live delta")).toBeVisible();
+    expect(container.querySelector('article.at-message[data-role-id="RenamedPrimary"]'))
+      .not.toBeNull();
+  });
+
+  it("restores attributed replay after switching away from an unknown actor", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, staleTime: Number.POSITIVE_INFINITY },
+      },
+    });
+    listSessionMessagesMock.mockResolvedValue([]);
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 1,
+        event_type: "run_started",
+        instance_id: "root-instance",
+        payload_json: "{}",
+        role_id: "RenamedPrimary",
+        run_id: "run-session-1",
+        session_id: "session-1",
+        trace_id: "run-session-1",
+      }),
+      relayRunEvent({
+        event_id: 2,
+        instance_id: null,
+        payload_json: JSON.stringify({ text: "attributed replay delta" }),
+        role_id: null,
+        run_id: "run-session-1",
+        session_id: "session-1",
+        trace_id: "run-session-1",
+      }),
+      relayRunEvent({
+        event_id: 1,
+        instance_id: null,
+        payload_json: JSON.stringify({ text: "unknown session delta" }),
+        role_id: null,
+        run_id: "run-session-2",
+        session_id: "session-2",
+        trace_id: "run-session-2",
+      }),
+    ]);
+
+    const view = render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <MessageTimeline sessionId="session-2" />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(listSessionMessagesMock).toHaveBeenCalledWith("session-2"));
+    expect(screen.queryByText("unknown session delta")).not.toBeInTheDocument();
+    expect(screen.queryByText("attributed replay delta")).not.toBeInTheDocument();
+
+    view.rerender(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <MessageTimeline sessionId="session-1" />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("attributed replay delta")).toBeVisible();
+    expect(screen.queryByText("unknown session delta")).not.toBeInTheDocument();
+  });
+
   it("restores a queued session prompt when switching back before its first token", async () => {
     const queryClient = new QueryClient({
       defaultOptions: {

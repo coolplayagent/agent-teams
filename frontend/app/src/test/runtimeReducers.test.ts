@@ -82,8 +82,104 @@ describe("runtime reducers", () => {
     );
 
     expect(state.runs["run-1"].entries[0]).toMatchObject({
+      actorIdentity: {
+        kind: "instance",
+        roleId: null,
+        source: "event",
+      },
       instanceId: "crafter-instance",
+      roleId: "",
       taskId: "crafter-task",
+    });
+  });
+
+  it("keeps actor identity unknown instead of inventing an assistant role", () => {
+    const state = reduceRunEvent(
+      initialRuntimeState,
+      runEvent({
+        event_id: 2,
+        event_type: "text_delta",
+        instance_id: null,
+        role_id: null,
+        payload_json: JSON.stringify({ text: "unattributed output" }),
+      }),
+    );
+
+    expect(state.runs["run-1"].entries[0]).toMatchObject({
+      actorIdentity: {
+        instanceId: null,
+        kind: "unknown",
+        roleId: null,
+        source: "missing",
+      },
+      roleId: "",
+      text: "unattributed output",
+    });
+    expect(state.runs["run-1"].entries[0].instanceId).toBeUndefined();
+    expect(state.runs["run-1"].hadVisibleTextStream).toBe(false);
+  });
+
+  it("inherits an established run actor for replayed deltas without identity", () => {
+    const state = [
+      runEvent({
+        event_id: 1,
+        event_type: "run_started",
+        instance_id: "root-instance",
+        role_id: "RenamedPrimary",
+      }),
+      runEvent({
+        event_id: 2,
+        event_type: "text_delta",
+        instance_id: null,
+        role_id: null,
+        payload_json: JSON.stringify({ text: "attributed replay output" }),
+      }),
+    ].reduce(reduceRunEvent, initialRuntimeState);
+
+    expect(state.runs["run-1"].entries[1]).toMatchObject({
+      actorIdentity: {
+        instanceId: "root-instance",
+        kind: "role",
+        roleId: "RenamedPrimary",
+        source: "run_target",
+      },
+      instanceId: "root-instance",
+      roleId: "RenamedPrimary",
+      text: "attributed replay output",
+    });
+    expect(state.runs["run-1"].hadVisibleTextStream).toBe(true);
+  });
+
+  it("does not borrow the root role for a different event instance", () => {
+    const started = reduceRunEvent(
+      initialRuntimeState,
+      runEvent({
+        event_id: 1,
+        event_type: "run_started",
+        instance_id: "root-instance",
+        role_id: "RenamedPrimary",
+      }),
+    );
+    const state = reduceRunEvent(
+      started,
+      runEvent({
+        event_id: 2,
+        event_type: "text_delta",
+        instance_id: "child-instance",
+        role_id: null,
+        payload_json: JSON.stringify({ text: "child without role" }),
+      }),
+    );
+
+    expect(state.runs["run-1"].entries[1]).toMatchObject({
+      actorIdentity: {
+        instanceId: "child-instance",
+        kind: "instance",
+        roleId: null,
+        source: "event",
+      },
+      instanceId: "child-instance",
+      roleId: "",
     });
   });
 
@@ -417,6 +513,7 @@ describe("runtime reducers", () => {
       runEvent({
         event_id: 2,
         event_type: "run_completed",
+        role_id: "MainAgent",
         payload_json: JSON.stringify({
           output: [{ kind: "text", text: "terminal structured answer" }],
         }),

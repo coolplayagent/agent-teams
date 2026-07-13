@@ -13253,6 +13253,43 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText(/Build finished/)).not.toBeInTheDocument();
   });
 
+  it("does not route similarly prefixed unknown events as lifecycle contracts", async () => {
+    setRuntimeEntries([
+      runtimeGenericEntry({
+        id: "run-near-lifecycle:1:0",
+        kind: "background_task_started_preview",
+        text: "unknown background event remains visible",
+        eventId: 1,
+        payload: {
+          background_task_id: "background-task-near-match",
+          command: "must not be summarized",
+          status: "running",
+        },
+      }),
+      runtimeGenericEntry({
+        id: "run-near-lifecycle:2:1",
+        kind: "run_completed_preview",
+        text: "unknown run event remains visible",
+        eventId: 2,
+        payload: {
+          run_id: "run-near-lifecycle",
+          status: "completed",
+        },
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    renderTimeline();
+
+    expect(
+      await screen.findByText("unknown background event remains visible"),
+    ).toBeVisible();
+    expect(screen.getByText("unknown run event remains visible")).toBeVisible();
+    expect(screen.queryByText(/Background task started:/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Run completed:/)).not.toBeInTheDocument();
+    expect(screen.queryByText("must not be summarized")).not.toBeInTheDocument();
+  });
+
   it("routes interleaved background deltas to their matching tool calls", async () => {
     setRuntimeEntries([
       runtimeGenericEntry({

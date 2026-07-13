@@ -94,6 +94,40 @@ export interface ParsedRunEvent extends RelayRunEvent {
 export type StreamStatus = "idle" | "connecting" | "open" | "closed" | "failed";
 export type RunEventEnvelope = RelayRunEvent | AgUiRunEvent;
 
+export const BACKGROUND_TASK_EVENT_TYPES = [
+  "background_task_started",
+  "background_task_updated",
+  "background_task_completed",
+  "background_task_stopped",
+] as const;
+
+export const RUN_LIFECYCLE_EVENT_TYPES = [
+  "run_started",
+  "run_paused",
+  "run_resumed",
+  "run_completed",
+  "run_stopped",
+  "run_failed",
+] as const;
+
+type BackgroundTaskEventType = (typeof BACKGROUND_TASK_EVENT_TYPES)[number];
+type RunLifecycleEventType = (typeof RUN_LIFECYCLE_EVENT_TYPES)[number];
+
+const BACKGROUND_TASK_EVENT_TYPE_SET = new Set<string>(BACKGROUND_TASK_EVENT_TYPES);
+const RUN_LIFECYCLE_EVENT_TYPE_SET = new Set<string>(RUN_LIFECYCLE_EVENT_TYPES);
+
+export function isBackgroundTaskEventType(
+  eventType: string,
+): eventType is BackgroundTaskEventType {
+  return BACKGROUND_TASK_EVENT_TYPE_SET.has(eventType);
+}
+
+export function isRunLifecycleEventType(
+  eventType: string,
+): eventType is RunLifecycleEventType {
+  return RUN_LIFECYCLE_EVENT_TYPE_SET.has(eventType);
+}
+
 export const AG_UI_EVENT_NAMES = [
   "run.started",
   "run.paused",

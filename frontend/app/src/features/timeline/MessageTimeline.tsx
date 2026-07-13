@@ -35,7 +35,11 @@ import {
   type SessionRoundsPage,
   type TimelineMessage,
 } from "../../api/contracts";
-import type { RunEventType } from "../../runtime/events";
+import {
+  isBackgroundTaskEventType,
+  isRunLifecycleEventType,
+  type RunEventType,
+} from "../../runtime/events";
 import type { RuntimeRunState, TimelineEntry } from "../../runtime/reducers";
 import {
   useOptimisticRunStore,
@@ -7864,7 +7868,7 @@ function runtimeFallbackText(entry: TimelineEntry): string {
   }
   if (
     entry.kind === "subagent_session_status_changed" ||
-    entry.kind.startsWith("background_task_")
+    isBackgroundTaskEventType(entry.kind)
   ) {
     return "";
   }
@@ -7905,7 +7909,7 @@ function runtimeStructuredEventText(
     variant === "subagent-panel" &&
     (
       entry.kind === "subagent_session_status_changed" ||
-      entry.kind.startsWith("background_task_")
+      isBackgroundTaskEventType(entry.kind)
     )
   ) {
     return null;
@@ -8085,7 +8089,7 @@ function runtimeLifecycleEventSummary(
   if (kind === "notification_requested") {
     return runtimeNotificationSummary(payload);
   }
-  if (kind.startsWith("background_task_")) {
+  if (isBackgroundTaskEventType(kind)) {
     return runtimeBackgroundTaskSummary(kind, payload);
   }
   return runtimePayloadSummary(payload);
@@ -8224,7 +8228,7 @@ function runtimeCoordinationEventSummary(
   if (kind === "awaiting_manual_action") {
     return runtimeManualActionSummary(payload);
   }
-  if (kind.startsWith("run_")) {
+  if (isRunLifecycleEventType(kind)) {
     return runtimeRunLifecycleSummary(payload);
   }
   return runtimePayloadSummary(payload);

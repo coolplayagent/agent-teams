@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import cast
 
+import pytest
+from pydantic import JsonValue
 from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
@@ -177,6 +179,120 @@ def test_get_agent_messages_includes_role_id(tmp_path: Path) -> None:
     assert len(messages) == 1
     assert messages[0]["entry_type"] == "message"
     assert messages[0]["role_id"] == "time"
+
+
+@pytest.mark.asyncio
+async def test_get_agent_messages_scopes_reused_instance_to_requested_task(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_path = tmp_path / "session_agent_messages_task_scope.db"
+    service = _build_service(db_path)
+    _ = service.create_session(session_id="session-1", workspace_id="default")
+
+    run_id = "subagent_run_shared"
+    instance_id = "inst-shared"
+    agent_repo = AgentInstanceRepository(db_path)
+    agent_repo.upsert_instance(
+        run_id=run_id,
+        trace_id=run_id,
+        session_id="session-1",
+        instance_id=instance_id,
+        role_id="crafter",
+        workspace_id="default",
+        status=InstanceStatus.COMPLETED,
+    )
+
+    task_repo = TaskRepository(db_path)
+    message_repo = MessageRepository(db_path)
+    for task_id, prompt, result in (
+        ("task-child-1", "Implement the first task.", "First task result."),
+        ("task-child-2", "Implement the second task.", "Second task result."),
+    ):
+        _ = task_repo.create(
+            TaskEnvelope(
+                task_id=task_id,
+                session_id="session-1",
+                trace_id=run_id,
+                role_id="crafter",
+                objective=prompt,
+                verification=VerificationPlan(checklist=("non_empty_response",)),
+            )
+        )
+        task_repo.update_status(
+            task_id,
+            TaskStatus.COMPLETED,
+            assigned_instance_id=instance_id,
+            result=result,
+        )
+        message_repo.append(
+            session_id="session-1",
+            workspace_id="default",
+            instance_id=instance_id,
+            task_id=task_id,
+            trace_id=run_id,
+            messages=[ModelRequest(parts=[UserPromptPart(content=prompt)])],
+        )
+
+    task_scope_calls: list[str | None] = []
+    original_async_read = service._message_repo.get_messages_for_instance_async
+
+    async def tracked_async_read(
+        session_id: str,
+        target_instance_id: str,
+        *,
+        task_id: str | None = None,
+        include_cleared: bool = False,
+        include_hidden_from_context: bool = False,
+    ) -> list[dict[str, JsonValue]]:
+        task_scope_calls.append(task_id)
+        return await original_async_read(
+            session_id,
+            target_instance_id,
+            task_id=task_id,
+            include_cleared=include_cleared,
+            include_hidden_from_context=include_hidden_from_context,
+        )
+
+    def reject_sync_read(
+        _session_id: str,
+        _target_instance_id: str,
+        *,
+        task_id: str | None = None,
+        include_cleared: bool = False,
+        include_hidden_from_context: bool = False,
+    ) -> list[dict[str, JsonValue]]:
+        del task_id, include_cleared, include_hidden_from_context
+        raise AssertionError("async service path used synchronous message I/O")
+
+    monkeypatch.setattr(
+        service._message_repo,
+        "get_messages_for_instance_async",
+        tracked_async_read,
+    )
+    monkeypatch.setattr(
+        service._message_repo,
+        "get_messages_for_instance",
+        reject_sync_read,
+    )
+
+    timeline = await service.get_agent_messages_async(
+        "session-1",
+        instance_id,
+        task_id="task-child-1",
+    )
+
+    assert task_scope_calls == ["task-child-1"]
+    assert [entry["task_id"] for entry in timeline] == [
+        "task-child-1",
+        "task-child-1",
+    ]
+    message = cast(dict[str, object], timeline[0]["message"])
+    message_parts = cast(list[dict[str, object]], message["parts"])
+    terminal_message = cast(dict[str, object], timeline[1]["message"])
+    terminal_parts = cast(list[dict[str, object]], terminal_message["parts"])
+    assert message_parts[0]["content"] == "Implement the first task."
+    assert terminal_parts[0]["content"] == "First task result."
 
 
 def test_get_agent_messages_preserves_parallel_tool_calls_and_args(

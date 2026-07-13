@@ -469,15 +469,29 @@ class _FakeSessionService:
         self,
         session_id: str,
         instance_id: str,
+        *,
+        task_id: str | None = None,
     ) -> list[dict[str, object]]:
-        return [{"session_id": session_id, "instance_id": instance_id}]
+        return [
+            {
+                "session_id": session_id,
+                "instance_id": instance_id,
+                "task_id": task_id,
+            }
+        ]
 
     async def get_agent_messages_async(
         self,
         session_id: str,
         instance_id: str,
+        *,
+        task_id: str | None = None,
     ) -> list[dict[str, object]]:
-        return self.get_agent_messages(session_id, instance_id)
+        return self.get_agent_messages(
+            session_id,
+            instance_id,
+            task_id=task_id,
+        )
 
     def get_session_tasks(self, session_id: str) -> list[dict[str, object]]:
         return [{"session_id": session_id, "task": "task-1"}]
@@ -959,6 +973,35 @@ def test_session_routes_call_service() -> None:
     ]
 
     assert [response.status_code for response in requests] == [200] * len(requests)
+
+
+def test_agent_message_route_accepts_task_scope() -> None:
+    client = _create_client(_FakeSessionService())
+
+    response = client.get(
+        "/api/sessions/session-1/agents/inst-1/messages",
+        params={"task_id": "task-child-1"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "session_id": "session-1",
+            "instance_id": "inst-1",
+            "task_id": "task-child-1",
+        }
+    ]
+
+
+def test_agent_message_route_rejects_blank_task_scope() -> None:
+    client = _create_client(_FakeSessionService())
+
+    response = client.get(
+        "/api/sessions/session-1/agents/inst-1/messages",
+        params={"task_id": "   "},
+    )
+
+    assert response.status_code == 422
 
 
 def test_session_recovery_times_out_when_snapshot_blocks(

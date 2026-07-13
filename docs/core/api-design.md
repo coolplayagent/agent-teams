@@ -1978,9 +1978,18 @@ Lists the raw history timeline for one agent instance, including:
 - session `clear` dividers
 - conversation-local `compaction` dividers
 
+Query:
+- `task_id`: optional task identifier. When provided, message rows are filtered by
+  `session_id`, `instance_id`, and `task_id` in the persistence query. Clients opening
+  an orchestration child task should provide this value because one orchestration
+  instance may execute multiple tasks over its lifetime.
+
 Notes:
 - History markers are resolved against the instance's persisted `conversation_id`.
 - This matters for normal-mode subagent child sessions, whose instance conversation may differ from the legacy `session_id + role_id` conversation id.
+- A synthesized terminal task result is scoped to `task_id` when the query provides
+  one; results from another task assigned to the same reused instance are never
+  appended to the response.
 
 Response entries are ordered oldest to newest and use `entry_type`:
 - `message`: original persisted message row. Includes `hidden_from_context`, `hidden_reason`, `hidden_at`, and `hidden_marker_id`.

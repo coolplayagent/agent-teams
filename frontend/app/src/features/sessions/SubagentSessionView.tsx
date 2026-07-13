@@ -107,6 +107,9 @@ function ActiveSubagentSessionView({
     displayedSubagent.runPhase,
   ].join("|");
   const hasMessageHistoryTarget = instanceId.length > 0;
+  const messageTaskId = recordAwareSubagent.subagentKind === "orchestration"
+    ? displayedSubagent.taskId?.trim() ?? ""
+    : "";
   const canRenderTimeline = hasMessageHistoryTarget || timelineRunId.length > 0;
   const title =
     displayedSubagent.title ||
@@ -118,8 +121,9 @@ function ActiveSubagentSessionView({
       hasMessageHistoryTarget
         ? instanceId
         : `pending:${runId || title}`,
+      messageTaskId,
     ),
-    [hasMessageHistoryTarget, instanceId, runId, sessionId, title],
+    [hasMessageHistoryTarget, instanceId, messageTaskId, runId, sessionId, title],
   );
   const loadSubagentMessages = useCallback(
     async () => {
@@ -131,7 +135,11 @@ function ActiveSubagentSessionView({
           taskId: displayedSubagent.taskId ?? "",
         });
       }
-      const messages = await listAgentMessages(sessionId, instanceId);
+      const messages = await listScopedAgentMessages(
+        sessionId,
+        instanceId,
+        messageTaskId,
+      );
       return subagentTaskMessages({
         messages,
         promptText: subagentPromptText,
@@ -143,6 +151,7 @@ function ActiveSubagentSessionView({
       displayedSubagent.taskId,
       hasMessageHistoryTarget,
       instanceId,
+      messageTaskId,
       sessionId,
       subagentPromptText,
       recordAwareSubagent.subagentKind,
@@ -155,8 +164,9 @@ function ActiveSubagentSessionView({
       messageQueryKey,
       queryClient,
       sessionId,
+      taskId: messageTaskId,
     };
-  }, [instanceId, messageQueryKey, queryClient, sessionId]);
+  }, [instanceId, messageQueryKey, messageTaskId, queryClient, sessionId]);
 
   const clearSubagentReconnectTimer = useCallback(() => {
     if (subagentReconnectTimerRef.current !== null) {
@@ -236,6 +246,7 @@ function ActiveSubagentSessionView({
           runId: dedicatedRunId,
           runtimeState: displayRuntimeState,
           sessionId: latestTarget.sessionId,
+          taskId: latestTarget.taskId,
         });
       },
       onError: (_message, errorKind) => {
@@ -393,6 +404,7 @@ interface SubagentStreamTarget {
   messageQueryKey: readonly unknown[];
   queryClient: ReturnType<typeof useQueryClient>;
   sessionId: string;
+  taskId: string;
 }
 
 function subagentClosedRuntimeStateForDisplay({
@@ -514,6 +526,7 @@ async function refreshSubagentTerminalHistoryFromRuntime({
   runId,
   runtimeState,
   sessionId,
+  taskId,
 }: {
   instanceId: string;
   messageQueryKey: readonly unknown[];
@@ -521,6 +534,7 @@ async function refreshSubagentTerminalHistoryFromRuntime({
   runId: string;
   runtimeState: RuntimeState;
   sessionId: string;
+  taskId: string;
 }): Promise<boolean> {
   if (instanceId.trim().length === 0) {
     void queryClient.invalidateQueries({ queryKey: ["sessions", sessionId, "subagents"] });
@@ -538,6 +552,7 @@ async function refreshSubagentTerminalHistoryFromRuntime({
     messageQueryKey,
     queryClient,
     sessionId,
+    taskId,
   });
   void queryClient.invalidateQueries({ queryKey: ["sessions", sessionId, "subagents"] });
   void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
@@ -551,6 +566,7 @@ async function refreshSubagentTerminalHistory({
   messageQueryKey,
   queryClient,
   sessionId,
+  taskId,
 }: {
   expectedToolCallIds: string[];
   instanceId: string;
@@ -558,10 +574,15 @@ async function refreshSubagentTerminalHistory({
   messageQueryKey: readonly unknown[];
   queryClient: ReturnType<typeof useQueryClient>;
   sessionId: string;
+  taskId: string;
 }): Promise<void> {
   if (expectedToolCallIds.length === 0) {
     try {
-      const latestMessages = await listAgentMessages(sessionId, instanceId);
+      const latestMessages = await listScopedAgentMessages(
+        sessionId,
+        instanceId,
+        taskId,
+      );
       if (!isCancelled()) {
         queryClient.setQueryData(messageQueryKey, latestMessages);
       }
@@ -574,7 +595,11 @@ async function refreshSubagentTerminalHistory({
   }
 
   try {
-    const latestMessages = await listAgentMessages(sessionId, instanceId);
+    const latestMessages = await listScopedAgentMessages(
+      sessionId,
+      instanceId,
+      taskId,
+    );
     if (isCancelled()) {
       return;
     }
@@ -857,8 +882,31 @@ function terminalStatusForEvent(eventType: RunEventType | null): string | null {
 function subagentMessagesQueryKey(
   sessionId: string,
   instanceId: string,
+  taskId: string,
 ): readonly unknown[] {
-  return ["sessions", sessionId, "agents", instanceId, "messages"] as const;
+  if (taskId.length === 0) {
+    return ["sessions", sessionId, "agents", instanceId, "messages"] as const;
+  }
+  return [
+    "sessions",
+    sessionId,
+    "agents",
+    instanceId,
+    "tasks",
+    taskId,
+    "messages",
+  ] as const;
+}
+
+function listScopedAgentMessages(
+  sessionId: string,
+  instanceId: string,
+  taskId: string,
+): Promise<TimelineMessage[]> {
+  if (taskId.length === 0) {
+    return listAgentMessages(sessionId, instanceId);
+  }
+  return listAgentMessages(sessionId, instanceId, { taskId });
 }
 
 function shouldStreamSubagentRun(runId: string, streamStatusKey: string): boolean {

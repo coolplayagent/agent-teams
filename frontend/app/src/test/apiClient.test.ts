@@ -401,6 +401,41 @@ describe("api client", () => {
     );
   });
 
+  it("scopes reused orchestration agent messages by task identity", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify([
+          {
+            message_id: "message-task-2",
+            role: "assistant",
+            task_id: "task-child-2",
+          },
+        ]),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      listAgentMessages("session-1", "shared-instance", {
+        taskId: "task-child-2",
+      }),
+    ).resolves.toEqual([
+      {
+        message_id: "message-task-2",
+        role: "assistant",
+        task_id: "task-child-2",
+      },
+    ]);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/sessions/session-1/agents/shared-instance/messages?task_id=task-child-2",
+      expect.objectContaining({
+        headers: expect.any(Headers),
+      }),
+    );
+  });
+
   it("lists and syncs board TODOs through board endpoints", async () => {
     const fetchMock = vi
       .fn()

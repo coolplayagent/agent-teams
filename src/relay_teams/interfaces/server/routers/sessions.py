@@ -584,9 +584,14 @@ async def get_session_messages(
 async def get_agent_messages(
     session_id: RequiredIdentifierStr,
     instance_id: RequiredIdentifierStr,
+    task_id: OptionalIdentifierStr = None,
     service: SessionService = Depends(get_session_service),
 ) -> list[dict[str, object]]:
-    return await service.get_agent_messages_async(session_id, instance_id)
+    return await service.get_agent_messages_async(
+        session_id,
+        instance_id,
+        task_id=task_id,
+    )
 
 
 @router.get("/{session_id}/tasks")

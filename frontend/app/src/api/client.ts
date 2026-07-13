@@ -1749,9 +1749,16 @@ export function listSessionMessages(sessionId: string): Promise<TimelineMessage[
 export function listAgentMessages(
   sessionId: string,
   instanceId: string,
+  options: { taskId?: string | null } = {},
 ): Promise<TimelineMessage[]> {
+  const params = new URLSearchParams();
+  const taskId = options.taskId?.trim() ?? "";
+  if (taskId.length > 0) {
+    params.set("task_id", taskId);
+  }
+  const query = params.size > 0 ? `?${params.toString()}` : "";
   return requestJson<TimelineMessage[]>(
-    `/sessions/${encodeURIComponent(sessionId)}/agents/${encodeURIComponent(instanceId)}/messages`,
+    `/sessions/${encodeURIComponent(sessionId)}/agents/${encodeURIComponent(instanceId)}/messages${query}`,
   );
 }
 

@@ -2192,13 +2192,18 @@ class SessionService:
         return result.value
 
     def get_agent_messages(
-        self, session_id: str, instance_id: str
+        self,
+        session_id: str,
+        instance_id: str,
+        *,
+        task_id: str | None = None,
     ) -> list[dict[str, object]]:
         messages = cast(
             list[dict[str, object]],
             self._message_repo.get_messages_for_instance(
                 session_id,
                 instance_id,
+                task_id=task_id,
                 include_cleared=True,
                 include_hidden_from_context=True,
             ),
@@ -2224,12 +2229,49 @@ class SessionService:
             entries=entries,
             session_id=session_id,
             agent=agent,
+            task_id=task_id,
         )
 
     async def get_agent_messages_async(
-        self, session_id: str, instance_id: str
+        self,
+        session_id: str,
+        instance_id: str,
+        *,
+        task_id: str | None = None,
     ) -> list[dict[str, object]]:
-        return await asyncio.to_thread(self.get_agent_messages, session_id, instance_id)
+        messages = cast(
+            list[dict[str, object]],
+            await self._message_repo.get_messages_for_instance_async(
+                session_id,
+                instance_id,
+                task_id=task_id,
+                include_cleared=True,
+                include_hidden_from_context=True,
+            ),
+        )
+        try:
+            agent = await self._agent_repo.get_instance_async(instance_id)
+        except KeyError:
+            return [
+                self._project_message_timeline_entry(message) for message in messages
+            ]
+        for message in messages:
+            if "role_id" not in message or not message.get("role_id"):
+                message["role_id"] = agent.role_id
+        markers = await self._list_agent_history_markers_async(
+            session_id=session_id,
+            conversation_id=agent.conversation_id,
+        )
+        entries = self._build_agent_timeline_entries(
+            messages=messages,
+            markers=markers,
+        )
+        return await self._with_terminal_task_result_entry_async(
+            entries=entries,
+            session_id=session_id,
+            agent=agent,
+            task_id=task_id,
+        )
 
     def get_global_events(self, session_id: str) -> list[dict[str, object]]:
         if self._event_log is None:
@@ -2359,8 +2401,7 @@ class SessionService:
         if not isinstance(parts, list):
             return False
         return any(
-            isinstance(part, dict)
-            and str(part.get("part_kind") or "") == "user-prompt"
+            isinstance(part, dict) and str(part.get("part_kind") or "") == "user-prompt"
             for part in parts
         )
 
@@ -2943,6 +2984,13 @@ class SessionService:
         if self._session_history_marker_repo is None:
             return ()
         markers = self._session_history_marker_repo.list_by_session(session_id)
+        return self._filter_agent_history_markers(markers, conversation_id)
+
+    @staticmethod
+    def _filter_agent_history_markers(
+        markers: tuple[SessionHistoryMarkerRecord, ...],
+        conversation_id: str,
+    ) -> tuple[SessionHistoryMarkerRecord, ...]:
         return tuple(
             marker
             for marker in markers
@@ -2952,6 +3000,19 @@ class SessionService:
                 and marker.metadata.get("conversation_id") == conversation_id
             )
         )
+
+    async def _list_agent_history_markers_async(
+        self,
+        *,
+        session_id: str,
+        conversation_id: str,
+    ) -> tuple[SessionHistoryMarkerRecord, ...]:
+        if self._session_history_marker_repo is None:
+            return ()
+        markers = await self._session_history_marker_repo.list_by_session_async(
+            session_id
+        )
+        return self._filter_agent_history_markers(markers, conversation_id)
 
     @staticmethod
     def _project_message_timeline_entry(
@@ -3032,19 +3093,44 @@ class SessionService:
         entries: list[dict[str, object]],
         session_id: str,
         agent: AgentRuntimeRecord,
+        task_id: str | None = None,
     ) -> list[dict[str, object]]:
         if not agent.run_id.startswith("subagent_run_"):
             return entries
         terminal_task = self._terminal_task_result_for_agent(
             session_id=session_id,
             agent=agent,
+            task_id=task_id,
         )
+        return self._append_terminal_task_result_entry(entries, agent, terminal_task)
+
+    async def _with_terminal_task_result_entry_async(
+        self,
+        *,
+        entries: list[dict[str, object]],
+        session_id: str,
+        agent: AgentRuntimeRecord,
+        task_id: str | None = None,
+    ) -> list[dict[str, object]]:
+        if not agent.run_id.startswith("subagent_run_"):
+            return entries
+        terminal_task = await self._terminal_task_result_for_agent_async(
+            session_id=session_id,
+            agent=agent,
+            task_id=task_id,
+        )
+        return self._append_terminal_task_result_entry(entries, agent, terminal_task)
+
+    def _append_terminal_task_result_entry(
+        self,
+        entries: list[dict[str, object]],
+        agent: AgentRuntimeRecord,
+        terminal_task: TaskRecord | None,
+    ) -> list[dict[str, object]]:
         if terminal_task is None:
             return entries
         result_text = str(terminal_task.result or "").strip()
-        if not result_text:
-            return entries
-        if not self._should_append_terminal_task_result(entries):
+        if not result_text or not self._should_append_terminal_task_result(entries):
             return entries
         return [
             *entries,
@@ -3060,11 +3146,32 @@ class SessionService:
         *,
         session_id: str,
         agent: AgentRuntimeRecord,
+        task_id: str | None = None,
+    ) -> TaskRecord | None:
+        records = self._task_repo.list_by_session(session_id)
+        return self._select_terminal_task_result(records, agent, task_id)
+
+    async def _terminal_task_result_for_agent_async(
+        self,
+        *,
+        session_id: str,
+        agent: AgentRuntimeRecord,
+        task_id: str | None = None,
+    ) -> TaskRecord | None:
+        task_records = await self._task_repo.list_by_session_async(session_id)
+        return self._select_terminal_task_result(task_records, agent, task_id)
+
+    @staticmethod
+    def _select_terminal_task_result(
+        task_records: tuple[TaskRecord, ...],
+        agent: AgentRuntimeRecord,
+        task_id: str | None,
     ) -> TaskRecord | None:
         records = [
             record
-            for record in self._task_repo.list_by_session(session_id)
+            for record in task_records
             if record.assigned_instance_id == agent.instance_id
+            and (task_id is None or record.envelope.task_id == task_id)
             and record.status == TaskStatus.COMPLETED
             and str(record.result or "").strip()
         ]
@@ -3816,9 +3923,7 @@ class SessionService:
         projected["run_status"] = (
             task.status.value
             if task is not None
-            else (
-                runtime.status.value if runtime is not None else projected["status"]
-            )
+            else (runtime.status.value if runtime is not None else projected["status"])
         )
         projected["run_phase"] = (
             self._public_phase(runtime, 0, 0) if runtime is not None else ""

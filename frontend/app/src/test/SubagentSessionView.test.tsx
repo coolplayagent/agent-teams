@@ -152,6 +152,39 @@ describe("SubagentSessionView", () => {
     mainTimeline.remove();
   });
 
+  it("requests only the selected orchestration task from a reused instance", async () => {
+    listAgentMessagesMock.mockResolvedValue([
+      {
+        content: "Output for the selected orchestration task",
+        message_id: "orchestration-task-message",
+        role: "assistant",
+        run_id: "orchestration-run-1",
+        task_id: "task-child-2",
+      },
+    ]);
+
+    renderSubagentSessionView({
+      subagent: createSubagent({
+        runId: "orchestration-run-1",
+        runPhase: "completed",
+        runStatus: "completed",
+        status: "completed",
+        subagentKind: "orchestration",
+        taskId: "task-child-2",
+      }),
+    });
+
+    expect(
+      await screen.findByText("Output for the selected orchestration task"),
+    ).toBeVisible();
+    expect(listAgentMessagesMock).toHaveBeenCalledWith(
+      "session-parent",
+      "subagent-instance-1",
+      { taskId: "task-child-2" },
+    );
+    expect(openSessionSubagentRunStreamMock).not.toHaveBeenCalled();
+  });
+
   it("shows a startup state before a running subagent id is known", async () => {
     const controller = createRunStreamController();
 

@@ -977,7 +977,7 @@ describe("SubagentSessionView", () => {
     expect(await screen.findByText("Final subagent answer")).toBeVisible();
   });
 
-  it("waits for terminal history to contain streamed tool calls before replacing visible history", async () => {
+  it("reads terminal history once and keeps live history when persistence is incomplete", async () => {
     const terminalEntries = [
       runtimeToolCallEntry({
         runId: "subagent_run_1",
@@ -1000,23 +1000,6 @@ describe("SubagentSessionView", () => {
           role: "assistant",
           run_id: "subagent_run_1",
         },
-      ])
-      .mockResolvedValueOnce([
-        {
-          message: {
-            parts: [
-              {
-                args: { command: "date" },
-                kind: "tool-call",
-                tool_call_id: "call-terminal-subagent",
-                tool_name: "shell",
-              },
-            ],
-          },
-          message_id: "subagent-message-tool",
-          role: "assistant",
-          run_id: "subagent_run_1",
-        },
       ]);
     renderSubagentSessionView();
 
@@ -1033,16 +1016,13 @@ describe("SubagentSessionView", () => {
       screen.queryByText("Incomplete persisted subagent answer"),
     ).not.toBeInTheDocument();
 
-    await waitFor(() => expect(listAgentMessagesMock).toHaveBeenCalledTimes(3));
-    fireEvent.click(screen.getByText("Processed"));
-    expect(await screen.findByText("Ran: shell")).toBeVisible();
-    expect(screen.queryByText("Existing subagent answer")).not.toBeInTheDocument();
-    expect(
-      screen.queryByText("Incomplete persisted subagent answer"),
-    ).not.toBeInTheDocument();
+    await new Promise((resolve) => window.setTimeout(resolve, 100));
+    expect(listAgentMessagesMock).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("Existing subagent answer")).toBeVisible();
+    expect(screen.getByText("Ran: shell")).toBeInTheDocument();
   });
 
-  it.each(["paused", "stopped"])(
+  it.each(["paused", "failed", "stopped"])(
     "does not stream %s subagent sessions",
     async (terminalStatus) => {
       const controller = createRunStreamController();
@@ -1070,8 +1050,27 @@ describe("SubagentSessionView", () => {
     },
   );
 
+  it("treats a waiting-for-input subagent as paused instead of streaming", async () => {
+    renderSubagentSessionView({
+      subagent: createSubagent({
+        runPhase: "awaiting_manual_action",
+        runStatus: "paused",
+        status: "paused",
+      }),
+    });
+
+    expect(await screen.findByText("Paused")).toHaveAttribute(
+      "data-status",
+      "paused",
+    );
+    expect(screen.queryByText("Waiting for subagent output...")).not
+      .toBeInTheDocument();
+    expect(openSessionSubagentRunStreamMock).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["run_completed", "Completed", "completed"],
+    ["run_failed", "Failed", "failed"],
     ["run_paused", "Paused", "paused"],
     ["run_stopped", "Stopped", "stopped"],
   ] satisfies Array<[RunEventType, string, string]>)(

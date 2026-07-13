@@ -31,8 +31,6 @@ import {
   type ActiveSubagentSession,
 } from "./SessionsSidebar";
 
-const SUBAGENT_TERMINAL_SETTLE_DELAY_MS = 80;
-const SUBAGENT_TERMINAL_SETTLE_MAX_ATTEMPTS = 3;
 const SUBAGENT_STREAM_RECONNECT_DELAY_MS = 750;
 const SUBAGENT_STREAM_RECONNECT_MAX_ATTEMPTS = 3;
 
@@ -56,14 +54,10 @@ export const SubagentSessionView = memo(function SubagentSessionView({
   const subagentStreamRef = useRef<RunStreamHandle | null>(null);
   const streamedRunIdRef = useRef<string | null>(null);
   const [streamReconnectGeneration, setStreamReconnectGeneration] = useState(0);
-  const [pollSubagentRecord, setPollSubagentRecord] = useState(
-    () => subagentHasStreamingStatus(subagent),
-  );
   const subagentRecordsQuery = useQuery({
     queryKey: ["sessions", subagent.sessionId, "subagents"],
     queryFn: () => listSessionSubagents(subagent.sessionId, true),
     enabled: visible && subagent.sessionId.trim().length > 0,
-    refetchInterval: visible && pollSubagentRecord ? 2000 : false,
     staleTime: 1000,
   });
   const latestSubagentRecord = useMemo(
@@ -159,26 +153,6 @@ export const SubagentSessionView = memo(function SubagentSessionView({
       setStreamReconnectGeneration((generation) => generation + 1);
     }, SUBAGENT_STREAM_RECONNECT_DELAY_MS * nextAttempt);
   }, []);
-
-  useEffect(() => {
-    setPollSubagentRecord(subagentHasStreamingStatus(subagent));
-  }, [
-    subagent.instanceId,
-    subagent.runId,
-    subagent.runPhase,
-    subagent.runStatus,
-    subagent.sessionId,
-    subagent.status,
-  ]);
-
-  useEffect(() => {
-    if (
-      latestSubagentRecord !== null &&
-      !subagentHasStreamingStatus(latestSubagentRecord)
-    ) {
-      setPollSubagentRecord(false);
-    }
-  }, [latestSubagentRecord]);
 
   useEffect(() => {
     if (!visible) {
@@ -571,35 +545,18 @@ async function refreshSubagentTerminalHistory({
   }
 
   try {
-    let latestMessages: TimelineMessage[] = [];
-    for (let attempt = 1; attempt <= SUBAGENT_TERMINAL_SETTLE_MAX_ATTEMPTS; attempt += 1) {
-      latestMessages = await listAgentMessages(sessionId, instanceId);
-      if (isCancelled()) {
-        return;
-      }
-      if (
-        agentMessagesHaveExpectedToolCalls(latestMessages, expectedToolCallIds) ||
-        attempt === SUBAGENT_TERMINAL_SETTLE_MAX_ATTEMPTS
-      ) {
-        queryClient.setQueryData(messageQueryKey, latestMessages);
-        return;
-      }
-      await subagentTerminalSettleDelay();
-      if (isCancelled()) {
-        return;
-      }
+    const latestMessages = await listAgentMessages(sessionId, instanceId);
+    if (isCancelled()) {
+      return;
+    }
+    if (agentMessagesHaveExpectedToolCalls(latestMessages, expectedToolCallIds)) {
+      queryClient.setQueryData(messageQueryKey, latestMessages);
     }
   } catch {
     if (!isCancelled()) {
       void queryClient.invalidateQueries({ queryKey: messageQueryKey });
     }
   }
-}
-
-function subagentTerminalSettleDelay(): Promise<void> {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, SUBAGENT_TERMINAL_SETTLE_DELAY_MS);
-  });
 }
 
 function runtimeToolCallIds(

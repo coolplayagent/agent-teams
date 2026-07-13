@@ -86,17 +86,21 @@ describe("shell layout CSS", () => {
   });
 
   it("keeps sidebar creation and selected session chrome neutral like V1", () => {
-    expect(themeCss).toMatch(
-      /\.at-sidebar-new-session\.ant-btn\.ant-btn-primary\s*{[\s\S]*?border-color:\s*var\(--at-border\);[\s\S]*?background:\s*var\(--at-surface-muted\);[\s\S]*?box-shadow:\s*none;[\s\S]*?color:\s*var\(--at-text\);/,
+    const newSessionButton = cssBlock(
+      ".at-sidebar-new-session.ant-btn.ant-btn-primary",
     );
+    expect(newSessionButton).toContain("border-color: var(--at-border);");
+    expect(newSessionButton).toContain("background: var(--at-surface-muted);");
+    expect(newSessionButton).toContain("box-shadow: none;");
+    expect(newSessionButton).toContain("color: var(--at-text);");
     expect(themeCss).toMatch(
-      /\.at-sidebar-new-session\.ant-btn\.ant-btn-primary:not\(:disabled\):not\(\.ant-btn-disabled\):hover,[\s\S]*?\.at-sidebar-new-session\.ant-btn\.ant-btn-primary:not\(:disabled\):not\(\.ant-btn-disabled\):focus-visible\s*{[\s\S]*?background:\s*color-mix\(in srgb, var\(--at-surface-muted\) 82%, var\(--at-border\)\);/,
+      /\.at-sidebar-new-session\.ant-btn\.ant-btn-primary:not\(:disabled\):not\([\s\S]*?\.ant-btn-disabled[\s\S]*?\):hover,[\s\S]*?\.at-sidebar-new-session\.ant-btn\.ant-btn-primary:not\(:disabled\):not\([\s\S]*?\.ant-btn-disabled[\s\S]*?\):focus-visible\s*{[\s\S]*?background:\s*color-mix\(in srgb, var\(--at-surface-muted\) 82%, var\(--at-border\)\);/,
     );
     expect(themeCss).toMatch(
       /\.at-session-item\.is-selected\s*{[\s\S]*?border-color:\s*color-mix\(in srgb, var\(--at-border-strong\) 55%, transparent\);[\s\S]*?background:\s*color-mix\(in srgb, var\(--at-surface-muted\) 78%, var\(--at-border\)\);/,
     );
     expect(themeCss).toMatch(
-      /\.at-session-item\.is-selected:hover,[\s\S]*?\.at-session-item\.is-selected:focus-within\s*{[\s\S]*?background:\s*color-mix\(in srgb, var\(--at-surface-muted\) 72%, var\(--at-border-strong\)\);/,
+      /\.at-session-item\.is-selected:hover,[\s\S]*?\.at-session-item\.is-selected:focus-within\s*{[\s\S]*?background:\s*color-mix\(\s*in srgb,\s*var\(--at-surface-muted\) 72%,\s*var\(--at-border-strong\)\s*\);/,
     );
   });
 
@@ -180,8 +184,8 @@ describe("shell layout CSS", () => {
     expect(themeCss).toMatch(
       /\.at-timeline-virtual\s*{[\s\S]*?width:\s*min\(var\(--at-timeline-column-width\), 100%\);[\s\S]*?margin:\s*0 auto;/,
     );
-    expect(themeCss).toContain(
-      "width: min(var(--at-timeline-column-width), 100%, max(320px, calc(100% - 288px)));",
+    expect(themeCss).toMatch(
+      /width:\s*min\(\s*var\(--at-timeline-column-width\),\s*100%,\s*max\(320px, calc\(100% - 288px\)\)\s*\);/,
     );
     expect(themeCss).not.toContain("max(0px, calc(100% - 288px))");
     expect(themeCss).toMatch(
@@ -207,7 +211,7 @@ describe("shell layout CSS", () => {
       /\.at-processed-group:not\(\[open\]\) > \.at-processed-group-body\s*{[\s\S]*?display:\s*none;/,
     );
     expect(themeCss).toMatch(
-      /\.at-processed-group\[open\] > \.at-processed-group-summary \.at-processed-group-toggle\s*{[\s\S]*?transform:\s*rotate\(90deg\);/,
+      /\.at-processed-group\[open\]\s*>\s*\.at-processed-group-summary\s+\.at-processed-group-toggle\s*{[\s\S]*?transform:\s*rotate\(90deg\);/,
     );
     expect(themeCss).toMatch(
       /\.at-processed-group-summary\s*{[\s\S]*?display:\s*inline-flex;[\s\S]*?min-height:\s*24px;/,
@@ -291,7 +295,9 @@ describe("shell layout CSS", () => {
     expect(themeCss).toMatch(
       /\.at-message-streaming-text\s*{[\s\S]*?position:\s*relative;/,
     );
-    expect(themeCss).not.toContain(".at-message-streaming-plain");
+    expect(themeCss).toMatch(
+      /\.at-message-streaming-plain\s*{[^}]*display:\s*block;[^}]*overflow-wrap:\s*anywhere;[^}]*white-space:\s*pre-wrap;/s,
+    );
     expect(themeCss).not.toMatch(
       /\.at-message-streaming-text \.at-message-markdown[\s\S]*?display:\s*inline;/,
     );
@@ -369,9 +375,7 @@ describe("shell layout CSS", () => {
     expect(themeCss).toMatch(
       /\.at-subagent-session-body\s*{[\s\S]*?display:\s*flex;[\s\S]*?flex-direction:\s*column;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/,
     );
-    expect(themeCss).toMatch(
-      /\.at-subagent-session-prompt\s*{[\s\S]*?flex:\s*0 1 auto;[\s\S]*?max-height:\s*min\(42%, 360px\);[\s\S]*?overflow-y:\s*auto;[\s\S]*?overscroll-behavior:\s*contain;[\s\S]*?scrollbar-gutter:\s*stable;[\s\S]*?touch-action:\s*pan-y;/,
-    );
+    expect(themeCss).not.toContain(".at-subagent-session-prompt");
     expect(themeCss).toMatch(
       /\.at-subagent-session-body > \.at-timeline-frame\s*{[\s\S]*?flex:\s*1 1 0;[\s\S]*?height:\s*auto;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/,
     );
@@ -390,7 +394,7 @@ describe("shell layout CSS", () => {
       /\.at-round-rail\s*{[\s\S]*?position:\s*absolute;[\s\S]*?right:\s*16px;[\s\S]*?width:\s*128px;[\s\S]*?background:\s*transparent;/,
     );
     expect(themeCss).toMatch(
-      /\.at-timeline-frame\.has-round-rail \.at-timeline-virtual\s*{[\s\S]*?width:\s*min\(var\(--at-timeline-column-width\), 100%, max\(320px, calc\(100% - 288px\)\)\);[\s\S]*?margin:\s*0 auto;/,
+      /\.at-timeline-frame\.has-round-rail \.at-timeline-virtual\s*{[\s\S]*?width:\s*min\(\s*var\(--at-timeline-column-width\),\s*100%,\s*max\(320px, calc\(100% - 288px\)\)\s*\);[\s\S]*?margin:\s*0 auto;/,
     );
     expect(themeCss).toMatch(
       /\.at-round-rail-item:hover,[\s\S]*?\.at-round-rail-item:focus-visible,[\s\S]*?\.at-round-rail-item\.is-active\s*{[\s\S]*?background:\s*var\(--at-surface-muted\);[\s\S]*?outline:\s*none;/,

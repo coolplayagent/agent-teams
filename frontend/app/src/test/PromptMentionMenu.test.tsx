@@ -179,9 +179,32 @@ describe("PromptMentionMenu", () => {
     expect(listbox.scrollTop).toBe(125);
     expect(outerWheel).not.toHaveBeenCalled();
 
-    fireEvent.wheel(listbox, { deltaMode: 2, deltaY: 1 });
-    expect(listbox.scrollTop).toBe(365);
+    fireEvent.wheel(listbox, { deltaMode: 1, deltaY: 2 });
+    expect(listbox.scrollTop).toBe(165);
     expect(outerWheel).not.toHaveBeenCalled();
+
+    fireEvent.wheel(listbox, { deltaMode: 2, deltaY: 1 });
+    expect(listbox.scrollTop).toBe(405);
+    expect(outerWheel).not.toHaveBeenCalled();
+  });
+
+  it("does not reposition the active option when its own list scrolls", async () => {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    render(
+      <MenuHarness activeIndex={0} options={options} />,
+    );
+
+    const listbox = await screen.findByRole("listbox");
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+    scrollIntoView.mockClear();
+
+    fireEvent.scroll(listbox);
+
+    expect(scrollIntoView).not.toHaveBeenCalled();
   });
 });
 

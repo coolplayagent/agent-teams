@@ -73,8 +73,19 @@ export function PromptMentionMenu({
       setPosition(promptMentionMenuPosition(anchor.getBoundingClientRect()));
     };
     updatePosition();
+    const handleScroll = (event: Event) => {
+      const target = event.target;
+      if (
+        target instanceof Node &&
+        listRef.current !== null &&
+        listRef.current.contains(target)
+      ) {
+        return;
+      }
+      updatePosition();
+    };
     window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
+    window.addEventListener("scroll", handleScroll, true);
     const resizeObserver =
       typeof ResizeObserver === "undefined"
         ? null
@@ -83,7 +94,7 @@ export function PromptMentionMenu({
     return () => {
       resizeObserver?.disconnect();
       window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
+      window.removeEventListener("scroll", handleScroll, true);
     };
   }, [anchorRef, open]);
 

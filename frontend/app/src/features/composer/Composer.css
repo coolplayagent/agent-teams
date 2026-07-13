@@ -54,22 +54,23 @@
 
 .at-prompt-mention-menu .at-prompt-mention-item {
   display: grid;
-  grid-template-columns: 22px minmax(96px, 0.7fr) minmax(0, 1fr) auto;
+  grid-template-columns: 18px minmax(96px, 0.7fr) minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
-  height: 38px;
+  height: 30px;
   min-width: 0;
-  padding: 4px 10px;
+  padding: 2px 8px;
   border-bottom: 0;
+  font-size: 12px;
 }
 
 .at-prompt-mention-group-label {
   position: sticky;
   top: 0;
   z-index: 1;
-  height: 22px;
-  padding: 4px 10px 3px;
+  height: 20px;
+  padding: 3px 8px 2px;
   border-top: 1px solid color-mix(in srgb, var(--at-border) 65%, transparent);
   background: color-mix(in srgb, var(--at-surface) 96%, transparent);
   color: var(--at-text-muted);
@@ -85,8 +86,8 @@
 .at-prompt-mention-icon {
   display: inline-grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: 18px;
+  height: 18px;
   color: var(--at-text-muted);
 }
 

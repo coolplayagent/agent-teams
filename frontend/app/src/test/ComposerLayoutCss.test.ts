@@ -72,5 +72,8 @@ describe("contextual composer layout", () => {
     expect(composerCss).toMatch(
       /\.at-prompt-mention-menu \.at-prompt-mention-menu-list\s*{[\s\S]*?max-height:\s*inherit;[\s\S]*?overflow-y:\s*auto;/,
     );
+    expect(composerCss).toMatch(
+      /\.at-prompt-mention-menu \.at-prompt-mention-item\s*{[\s\S]*?grid-template-columns:[\s\S]*?height:\s*30px;[\s\S]*?font-size:\s*12px;/,
+    );
   });
 });

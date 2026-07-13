@@ -941,6 +941,7 @@ class ServerContainer:
             role_registry=self.role_registry,
             skill_registry=self.skill_registry,
             mcp_registry=self.mcp_registry,
+            tool_registry=self.tool_registry,
             orchestration_settings_service=self.orchestration_settings_service,
             media_asset_service=self.media_asset_service,
             run_intent_repo=self.run_intent_repo,

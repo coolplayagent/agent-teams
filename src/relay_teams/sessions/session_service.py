@@ -31,6 +31,9 @@ from relay_teams.sessions.session_metadata import (
     SESSION_TITLE_SOURCE_MANUAL,
 )
 from relay_teams.sessions.session_list_cache import SessionListCache
+from relay_teams.sessions.message_tool_semantics_projection import (
+    project_message_tool_semantics,
+)
 from relay_teams.sessions.session_read_models import (
     CachedReadResult,
     SessionRoundsQueryKey,
@@ -54,6 +57,7 @@ from relay_teams.agent_runtimes.instances.instance_repository import (
     AgentInstanceRepository,
 )
 from relay_teams.tools.runtime.acp_approval import acp_options_projection
+from relay_teams.tools.registry import ToolRegistry
 from relay_teams.tools.runtime.approval_ticket_repo import ApprovalTicketRepository
 from relay_teams.sessions.runs.event_log import EventLog
 from relay_teams.agents.execution.message_repository import MessageRepository
@@ -365,6 +369,7 @@ class SessionService:
         role_registry: RoleRegistry | None = None,
         skill_registry: SkillRegistry | None = None,
         mcp_registry: McpRegistry | None = None,
+        tool_registry: ToolRegistry | None = None,
         orchestration_settings_service: OrchestrationSettingsService | None = None,
         media_asset_service: MediaAssetService | None = None,
         run_intent_repo: RunIntentRepository | None = None,
@@ -396,6 +401,7 @@ class SessionService:
         self._role_registry = role_registry
         self._skill_registry = skill_registry
         self._mcp_registry = mcp_registry
+        self._tool_registry = tool_registry
         self._orchestration_settings_service = orchestration_settings_service
         self._media_asset_service = media_asset_service
         self._run_intent_repo = run_intent_repo
@@ -2208,6 +2214,10 @@ class SessionService:
                 include_hidden_from_context=True,
             ),
         )
+        messages = project_message_tool_semantics(
+            messages,
+            tool_registry=self._tool_registry,
+        )
         try:
             agent = self._agent_repo.get_instance(instance_id)
         except KeyError:
@@ -2248,6 +2258,10 @@ class SessionService:
                 include_cleared=True,
                 include_hidden_from_context=True,
             ),
+        )
+        messages = project_message_tool_semantics(
+            messages,
+            tool_registry=self._tool_registry,
         )
         try:
             agent = await self._agent_repo.get_instance_async(instance_id)
@@ -2335,9 +2349,12 @@ class SessionService:
             list[dict[str, object]],
             self._message_repo.get_messages_by_session(session_id),
         )
-        return self._with_internal_provider_prompts(
-            session_id=session_id,
-            messages=messages,
+        return project_message_tool_semantics(
+            self._with_internal_provider_prompts(
+                session_id=session_id,
+                messages=messages,
+            ),
+            tool_registry=self._tool_registry,
         )
 
     async def get_session_messages_async(
@@ -2489,6 +2506,29 @@ class SessionService:
             for run_id, runtime in self._session_run_runtime_by_run(session_id).items()
             if included_run_ids is None or run_id in included_run_ids
         }
+
+        def get_projected_session_messages(
+            current_session_id: str,
+        ) -> list[dict[str, object]]:
+            persisted_messages = (
+                self._message_repo.get_messages_by_session(
+                    current_session_id,
+                    include_cleared=True,
+                    include_hidden_from_context=True,
+                )
+                if selected_run_ids is None
+                else self._message_repo.get_messages_by_session_run_ids(
+                    current_session_id,
+                    selected_run_ids,
+                    include_cleared=True,
+                    include_hidden_from_context=True,
+                )
+            )
+            return project_message_tool_semantics(
+                cast(list[dict[str, object]], persisted_messages),
+                tool_registry=self._tool_registry,
+            )
+
         rounds = build_session_rounds(
             session_id=session_id,
             agent_repo=self._agent_repo,
@@ -2503,23 +2543,7 @@ class SessionService:
                 ]
             ),
             run_runtime_repo=self._run_runtime_repo,
-            get_session_messages=lambda current_session_id: cast(
-                list[dict[str, object]],
-                (
-                    self._message_repo.get_messages_by_session(
-                        current_session_id,
-                        include_cleared=True,
-                        include_hidden_from_context=True,
-                    )
-                    if selected_run_ids is None
-                    else self._message_repo.get_messages_by_session_run_ids(
-                        current_session_id,
-                        selected_run_ids,
-                        include_cleared=True,
-                        include_hidden_from_context=True,
-                    )
-                ),
-            ),
+            get_session_messages=get_projected_session_messages,
             get_run_intent_input=intent_input_parts_by_run.get,
             get_session_history_markers=(
                 self._get_session_history_markers if include_history_markers else None

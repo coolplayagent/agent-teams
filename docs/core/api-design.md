@@ -1991,6 +1991,10 @@ Lists persisted business events in the session.
 
 Lists persisted messages in the active session segment only. Rows before the latest logical `clear` marker are excluded from this endpoint, and rows marked hidden-from-context by automatic compaction are also excluded.
 
+Persisted `tool-call`, `tool-return`, and `retry-prompt` parts are projected at
+read time with the current tool registry's `semantic_category` and
+`action_family`. The projection does not rewrite stored provider messages.
+
 ### `GET /sessions/{session_id}/agents/{instance_id}/messages`
 
 Lists the raw history timeline for one agent instance, including:
@@ -2006,6 +2010,8 @@ Query:
 
 Notes:
 - History markers are resolved against the instance's persisted `conversation_id`.
+- Persisted tool parts use the same read-time registry semantics projection as the
+  session message endpoint.
 - This matters for normal-mode subagent child sessions, whose instance conversation may differ from the legacy `session_id + role_id` conversation id.
 - A synthesized terminal task result is scoped to `task_id` when the query provides
   one; results from another task assigned to the same reused instance are never

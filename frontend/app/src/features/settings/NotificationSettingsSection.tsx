@@ -10,7 +10,7 @@ import type {
   NotificationRule,
   NotificationTypeId,
 } from "../../api/contracts";
-import { ChoiceControl } from "../../components/ChoiceControl";
+import { FormChoiceControl } from "../../components/ChoiceControl";
 import { useTranslations } from "../../i18n";
 import { SettingsQueryState, SettingsSection } from "./SettingsShared";
 import "./NotificationSettingsSection.css";
@@ -160,13 +160,11 @@ function NotificationRuleRow({
                 noStyle
                 getValueProps={booleanChoiceValueProps}
               >
-                <ChoiceControl
+                <FormChoiceControl
                   ariaLabel={`${title} · ${t("settingsEnabled")}`}
-                  checked={enabled}
                   className="at-notification-rule-toggle"
                   kind="switch"
                   label={enabled ? t("settingsEnabled") : t("settingsDisabled")}
-                  onChange={() => undefined}
                 />
               </Form.Item>
               <div
@@ -179,11 +177,9 @@ function NotificationRuleRow({
                   noStyle
                   getValueProps={booleanChoiceValueProps}
                 >
-                  <ChoiceControl
-                    checked={form.getFieldValue([typeId, "browser"]) === true}
+                  <FormChoiceControl
                     disabled={!enabled}
                     label={t("settingsChannelBrowser")}
-                    onChange={() => undefined}
                     variant="chip"
                   />
                 </Form.Item>
@@ -192,11 +188,9 @@ function NotificationRuleRow({
                   noStyle
                   getValueProps={booleanChoiceValueProps}
                 >
-                  <ChoiceControl
-                    checked={form.getFieldValue([typeId, "toast"]) === true}
+                  <FormChoiceControl
                     disabled={!enabled}
                     label={t("settingsChannelToast")}
-                    onChange={() => undefined}
                     variant="chip"
                   />
                 </Form.Item>

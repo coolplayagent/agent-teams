@@ -49,7 +49,7 @@ import type {
   RoleConfigSummary,
   RoleSkillOption,
 } from "../../api/contracts";
-import { ChoiceControl } from "../../components/ChoiceControl";
+import { FormChoiceControl } from "../../components/ChoiceControl";
 import { useTranslations } from "../../i18n";
 import { useUiStore } from "../../runtime/uiStore";
 import { CommandsSettingsSection } from "./CommandsSettingsSection";
@@ -360,12 +360,10 @@ function SettingsGeneral({
                 noStyle
                 getValueProps={booleanChoiceValueProps}
               >
-                <ChoiceControl
+                <FormChoiceControl
                   ariaLabel={t("settingsShellSafetyPolicy")}
-                  checked={form.getFieldValue("shell_safety_policy_enabled") === true}
                   kind="switch"
                   label={t("settingsEnabled")}
-                  onChange={() => undefined}
                 />
               </Form.Item>
             </div>
@@ -860,12 +858,10 @@ function RoleConfigDetail({
                     label={t("settingsRoleMemoryEnabled")}
                     name="memory_enabled"
                   >
-                    <ChoiceControl
+                    <FormChoiceControl
                       ariaLabel={t("settingsRoleMemoryEnabled")}
-                      checked={form.getFieldValue("memory_enabled") === true}
                       kind="switch"
                       label={t("settingsEnabled")}
-                      onChange={() => undefined}
                     />
                   </Form.Item>
                 </SettingsFormGrid>
@@ -1730,11 +1726,9 @@ function ModelProfileDetail({
             getValueProps={booleanChoiceValueProps}
             name="is_default"
           >
-            <ChoiceControl
-              checked={form.getFieldValue("is_default") === true}
+            <FormChoiceControl
               kind="switch"
               label={t("settingsModelDefault")}
-              onChange={() => undefined}
             />
           </Form.Item>
         </div>

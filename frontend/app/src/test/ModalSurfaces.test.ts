@@ -37,7 +37,10 @@ describe("independent modal surfaces", () => {
     expect(settingsSource).toContain("onCancel={onClose}");
     expect(settingsSource).not.toContain("<Drawer");
     expect(settingsCss).toContain("height: min(860px, calc(100dvh - 48px));");
-    expect(settingsCss).toContain("overflow: hidden;");
+    expect(settingsCss).toContain("overflow: clip;");
+    expect(settingsCss).toMatch(
+      /\.at-settings-modal \.ant-modal-body\s*{[^}]*overflow-y:\s*auto;/s,
+    );
   });
 
   it("opens skill work and detail surfaces as responsive scrolling modals", () => {

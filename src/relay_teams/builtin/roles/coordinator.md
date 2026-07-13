@@ -5,6 +5,7 @@ description: Orchestrates delegated work across specialist roles.
 model_profile: default
 version: 1.0.0
 mode: primary
+system_role: coordinator
 skills:
   - '*'
 tools:

@@ -146,12 +146,6 @@ TERMINAL_RUN_STATUSES = frozenset(
         RunRuntimeStatus.STOPPED,
     }
 )
-_LEGACY_COORDINATOR_IDENTIFIERS = (
-    "coordinator",
-    "coordinator agent",
-    "coordinator_agent",
-)
-_MAIN_AGENT_IDENTIFIERS = ("mainagent", "main agent", "main_agent")
 _AUTO_SESSION_TITLE_MAX_CHARS = 120
 _SESSION_SIDEBAR_DEFAULT_LIMIT = 50
 _SESSION_SIDEBAR_MAX_LIMIT = 200
@@ -256,14 +250,6 @@ _SESSION_ACTIVITY_EVENT_TYPES = frozenset(
 class BoardTodoSessionLifecycleService(Protocol):
     def mark_session_deleted(self, *, session_id: str) -> None:
         raise NotImplementedError
-
-
-def _legacy_coordinator_identifiers() -> tuple[str, ...]:
-    return _LEGACY_COORDINATOR_IDENTIFIERS
-
-
-def _main_agent_identifiers() -> tuple[str, ...]:
-    return _MAIN_AGENT_IDENTIFIERS
 
 
 def _normalize_optional_identifier(value: str | None) -> str | None:
@@ -3756,15 +3742,9 @@ class SessionService:
         safe_role_id = str(role_id or "").strip()
         if not safe_role_id:
             return False
-        if self._role_registry is not None and (
+        return self._role_registry is not None and (
             self._role_registry.is_coordinator_role(safe_role_id)
             or self._role_registry.is_main_agent_role(safe_role_id)
-        ):
-            return True
-        normalized = safe_role_id.casefold()
-        return (
-            normalized in _legacy_coordinator_identifiers()
-            or normalized in _main_agent_identifiers()
         )
 
     def _count_subagents_by_session(

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from relay_teams.roles.role_models import RoleDefinition
+from relay_teams.roles.role_models import RoleDefinition, SystemRoleIdentity
 from relay_teams.roles.role_registry import RoleRegistry
 from relay_teams.roles.runtime_role_resolver import RuntimeRoleResolver
 from relay_teams.roles.temporary_role_models import TemporaryRoleSpec
@@ -17,6 +17,7 @@ def _base_registry() -> RoleRegistry:
     registry.register(
         RoleDefinition(
             role_id="Coordinator",
+            system_role=SystemRoleIdentity.COORDINATOR,
             name="Coordinator",
             description="system",
             version="1",
@@ -27,6 +28,7 @@ def _base_registry() -> RoleRegistry:
     registry.register(
         RoleDefinition(
             role_id="MainAgent",
+            system_role=SystemRoleIdentity.MAIN_AGENT,
             name="MainAgent",
             description="system",
             version="1",

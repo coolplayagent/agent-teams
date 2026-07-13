@@ -15,11 +15,13 @@ from relay_teams.plugins.path_resolution import namespace_plugin_ref
 from relay_teams.plugins.plugin_models import PluginComponentSource
 from relay_teams.roles.memory_models import MemoryProfile, default_memory_profile
 from relay_teams.roles.role_contracts import RoleContract
-from relay_teams.roles.role_models import RoleConfigSource, RoleDefinition, RoleMode
+from relay_teams.roles.role_models import (
+    RoleConfigSource,
+    RoleDefinition,
+    RoleMode,
+    SystemRoleIdentity,
+)
 
-MAIN_AGENT_ROLE_ID = "MainAgent"
-MAIN_AGENT_IDENTIFIERS = frozenset(("mainagent", "main agent", "main_agent"))
-COORDINATOR_IDENTIFIERS = frozenset(("coordinator",))
 COORDINATOR_REQUIRED_TOOLS = frozenset(
     ("orch_create_tasks", "orch_update_task", "orch_dispatch_task")
 )
@@ -28,19 +30,11 @@ LOGGER = get_logger(__name__)
 
 
 def is_coordinator_role_definition(role: RoleDefinition) -> bool:
-    role_id = role.role_id.strip().casefold()
-    name = role.name.strip().casefold()
-    return (
-        COORDINATOR_REQUIRED_TOOLS.issubset(set(role.tools))
-        or role_id in COORDINATOR_IDENTIFIERS
-        or name in COORDINATOR_IDENTIFIERS
-    )
+    return role.system_role == SystemRoleIdentity.COORDINATOR
 
 
 def is_main_agent_role_definition(role: RoleDefinition) -> bool:
-    role_id = role.role_id.strip().casefold()
-    name = role.name.strip().casefold()
-    return role_id in MAIN_AGENT_IDENTIFIERS or name in MAIN_AGENT_IDENTIFIERS
+    return role.system_role == SystemRoleIdentity.MAIN_AGENT
 
 
 def is_reserved_system_role_definition(role: RoleDefinition) -> bool:
@@ -371,6 +365,11 @@ class RoleLoader:
                 str(parsed.get("execution_surface", ExecutionSurface.API.value))
             ),
             mode=RoleMode(str(parsed.get("mode", RoleMode.PRIMARY.value))),
+            system_role=(
+                SystemRoleIdentity(str(parsed["system_role"]))
+                if parsed.get("system_role") is not None
+                else None
+            ),
             memory_profile=memory_profile,
             contract=contract,
             hooks=_parse_frontmatter_hooks(

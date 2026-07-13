@@ -5,6 +5,7 @@ description: Executes the full user request directly in normal mode.
 model_profile: default
 version: 1.0.0
 mode: primary
+system_role: main_agent
 mcp_servers:
   - '*'
 skills:

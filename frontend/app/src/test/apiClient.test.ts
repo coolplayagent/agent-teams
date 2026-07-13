@@ -3535,6 +3535,7 @@ describe("api client", () => {
       source: "project",
       source_role_id: "reviewer",
       system_prompt: "Review carefully.",
+      system_role: null,
       tools: ["read_file"],
       version: "1.0.0",
     };
@@ -3556,6 +3557,7 @@ describe("api client", () => {
       skills: ["review"],
       source_role_id: "reviewer",
       system_prompt: "Review carefully.",
+      system_role: null,
       tools: ["read_file"],
       version: "1.0.0",
     };

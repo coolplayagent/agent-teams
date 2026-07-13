@@ -3265,6 +3265,7 @@ Response fields:
 - `main_agent_role_id`
 - `coordinator_role`
   - `role_id`
+  - `system_role`: `coordinator`
   - `name`
   - `description`
   - `model_profile`
@@ -3272,6 +3273,7 @@ Response fields:
   - `input_modalities[]`
 - `main_agent_role`
   - `role_id`
+  - `system_role`: `main_agent`
   - `name`
   - `description`
   - `model_profile`
@@ -3345,6 +3347,7 @@ role files exist, the response contains the app-backed documents only.
 
 Response fields:
 - `role_id`
+- `system_role`: `main_agent`, `coordinator`, or `null`
 - `name`
 - `description`
 - `version`
@@ -3371,6 +3374,7 @@ Response fields:
 - `contract`
 - `bound_agent_id`
 - `mode`
+- `system_role`: `main_agent`, `coordinator`, or `null`
 - `source`
 - `system_prompt`
 - `file_name`
@@ -3400,6 +3404,7 @@ Request:
   "model_profile": "default",
   "bound_agent_id": "codex_local",
   "mode": "subagent",
+  "system_role": null,
   "memory_profile": {
     "enabled": true
   },
@@ -3435,7 +3440,13 @@ Rules:
 - Renaming a role writes a new file and removes the previous file when validation succeeds.
 - When `bound_agent_id` is set, that role executes through the configured agent runtime provider instead of the local model provider chain.
 - `mode` controls where the role can be selected: `primary` for normal-mode root roles, `subagent` for background/delegated subagent roles, `all` for both.
-- Reserved system roles keep fixed identity fields (`role_id`, `name`, `description`, `version`), fixed `mode`, and fixed `system_prompt` through this API.
+- `system_role` is explicit role identity metadata. Only builtin manifests may
+  assign `main_agent` or `coordinator`; names and tool combinations never imply
+  system identity, so user roles may reuse those names without becoming
+  reserved roles.
+- Reserved system roles keep fixed identity fields (`role_id`, `name`,
+  `description`, `version`, `mode`, and `system_role`) through this API. Their
+  prompt and capability configuration remains editable.
 - `contract` is serialized into role YAML front matter and is included in the
   runtime system prompt as `## Role Contract` when non-empty; enforcement does
   not rely on model compliance with that prompt section.

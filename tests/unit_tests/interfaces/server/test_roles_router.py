@@ -35,6 +35,7 @@ from relay_teams.roles import (
     RoleSkillOption,
     RoleToolGroupOption,
     SystemRolesUnavailableError,
+    SystemRoleIdentity,
     RoleValidationResult,
 )
 from relay_teams.skills.skill_models import SkillOptionEntry, SkillSource
@@ -229,6 +230,7 @@ def _create_test_client(
         resolved_registry.register(
             RoleDefinition(
                 role_id="Coordinator",
+                system_role=SystemRoleIdentity.COORDINATOR,
                 name="Coordinator",
                 description="Coordinates the run.",
                 version="1.0.0",
@@ -241,6 +243,7 @@ def _create_test_client(
         resolved_registry.register(
             RoleDefinition(
                 role_id="MainAgent",
+                system_role=SystemRoleIdentity.MAIN_AGENT,
                 name="Main Agent",
                 description="Executes normal-mode runs.",
                 version="1.0.0",
@@ -451,6 +454,7 @@ def test_get_role_config_options() -> None:
         main_agent_role_id="MainAgent",
         coordinator_role=NormalModeRoleOption(
             role_id="Coordinator",
+            system_role=SystemRoleIdentity.COORDINATOR,
             name="Coordinator",
             description="Coordinates the run.",
             model_profile="default",
@@ -459,6 +463,7 @@ def test_get_role_config_options() -> None:
         ),
         main_agent_role=NormalModeRoleOption(
             role_id="MainAgent",
+            system_role=SystemRoleIdentity.MAIN_AGENT,
             name="Main Agent",
             description="Executes normal-mode runs.",
             model_profile="default",
@@ -468,6 +473,7 @@ def test_get_role_config_options() -> None:
         normal_mode_roles=(
             NormalModeRoleOption(
                 role_id="MainAgent",
+                system_role=SystemRoleIdentity.MAIN_AGENT,
                 name="Main Agent",
                 description="Executes normal-mode runs.",
                 model_profile="default",
@@ -541,6 +547,7 @@ def test_get_role_config_options_reloads_missing_builtin_skills(
     registry.register(
         RoleDefinition(
             role_id="Coordinator",
+            system_role=SystemRoleIdentity.COORDINATOR,
             name="Coordinator",
             description="Coordinates the run.",
             version="1.0.0",
@@ -552,6 +559,7 @@ def test_get_role_config_options_reloads_missing_builtin_skills(
     registry.register(
         RoleDefinition(
             role_id="MainAgent",
+            system_role=SystemRoleIdentity.MAIN_AGENT,
             name="Main Agent",
             description="Executes normal-mode runs.",
             version="1.0.0",
@@ -615,6 +623,7 @@ def test_get_role_config_options_returns_503_when_builtin_skills_still_missing(
     registry.register(
         RoleDefinition(
             role_id="Coordinator",
+            system_role=SystemRoleIdentity.COORDINATOR,
             name="Coordinator",
             description="Coordinates the run.",
             version="1.0.0",
@@ -626,6 +635,7 @@ def test_get_role_config_options_returns_503_when_builtin_skills_still_missing(
     registry.register(
         RoleDefinition(
             role_id="MainAgent",
+            system_role=SystemRoleIdentity.MAIN_AGENT,
             name="Main Agent",
             description="Executes normal-mode runs.",
             version="1.0.0",
@@ -666,6 +676,7 @@ def test_get_role_config_options_ignores_reserved_role_skill_wildcard() -> None:
     registry.register(
         RoleDefinition(
             role_id="Coordinator",
+            system_role=SystemRoleIdentity.COORDINATOR,
             name="Coordinator",
             description="Coordinates the run.",
             version="1.0.0",
@@ -677,6 +688,7 @@ def test_get_role_config_options_ignores_reserved_role_skill_wildcard() -> None:
     registry.register(
         RoleDefinition(
             role_id="MainAgent",
+            system_role=SystemRoleIdentity.MAIN_AGENT,
             name="Main Agent",
             description="Executes normal-mode runs.",
             version="1.0.0",
@@ -722,6 +734,7 @@ def test_get_role_config_options_ignores_missing_non_system_role_skills() -> Non
     registry.register(
         RoleDefinition(
             role_id="Coordinator",
+            system_role=SystemRoleIdentity.COORDINATOR,
             name="Coordinator",
             description="Coordinates the run.",
             version="1.0.0",
@@ -733,6 +746,7 @@ def test_get_role_config_options_ignores_missing_non_system_role_skills() -> Non
     registry.register(
         RoleDefinition(
             role_id="MainAgent",
+            system_role=SystemRoleIdentity.MAIN_AGENT,
             name="Main Agent",
             description="Executes normal-mode runs.",
             version="1.0.0",
@@ -789,6 +803,7 @@ def test_get_role_config_options_ignores_missing_custom_reserved_role_skills() -
     registry.register(
         RoleDefinition(
             role_id="Coordinator",
+            system_role=SystemRoleIdentity.COORDINATOR,
             name="Coordinator",
             description="Coordinates the run.",
             version="1.0.0",
@@ -801,6 +816,7 @@ def test_get_role_config_options_ignores_missing_custom_reserved_role_skills() -
     registry.register(
         RoleDefinition(
             role_id="MainAgent",
+            system_role=SystemRoleIdentity.MAIN_AGENT,
             name="Main Agent",
             description="Executes normal-mode runs.",
             version="1.0.0",
@@ -845,6 +861,7 @@ def test_get_role_config_options_uses_available_project_skill_without_reload() -
     registry.register(
         RoleDefinition(
             role_id="Coordinator",
+            system_role=SystemRoleIdentity.COORDINATOR,
             name="Coordinator",
             description="Coordinates the run.",
             version="1.0.0",
@@ -856,6 +873,7 @@ def test_get_role_config_options_uses_available_project_skill_without_reload() -
     registry.register(
         RoleDefinition(
             role_id="MainAgent",
+            system_role=SystemRoleIdentity.MAIN_AGENT,
             name="Main Agent",
             description="Executes normal-mode runs.",
             version="1.0.0",
@@ -908,6 +926,7 @@ def test_get_role_config_options_recomputes_required_builtin_skills_after_reload
     registry.register(
         RoleDefinition(
             role_id="Coordinator",
+            system_role=SystemRoleIdentity.COORDINATOR,
             name="Coordinator",
             description="Coordinates the run.",
             version="1.0.0",
@@ -920,6 +939,7 @@ def test_get_role_config_options_recomputes_required_builtin_skills_after_reload
     registry.register(
         RoleDefinition(
             role_id="MainAgent",
+            system_role=SystemRoleIdentity.MAIN_AGENT,
             name="Main Agent",
             description="Executes normal-mode runs.",
             version="1.0.0",

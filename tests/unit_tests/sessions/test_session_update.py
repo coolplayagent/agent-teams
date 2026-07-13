@@ -24,7 +24,7 @@ from relay_teams.sessions.session_metadata import (
     SESSION_TITLE_SOURCE_AUTO,
     SESSION_TITLE_SOURCE_MANUAL,
 )
-from relay_teams.roles.role_models import RoleDefinition
+from relay_teams.roles.role_models import RoleDefinition, SystemRoleIdentity
 from relay_teams.roles.role_registry import RoleRegistry, SystemRolesUnavailableError
 from relay_teams.tools.runtime.approval_ticket_repo import ApprovalTicketRepository
 from relay_teams.workspace import WorkspaceService
@@ -40,6 +40,7 @@ def _build_service(
     role_registry.register(
         RoleDefinition(
             role_id="Coordinator",
+            system_role=SystemRoleIdentity.COORDINATOR,
             name="Coordinator",
             description="Coordinates delegated work.",
             version="1.0.0",
@@ -50,6 +51,7 @@ def _build_service(
     role_registry.register(
         RoleDefinition(
             role_id="MainAgent",
+            system_role=SystemRoleIdentity.MAIN_AGENT,
             name="Main Agent",
             description="Handles direct runs.",
             version="1.0.0",
@@ -162,6 +164,7 @@ def test_create_session_raises_when_main_agent_role_is_unavailable(
     role_registry.register(
         RoleDefinition(
             role_id="Coordinator",
+            system_role=SystemRoleIdentity.COORDINATOR,
             name="Coordinator",
             description="Coordinates delegated work.",
             version="1.0.0",

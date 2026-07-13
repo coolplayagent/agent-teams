@@ -30,7 +30,11 @@ from relay_teams.mcp.mcp_models import (
 from relay_teams.mcp.mcp_registry import McpRegistry
 from relay_teams.mcp.runtime_schema_loader import RuntimeMcpSchemaLoader
 from relay_teams.secrets import AppSecretStore
-from relay_teams.roles.role_models import RoleDefinition, RoleMode
+from relay_teams.roles.role_models import (
+    RoleDefinition,
+    RoleMode,
+    SystemRoleIdentity,
+)
 from relay_teams.roles.role_contracts import (
     RoleContract,
     RoleContractPostcondition,
@@ -116,6 +120,11 @@ def _role(role_id: str) -> RoleDefinition:
         )
     return RoleDefinition(
         role_id=role_id,
+        system_role=(
+            SystemRoleIdentity.COORDINATOR
+            if role_id.casefold() == "coordinator"
+            else None
+        ),
         name="role",
         description="Role description.",
         version="1",
@@ -269,6 +278,7 @@ def _coordinator_registry() -> RoleRegistry:
     registry.register(
         RoleDefinition(
             role_id="Coordinator",
+            system_role=SystemRoleIdentity.COORDINATOR,
             name="Coordinator",
             description="Coordinates delegated work.",
             version="1",
@@ -461,6 +471,7 @@ def test_runtime_system_prompt_ignores_unknown_mcp_servers_in_available_roles() 
     registry.register(
         RoleDefinition(
             role_id="Coordinator",
+            system_role=SystemRoleIdentity.COORDINATOR,
             name="Coordinator",
             description="Coordinates delegated work.",
             version="1",
@@ -1280,6 +1291,7 @@ def test_runtime_system_prompt_for_normal_mode_root_includes_available_subagents
     registry.register(
         RoleDefinition(
             role_id="MainAgent",
+            system_role=SystemRoleIdentity.MAIN_AGENT,
             name="Main Agent",
             description="Handles direct runs.",
             version="1",

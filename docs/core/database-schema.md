@@ -1024,7 +1024,11 @@ Board configurations are currently held in-memory via `TaskBoardConfig` models. 
 - Role document files: role Markdown front matter stores `RoleDefinition`
   metadata, including the optional `contract` object for behavioral
   preconditions, postconditions, and capability invariants. These files are
-  configuration resources, not SQLite tables.
+  configuration resources, not SQLite tables. Builtin main-agent and
+  coordinator manifests declare `system_role: main_agent` or
+  `system_role: coordinator`; runtime identity is resolved only from that
+  explicit enum field, never from a role name, identifier spelling, or tool
+  combination.
 
 ---
 

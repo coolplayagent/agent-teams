@@ -321,6 +321,7 @@ def _build_role_option(
         input_modalities = capabilities.supported_input_modalities()
     return NormalModeRoleOption(
         role_id=str(getattr(role, "role_id")),
+        system_role=getattr(role, "system_role", None),
         name=str(getattr(role, "name")),
         description=str(getattr(role, "description")),
         model_profile=role_model_profile,

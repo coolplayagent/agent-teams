@@ -13,7 +13,7 @@ from relay_teams.agents.execution.message_repository import MessageRepository
 from relay_teams.agents.tasks.task_repository import TaskRepository
 from relay_teams.memory.event_handler import MemoryEventHandler
 from relay_teams.providers.token_usage_repo import TokenUsageRepository
-from relay_teams.roles.role_models import RoleDefinition
+from relay_teams.roles.role_models import RoleDefinition, SystemRoleIdentity
 from relay_teams.roles.role_registry import RoleRegistry
 from relay_teams.sessions.runs.run_runtime_repo import RunRuntimeRepository
 from relay_teams.sessions.runs.todo_repository import TodoRepository
@@ -32,6 +32,7 @@ def _build_service(
     role_registry.register(
         RoleDefinition(
             role_id="MainAgent",
+            system_role=SystemRoleIdentity.MAIN_AGENT,
             name="Main Agent",
             description="Handles direct runs.",
             version="1.0.0",

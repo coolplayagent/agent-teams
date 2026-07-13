@@ -1388,6 +1388,7 @@ export interface DeleteSessionRequest {
 
 export interface RoleOption {
   role_id: string;
+  system_role?: SystemRoleIdentity | null;
   name: string;
   description?: string;
   capabilities?: ModelCapabilities;
@@ -1414,6 +1415,7 @@ export interface RoleSkillOption {
 }
 
 export type RoleConfigMode = "primary" | "subagent" | "all" | (string & {});
+export type SystemRoleIdentity = "main_agent" | "coordinator";
 
 export interface RoleMemoryProfile {
   enabled?: boolean | null;
@@ -1430,6 +1432,7 @@ export interface RoleConfigSummary {
   source?: string | null;
   deletable?: boolean;
   execution_surface?: string | null;
+  system_role?: SystemRoleIdentity | null;
 }
 
 export interface RoleConfigDocument extends RoleConfigSummary {
@@ -1458,6 +1461,7 @@ export interface RoleConfigSaveRequest {
   skills?: string[];
   source_role_id?: string | null;
   system_prompt: string;
+  system_role?: SystemRoleIdentity | null;
   tools?: string[];
   version: string;
 }

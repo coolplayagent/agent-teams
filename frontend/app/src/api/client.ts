@@ -936,6 +936,7 @@ function roleConfigSaveRequest(config: RoleConfigDocument): RoleConfigSaveReques
     skills: config.skills ?? [],
     source_role_id: config.source_role_id ?? null,
     system_prompt: config.system_prompt ?? "",
+    system_role: config.system_role ?? null,
     tools: config.tools ?? [],
     version: config.version ?? "1.0.0",
   };

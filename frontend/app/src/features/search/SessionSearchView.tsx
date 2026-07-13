@@ -46,6 +46,7 @@ export function SessionSearchView({
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<InputRef>(null);
   const activeOptionRef = useRef<HTMLButtonElement | null>(null);
+  const resultsRef = useRef<HTMLDivElement | null>(null);
   const pointerPositionRef = useRef<{ x: number; y: number } | null>(null);
   const resultsId = useId();
   const rows = useMemo(
@@ -79,6 +80,30 @@ export function SessionSearchView({
   useEffect(() => {
     activeOptionRef.current?.scrollIntoView?.({ block: "nearest" });
   }, [activeIndex, rows]);
+
+  useEffect(() => {
+    const results = resultsRef.current;
+    if (results === null) {
+      return;
+    }
+    const handleWheel = (event: WheelEvent) => {
+      if (event.deltaY === 0) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      const lineHeight = 20;
+      const pageHeight = Math.max(1, results.clientHeight);
+      const delta = event.deltaMode === 1
+        ? event.deltaY * lineHeight
+        : event.deltaMode === 2
+          ? event.deltaY * pageHeight
+          : event.deltaY;
+      results.scrollTop += delta;
+    };
+    results.addEventListener("wheel", handleWheel, { passive: false });
+    return () => results.removeEventListener("wheel", handleWheel);
+  }, []);
 
   return (
     <section
@@ -120,6 +145,7 @@ export function SessionSearchView({
         className="at-session-search-results at-scroll-region"
         id={resultsId}
         onPointerEnter={recordPointerPosition}
+        ref={resultsRef}
         role="listbox"
       >
         {loading && rows.length === 0 ? (

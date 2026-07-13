@@ -4472,7 +4472,9 @@ body {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
   padding: 14px 20px 22px;
+  touch-action: pan-y;
 }
 
 .at-session-search-list {

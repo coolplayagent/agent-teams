@@ -126,6 +126,37 @@ describe("SessionSearchView", () => {
     });
   });
 
+  it("keeps wheel and touchpad deltas inside the results scroller", () => {
+    const outerWheel = vi.fn();
+    render(
+      <div onWheel={outerWheel}>
+        <ConfigProvider button={{ autoInsertSpace: false }}>
+          <SessionSearchView
+            onSessionSelected={vi.fn()}
+            selectedSessionId={null}
+            sessions={sessions}
+            workspaces={workspaces}
+          />
+        </ConfigProvider>
+      </div>,
+    );
+
+    const listbox = screen.getByRole("listbox");
+    Object.defineProperties(listbox, {
+      clientHeight: { configurable: true, value: 240 },
+      scrollHeight: { configurable: true, value: 1600 },
+      scrollTop: { configurable: true, value: 0, writable: true },
+    });
+
+    fireEvent.wheel(listbox, { deltaMode: 0, deltaY: 125 });
+    expect(listbox.scrollTop).toBe(125);
+    expect(outerWheel).not.toHaveBeenCalled();
+
+    fireEvent.wheel(listbox, { deltaMode: 2, deltaY: 1 });
+    expect(listbox.scrollTop).toBe(365);
+    expect(outerWheel).not.toHaveBeenCalled();
+  });
+
   it("does not let programmatic scrolling under a stationary pointer replace keyboard selection", async () => {
     renderSearch();
 

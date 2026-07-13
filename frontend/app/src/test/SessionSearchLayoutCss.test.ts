@@ -10,6 +10,8 @@ describe("session search modal layout", () => {
     expect(css).toMatch(/\.at-session-search-modal \.ant-modal-content\s*\{[^}]*display:\s*flex[^}]*overflow:\s*hidden/s);
     expect(css).toMatch(/\.at-session-search-modal \.ant-modal-body\s*\{[^}]*flex:\s*1 1 auto[^}]*display:\s*flex[^}]*min-height:\s*0[^}]*overflow:\s*hidden/s);
     expect(css).toMatch(/\.at-session-search-results\s*\{[^}]*overflow:\s*auto/s);
+    expect(css).toMatch(/\.at-session-search-results\s*\{[^}]*overscroll-behavior:\s*contain/s);
+    expect(css).toMatch(/\.at-session-search-results\s*\{[^}]*touch-action:\s*pan-y/s);
     expect(view).toContain('className="at-session-search-results at-scroll-region"');
     expect(view).toContain("aria-activedescendant");
     expect(view).toContain('role="searchbox"');

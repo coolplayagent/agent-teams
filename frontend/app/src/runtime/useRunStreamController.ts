@@ -128,61 +128,39 @@ export function useRunStreamController(): RunStreamController {
     void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
   };
 
-  const refreshSubagentDiscoveryForNewEvents = (
+  const refreshForNewRuntimeEvents = (
     sessionId: string,
     nextRuntimeState: RuntimeState,
     previousRuntimeState: RuntimeState,
   ) => {
     let hasNewSubagentDiscoveryEvent = false;
-    for (const run of Object.values(nextRuntimeState.runs)) {
-      const previousEntries = previousRuntimeState.runs[run.runId]?.entries ?? [];
-      for (let index = 0; index < run.entries.length; index += 1) {
-        const entry = run.entries[index];
-        if (entry === undefined || previousEntries[index] === entry) {
-          continue;
-        }
-        if (!isSubagentDiscoveryEvent(entry)) {
-          continue;
-        }
-        const eventKey = subagentDiscoveryEventKey(entry);
-        if (subagentDiscoveryEventKeysRef.current.has(eventKey)) {
-          continue;
-        }
-        subagentDiscoveryEventKeysRef.current.add(eventKey);
-        hasNewSubagentDiscoveryEvent = true;
-      }
-    }
-    if (hasNewSubagentDiscoveryEvent) {
-      refreshSubagentDiscovery(sessionId);
-    }
-  };
-
-  const refreshRecoveryForNewInteractionEvents = (
-    sessionId: string,
-    nextRuntimeState: RuntimeState,
-    previousRuntimeState: RuntimeState,
-  ) => {
     let hasNewInteractionEvent = false;
-    for (const run of Object.values(nextRuntimeState.runs)) {
-      const previousEntries = previousRuntimeState.runs[run.runId]?.entries ?? [];
-      for (let index = 0; index < run.entries.length; index += 1) {
-        const entry = run.entries[index];
-        if (entry === undefined || previousEntries[index] === entry) {
-          continue;
+    forEachChangedTimelineEntry(
+      nextRuntimeState,
+      previousRuntimeState,
+      (entry) => {
+        if (isSubagentDiscoveryEvent(entry)) {
+          const eventKey = subagentDiscoveryEventKey(entry);
+          if (!subagentDiscoveryEventKeysRef.current.has(eventKey)) {
+            subagentDiscoveryEventKeysRef.current.add(eventKey);
+            hasNewSubagentDiscoveryEvent = true;
+          }
         }
         if (
           entry.kind !== "user_question_requested" &&
           entry.kind !== "user_question_answered"
         ) {
-          continue;
+          return;
         }
         const eventKey = `${entry.runId}:${entry.id}`;
-        if (recoveryInteractionEventKeysRef.current.has(eventKey)) {
-          continue;
+        if (!recoveryInteractionEventKeysRef.current.has(eventKey)) {
+          recoveryInteractionEventKeysRef.current.add(eventKey);
+          hasNewInteractionEvent = true;
         }
-        recoveryInteractionEventKeysRef.current.add(eventKey);
-        hasNewInteractionEvent = true;
-      }
+      },
+    );
+    if (hasNewSubagentDiscoveryEvent) {
+      refreshSubagentDiscovery(sessionId);
     }
     if (hasNewInteractionEvent) {
       refreshRecoverySnapshot(sessionId);
@@ -438,12 +416,7 @@ export function useRunStreamController(): RunStreamController {
             foregroundSessionIdRef.current,
           ),
         );
-        refreshSubagentDiscoveryForNewEvents(
-          options.sessionId,
-          nextRuntimeState,
-          previousRuntimeState,
-        );
-        refreshRecoveryForNewInteractionEvents(
+        refreshForNewRuntimeEvents(
           options.sessionId,
           nextRuntimeState,
           previousRuntimeState,
@@ -884,13 +857,48 @@ function isSubagentBackgroundTaskEvent(entry: TimelineEntry): boolean {
 }
 
 function subagentDiscoveryEventKey(entry: TimelineEntry): string {
+  const payload = jsonObject(entry.payload);
   return [
     entry.runId,
-    String(entry.eventId),
     entry.kind,
     entry.instanceId ?? "",
-    entry.occurredAt,
+    payload === null ? "" : jsonString(payload.background_task_id),
+    payload === null ? "" : jsonString(payload.task_id),
+    payload === null ? "" : jsonString(payload.instance_id),
+    payload === null ? "" : jsonString(payload.subagent_instance_id),
+    payload === null ? "" : jsonString(payload.subagent_run_id),
+    payload === null ? "" : jsonString(payload.run_status),
+    payload === null ? "" : jsonString(payload.status),
+    payload === null ? "" : jsonString(payload.run_phase),
   ].join(":");
+}
+
+function forEachChangedTimelineEntry(
+  nextRuntimeState: RuntimeState,
+  previousRuntimeState: RuntimeState,
+  visit: (entry: TimelineEntry) => void,
+): void {
+  for (const [runId, run] of Object.entries(nextRuntimeState.runs)) {
+    const previousRun = previousRuntimeState.runs[runId];
+    if (run === previousRun || run.entries === previousRun?.entries) {
+      continue;
+    }
+    const previousEntries = previousRun?.entries ?? [];
+    const commonLength = Math.min(previousEntries.length, run.entries.length);
+    let firstChangedIndex = 0;
+    while (
+      firstChangedIndex < commonLength &&
+      previousEntries[firstChangedIndex] === run.entries[firstChangedIndex]
+    ) {
+      firstChangedIndex += 1;
+    }
+    for (let index = firstChangedIndex; index < run.entries.length; index += 1) {
+      const entry = run.entries[index];
+      if (entry !== undefined) {
+        visit(entry);
+      }
+    }
+  }
 }
 
 function normalizeForegroundRunIds(

@@ -317,6 +317,22 @@ describe("useRunStreamController", () => {
       options.onState(runtimeStateWithEntries([
         statusEntry,
         runtimeStateEntry({
+          eventId: 8,
+          kind: "subagent_session_status_changed",
+          payload: {
+            status: "running",
+            subagent_instance_id: "subagent-1",
+            subagent_run_id: "subagent-run-1",
+          },
+        }),
+      ]));
+    });
+    expect(subagentDiscoveryRefreshCallCount(invalidateSpy)).toBe(1);
+
+    act(() => {
+      options.onState(runtimeStateWithEntries([
+        statusEntry,
+        runtimeStateEntry({
           eventId: 6,
           kind: "subagent_resumed",
           payload: {

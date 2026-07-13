@@ -16,7 +16,6 @@ import {
   useState,
   type CSSProperties,
   type RefObject,
-  type WheelEvent as ReactWheelEvent,
 } from "react";
 
 import type { PromptMentionOption } from "./PromptMentions";
@@ -58,6 +57,7 @@ export function PromptMentionMenu({
   const generatedMenuId = useId();
   const menuId = providedMenuId ?? generatedMenuId;
   const activeOptionRef = useRef<HTMLButtonElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
   const [position, setPosition] = useState<PromptMentionMenuPosition | null>(null);
 
   useEffect(() => {
@@ -94,6 +94,18 @@ export function PromptMentionMenu({
     }
   }, [activeIndex, options, position]);
 
+  useEffect(() => {
+    const list = listRef.current;
+    if (!open || list === null) {
+      return;
+    }
+    const handleWheel = (event: WheelEvent) => {
+      handlePromptMentionWheel(event, list);
+    };
+    list.addEventListener("wheel", handleWheel, { passive: false });
+    return () => list.removeEventListener("wheel", handleWheel);
+  }, [open, options.length, position]);
+
   if (!open || position === null) {
     return null;
   }
@@ -115,7 +127,7 @@ export function PromptMentionMenu({
           className="at-prompt-mention-menu-list"
           id={menuId}
           onTouchMove={(event) => event.stopPropagation()}
-          onWheel={handlePromptMentionWheel}
+          ref={listRef}
           role="listbox"
         >
           {options.map((option, index) => {
@@ -184,8 +196,7 @@ export function promptMentionOptionId(menuId: string, index: number): string {
   return `${menuId}-option-${index}`;
 }
 
-function handlePromptMentionWheel(event: ReactWheelEvent<HTMLDivElement>) {
-  const list = event.currentTarget;
+function handlePromptMentionWheel(event: WheelEvent, list: HTMLDivElement) {
   if (event.deltaY === 0) {
     return;
   }

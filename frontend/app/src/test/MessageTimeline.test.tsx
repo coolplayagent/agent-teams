@@ -8603,6 +8603,122 @@ describe("MessageTimeline", () => {
     }));
   });
 
+  it("opens a legacy orchestration dispatch as a compact task-scoped subagent card", async () => {
+    const onSubagentOpen = vi.fn();
+    const prompt = "Implement the requested composer regression fix.";
+    listSessionSubagentsMock.mockResolvedValue([{
+      instance_id: "crafter-instance",
+      role_id: "Crafter",
+      run_id: "crafter-run",
+      run_status: "completed",
+      status: "completed",
+      task_id: "dispatch-task",
+      title: "Composer regression fix",
+    }]);
+    listSessionMessagesMock.mockResolvedValue([{
+      message: { parts: [
+        {
+          action_family: "orchestration",
+          args: {
+            prompt,
+            role_id: "Crafter",
+            task_id: "dispatch-task",
+          },
+          kind: "tool-call",
+          semantic_category: "orchestration",
+          tool_call_id: "call-dispatch-task",
+          tool_name: "orch_dispatch_task",
+        },
+        {
+          action_family: "orchestration",
+          content: {
+            output: "LEGACY_DISPATCH_OUTPUT_MUST_STAY_IN_THE_SUBAGENT_PANEL",
+            task_id: "dispatch-task",
+          },
+          kind: "tool-return",
+          semantic_category: "orchestration",
+          tool_call_id: "call-dispatch-task",
+          tool_name: "orch_dispatch_task",
+        },
+      ] },
+      message_id: "legacy-dispatch-message",
+      role: "assistant",
+      trace_id: "parent-orchestration-run",
+    }]);
+
+    const { container } = renderTimeline("session-1", { onSubagentOpen });
+
+    const tool = await waitFor(() => {
+      const candidate = container.querySelector<HTMLElement>(
+        '[data-tool-call-id="call-dispatch-task"]',
+      );
+      expect(candidate).toHaveClass("is-openable-subagent");
+      return candidate as HTMLElement;
+    });
+    expect(tool).toHaveAttribute("data-subagent-instance-id", "crafter-instance");
+    expect(tool).toHaveAttribute("data-subagent-run-id", "crafter-run");
+    expect(tool).toHaveAttribute("data-subagent-task-id", "dispatch-task");
+    expect(tool.querySelector(".at-message-tool-body")).toBeNull();
+    expect(tool.textContent).not.toContain(prompt);
+    expect(tool.textContent).not.toContain(
+      "LEGACY_DISPATCH_OUTPUT_MUST_STAY_IN_THE_SUBAGENT_PANEL",
+    );
+
+    fireEvent.click(tool.querySelector("summary") as HTMLElement);
+
+    expect(onSubagentOpen).toHaveBeenCalledTimes(1);
+    expect(onSubagentOpen).toHaveBeenCalledWith(expect.objectContaining({
+      instanceId: "crafter-instance",
+      roleId: "Crafter",
+      runId: "crafter-run",
+      sessionId: "session-1",
+      sourceRunId: "parent-orchestration-run",
+      sourceToolCallId: "call-dispatch-task",
+      taskId: "dispatch-task",
+      title: "Composer regression fix",
+    }));
+  });
+
+  it("keeps ordinary persisted orchestration tools as non-subagent disclosures", async () => {
+    const onSubagentOpen = vi.fn();
+    listSessionSubagentsMock.mockResolvedValue([{
+      instance_id: "unrelated-instance",
+      role_id: "Crafter",
+      run_id: "unrelated-run",
+      task_id: "unrelated-task",
+      title: "Unrelated child",
+    }]);
+    listSessionMessagesMock.mockResolvedValue([{
+      message: { parts: [{
+        action_family: "orchestration",
+        args: { workflow_id: "workflow-1" },
+        kind: "tool-call",
+        semantic_category: "orchestration",
+        tool_call_id: "call-orchestration-status",
+        tool_name: "orch_workflow_status",
+      }] },
+      message_id: "ordinary-orchestration-message",
+      role: "assistant",
+      trace_id: "parent-orchestration-run",
+    }]);
+
+    const { container } = renderTimeline("session-1", { onSubagentOpen });
+
+    const tool = await waitFor(() => {
+      const candidate = container.querySelector<HTMLElement>(
+        '[data-tool-call-id="call-orchestration-status"]',
+      );
+      expect(candidate).not.toBeNull();
+      return candidate as HTMLElement;
+    });
+    expect(tool).not.toHaveClass("is-openable-subagent");
+    expect(tool.querySelector(".at-message-tool-body")).not.toBeNull();
+
+    fireEvent.click(tool.querySelector("summary") as HTMLElement);
+
+    expect(onSubagentOpen).not.toHaveBeenCalled();
+  });
+
   it("uses the source run to disambiguate identical persisted tool call ids", async () => {
     const onSubagentOpen = vi.fn();
     const prompt = "Inspect the selected run.";

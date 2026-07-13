@@ -94,12 +94,18 @@ export function roundTitle(round: SessionRound, index: number): string {
 export function sanitizeRoundDiagnosticText(
   value: string,
   errorCode: string | null | undefined = null,
+  verificationStatus: string | null | undefined = null,
 ): string {
   const text = normalizedText(value);
   if (text.length === 0 || areDiagnosticsVisible()) {
     return text;
   }
-  if (normalizedText(errorCode).toLowerCase() === "verification_failed") {
+  const normalizedErrorCode = normalizedText(errorCode).toLowerCase();
+  const normalizedVerificationStatus = normalizedText(verificationStatus).toLowerCase();
+  if (
+    normalizedErrorCode === "verification_failed" ||
+    normalizedVerificationStatus === "failed"
+  ) {
     return VERIFICATION_NOT_PASSED_LABEL;
   }
   return text;
@@ -304,6 +310,7 @@ function roundDiagnosticText(round: SessionRound): string {
   return sanitizeRoundDiagnosticText(
     round.run_diagnostic_message ?? "",
     round.run_error_code,
+    round.verification_status,
   );
 }
 

@@ -149,6 +149,9 @@ describe("roundMetadata", () => {
       "Verification not passed.",
     );
     expect(sanitizeRoundDiagnosticText(rawDiagnostic)).toBe(rawDiagnostic);
+    expect(sanitizeRoundDiagnosticText(rawDiagnostic, null, "failed")).toBe(
+      "Verification not passed.",
+    );
     expect(
       sanitizeRoundDiagnosticText(
         "The verification_failed error code means the run did not satisfy a verifier.",

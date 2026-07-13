@@ -224,6 +224,34 @@ describe("runtime reducers", () => {
     ]);
   });
 
+  it("compacts concurrent provider deltas independently by stream identity", () => {
+    const eventCount = 6000;
+    const streamed = Array.from({ length: eventCount }, (_value, index) =>
+      runEvent({
+        event_id: index + 1,
+        instance_id: index % 2 === 0 ? "instance-a" : "instance-b",
+        role_id: index % 2 === 0 ? "Coordinator" : "Explorer",
+        payload_json: JSON.stringify({
+          part_index: 0,
+          text: String(index % 10),
+        }),
+      }),
+    ).reduce(reduceRunEvent, initialRuntimeState);
+
+    const entries = streamed.runs["run-1"].entries;
+    expect(entries).toHaveLength(2);
+    expect(entries.find((entry) => entry.instanceId === "instance-a")?.text)
+      .toBe(Array.from({ length: eventCount }, (_value, index) => index)
+        .filter((index) => index % 2 === 0)
+        .map((index) => String(index % 10))
+        .join(""));
+    expect(entries.find((entry) => entry.instanceId === "instance-b")?.text)
+      .toBe(Array.from({ length: eventCount }, (_value, index) => index)
+        .filter((index) => index % 2 === 1)
+        .map((index) => String(index % 10))
+        .join(""));
+  });
+
   it("batch reduction preserves stream text, cursors, and terminal state", () => {
     const events = [
       runEvent({
@@ -313,6 +341,23 @@ describe("runtime reducers", () => {
     expect(started.activeRunIds).toEqual(["run-1"]);
     expect(completed.activeRunIds).toEqual([]);
     expect(completed.runs["run-1"].terminalEventType).toBe("run_completed");
+  });
+
+  it("preserves active run identity while an already-active run streams", () => {
+    const started = reduceRunEvent(
+      initialRuntimeState,
+      runEvent({ event_id: 1, event_type: "run_started" }),
+    );
+    const streamed = reduceRunEvent(
+      started,
+      runEvent({
+        event_id: 2,
+        event_type: "text_delta",
+        payload_json: JSON.stringify({ delta: "next" }),
+      }),
+    );
+
+    expect(streamed.activeRunIds).toBe(started.activeRunIds);
   });
 
   it("marks terminal structured output as visible runtime output", () => {
@@ -516,6 +561,21 @@ describe("runtime reducers", () => {
       instanceId: "worker-a",
       roleId: "MainAgent",
     });
+    expect(state.runs["run-1"].targetInstanceId).toBeUndefined();
+  });
+
+  it("derives the primary instance only from a run lifecycle event", () => {
+    const state = reduceRunEvent(
+      initialRuntimeState,
+      runEvent({
+        event_id: 1,
+        event_type: "run_started",
+        instance_id: "instance-root",
+        role_id: "RenamedPrimary",
+      }),
+    );
+
+    expect(state.runs["run-1"].targetInstanceId).toBe("instance-root");
   });
 
   it("keeps subagent stream events isolated from parent run state", () => {
@@ -595,6 +655,90 @@ describe("runtime reducers", () => {
         text: "downloading",
       },
     ]);
+  });
+
+  it.each([
+    ["running", "subagent_running", "open", null, true],
+    ["paused", "awaiting_manual_action", "closed", "run_paused", false],
+    ["completed", "terminal", "closed", "run_completed", false],
+    ["failed", "terminal", "closed", "run_failed", false],
+    ["stopped", "idle", "closed", "run_stopped", false],
+  ] as const)(
+    "maps reported subagent %s state without waiting for a child stream terminal event",
+    (reportedStatus, runPhase, expectedStatus, terminalEventType, active) => {
+      const childRunId = "child-run-status-matrix";
+      const state = reduceRunEvent(
+        initialRuntimeState,
+        runEvent({
+          event_id: 12,
+          event_type: "subagent_session_status_changed",
+          instance_id: "child-instance",
+          role_id: "reviewer",
+          run_id: childRunId,
+          trace_id: childRunId,
+          payload_json: JSON.stringify({
+            run_phase: runPhase,
+            run_status: reportedStatus,
+            status: reportedStatus,
+            subagent_instance_id: "child-instance",
+            subagent_role_id: "reviewer",
+            subagent_run_id: childRunId,
+          }),
+        }),
+      );
+
+      expect(state.runs[childRunId]).toMatchObject({
+        scope: "subagent",
+        status: expectedStatus,
+        terminalEventType,
+      });
+      expect(state.activeRunIds.includes(childRunId)).toBe(active);
+    },
+  );
+
+  it("keeps a completed parent closed while a reported child remains running", () => {
+    const parentRunId = "parent-run-completed-child-running";
+    const childRunId = "child-run-still-running";
+    const parentCompleted = reduceRunEvent(
+      initialRuntimeState,
+      runEvent({
+        event_id: 20,
+        event_type: "run_completed",
+        run_id: parentRunId,
+        trace_id: parentRunId,
+      }),
+    );
+    const withRunningChild = reduceRunEvent(
+      parentCompleted,
+      runEvent({
+        event_id: 21,
+        event_type: "subagent_session_status_changed",
+        instance_id: "child-instance",
+        role_id: "reviewer",
+        run_id: childRunId,
+        trace_id: childRunId,
+        payload_json: JSON.stringify({
+          parent_run_id: parentRunId,
+          run_phase: "subagent_running",
+          run_status: "running",
+          status: "running",
+          subagent_instance_id: "child-instance",
+          subagent_role_id: "reviewer",
+          subagent_run_id: childRunId,
+        }),
+      }),
+    );
+
+    expect(withRunningChild.runs[parentRunId]).toMatchObject({
+      status: "closed",
+      terminalEventType: "run_completed",
+    });
+    expect(withRunningChild.runs[childRunId]).toMatchObject({
+      scope: "subagent",
+      status: "open",
+      terminalEventType: null,
+    });
+    expect(withRunningChild.activeRunIds).toEqual([childRunId]);
   });
 
   it("marks explicit child run references as subagent scope before UUID child events arrive", () => {

@@ -18,6 +18,7 @@ export interface TimelineEntry {
   text: string;
   payload: JsonValue;
   eventId: number;
+  lastMergedEventId?: number;
   occurredAt: string;
 }
 
@@ -26,6 +27,7 @@ export interface RuntimeRunState {
   sessionId?: string;
   promptText?: string;
   createdAt?: string;
+  targetInstanceId?: string;
   targetRoleId?: string;
   scope?: "session" | "subagent";
   status: StreamStatus;
@@ -126,10 +128,18 @@ export function reduceRunEvent(
     eventId,
     occurredAt: event.occurred_at ?? "",
   } satisfies TimelineEntry;
-  const entries = appendTimelineEntry(existing.entries, nextEntry);
-  const terminalEventType = isRunLifecycleEntry(nextEntry.kind)
-    ? terminalEventTypeFromEntries(entries, existing.terminalEventType)
-    : existing.terminalEventType;
+  const entries = appendTimelineEntry(
+    existing.entries,
+    nextEntry,
+    existing.seenEventIdRanges ?? [],
+  );
+  const reportedSubagentTerminalEventType =
+    subagentTerminalEventTypeFromStatusEntry(nextEntry);
+  const terminalEventType = reportedSubagentTerminalEventType !== undefined
+    ? reportedSubagentTerminalEventType
+    : isRunLifecycleEntry(nextEntry.kind)
+      ? terminalEventTypeFromEntries(entries, existing.terminalEventType)
+      : existing.terminalEventType;
   const status: StreamStatus = terminalEventType === null ? "open" : "closed";
   const nextRun: RuntimeRunState = {
     ...existing,
@@ -149,12 +159,7 @@ export function reduceRunEvent(
     entries,
   };
 
-  const activeRunIds = new Set(state.activeRunIds);
-  if (status === "closed") {
-    activeRunIds.delete(runId);
-  } else {
-    activeRunIds.add(runId);
-  }
+  const activeRunIds = nextActiveRunIds(state.activeRunIds, runId, status);
 
   const nextRuns = markReferencedSubagentRuns(
     {
@@ -169,8 +174,22 @@ export function reduceRunEvent(
   return {
     ...state,
     runs: nextRuns,
-    activeRunIds: Array.from(activeRunIds),
+    activeRunIds,
   };
+}
+
+function nextActiveRunIds(
+  activeRunIds: string[],
+  runId: string,
+  status: StreamStatus,
+): string[] {
+  const activeIndex = activeRunIds.indexOf(runId);
+  if (status === "closed") {
+    return activeIndex < 0
+      ? activeRunIds
+      : activeRunIds.filter((activeRunId) => activeRunId !== runId);
+  }
+  return activeIndex >= 0 ? activeRunIds : [...activeRunIds, runId];
 }
 
 export function reduceRunEvents(
@@ -234,6 +253,9 @@ function runtimeRunStateWithScope(
       : {}),
     ...(currentRun?.createdAt !== undefined ? { createdAt: currentRun.createdAt } : {}),
     ...(currentRun?.promptText !== undefined ? { promptText: currentRun.promptText } : {}),
+    ...(currentRun?.targetInstanceId !== undefined
+      ? { targetInstanceId: currentRun.targetInstanceId }
+      : {}),
     ...(currentRun?.targetRoleId !== undefined
       ? { targetRoleId: currentRun.targetRoleId }
       : {}),
@@ -320,6 +342,9 @@ function runtimeMetadataFromEvent(
   event: ReturnType<typeof parseRunEvent>,
 ): Partial<RuntimeRunState> {
   const metadata: Partial<RuntimeRunState> = {};
+  if (event.event_type === "subagent_session_status_changed") {
+    metadata.scope = "subagent";
+  }
   if (existing.sessionId === undefined && event.session_id.trim().length > 0) {
     metadata.sessionId = event.session_id;
   }
@@ -327,6 +352,15 @@ function runtimeMetadataFromEvent(
     const roleId = event.role_id?.trim() ?? "";
     if (roleId.length > 0) {
       metadata.targetRoleId = roleId;
+    }
+  }
+  if (
+    existing.targetInstanceId === undefined &&
+    (event.event_type === "run_started" || event.event_type === "run_resumed")
+  ) {
+    const instanceId = event.instance_id?.trim() ?? "";
+    if (instanceId.length > 0) {
+      metadata.targetInstanceId = instanceId;
     }
   }
   if (existing.createdAt === undefined) {
@@ -349,6 +383,53 @@ function nextTerminalEventType(
     return eventType;
   }
   return existingTerminalEventType;
+}
+
+function subagentTerminalEventTypeFromStatusEntry(
+  entry: TimelineEntry,
+): RunEventType | null | undefined {
+  if (entry.kind !== "subagent_session_status_changed") {
+    return undefined;
+  }
+  const payload = jsonObject(entry.payload);
+  if (payload === null) {
+    return undefined;
+  }
+  const status = firstPayloadString(payload, ["run_status", "status"])
+    ?.trim()
+    .toLowerCase() ?? "";
+  const phase = firstPayloadString(payload, ["run_phase"])
+    ?.trim()
+    .toLowerCase() ?? "";
+  if (status === "completed") {
+    return "run_completed";
+  }
+  if (status === "failed" || status === "error") {
+    return "run_failed";
+  }
+  if (
+    status === "stopped" ||
+    status === "cancelled" ||
+    status === "canceled"
+  ) {
+    return "run_stopped";
+  }
+  if (
+    status === "paused" ||
+    phase === "awaiting_manual_action" ||
+    phase === "awaiting_subagent_followup" ||
+    phase === "awaiting_recovery"
+  ) {
+    return "run_paused";
+  }
+  if (
+    status === "queued" ||
+    status === "running" ||
+    status === "stopping"
+  ) {
+    return null;
+  }
+  return undefined;
 }
 
 function rememberSeenEventKey(
@@ -476,6 +557,7 @@ function visibleTextFromStreamPayload(payload: JsonValue): string {
 function appendTimelineEntry(
   entries: TimelineEntry[],
   nextEntry: TimelineEntry,
+  seenEventIdRanges: Array<[number, number]>,
 ): TimelineEntry[] {
   if (!shouldRenderEntry(nextEntry.kind)) {
     return entries;
@@ -484,6 +566,26 @@ function appendTimelineEntry(
   const compactedEntry = compactAdjacentDeltaEntry(lastEntry, nextEntry);
   if (compactedEntry !== null) {
     return [...entries.slice(0, -1), compactedEntry];
+  }
+  const interleavedDeltaIndex = previousStreamEntryIndex(entries, nextEntry);
+  if (
+    interleavedDeltaIndex >= 0 &&
+    timelineEntriesCoverEventGap(
+      seenEventIdRanges,
+      entries[interleavedDeltaIndex],
+      nextEntry,
+    )
+  ) {
+    const interleavedDelta = compactAdjacentDeltaEntry(
+      entries[interleavedDeltaIndex],
+      nextEntry,
+      true,
+    );
+    if (interleavedDelta !== null) {
+      return entries.map((entry, index) =>
+        index === interleavedDeltaIndex ? interleavedDelta : entry
+      );
+    }
   }
   if (
     lastEntry === undefined ||
@@ -502,7 +604,9 @@ function appendTimelineEntry(
 function compactAdjacentDeltaEntry(
   previous: TimelineEntry | undefined,
   next: TimelineEntry,
+  allowCoveredEventGap = false,
 ): TimelineEntry | null {
+  const previousEndEventId = previous?.lastMergedEventId ?? previous?.eventId ?? 0;
   if (
     previous === undefined ||
     previous.kind !== next.kind ||
@@ -511,7 +615,11 @@ function compactAdjacentDeltaEntry(
     previous.instanceId !== next.instanceId ||
     previous.roleId !== next.roleId ||
     previous.eventId <= 0 ||
-    next.eventId !== previous.eventId + 1
+    (
+      allowCoveredEventGap
+        ? next.eventId <= previousEndEventId
+        : next.eventId !== previousEndEventId + 1
+    )
   ) {
     return null;
   }
@@ -531,13 +639,59 @@ function compactAdjacentDeltaEntry(
   }
   return {
     ...previous,
-    eventId: next.eventId,
+    lastMergedEventId: next.eventId,
     payload: {
       ...previousPayload,
       [previousText.key]: previousText.value + nextText.value,
     },
     text: previousText.value + nextText.value,
   };
+}
+
+function timelineEntriesCoverEventGap(
+  seenEventIdRanges: Array<[number, number]>,
+  previous: TimelineEntry | undefined,
+  next: TimelineEntry,
+): boolean {
+  if (previous === undefined) {
+    return false;
+  }
+  let coveredThrough = previous.lastMergedEventId ?? previous.eventId;
+  const requiredEnd = next.eventId - 1;
+  if (coveredThrough >= requiredEnd) {
+    return true;
+  }
+  for (const [rangeStart, rangeEnd] of seenEventIdRanges) {
+    if (rangeEnd <= coveredThrough) {
+      continue;
+    }
+    if (rangeStart > coveredThrough + 1) {
+      return false;
+    }
+    coveredThrough = Math.max(coveredThrough, rangeEnd);
+    if (coveredThrough >= requiredEnd) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function previousStreamEntryIndex(
+  entries: TimelineEntry[],
+  next: TimelineEntry,
+): number {
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (
+      entry !== undefined &&
+      entry.runId === next.runId &&
+      entry.instanceId === next.instanceId &&
+      entry.roleId === next.roleId
+    ) {
+      return index;
+    }
+  }
+  return -1;
 }
 
 function isCompactableDeltaKind(kind: RunEventType | "message"): boolean {

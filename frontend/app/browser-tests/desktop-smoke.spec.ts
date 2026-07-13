@@ -16,7 +16,7 @@ import { chromium, expect, test, type Browser, type Page } from "@playwright/tes
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(packageRoot, "../..");
 const frontendRoot = join(repoRoot, "frontend", "dist");
-const mainScript = join(packageRoot, "dist-desktop", "desktop", "main.js");
+const testMainScript = join(packageRoot, "dist-desktop", "desktop", "testMain.js");
 const desktopArtifactRoot = join(repoRoot, ".tmp", "frontend-desktop");
 const desktopReleaseRoot = join(repoRoot, ".tmp", "desktop-release");
 const packagedAppRoot = join(desktopReleaseRoot, "win-unpacked");
@@ -130,7 +130,7 @@ test("packaged distribution starts bundled backend and survives renderer refresh
 
 test("electron loads renderer with isolated preload", async () => {
   expect(
-    existsSync(mainScript),
+    existsSync(testMainScript),
     "Run npm run desktop:build before desktop smoke tests.",
   ).toBe(true);
 
@@ -209,7 +209,6 @@ test("electron shows backend startup failure", async () => {
   const backend = await serveDesktopBackend(false);
   const electron = await launchElectron(backend.url, {
     AGENT_TEAMS_DESKTOP_COPY_TEXT_LOG: copyLog,
-    AGENT_TEAMS_DESKTOP_TEST_MODE: "1",
     AGENT_TEAMS_BACKEND_STARTUP_TIMEOUT_MS: "900",
   });
   try {
@@ -269,7 +268,6 @@ test("electron open external uses preload main boundary", async () => {
   const backend = await serveDesktopBackend(true);
   const electron = await launchElectron(backend.url, {
     AGENT_TEAMS_DESKTOP_OPEN_EXTERNAL_LOG: externalLog,
-    AGENT_TEAMS_DESKTOP_TEST_MODE: "1",
   });
   try {
     const browser = await connectToElectron(electron.debugPort);
@@ -334,7 +332,6 @@ test("electron managed backend starts and stops with main lifecycle", async () =
     AGENT_TEAMS_DESKTOP_AUTO_QUIT_AFTER_READY_MS: "750",
     AGENT_TEAMS_DESKTOP_AUTO_QUIT_TRACE: traceLog,
     AGENT_TEAMS_DESKTOP_MANAGED_REQUEST_LOG: requestLog,
-    AGENT_TEAMS_DESKTOP_TEST_MODE: "1",
     AGENT_TEAMS_BACKEND_STARTUP_TIMEOUT_MS: "4000",
   });
   try {
@@ -598,7 +595,7 @@ async function launchElectron(
     [
       `--remote-debugging-port=${debugPort}`,
       `--user-data-dir=${userDataDir}`,
-      mainScript,
+      testMainScript,
     ],
     {
       cwd: packageRoot,
@@ -619,7 +616,6 @@ async function launchPackagedElectron(): Promise<ElectronLaunch> {
     ...process.env,
     AGENT_TEAMS_BACKEND_HEALTH_POLL_MS: "100",
     AGENT_TEAMS_BACKEND_STARTUP_TIMEOUT_MS: "90000",
-    AGENT_TEAMS_DESKTOP_TEST_MODE: "1",
   };
   delete env.AGENT_TEAMS_BACKEND_COMMAND;
   delete env.AGENT_TEAMS_BACKEND_COMMAND_ARGS_JSON;

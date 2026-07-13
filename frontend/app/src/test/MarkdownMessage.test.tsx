@@ -1,14 +1,7 @@
-import { act, render } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { render } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
 
-import {
-  MarkdownMessage,
-  streamingMarkdownInterval,
-} from "../features/timeline/MarkdownMessage";
-
-afterEach(() => {
-  vi.useRealTimers();
-});
+import { MarkdownMessage } from "../features/timeline/MarkdownMessage";
 
 describe("MarkdownMessage", () => {
   it("keeps the markdown tree and container mounted when a stream settles", () => {
@@ -49,45 +42,75 @@ describe("MarkdownMessage", () => {
     expect(container.querySelectorAll(".at-message-markdown > p")).toHaveLength(1);
   });
 
-  it("coalesces rapid streaming text without starving the latest update", () => {
-    vi.useFakeTimers();
+  it("renders every streaming delta immediately in the existing markdown tree", () => {
     const { container, rerender } = render(
       <MarkdownMessage streaming text="chunk 1" />,
     );
     const markdownContainer = container.querySelector(".at-message-markdown");
+    const liveParagraph = markdownContainer?.querySelector("p");
 
     rerender(<MarkdownMessage streaming text="chunk 1 chunk 2" />);
     rerender(<MarkdownMessage streaming text="chunk 1 chunk 2 chunk 3" />);
 
-    expect(markdownContainer?.querySelector("p")).toHaveTextContent("chunk 1");
-    expect(container.querySelector(".at-message-streaming-tail")?.textContent).toBe(
-      " chunk 2 chunk 3",
-    );
-    expect(markdownContainer).toHaveTextContent("chunk 1 chunk 2 chunk 3");
-    act(() => vi.advanceTimersByTime(streamingMarkdownInterval(21)));
+    expect(markdownContainer?.querySelector("p")).toBe(liveParagraph);
     expect(markdownContainer).toHaveTextContent("chunk 1 chunk 2 chunk 3");
     expect(container.querySelector(".at-message-streaming-tail")).toBeNull();
     expect(container.querySelector(".at-message-markdown")).toBe(markdownContainer);
   });
 
-  it("renders exact terminal markdown immediately without waiting for a live buffer", () => {
-    vi.useFakeTimers();
+  it("preserves the live markdown DOM when the same text reaches terminal state", () => {
     const { container, rerender } = render(
-      <MarkdownMessage streaming text="partial" />,
+      <MarkdownMessage streaming text="complete **answer**" />,
     );
-    rerender(<MarkdownMessage streaming text="partial **queued**" />);
-    expect(container.querySelector("strong")).toBeNull();
+    const markdownContainer = container.querySelector(".at-message-markdown");
+    const liveParagraph = markdownContainer?.querySelector("p");
+    const liveStrong = markdownContainer?.querySelector("strong");
 
     rerender(<MarkdownMessage text="complete **answer**" />);
 
-    expect(container.querySelector("strong")).toHaveTextContent("answer");
+    expect(container.querySelector(".at-message-markdown")).toBe(markdownContainer);
+    expect(container.querySelector("p")).toBe(liveParagraph);
+    expect(container.querySelector("strong")).toBe(liveStrong);
     expect(container.querySelector(".at-message-markdown")).not.toHaveAttribute(
-      "data-stream-buffered",
+      "data-streaming",
+    );
+  });
+
+  it("keeps code block containers mounted while terminal highlighting activates", () => {
+    const code = "```typescript\nconst answer = 42;\n```";
+    const { container, rerender } = render(
+      <MarkdownMessage streaming text={code} />,
+    );
+    const livePre = container.querySelector("pre");
+    const liveCode = container.querySelector("code");
+
+    rerender(<MarkdownMessage text={code} />);
+
+    expect(container.querySelector("pre")).toBe(livePre);
+    expect(container.querySelector("code")).toBe(liveCode);
+    expect(liveCode).toHaveClass("hljs");
+  });
+
+  it("keeps completed markdown blocks mounted while later blocks grow", () => {
+    const { container, rerender } = render(
+      <MarkdownMessage streaming text={"Stable first block.\n\nSecond"} />,
+    );
+    const firstParagraph = container.querySelectorAll("p")[0];
+
+    rerender(
+      <MarkdownMessage
+        streaming
+        text={"Stable first block.\n\nSecond block receives **more** text."}
+      />,
+    );
+
+    expect(container.querySelectorAll("p")[0]).toBe(firstParagraph);
+    expect(container.querySelectorAll("p")[1]).toHaveTextContent(
+      "Second block receives more text.",
     );
   });
 
   it("keeps a single plain-text node mounted across live thinking increments", () => {
-    vi.useFakeTimers();
     const { container, rerender } = render(
       <MarkdownMessage
         streaming
@@ -105,8 +128,6 @@ describe("MarkdownMessage", () => {
         text="Inspecting the runtime state **without reparsing**"
       />,
     );
-    act(() => vi.advanceTimersByTime(500));
-
     expect(container.querySelector(".at-message-markdown")).toBe(
       markdownContainer,
     );
@@ -120,9 +141,16 @@ describe("MarkdownMessage", () => {
     expect(container.querySelector("strong")).toBeNull();
   });
 
-  it("keeps even very large streams below the one-second feedback budget", () => {
-    expect(streamingMarkdownInterval(2_000)).toBe(80);
-    expect(streamingMarkdownInterval(8_000)).toBe(180);
-    expect(streamingMarkdownInterval(80_000)).toBe(400);
+  it("renders a large delta synchronously without a timer-backed staging node", () => {
+    const firstText = `# Result\n\n${"A".repeat(80_000)}`;
+    const secondText = `${firstText} visible-now`;
+    const { container, rerender } = render(
+      <MarkdownMessage streaming text={firstText} />,
+    );
+
+    rerender(<MarkdownMessage streaming text={secondText} />);
+
+    expect(container).toHaveTextContent("visible-now");
+    expect(container.querySelector(".at-message-streaming-tail")).toBeNull();
   });
 });

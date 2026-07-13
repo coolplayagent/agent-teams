@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo, useLayoutEffect, useRef } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { rehypeCodeHighlight } from "./markdownHighlight";
@@ -9,10 +9,6 @@ interface MarkdownMessageProps {
   streaming?: boolean;
   text: string;
 }
-
-const STREAMING_MARKDOWN_SHORT_INTERVAL_MS = 80;
-const STREAMING_MARKDOWN_MEDIUM_INTERVAL_MS = 180;
-const STREAMING_MARKDOWN_LONG_INTERVAL_MS = 400;
 
 const markdownComponents: Components = {
   a({ children, href, ...props }) {
@@ -41,18 +37,7 @@ export const MarkdownMessage = memo(function MarkdownMessage({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const lastMeasuredSizeRef = useRef<number | null>(null);
   const renderPlainStreaming = streaming && streamingPresentation === "plain";
-  const bufferedText = useStreamingMarkdownBuffer(
-    text,
-    streaming && !renderPlainStreaming,
-  );
-  const markdownText = stripMarkdownFrontmatter(
-    streaming ? bufferedText : text,
-  );
-  const plainStreamingText = stripMarkdownFrontmatter(text);
-  const unbufferedTail =
-    streaming && !renderPlainStreaming && text.startsWith(bufferedText)
-      ? text.slice(bufferedText.length)
-      : "";
+  const visibleText = stripMarkdownFrontmatter(text);
   useLayoutEffect(() => {
     if (resizeTimelineRow === undefined) {
       return;
@@ -76,16 +61,16 @@ export const MarkdownMessage = memo(function MarkdownMessage({
       lastMeasuredSizeRef.current = size;
       resizeTimelineRow(index, size);
     }
-  }, [markdownText, plainStreamingText, resizeTimelineRow]);
+  }, [visibleText, resizeTimelineRow]);
   return (
     <div
       className="at-message-markdown"
-      data-stream-buffered={streaming ? "true" : undefined}
+      data-streaming={streaming ? "true" : undefined}
       ref={containerRef}
     >
       {renderPlainStreaming ? (
         <span className="at-message-streaming-plain">
-          {plainStreamingText}
+          {visibleText}
         </span>
       ) : (
         <ReactMarkdown
@@ -93,63 +78,12 @@ export const MarkdownMessage = memo(function MarkdownMessage({
           rehypePlugins={streaming ? [] : [rehypeCodeHighlight]}
           remarkPlugins={[remarkGfm]}
         >
-          {markdownText}
+          {visibleText}
         </ReactMarkdown>
       )}
-      {unbufferedTail.length > 0 ? (
-        <span
-          className="at-message-streaming-tail"
-          style={{ whiteSpace: "pre-wrap" }}
-        >
-          {unbufferedTail}
-        </span>
-      ) : null}
     </div>
   );
 });
-
-function useStreamingMarkdownBuffer(text: string, streaming: boolean): string {
-  const [bufferedText, setBufferedText] = useState(text);
-  const latestTextRef = useRef(text);
-  const timerRef = useRef<number | null>(null);
-  latestTextRef.current = text;
-
-  useEffect(() => {
-    if (!streaming) {
-      if (timerRef.current !== null) {
-        window.clearTimeout(timerRef.current);
-        timerRef.current = null;
-      }
-      setBufferedText(text);
-      return;
-    }
-    if (bufferedText === text || timerRef.current !== null) {
-      return;
-    }
-    timerRef.current = window.setTimeout(() => {
-      timerRef.current = null;
-      setBufferedText(latestTextRef.current);
-    }, streamingMarkdownInterval(text.length));
-  }, [bufferedText, streaming, text]);
-
-  useEffect(() => () => {
-    if (timerRef.current !== null) {
-      window.clearTimeout(timerRef.current);
-    }
-  }, []);
-
-  return bufferedText;
-}
-
-export function streamingMarkdownInterval(textLength: number): number {
-  if (textLength < 4_000) {
-    return STREAMING_MARKDOWN_SHORT_INTERVAL_MS;
-  }
-  if (textLength < 16_000) {
-    return STREAMING_MARKDOWN_MEDIUM_INTERVAL_MS;
-  }
-  return STREAMING_MARKDOWN_LONG_INTERVAL_MS;
-}
 
 export function stripMarkdownFrontmatter(text: string): string {
   const frontmatterMatch = text.match(/^\uFEFF?---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/);

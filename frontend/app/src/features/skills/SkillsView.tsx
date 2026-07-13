@@ -66,11 +66,11 @@ type SkillsDrawer = "clawhub" | "install";
 
 type DetailTarget =
   | { kind: "installed"; ref: string }
-  | { kind: "market"; slug: string; version?: string | null };
+  | { item: ClawHubSkillMarketSearchItem; kind: "market" };
 
 interface SkillDetailView {
   description: string;
-  markdown: string;
+  markdown: string | null;
   rows: DetailRow[];
   subtitle: string;
   title: string;
@@ -350,9 +350,8 @@ export function SkillsView() {
             }}
             onOpenDetail={(item) =>
               setDetailTarget({
+                item,
                 kind: "market",
-                slug: item.slug,
-                version: item.version ?? null,
               })
             }
             onUninstall={confirmMarketUninstall}
@@ -916,15 +915,19 @@ function SkillDetailModal({
         return runtimeDetailView(detail, t);
       }
       const detail = await getClawHubSkillMarketDetail(
-        detailTarget.slug,
-        detailTarget.version ?? null,
+        detailTarget.item.slug,
+        detailTarget.item.version ?? null,
       );
-      return marketDetailView(detail, t);
+      return marketDetailView(detail, detailTarget.item, t);
     },
     enabled: detailTarget !== null,
   });
 
-  const detail = detailQuery.data;
+  const summaryDetail =
+    detailTarget?.kind === "market"
+      ? marketSummaryDetailView(detailTarget.item, t)
+      : null;
+  const detail = detailQuery.data ?? summaryDetail;
   return (
     <Modal
       centered
@@ -937,7 +940,9 @@ function SkillDetailModal({
       title={t("skillsDetail")}
       width={720}
     >
-      {detailQuery.isLoading ? <Skeleton active paragraph={{ rows: 8 }} /> : null}
+      {detailQuery.isLoading && detail === null ? (
+        <Skeleton active paragraph={{ rows: 8 }} />
+      ) : null}
       {detailQuery.isError ? (
         <Alert message={t("skillsDetailsLoadFailed")} showIcon type="error" />
       ) : null}
@@ -951,7 +956,14 @@ function SkillDetailModal({
           <section className="at-skills-detail-section">
             <h4>{t("skillsManifest")}</h4>
             <div className="at-skills-detail-markdown">
-              <MarkdownMessage text={detail.markdown || t("skillsNoManifest")} />
+              {detail.markdown ? (
+                <MarkdownMessage text={detail.markdown} />
+              ) : (
+                <Empty
+                  description={t("skillsNoManifest")}
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                />
+              )}
             </div>
           </section>
           <dl className="at-skills-detail-list">
@@ -1027,29 +1039,116 @@ function runtimeDetailView(detail: RuntimeSkillDetail, t: Translate): SkillDetai
 
 function marketDetailView(
   detail: ClawHubSkillMarketDetail,
+  summary: ClawHubSkillMarketSearchItem,
   t: Translate,
 ): SkillDetailView {
-  const stats = detail.stats;
+  const stats = mergeMarketStats(summary.stats, detail.stats);
   return {
-    description: detail.summary,
-    markdown: detail.manifest_content ?? detail.summary,
-    rows: [
-      { code: true, label: t("skillsRef"), value: detail.slug },
-      { label: t("skillsVersion"), value: detail.version ?? t("skillsUnknown") },
+    description: firstNonEmpty(summary.summary, detail.summary) ?? "",
+    markdown: firstNonEmpty(detail.manifest_content) ?? null,
+    rows: marketDetailRows(
       {
-        label: t("skillsOwner"),
-        value: detail.owner_display_name ?? detail.owner_handle ?? t("skillsUnknown"),
+        owner:
+          firstNonEmpty(
+            summary.owner_display_name,
+            summary.owner_handle,
+            detail.owner_display_name,
+            detail.owner_handle,
+          ) ?? null,
+        ref: firstNonEmpty(summary.slug, detail.slug),
+        stats,
+        version: firstNonEmpty(summary.version, detail.version),
       },
-      {
-        label: t("skillsInstalls"),
-        value: formatCount(stats?.installs_current ?? stats?.installs_all_time),
-      },
-      { label: t("skillsStars"), value: formatCount(stats?.stars) },
-      { label: t("skillsDownloads"), value: formatCount(stats?.downloads) },
-    ],
+      t,
+    ),
     subtitle: t("skillsMarketSource"),
-    title: detail.title || detail.slug,
+    title:
+      firstNonEmpty(summary.title, detail.title, summary.slug, detail.slug) ?? "",
   };
+}
+
+function marketSummaryDetailView(
+  summary: ClawHubSkillMarketSearchItem,
+  t: Translate,
+): SkillDetailView {
+  return {
+    description: summary.summary.trim(),
+    markdown: null,
+    rows: marketDetailRows(
+      {
+        owner:
+          firstNonEmpty(summary.owner_display_name, summary.owner_handle) ?? null,
+        ref: firstNonEmpty(summary.slug),
+        stats: summary.stats ?? null,
+        version: firstNonEmpty(summary.version),
+      },
+      t,
+    ),
+    subtitle: t("skillsMarketSource"),
+    title: marketTitle(summary),
+  };
+}
+
+function marketDetailRows(
+  detail: {
+    owner: string | null;
+    ref: string | null;
+    stats: ClawHubSkillMarketSearchItem["stats"];
+    version: string | null;
+  },
+  t: Translate,
+): DetailRow[] {
+  const installs = detail.stats?.installs_current ?? detail.stats?.installs_all_time;
+  return [
+    detail.ref
+      ? { code: true, label: t("skillsRef"), value: detail.ref }
+      : null,
+    detail.version
+      ? { label: t("skillsVersion"), value: detail.version }
+      : null,
+    detail.owner ? { label: t("skillsOwner"), value: detail.owner } : null,
+    countDetailRow(t("skillsInstalls"), installs),
+    countDetailRow(t("skillsStars"), detail.stats?.stars),
+    countDetailRow(t("skillsDownloads"), detail.stats?.downloads),
+  ].filter((row): row is DetailRow => row !== null);
+}
+
+function countDetailRow(
+  label: string,
+  value: number | null | undefined,
+): DetailRow | null {
+  return typeof value === "number" && Number.isFinite(value)
+    ? { label, value: formatCount(value) }
+    : null;
+}
+
+function mergeMarketStats(
+  primary: ClawHubSkillMarketSearchItem["stats"],
+  fallback: ClawHubSkillMarketSearchItem["stats"],
+): ClawHubSkillMarketSearchItem["stats"] {
+  if (primary === null || primary === undefined) {
+    return fallback ?? null;
+  }
+  return {
+    comments: primary.comments ?? fallback?.comments,
+    downloads: primary.downloads ?? fallback?.downloads,
+    installs_all_time: primary.installs_all_time ?? fallback?.installs_all_time,
+    installs_current: primary.installs_current ?? fallback?.installs_current,
+    stars: primary.stars ?? fallback?.stars,
+    versions: primary.versions ?? fallback?.versions,
+  };
+}
+
+function firstNonEmpty(
+  ...values: Array<string | null | undefined>
+): string | null {
+  for (const value of values) {
+    const normalized = value?.trim();
+    if (normalized) {
+      return normalized;
+    }
+  }
+  return null;
 }
 
 function marketTitle(item: ClawHubSkillMarketSearchItem): string {
@@ -1098,7 +1197,7 @@ function skillSourceLabel(source: SkillSource, t: Translate): string {
 
 function formatCount(value: number | null | undefined): string {
   if (typeof value !== "number" || !Number.isFinite(value)) {
-    return "0";
+    return "";
   }
   return new Intl.NumberFormat(undefined, {
     maximumFractionDigits: value >= 10000 ? 1 : 0,

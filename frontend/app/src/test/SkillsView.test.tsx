@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -258,6 +259,89 @@ describe("SkillsView", () => {
         version: "1.0.0",
       }),
     );
+  });
+
+  it("preserves the clicked market summary when detail fields are unavailable", async () => {
+    browseClawHubSkillMarketMock.mockResolvedValueOnce({
+      items: [
+        {
+          installed: false,
+          owner_display_name: "Ada Lovelace",
+          slug: "reliable-writer",
+          stats: {
+            downloads: 467000,
+            installs_current: 29,
+            stars: 3917,
+          },
+          summary: "Draft reliable project updates.",
+          title: "Reliable Writer",
+          version: "2.3.0",
+        },
+      ],
+      next_cursor: null,
+      ok: true,
+      query: "",
+      sort: "popular",
+    });
+    getClawHubSkillMarketDetailMock.mockResolvedValueOnce({
+      files: [],
+      manifest_content: null,
+      ok: true,
+      slug: "reliable-writer",
+      stats: { downloads: 0, installs_current: 0, stars: 0 },
+      summary: "",
+      title: "reliable-writer",
+      version: null,
+    });
+    renderSkills();
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Open skill Reliable Writer",
+      }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Reliable Writer")).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("Draft reliable project updates."),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText("reliable-writer")).toBeInTheDocument();
+    expect(within(dialog).getByText("Ada Lovelace")).toBeInTheDocument();
+    expect(within(dialog).getByText("2.3.0")).toBeInTheDocument();
+    expect(within(dialog).getByText("29")).toBeInTheDocument();
+    expect(within(dialog).getByText("3,917")).toBeInTheDocument();
+    expect(within(dialog).getByText(/46[.,]7(?:K|万)/)).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("No manifest content available."),
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByText("Unknown")).not.toBeInTheDocument();
+    expect(within(dialog).queryByText("0")).not.toBeInTheDocument();
+  });
+
+  it("keeps the clicked market summary visible when detail loading fails", async () => {
+    getClawHubSkillMarketDetailMock.mockRejectedValueOnce(
+      new Error("detail unavailable"),
+    );
+    renderSkills();
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Open skill Writer",
+      }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Writer")).toBeInTheDocument();
+    expect(within(dialog).getByText("Draft project updates.")).toBeInTheDocument();
+    expect(within(dialog).getByText("1.0.0")).toBeInTheDocument();
+    expect(within(dialog).getByText("12")).toBeInTheDocument();
+    expect(
+      await within(dialog).findByText("Could not load skill detail."),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("No manifest content available."),
+    ).toBeInTheDocument();
   });
 
   it("loads the next ClawHub market page from the browse cursor", async () => {

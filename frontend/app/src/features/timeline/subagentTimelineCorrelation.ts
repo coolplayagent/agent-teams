@@ -127,7 +127,7 @@ function childPrompt(
     }
     return instanceId.length > 0 || taskId.length > 0 || runId.length > 0;
   });
-  if (candidates.length === 0) {
+  if (candidates.length !== 1) {
     return "";
   }
   return messageText(candidates[0] ?? {});
@@ -141,6 +141,15 @@ function messageToolCallSites(message: TimelineMessage): ToolCallSite[] {
       ("kind" in part && part.kind === "tool-call") ||
       ("part_kind" in part && part.part_kind === "tool-call")
     )) {
+      return [];
+    }
+    if (
+      (part.action_family !== undefined && part.action_family !== "subagent") ||
+      (
+        part.semantic_category !== undefined &&
+        part.semantic_category !== "orchestration"
+      )
+    ) {
       return [];
     }
     const callId = normalized(part.tool_call_id);

@@ -8378,6 +8378,110 @@ describe("MessageTimeline", () => {
     }));
   });
 
+  it("does not correlate a legacy record when the child prompt is ambiguous", async () => {
+    const onSubagentOpen = vi.fn();
+    const prompt = "Inspect the ambiguous child.";
+    listSessionSubagentsMock.mockResolvedValue([{
+      instance_id: "ambiguous-instance",
+      role_id: "Explorer",
+      run_id: "ambiguous-run",
+      task_id: "ambiguous-task",
+      title: "Ambiguous child",
+    }]);
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message: { parts: [{
+          args: { prompt, role_id: "Explorer" },
+          kind: "tool-call",
+          tool_call_id: "ambiguous-call",
+          tool_name: "delegate_worker",
+        }] },
+        message_id: "ambiguous-parent-call",
+        role: "assistant",
+        trace_id: "ambiguous-parent-run",
+      },
+      {
+        content: prompt,
+        instance_id: "ambiguous-instance",
+        message_id: "ambiguous-child-prompt-1",
+        role: "user",
+        task_id: "ambiguous-task",
+        trace_id: "ambiguous-run",
+      },
+      {
+        content: "A later follow-up makes the child source ambiguous.",
+        instance_id: "ambiguous-instance",
+        message_id: "ambiguous-child-prompt-2",
+        role: "user",
+        task_id: "ambiguous-task",
+        trace_id: "ambiguous-run",
+      },
+    ]);
+
+    const { container } = renderTimeline("session-1", { onSubagentOpen });
+
+    const tool = await waitFor(() => {
+      const candidate = container.querySelector<HTMLElement>(
+        '[data-tool-call-id="ambiguous-call"]',
+      );
+      expect(candidate).not.toBeNull();
+      return candidate as HTMLElement;
+    });
+    expect(tool).not.toHaveClass("is-openable-subagent");
+    fireEvent.click(tool.querySelector("summary") as HTMLElement);
+    expect(onSubagentOpen).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["explicit generic action", { action_family: "generic" as const }],
+    ["explicit file-read semantics", { semantic_category: "file-read" as const }],
+  ])("does not override %s from structural arguments", async (_label, semantics) => {
+    const onSubagentOpen = vi.fn();
+    const prompt = "Inspect a non-subagent tool.";
+    listSessionSubagentsMock.mockResolvedValue([{
+      instance_id: "semantic-instance",
+      role_id: "Explorer",
+      run_id: "semantic-run",
+      task_id: "semantic-task",
+      title: "Semantic conflict",
+    }]);
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        message: { parts: [{
+          ...semantics,
+          args: { prompt, role_id: "Explorer" },
+          kind: "tool-call",
+          tool_call_id: "semantic-call",
+          tool_name: "delegate_worker",
+        }] },
+        message_id: "semantic-parent-call",
+        role: "assistant",
+        trace_id: "semantic-parent-run",
+      },
+      {
+        content: prompt,
+        instance_id: "semantic-instance",
+        message_id: "semantic-child-prompt",
+        role: "user",
+        task_id: "semantic-task",
+        trace_id: "semantic-run",
+      },
+    ]);
+
+    const { container } = renderTimeline("session-1", { onSubagentOpen });
+
+    const tool = await waitFor(() => {
+      const candidate = container.querySelector<HTMLElement>(
+        '[data-tool-call-id="semantic-call"]',
+      );
+      expect(candidate).not.toBeNull();
+      return candidate as HTMLElement;
+    });
+    expect(tool).not.toHaveClass("is-openable-subagent");
+    fireEvent.click(tool.querySelector("summary") as HTMLElement);
+    expect(onSubagentOpen).not.toHaveBeenCalled();
+  });
+
   it("keeps the submitted prompt and real answer out of verification presentation messages", async () => {
     const verificationPresentation =
       "The task finished, but verification did not pass. Review the result.";

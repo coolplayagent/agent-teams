@@ -2,7 +2,15 @@ import { App as AntApp, ConfigProvider } from "antd";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ClipboardEventHandler, KeyboardEventHandler, ReactNode } from "react";
+import {
+  forwardRef,
+  useImperativeHandle,
+  useRef,
+  type ClipboardEventHandler,
+  type ForwardedRef,
+  type KeyboardEventHandler,
+  type ReactNode,
+} from "react";
 
 import {
   createRun,
@@ -46,22 +54,41 @@ interface MockSenderProps {
 }
 
 vi.mock("@ant-design/x", () => ({
-  Sender: (props: MockSenderProps) => (
-    <textarea
-      aria-label={props["aria-label"]}
-      disabled={props.disabled}
-      onChange={(event) => props.onChange?.(event.target.value)}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" && !event.shiftKey) {
-          props.onSubmit?.(props.value ?? "");
-        }
-        props.onKeyDown?.(event);
-      }}
-      onPaste={props.onPaste}
-      placeholder={props.placeholder}
-      value={props.value ?? ""}
-    />
-  ),
+  Sender: forwardRef(function MockSender(
+    props: MockSenderProps,
+    ref: ForwardedRef<{
+      blur: () => void;
+      focus: () => void;
+      nativeElement: HTMLDivElement;
+    }>,
+  ) {
+    const rootRef = useRef<HTMLDivElement | null>(null);
+    const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+    useImperativeHandle(ref, () => ({
+      blur: () => textareaRef.current?.blur(),
+      focus: () => textareaRef.current?.focus(),
+      nativeElement: rootRef.current as HTMLDivElement,
+    }));
+    return (
+      <div ref={rootRef}>
+        <textarea
+          aria-label={props["aria-label"]}
+          disabled={props.disabled}
+          onChange={(event) => props.onChange?.(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              props.onSubmit?.(props.value ?? "");
+            }
+            props.onKeyDown?.(event);
+          }}
+          onPaste={props.onPaste}
+          placeholder={props.placeholder}
+          ref={textareaRef}
+          value={props.value ?? ""}
+        />
+      </div>
+    );
+  }),
 }));
 
 vi.mock("../api/client", () => ({
@@ -260,6 +287,7 @@ describe("Composer", () => {
     renderComposer();
 
     const prompt = await screen.findByLabelText("Prompt");
+    prompt.focus();
     fireEvent.change(prompt, { target: { value: "@" } });
 
     expect(await screen.findByText("@Main Agent")).toBeVisible();
@@ -282,6 +310,53 @@ describe("Composer", () => {
       expect(screen.queryByLabelText("Prompt suggestions")).toBeNull(),
     );
     expect(prompt).toHaveValue("＠Ma");
+  });
+
+  it("navigates long mention menus without moving focus out of the prompt", async () => {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: Array.from({ length: 24 }, (_, index) => ({
+        description: `Role ${index} description`,
+        name: `Role ${index}`,
+        role_id: `role-${index}`,
+      })),
+    });
+
+    renderComposer();
+
+    const prompt = await screen.findByLabelText("Prompt");
+    prompt.focus();
+    fireEvent.change(prompt, { target: { value: "@" } });
+    const listbox = await screen.findByRole("listbox");
+    expect(prompt).toHaveAttribute("aria-controls", listbox.id);
+    expect(prompt).toHaveAttribute("aria-expanded", "true");
+    expect(prompt).toHaveAttribute("aria-haspopup", "listbox");
+
+    fireEvent.keyDown(prompt, { key: "PageDown" });
+    await waitFor(() => {
+      const activeId = prompt.getAttribute("aria-activedescendant");
+      expect(activeId).not.toBeNull();
+      expect(document.getElementById(activeId ?? "")).toHaveTextContent("Role 8");
+    });
+    expect(document.activeElement).toBe(prompt);
+
+    fireEvent.keyDown(prompt, { key: "End" });
+    await waitFor(() => {
+      const activeId = prompt.getAttribute("aria-activedescendant");
+      expect(document.getElementById(activeId ?? "")).toBe(
+        screen.getAllByRole("option").at(-1),
+      );
+    });
+    fireEvent.keyDown(prompt, { key: "Home" });
+    await waitFor(() => {
+      const activeId = prompt.getAttribute("aria-activedescendant");
+      expect(document.getElementById(activeId ?? "")).toHaveTextContent("Role 0");
+    });
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
   });
 
   it("keeps composer topology controls scoped to the active session mode", async () => {

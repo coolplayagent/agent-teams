@@ -137,6 +137,41 @@ describe("PromptMentionMenu", () => {
       "No matching commands.",
     );
   });
+
+  it("keeps long suggestion lists as the wheel scroll owner", async () => {
+    const longOptions: PromptMentionOption[] = Array.from(
+      { length: 40 },
+      (_, index) => ({
+        aliases: [`role-${index}`],
+        description: `Role ${index} description`,
+        displayName: `Role ${index}`,
+        insertTerm: `role-${index}`,
+        kind: "role" as const,
+        roleId: `role-${index}`,
+      }),
+    );
+    const outerWheel = vi.fn();
+    render(
+      <div onWheel={outerWheel}>
+        <MenuHarness activeIndex={0} options={longOptions} />
+      </div>,
+    );
+
+    const listbox = await screen.findByRole("listbox");
+    Object.defineProperties(listbox, {
+      clientHeight: { configurable: true, value: 240 },
+      scrollHeight: { configurable: true, value: 1600 },
+      scrollTop: { configurable: true, value: 0, writable: true },
+    });
+
+    fireEvent.wheel(listbox, { deltaMode: 0, deltaY: 125 });
+    expect(listbox.scrollTop).toBe(125);
+    expect(outerWheel).not.toHaveBeenCalled();
+
+    fireEvent.wheel(listbox, { deltaMode: 2, deltaY: 1 });
+    expect(listbox.scrollTop).toBe(365);
+    expect(outerWheel).not.toHaveBeenCalled();
+  });
 });
 
 interface MenuHarnessProps {

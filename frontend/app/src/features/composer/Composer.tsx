@@ -21,7 +21,7 @@ import {
   Settings2,
   Square,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ClipboardEvent, KeyboardEvent } from "react";
 import {
   useMutation,
@@ -73,7 +73,10 @@ import {
   summarizePromptAttachments,
   type PromptAttachment,
 } from "./PromptAttachments";
-import { PromptMentionMenu } from "./PromptMentionMenu";
+import {
+  PromptMentionMenu,
+  promptMentionOptionId,
+} from "./PromptMentionMenu";
 import {
   applyPromptCommandOption,
   applyPromptMentionOption,
@@ -100,6 +103,7 @@ interface ComposerProps {
 const THINKING_MODE_STORAGE_KEY = "agent_teams_thinking_enabled";
 const THINKING_EFFORT_STORAGE_KEY = "agent_teams_thinking_effort";
 const DEFAULT_THINKING_EFFORT: ThinkingEffort = "medium";
+const MENTION_PAGE_SIZE = 8;
 
 interface ModelProfileOption {
   label: string;
@@ -268,6 +272,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
   const [promptAttachments, setPromptAttachments] = useState<PromptAttachment[]>([]);
   const [composerStatus, setComposerStatus] = useState("");
   const [activeMentionIndex, setActiveMentionIndex] = useState(0);
+  const mentionMenuId = useId();
   const [dismissedMentionDraft, setDismissedMentionDraft] = useState("");
   const [quickMenuOpen, setQuickMenuOpen] = useState(false);
   const [yolo, setYolo] = useState(true);
@@ -538,7 +543,10 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
         ? resourceMentionOptions
         : leadingMentionOptions;
   const mentionMenuOpen =
-    quickMenuOpen || promptCommandContext !== null || promptResourceContext !== null;
+    quickMenuOpen ||
+    promptCommandContext !== null ||
+    promptResourceContext !== null ||
+    leadingMentionOptions.length > 0;
   const mentionMenuLoading = quickMenuOpen
     ? commandCatalogQuery.isLoading || roleOptionsQuery.isLoading
     : promptCommandContext !== null
@@ -590,6 +598,33 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
   useEffect(() => {
     setActiveMentionIndex(0);
   }, [promptMentionOptions.length, quickMenuOpen]);
+
+  useEffect(() => {
+    const promptInput = inputRef.current?.nativeElement.querySelector("textarea");
+    if (promptInput === undefined || promptInput === null) {
+      return;
+    }
+    promptInput.setAttribute("role", "combobox");
+    promptInput.setAttribute("aria-autocomplete", "list");
+    promptInput.setAttribute("aria-haspopup", "listbox");
+    promptInput.setAttribute("aria-expanded", String(mentionMenuOpen));
+    if (mentionMenuOpen) {
+      promptInput.setAttribute("aria-controls", mentionMenuId);
+    } else {
+      promptInput.removeAttribute("aria-controls");
+    }
+    if (mentionMenuOpen && promptMentionOptions.length > 0) {
+      promptInput.setAttribute(
+        "aria-activedescendant",
+        promptMentionOptionId(
+          mentionMenuId,
+          Math.min(activeMentionIndex, promptMentionOptions.length - 1),
+        ),
+      );
+    } else {
+      promptInput.removeAttribute("aria-activedescendant");
+    }
+  }, [activeMentionIndex, mentionMenuId, mentionMenuOpen, promptMentionOptions.length]);
 
   useEffect(() => {
     if (!mentionMenuOpen) {
@@ -976,6 +1011,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
             loading={mentionMenuLoading}
             loadingLabel={t("connectorsRuntimeToolsStatusLoading")}
             menuLabel={t("composerPromptSuggestions")}
+            menuId={mentionMenuId}
             onSelect={selectPromptMentionOption}
             open={mentionMenuOpen}
             options={promptMentionOptions}
@@ -1419,6 +1455,24 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       const direction = event.key === "ArrowDown" ? 1 : -1;
       setActiveMentionIndex((current) =>
         wrapIndex(current + direction, promptMentionOptions.length),
+      );
+      return;
+    }
+    if (event.key === "PageDown" || event.key === "PageUp") {
+      event.preventDefault();
+      const direction = event.key === "PageDown" ? 1 : -1;
+      setActiveMentionIndex((current) =>
+        clampIndex(
+          current + direction * MENTION_PAGE_SIZE,
+          promptMentionOptions.length,
+        ),
+      );
+      return;
+    }
+    if (event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      setActiveMentionIndex(
+        event.key === "Home" ? 0 : promptMentionOptions.length - 1,
       );
       return;
     }
@@ -1994,6 +2048,10 @@ function wrapIndex(index: number, length: number): number {
     return 0;
   }
   return ((index % length) + length) % length;
+}
+
+function clampIndex(index: number, length: number): number {
+  return Math.max(0, Math.min(index, Math.max(0, length - 1)));
 }
 
 function normalizeProfileName(value: string | null | undefined): string {

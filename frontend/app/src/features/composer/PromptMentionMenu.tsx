@@ -16,6 +16,7 @@ import {
   useState,
   type CSSProperties,
   type RefObject,
+  type WheelEvent as ReactWheelEvent,
 } from "react";
 
 import type { PromptMentionOption } from "./PromptMentions";
@@ -27,6 +28,7 @@ interface PromptMentionMenuProps {
   emptyLabel: string;
   loading: boolean;
   loadingLabel: string;
+  menuId?: string;
   menuLabel?: string;
   onSelect: (option: PromptMentionOption) => void;
   open: boolean;
@@ -46,13 +48,15 @@ export function PromptMentionMenu({
   emptyLabel,
   loading,
   loadingLabel,
+  menuId: providedMenuId,
   menuLabel = "Prompt suggestions",
   onSelect,
   open,
   options,
 }: PromptMentionMenuProps) {
   const t = useTranslations();
-  const menuId = useId();
+  const generatedMenuId = useId();
+  const menuId = providedMenuId ?? generatedMenuId;
   const activeOptionRef = useRef<HTMLButtonElement | null>(null);
   const [position, setPosition] = useState<PromptMentionMenuPosition | null>(null);
 
@@ -95,7 +99,7 @@ export function PromptMentionMenu({
   }
   const activeOptionId =
     options.length > 0
-      ? `${menuId}-${Math.min(activeIndex, options.length - 1)}`
+      ? promptMentionOptionId(menuId, Math.min(activeIndex, options.length - 1))
       : undefined;
   const menuStyle: CSSProperties = position;
   return createPortal(
@@ -109,6 +113,9 @@ export function PromptMentionMenu({
           aria-activedescendant={activeOptionId}
           aria-busy={loading}
           className="at-prompt-mention-menu-list"
+          id={menuId}
+          onTouchMove={(event) => event.stopPropagation()}
+          onWheel={handlePromptMentionWheel}
           role="listbox"
         >
           {options.map((option, index) => {
@@ -129,7 +136,7 @@ export function PromptMentionMenu({
                       ? "at-prompt-mention-item is-active"
                       : "at-prompt-mention-item"
                   }
-                  id={`${menuId}-${index}`}
+                  id={promptMentionOptionId(menuId, index)}
                   onMouseDown={(event) => {
                     event.preventDefault();
                     onSelect(option);
@@ -174,6 +181,27 @@ export function PromptMentionMenu({
     </div>,
     document.body,
   );
+}
+
+export function promptMentionOptionId(menuId: string, index: number): string {
+  return `${menuId}-option-${index}`;
+}
+
+function handlePromptMentionWheel(event: ReactWheelEvent<HTMLDivElement>) {
+  const list = event.currentTarget;
+  if (event.deltaY === 0) {
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  const lineHeight = 20;
+  const pageHeight = Math.max(1, list.clientHeight);
+  const delta = event.deltaMode === 1
+    ? event.deltaY * lineHeight
+    : event.deltaMode === 2
+      ? event.deltaY * pageHeight
+      : event.deltaY;
+  list.scrollTop += delta;
 }
 
 function promptMentionMenuPosition(

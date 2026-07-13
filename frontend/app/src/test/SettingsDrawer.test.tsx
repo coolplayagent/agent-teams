@@ -1691,6 +1691,14 @@ describe("SettingsDrawer", () => {
     fetchSpeechConfigMock.mockResolvedValue({
       language: "zh-CN",
       noise_reduction: "near_field",
+      profile_eligibility: [
+        {
+          eligible: true,
+          model: "qwen3-omni-flash",
+          profile_name: "stt",
+          reason: null,
+        },
+      ],
       prompt: "existing terms",
       stt_profile_name: null,
       vad_prefix_padding_ms: 240,
@@ -1727,38 +1735,40 @@ describe("SettingsDrawer", () => {
   });
 
   it("explains unavailable speech profiles when no realtime STT option can be selected", async () => {
-    getModelProfilesMock.mockResolvedValue({
-      diarize: {
-        model: "gpt-4o-transcribe-diarize",
-        provider: "openai_compatible",
-      },
-      no_speech: {
-        model: "text-only",
-        provider: "openai_compatible",
-        resolved_capabilities: {
-          input: { audio: false, text: true },
-          output: { audio: false, text: true },
-        },
-      },
-      openai: {
-        model: "gpt-5-mini",
-        provider: "openai",
-      },
-      tts: {
-        model: "tts-1",
-        provider: "openai_compatible",
-        resolved_capabilities: {
-          input: { text: true },
-          output: { audio: true, text: true },
-        },
-      },
-      unknown: {
-        model: "custom-voice",
-        provider: "openai_compatible",
-      },
-    });
     fetchSpeechConfigMock.mockResolvedValue({
       language: "es-MX",
+      profile_eligibility: [
+        {
+          eligible: false,
+          model: "gpt-4o-transcribe-diarize",
+          profile_name: "diarize",
+          reason: "diarization_not_supported",
+        },
+        {
+          eligible: false,
+          model: "text-only",
+          profile_name: "no_speech",
+          reason: "input_audio_not_supported",
+        },
+        {
+          eligible: false,
+          model: "gpt-5-mini",
+          profile_name: "openai",
+          reason: "provider_not_supported",
+        },
+        {
+          eligible: false,
+          model: "tts-1",
+          profile_name: "tts",
+          reason: "tts_only",
+        },
+        {
+          eligible: false,
+          model: "custom-voice",
+          profile_name: "unknown",
+          reason: "realtime_stt_not_declared",
+        },
+      ],
       prompt: "",
       stt_profile_name: "missing-saved-profile",
     });
@@ -3817,6 +3827,8 @@ describe("SettingsDrawer", () => {
       providers: [
         {
           api: null,
+          default_base_url:
+            "http://snapengine.cida.cce.prod-szv-g.dragon.tools.huawei.com/api/v2/",
           id: "maas",
           models: [
             {

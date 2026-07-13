@@ -949,10 +949,6 @@ export function AppShell() {
             <ObservabilityPanel sessionId={selectedSessionId} />
           ) : activeView === "automation" ? (
             <AutomationView
-              onOpenGitHubSettings={() => {
-                setSettingsSystemPage("github");
-                setSettingsOpen(true);
-              }}
               onSessionSelected={handleAutomationSessionSelected}
             />
           ) : activeView === "board" ? (

@@ -74,8 +74,6 @@ import {
 import { deliveryProviderAdapter } from "./deliveryProviderAdapters";
 
 interface AutomationViewProps {
-  /** @deprecated GitHub configuration now renders inside the automation workspace. */
-  onOpenGitHubSettings?: () => void;
   onSessionSelected?: (sessionId: string, workspaceId?: string | null) => void;
 }
 

@@ -190,8 +190,7 @@ afterEach(() => {
 
 describe("AutomationView", () => {
   it("keeps Schedules primary and renders GitHub inside the automation workspace", async () => {
-    const onOpenGitHubSettings = vi.fn();
-    renderAutomation(vi.fn(), onOpenGitHubSettings);
+    renderAutomation();
 
     expect(await screen.findByRole("tab", { name: "Schedules" }))
       .toHaveAttribute("aria-selected", "true");
@@ -203,8 +202,6 @@ describe("AutomationView", () => {
     );
     expect(screen.getByText("Inline GitHub configuration")).toBeVisible();
     expect(screen.getByRole("tabpanel", { name: "GitHub" })).toBeVisible();
-    expect(onOpenGitHubSettings).not.toHaveBeenCalled();
-
     fireEvent.click(screen.getByRole("tab", { name: "Schedules" }));
     expect(screen.getByRole("button", { name: /Daily triage/ })).toBeVisible();
   });
@@ -522,7 +519,6 @@ describe("AutomationView", () => {
 
 function renderAutomation(
   onSessionSelected = vi.fn(),
-  onOpenGitHubSettings = vi.fn(),
 ) {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -534,7 +530,6 @@ function renderAutomation(
       <AntApp>
         <QueryClientProvider client={queryClient}>
           <AutomationView
-            onOpenGitHubSettings={onOpenGitHubSettings}
             onSessionSelected={onSessionSelected}
           />
         </QueryClientProvider>

@@ -16,7 +16,9 @@ describe("timeline scroll state contract", () => {
     expect(timelineSource).toContain(
       "new Map<string, TimelineContentSignature>()",
     );
-    expect(timelineSource).not.toContain("Map<string, TimelineRow[]>");
+    expect(timelineSource).toContain(
+      "new Map<string, TimelineScrollSnapshot>()",
+    );
     expect(timelineSource).toMatch(
       /while \(values\.size > TIMELINE_SCROLL_SCOPE_CACHE_LIMIT\)[\s\S]*?values\.delete\(oldestKey\);/,
     );
@@ -39,29 +41,26 @@ describe("timeline scroll state contract", () => {
       "consumePendingProgrammaticTimelineScroll(",
     );
     expect(timelineSource).toContain(
-      "timelineScopeKey: scopeKey",
-    );
-    expect(timelineSource).toContain(
       "pendingScroll.scopeKey === scopeKey",
     );
     expect(timelineSource).toContain("if (event.nativeEvent.isTrusted)");
   });
 
-  it("treats explicit scrolling away from the exact bottom as reading intent", () => {
+  it("anchors explicit reading intent to stable virtual row identity", () => {
     expect(timelineSource).toContain(
-      "timelineUserScrollRequiresTransientAnchor(container)",
+      "timelineScrollAnchorFromVirtualItems(",
     );
     expect(timelineSource).toContain(
-      "timelineRowTop(row) + timelineRowHeight(row) > hostHeight + 1",
+      "scrollSnapshotRef.current = captureCurrentTimelineScrollSnapshot(",
     );
     expect(timelineSource).toContain(
       "snapshot?.shouldFollow === false",
     );
     expect(timelineSource).toContain(
-      "snapshot.preferAnchor || (contentChanged && !contentAppended)",
+      "pendingScrollScopeRestoreRef.current === scrollScopeKey",
     );
-    expect(timelineSource).toMatch(
-      /captureTimelineScrollSnapshot\(\s+container,\s+snapshot\?\.shouldFollow === false,\s+false,/,
+    expect(timelineSource).toContain(
+      "restoredAnchorReady &&",
     );
   });
 

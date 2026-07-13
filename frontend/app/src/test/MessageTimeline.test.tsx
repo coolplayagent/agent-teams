@@ -6107,8 +6107,8 @@ describe("MessageTimeline", () => {
     expect(streamingText).toHaveTextContent("already persisted");
     expect(container.querySelectorAll(".at-message-streaming-text")).toHaveLength(1);
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
-    expect(screen.queryByRole("button", { name: "Copy last answer" }))
-      .not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy last answer" }))
+      .toBeDisabled();
   });
 
   it("keeps hydrated open runtime text streaming before replayed deltas arrive", async () => {
@@ -6611,9 +6611,9 @@ describe("MessageTimeline", () => {
     });
 
     await waitForSingleVisibleText("hello");
-    expect(await screen.findByText("world")).toBeVisible();
     expect(await screen.findByText("Running: shell")).toBeVisible();
     await waitForToolPreviews(container, ["pwd"]);
+    expect(screen.getByText("world")).toBeVisible();
     const streamingText = container.querySelector<HTMLElement>(
       ".at-message-streaming-text",
     );

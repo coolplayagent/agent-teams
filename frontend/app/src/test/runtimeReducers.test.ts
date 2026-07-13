@@ -5,6 +5,7 @@ import {
   MAX_SEEN_EVENT_KEYS,
   reduceRunEvent,
   reduceRunEvents,
+  type RuntimeRunState,
 } from "../runtime/reducers";
 import {
   AG_UI_EVENT_NAMES,
@@ -1025,6 +1026,44 @@ describe("runtime reducers", () => {
     expect(entries.map((entry) => entry.text)).toEqual(
       eventTypes.map((eventType) => `${eventType} visible`),
     );
+  });
+
+  it("reduces a large mixed event transaction with one runs-index copy", () => {
+    const unrelatedRun = {
+      entries: [],
+      lastEventId: 1,
+      runId: "unrelated-run",
+      seenEventKeys: [],
+      status: "open",
+      terminalEventType: null,
+    } satisfies RuntimeRunState;
+    let runsIndexCopies = 0;
+    const runs = new Proxy<Record<string, RuntimeRunState>>(
+      { "unrelated-run": unrelatedRun },
+      {
+        ownKeys(target) {
+          runsIndexCopies += 1;
+          return Reflect.ownKeys(target);
+        },
+      },
+    );
+    const events = Array.from({ length: 500 }, (_, index) => runEvent({
+      event_id: index + 1,
+      event_type: index % 2 === 0 ? "text_delta" : "thinking_delta",
+      payload_json: JSON.stringify({ text: `${index}` }),
+      run_id: "busy-run",
+    }));
+
+    const nextState = reduceRunEvents(
+      { activeRunIds: [], runs },
+      events,
+    );
+
+    expect(runsIndexCopies).toBe(1);
+    expect(nextState.changedRunIds).toEqual(["busy-run"]);
+    expect(nextState.runs["unrelated-run"]).toBe(unrelatedRun);
+    expect(nextState.runs["busy-run"].lastEventId).toBe(500);
+    expect(nextState.runs["busy-run"].entries).toHaveLength(500);
   });
 });
 

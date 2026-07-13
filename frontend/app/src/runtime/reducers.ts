@@ -66,6 +66,8 @@ export interface RuntimeRunState {
 export interface RuntimeState {
   runs: Record<string, RuntimeRunState>;
   activeRunIds: string[];
+  /** Run identities changed by the most recent reducer transaction. */
+  changedRunIds?: string[];
 }
 
 export const MAX_SEEN_EVENT_KEYS = 512;
@@ -100,6 +102,7 @@ export function runtimeStateWithScopedRun(
   }
   return {
     ...runtimeState,
+    changedRunIds: [normalizedRunId],
     runs: {
       ...runtimeState.runs,
       [normalizedRunId]: nextRun,
@@ -111,13 +114,42 @@ export function reduceRunEvent(
   state: RuntimeState,
   rawEvent: RunEventEnvelope,
 ): RuntimeState {
+  const nextRuns = { ...state.runs };
+  const changedRunIds = new Set<string>();
+  const reduction = reduceRunEventInto(
+    state,
+    rawEvent,
+    nextRuns,
+    changedRunIds,
+  );
+  if (reduction === null) {
+    return state;
+  }
+  return {
+    ...state,
+    activeRunIds: reduction.activeRunIds,
+    changedRunIds: Array.from(changedRunIds),
+    runs: nextRuns,
+  };
+}
+
+interface RunEventReduction {
+  activeRunIds: string[];
+}
+
+function reduceRunEventInto(
+  state: RuntimeState,
+  rawEvent: RunEventEnvelope,
+  runs: Record<string, RuntimeRunState>,
+  changedRunIds: Set<string>,
+): RunEventReduction | null {
   const event = parseRunEvent(rawEvent);
   const runId = event.run_id;
-  const existing = state.runs[runId] ?? createRunState(runId);
+  const existing = runs[runId] ?? createRunState(runId);
   const rawEventId = event.event_id;
   const hasPositiveEventId = typeof rawEventId === "number" && rawEventId > 0;
   if (hasPositiveEventId && rawEventId <= (existing.replayAfterEventId ?? 0)) {
-    return state;
+    return null;
   }
   const positiveEventDedupeKey = hasPositiveEventId
     ? `${runId}:${rawEventId}`
@@ -127,11 +159,11 @@ export function reduceRunEvent(
     (seenEventIdRangesInclude(existing.seenEventIdRanges ?? [], rawEventId) ||
       existing.seenEventKeys.includes(positiveEventDedupeKey ?? ""))
   ) {
-    return state;
+    return null;
   }
   const dedupeKey = hasPositiveEventId ? null : eventDedupeKey(event);
   if (dedupeKey !== null && existing.seenEventKeys.includes(dedupeKey)) {
-    return state;
+    return null;
   }
 
   const eventId =
@@ -189,19 +221,17 @@ export function reduceRunEvent(
 
   const activeRunIds = nextActiveRunIds(state.activeRunIds, runId, status);
 
-  const nextRuns = markReferencedSubagentRuns(
-    {
-      ...state.runs,
-      [runId]: nextRun,
-    },
+  runs[runId] = nextRun;
+  changedRunIds.add(runId);
+  markReferencedSubagentRunsInPlace(
+    runs,
     event.payload,
     event.session_id,
     runId,
+    changedRunIds,
   );
 
   return {
-    ...state,
-    runs: nextRuns,
     activeRunIds,
   };
 }
@@ -311,14 +341,37 @@ export function reduceRunEvents(
   state: RuntimeState,
   rawEvents: readonly RunEventEnvelope[],
 ): RuntimeState {
-  let nextState = state;
+  if (rawEvents.length === 0) {
+    return state;
+  }
+  const nextRuns = { ...state.runs };
+  const changedRunIds = new Set<string>();
+  let activeRunIds = state.activeRunIds;
+  let changed = false;
   for (const eventBatch of compactRunEventBatch(state, rawEvents)) {
-    nextState = reduceRunEvent(nextState, eventBatch.event);
+    const reduction = reduceRunEventInto(
+      { ...state, activeRunIds, runs: nextRuns },
+      eventBatch.event,
+      nextRuns,
+      changedRunIds,
+    );
+    if (reduction === null) {
+      continue;
+    }
+    changed = true;
+    activeRunIds = reduction.activeRunIds;
     if (eventBatch.lastEventId > eventBatch.firstEventId) {
-      nextState = applyCompactedEventCoverage(nextState, eventBatch);
+      applyCompactedEventCoverageInPlace(nextRuns, eventBatch);
     }
   }
-  return nextState;
+  return changed
+    ? {
+        ...state,
+        activeRunIds,
+        changedRunIds: Array.from(changedRunIds),
+        runs: nextRuns,
+      }
+    : state;
 }
 
 interface CompactedRunEventBatch {
@@ -409,13 +462,13 @@ function mergedAdjacentDeltaEvent(
   };
 }
 
-function applyCompactedEventCoverage(
-  state: RuntimeState,
+function applyCompactedEventCoverageInPlace(
+  runs: Record<string, RuntimeRunState>,
   eventBatch: CompactedRunEventBatch,
-): RuntimeState {
-  const runState = state.runs[eventBatch.runId];
+): void {
+  const runState = runs[eventBatch.runId];
   if (runState === undefined) {
-    return state;
+    return;
   }
   const entries = runState.entries.map((entry) =>
     entry.eventId === eventBatch.firstEventId ||
@@ -423,21 +476,15 @@ function applyCompactedEventCoverage(
       ? { ...entry, lastMergedEventId: eventBatch.lastEventId }
       : entry
   );
-  return {
-    ...state,
-    runs: {
-      ...state.runs,
-      [eventBatch.runId]: {
-        ...runState,
-        entries,
-        lastEventId: Math.max(runState.lastEventId, eventBatch.lastEventId),
-        seenEventIdRanges: rememberSeenEventRange(
-          runState.seenEventIdRanges ?? [],
-          eventBatch.firstEventId,
-          eventBatch.lastEventId,
-        ),
-      },
-    },
+  runs[eventBatch.runId] = {
+    ...runState,
+    entries,
+    lastEventId: Math.max(runState.lastEventId, eventBatch.lastEventId),
+    seenEventIdRanges: rememberSeenEventRange(
+      runState.seenEventIdRanges ?? [],
+      eventBatch.firstEventId,
+      eventBatch.lastEventId,
+    ),
   };
 }
 
@@ -445,20 +492,20 @@ function positiveEventId(value: number | null | undefined): number | null {
   return typeof value === "number" && value > 0 ? value : null;
 }
 
-function markReferencedSubagentRuns(
+function markReferencedSubagentRunsInPlace(
   runs: Record<string, RuntimeRunState>,
   payload: JsonValue,
   sessionId: string,
   sourceRunId: string,
-): Record<string, RuntimeRunState> {
+  changedRunIds: Set<string>,
+): void {
   const referencedRunIds = subagentRunReferences(payload)
     .filter((runId) => runId.length > 0 && runId !== sourceRunId);
   if (referencedRunIds.length === 0) {
-    return runs;
+    return;
   }
-  let nextRuns: Record<string, RuntimeRunState> | null = null;
   for (const runId of referencedRunIds) {
-    const currentRun = (nextRuns ?? runs)[runId];
+    const currentRun = runs[runId];
     const nextRun = runtimeRunStateWithScope(
       currentRun,
       runId,
@@ -468,10 +515,9 @@ function markReferencedSubagentRuns(
     if (nextRun === currentRun) {
       continue;
     }
-    nextRuns ??= { ...runs };
-    nextRuns[runId] = nextRun;
+    runs[runId] = nextRun;
+    changedRunIds.add(runId);
   }
-  return nextRuns ?? runs;
 }
 
 function runtimeRunStateWithScope(

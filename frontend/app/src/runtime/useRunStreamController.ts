@@ -132,12 +132,14 @@ export function useRunStreamController(): RunStreamController {
     sessionId: string,
     nextRuntimeState: RuntimeState,
     previousRuntimeState: RuntimeState,
+    changedRunIds: readonly string[],
   ) => {
     let hasNewSubagentDiscoveryEvent = false;
     let hasNewInteractionEvent = false;
     forEachChangedTimelineEntry(
       nextRuntimeState,
       previousRuntimeState,
+      changedRunIds,
       (entry) => {
         if (isSubagentDiscoveryEvent(entry)) {
           const eventKey = subagentDiscoveryEventKey(entry);
@@ -397,14 +399,20 @@ export function useRunStreamController(): RunStreamController {
         reconnectAttemptRef.current = 0;
         const previousRuntimeState = runtimeStateRef.current;
         runtimeStateRef.current = nextRuntimeState;
+        const changedRunIds = changedRuntimeRunIds(
+          nextRuntimeState,
+          options.runs,
+        );
         markNewRuntimeTerminals(
           nextRuntimeState,
+          changedRunIds,
           terminalStoreMarkKeysRef.current,
           "on-state",
         );
         setRuntimeState(nextRuntimeState);
         markNewRuntimeTerminals(
           nextRuntimeState,
+          changedRunIds,
           terminalStoreMarkKeysRef.current,
           "store",
           true,
@@ -420,6 +428,7 @@ export function useRunStreamController(): RunStreamController {
           options.sessionId,
           nextRuntimeState,
           previousRuntimeState,
+          changedRunIds,
         );
       },
       onClosed: () => {
@@ -607,11 +616,16 @@ export function useRunStreamController(): RunStreamController {
 
 function markNewRuntimeTerminals(
   runtimeState: RuntimeState,
+  runIds: readonly string[],
   markedKeys: Set<string>,
   phase: "on-state" | "store",
   allowExisting = false,
 ): void {
-  for (const runState of Object.values(runtimeState.runs)) {
+  for (const runId of runIds) {
+    const runState = runtimeState.runs[runId];
+    if (runState === undefined) {
+      continue;
+    }
     const eventType = runState.terminalEventType?.trim() ?? "";
     if (eventType.length === 0) {
       continue;
@@ -730,6 +744,7 @@ function runtimeStateWithStartedTargets(
     ? runtimeState
     : {
         ...runtimeState,
+        changedRunIds: runs.map((run) => run.runId),
         runs: nextRuns,
       };
 }
@@ -798,6 +813,7 @@ function runtimeStateWithClosedTargets(
   return {
     ...runtimeState,
     activeRunIds: nextActiveRunIds,
+    ...(nextRuns !== null ? { changedRunIds: Array.from(targetRunIds) } : {}),
     ...(nextRuns !== null ? { runs: nextRuns } : {}),
   };
 }
@@ -876,9 +892,14 @@ function subagentDiscoveryEventKey(entry: TimelineEntry): string {
 function forEachChangedTimelineEntry(
   nextRuntimeState: RuntimeState,
   previousRuntimeState: RuntimeState,
+  changedRunIds: readonly string[],
   visit: (entry: TimelineEntry) => void,
 ): void {
-  for (const [runId, run] of Object.entries(nextRuntimeState.runs)) {
+  for (const runId of changedRunIds) {
+    const run = nextRuntimeState.runs[runId];
+    if (run === undefined) {
+      continue;
+    }
     const previousRun = previousRuntimeState.runs[runId];
     if (run === previousRun || run.entries === previousRun?.entries) {
       continue;
@@ -899,6 +920,22 @@ function forEachChangedTimelineEntry(
       }
     }
   }
+}
+
+function changedRuntimeRunIds(
+  runtimeState: RuntimeState,
+  fallbackTargets: readonly StartRunStreamTarget[],
+): string[] {
+  if (runtimeState.changedRunIds !== undefined) {
+    return runtimeState.changedRunIds;
+  }
+  return Array.from(
+    new Set(
+      fallbackTargets
+        .map((target) => target.runId.trim())
+        .filter((runId) => runId.length > 0),
+    ),
+  );
 }
 
 function normalizeForegroundRunIds(
@@ -998,6 +1035,7 @@ function runtimeStatePreparedForReplayTargets(
     ? runtimeState
     : {
         ...runtimeState,
+        changedRunIds: runs.map((run) => run.runId),
         runs: nextRuns,
       };
 }

@@ -6,7 +6,11 @@ import type { MockInstance } from "vitest";
 
 import { listSessionRounds, listSidebarSessions } from "../api/client";
 import type { SessionRound, SessionSidebarRecord } from "../api/contracts";
-import type { RuntimeState, TimelineEntry } from "../runtime/reducers";
+import type {
+  RuntimeRunState,
+  RuntimeState,
+  TimelineEntry,
+} from "../runtime/reducers";
 import { useRuntimeStore } from "../runtime/runtimeStore";
 import type {
   MultiplexedRunStreamOptions,
@@ -2140,6 +2144,59 @@ describe("useRunStreamController", () => {
     expect(reconnectOptions.afterEventId).toBe(88);
     expect(screen.getByTestId("active-run-ids")).toHaveTextContent("run-2");
     expect(screen.getByTestId("tracked-run-ids")).toHaveTextContent("run-1,run-2");
+  });
+
+  it("processes a changed tracked run without scanning unrelated run state", () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <RunStreamHarness />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Start stream" }));
+
+    const runState = runtimeStateWithRunStatuses([
+      { lastEventId: 2, runId: "run-1", status: "open" },
+    ]).runs["run-1"];
+    const unrelatedRuns = Object.fromEntries(
+      Array.from({ length: 250 }, (_, index) => [
+        `unrelated-${index}`,
+        {
+          entries: [],
+          lastEventId: 1,
+          runId: `unrelated-${index}`,
+          seenEventKeys: [],
+          status: "open",
+          terminalEventType: null,
+        } satisfies RuntimeRunState,
+      ]),
+    );
+    let runsIndexScans = 0;
+    const runs = new Proxy<Record<string, RuntimeRunState>>(
+      { ...unrelatedRuns, "run-1": runState },
+      {
+        ownKeys(target) {
+          runsIndexScans += 1;
+          return Reflect.ownKeys(target);
+        },
+      },
+    );
+    const options = streamMocks.latestOptions as RunStreamOptions;
+
+    act(() => options.onState({
+      activeRunIds: ["run-1"],
+      changedRunIds: ["run-1"],
+      runs,
+    }));
+
+    expect(runsIndexScans).toBe(0);
+    expect(screen.getByTestId("runtime-run-status")).toHaveTextContent("open");
   });
 });
 

@@ -500,6 +500,7 @@ function runtimeStateWithReplayCursors(
     ? initialState
     : {
         ...initialState,
+        changedRunIds: runs.map((run) => run.runId),
         runs: nextRuns,
   };
 }
@@ -528,6 +529,7 @@ function runtimeStateWithRunScope(
   }
   return {
     ...initialState,
+    changedRunIds: [runId],
     runs: {
       ...initialState.runs,
       [runId]: scopedRun,

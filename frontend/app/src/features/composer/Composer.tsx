@@ -1812,6 +1812,7 @@ async function resolveComposerPromptSubmission({
 
 function extractPromptSlashInvocation(promptText: string): PromptSlashInvocation | null {
   const trimmedPrompt = promptText.trim();
+  // semantic-special-case-allow: prompt-command-prefix — "/" is public command syntax.
   if (!trimmedPrompt.startsWith("/")) {
     return null;
   }

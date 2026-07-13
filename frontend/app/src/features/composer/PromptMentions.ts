@@ -516,6 +516,7 @@ function extractPromptSlashInvocation(
   promptText: string,
 ): { args: string; name: string } | null {
   const trimmedPrompt = promptText.trim();
+  // semantic-special-case-allow: prompt-command-prefix — "/" is public command syntax.
   if (!trimmedPrompt.startsWith("/")) {
     return null;
   }

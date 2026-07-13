@@ -106,12 +106,8 @@ function classNames(node: Element): string[] {
 }
 
 function highlight(language: string, code: string): Root | null {
-  try {
-    return lowlight.highlight(language, code);
-  } catch (error) {
-    if (error instanceof Error && error.message.includes("Unknown language")) {
-      return null;
-    }
-    throw error;
+  if (!lowlight.registered(language)) {
+    return null;
   }
+  return lowlight.highlight(language, code);
 }

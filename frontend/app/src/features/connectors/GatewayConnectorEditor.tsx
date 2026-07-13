@@ -3,50 +3,24 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import {
-  createDiscordGatewayAccount,
-  createXiaolubanGatewayAccount,
-  deleteDiscordGatewayAccount,
-  deleteXiaolubanGatewayAccount,
-  disableDiscordGatewayAccount,
-  disableXiaolubanGatewayAccount,
-  enableDiscordGatewayAccount,
-  enableXiaolubanGatewayAccount,
-  listDiscordGatewayAccounts,
-  listWorkspaces,
-  listXiaolubanGatewayAccounts,
-  updateDiscordGatewayAccount,
-  updateXiaolubanGatewayAccount,
-} from "../../api/client";
-import type {
-  DiscordGatewayAccountRecord,
-  WorkspaceRecord,
-  XiaolubanGatewayAccountRecord,
-} from "../../api/contracts";
+import { listWorkspaces } from "../../api/client";
 import { FormChoiceControl } from "../../components/ChoiceControl";
 import { useTranslations } from "../../i18n";
 
-export type GatewayConnectorProvider = "discord" | "xiaoluban";
+import {
+  gatewayAccountFormValues,
+  gatewayConnectorAdapter,
+  type GatewayAccountFormValues,
+  type GatewayAccountRecord,
+  type GatewayConnectorProvider,
+} from "./gatewayConnectorAdapters";
+
+export type { GatewayConnectorProvider } from "./gatewayConnectorAdapters";
 
 interface GatewayConnectorEditorProps {
   onClose: () => void;
   provider: GatewayConnectorProvider;
 }
-
-interface GatewayAccountFormValues {
-  allowChannelMessages: boolean;
-  allowedChannelIds: string;
-  applicationId: string;
-  baseUrl: string;
-  displayName: string;
-  enabled: boolean;
-  token: string;
-  workspaceId: string;
-}
-
-type GatewayAccountRecord =
-  | DiscordGatewayAccountRecord
-  | XiaolubanGatewayAccountRecord;
 
 export function GatewayConnectorEditor({
   onClose,
@@ -56,13 +30,11 @@ export function GatewayConnectorEditor({
   const [form] = Form.useForm<GatewayAccountFormValues>();
   const queryClient = useQueryClient();
   const t = useTranslations();
+  const adapter = gatewayConnectorAdapter(provider);
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
   const [creatingNew, setCreatingNew] = useState(false);
   const accountsQuery = useQuery<GatewayAccountRecord[]>({
-    queryFn: async (): Promise<GatewayAccountRecord[]> =>
-      provider === "discord"
-        ? await listDiscordGatewayAccounts()
-        : await listXiaolubanGatewayAccounts(),
+    queryFn: adapter.list,
     queryKey: ["connectors", "gateway-accounts", provider],
   });
   const workspacesQuery = useQuery({
@@ -93,9 +65,9 @@ export function GatewayConnectorEditor({
       return;
     }
     form.setFieldsValue(
-      gatewayAccountFormValues(provider, selectedAccount, workspacesQuery.data ?? []),
+      gatewayAccountFormValues(adapter, selectedAccount, workspacesQuery.data ?? []),
     );
-  }, [accountsQuery.isLoading, form, provider, selectedAccount, workspacesQuery.data]);
+  }, [accountsQuery.isLoading, adapter, form, selectedAccount, workspacesQuery.data]);
 
   const refreshAccounts = () =>
     queryClient.invalidateQueries({
@@ -103,7 +75,7 @@ export function GatewayConnectorEditor({
     });
   const saveMutation = useMutation({
     mutationFn: (values: GatewayAccountFormValues) =>
-      saveGatewayAccount(provider, selectedAccount, values),
+      adapter.save(selectedAccount, values),
     onError: (error) => {
       void message.error(error instanceof Error ? error.message : t("connectorsSaveFailed"));
     },
@@ -117,7 +89,7 @@ export function GatewayConnectorEditor({
   });
   const toggleMutation = useMutation({
     mutationFn: (account: GatewayAccountRecord) =>
-      toggleGatewayAccount(provider, account),
+      adapter.toggle(account),
     onError: (error) => {
       void message.error(
         error instanceof Error ? error.message : t("connectorsGatewayActionFailed"),
@@ -129,7 +101,7 @@ export function GatewayConnectorEditor({
     },
   });
   const deleteMutation = useMutation({
-    mutationFn: (accountId: string) => deleteGatewayAccount(provider, accountId),
+    mutationFn: adapter.remove,
     onError: (error) => {
       void message.error(
         error instanceof Error ? error.message : t("connectorsGatewayActionFailed"),
@@ -159,7 +131,7 @@ export function GatewayConnectorEditor({
         <div>
           <Typography.Title level={4}>
             {t("connectorsGatewayAccounts", {
-              provider: provider === "discord" ? "Discord" : "Xiaoluban",
+              provider: adapter.defaultDisplayName,
             })}
           </Typography.Title>
           <Typography.Text type="secondary">
@@ -222,7 +194,7 @@ export function GatewayConnectorEditor({
             >
               <Input.Password autoComplete="new-password" />
             </Form.Item>
-            {provider === "discord" ? (
+            {adapter.fields === "discord" ? (
               <>
                 <Form.Item label={t("connectorsGatewayApplicationId")} name="applicationId">
                   <Input />
@@ -277,98 +249,4 @@ export function GatewayConnectorEditor({
       ) : null}
     </section>
   );
-}
-
-function gatewayAccountFormValues(
-  provider: GatewayConnectorProvider,
-  account: GatewayAccountRecord | null,
-  workspaces: WorkspaceRecord[],
-): GatewayAccountFormValues {
-  const workspaceId =
-    (account !== null && "workspace_id" in account ? account.workspace_id : account?.im_config.workspace_id) ??
-    workspaces[0]?.workspace_id ??
-    "";
-  return {
-    allowChannelMessages:
-      account !== null && "allow_channel_messages" in account
-        ? account.allow_channel_messages
-        : false,
-    allowedChannelIds:
-      account !== null && "allowed_channel_ids" in account
-        ? account.allowed_channel_ids.join(", ")
-        : "",
-    applicationId:
-      account !== null && "application_id" in account ? account.application_id ?? "" : "",
-    baseUrl: account !== null && "base_url" in account ? account.base_url : "https://api.xiaoluban.com",
-    displayName: account?.display_name ?? (provider === "discord" ? "Discord" : "Xiaoluban"),
-    enabled: account?.status !== "disabled",
-    token: "",
-    workspaceId,
-  };
-}
-
-async function saveGatewayAccount(
-  provider: GatewayConnectorProvider,
-  account: GatewayAccountRecord | null,
-  values: GatewayAccountFormValues,
-): Promise<GatewayAccountRecord> {
-  const token = values.token.trim();
-  if (provider === "discord") {
-    const body = {
-      allow_channel_messages: values.allowChannelMessages,
-      allowed_channel_ids: splitIdentifiers(values.allowedChannelIds),
-      application_id: values.applicationId.trim() || null,
-      display_name: values.displayName.trim(),
-      enabled: values.enabled,
-      workspace_id: values.workspaceId,
-    };
-    return account === null
-      ? createDiscordGatewayAccount({ ...body, bot_token: token })
-      : updateDiscordGatewayAccount(account.account_id, {
-          ...body,
-          bot_token: token || null,
-        });
-  }
-  const body = {
-    base_url: values.baseUrl.trim(),
-    display_name: values.displayName.trim(),
-    enabled: values.enabled,
-    im_config: { workspace_id: values.workspaceId },
-  };
-  return account === null
-    ? createXiaolubanGatewayAccount({ ...body, token })
-    : updateXiaolubanGatewayAccount(account.account_id, {
-        ...body,
-        token: token || null,
-      });
-}
-
-function toggleGatewayAccount(
-  provider: GatewayConnectorProvider,
-  account: GatewayAccountRecord,
-): Promise<GatewayAccountRecord> {
-  if (provider === "discord") {
-    return account.status === "enabled"
-      ? disableDiscordGatewayAccount(account.account_id)
-      : enableDiscordGatewayAccount(account.account_id);
-  }
-  return account.status === "enabled"
-    ? disableXiaolubanGatewayAccount(account.account_id)
-    : enableXiaolubanGatewayAccount(account.account_id);
-}
-
-function deleteGatewayAccount(
-  provider: GatewayConnectorProvider,
-  accountId: string,
-): Promise<{ status: string }> {
-  return provider === "discord"
-    ? deleteDiscordGatewayAccount(accountId)
-    : deleteXiaolubanGatewayAccount(accountId);
-}
-
-function splitIdentifiers(value: string): string[] {
-  return value
-    .split(/[\s,]+/)
-    .map((item) => item.trim())
-    .filter(Boolean);
 }

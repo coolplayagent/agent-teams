@@ -677,7 +677,8 @@ function PluginMarketplaceUpdateView({
         throw new Error(t("settingsPluginsNameRequired"));
       }
       return updatePlugin(name, {
-        allow_missing_digest: source?.marketplace_provider === "clawhub",
+        allow_missing_digest:
+          pluginMarketplaceAdapter(source?.marketplace_provider)?.allowMissingDigest ?? false,
         scope: pluginScope(plugin),
         version: selectedVersion || null,
       });
@@ -1685,10 +1686,11 @@ function buildPluginMarketplaceRequestFromSource(
     };
   }
   const provider = source.marketplace_provider ?? "local_json";
+  const adapter = pluginMarketplaceAdapter(provider);
   return {
-    allow_missing_digest: provider === "clawhub",
+    allow_missing_digest: adapter?.allowMissingDigest ?? false,
     fetch_all: true,
-    include_details: provider === "clawhub",
+    include_details: adapter?.includeDetails ?? false,
     marketplace: source.marketplace,
     marketplace_provider: provider,
     marketplace_ref: source.marketplace_ref ?? "",
@@ -1726,10 +1728,9 @@ function pluginMarketplaceSource(
 function pluginMarketplaceProviderValue(
   value: string,
 ): PluginInstallRequest["marketplace_provider"] | undefined {
-  if (value === "claude" || value === "clawhub" || value === "local_json") {
-    return value;
-  }
-  return undefined;
+  return PLUGIN_MARKETPLACE_PROVIDERS.has(value)
+    ? (value as PluginInstallRequest["marketplace_provider"])
+    : undefined;
 }
 
 function stringRecordValue(source: Record<string, JsonValue>, key: string): string {
@@ -1740,31 +1741,61 @@ function stringRecordValue(source: Record<string, JsonValue>, key: string): stri
 function pluginMarketplaceProviderDefaults(
   provider: PluginInstallRequest["marketplace_provider"],
 ): Partial<PluginInstallFormValues> {
-  if (provider === "claude") {
-    return {
-      allow_missing_digest: false,
-      marketplace: "claude-plugins-official",
-      marketplace_source: "anthropics/claude-plugins-official",
-      source: "",
-      version: "",
-    };
-  }
-  if (provider === "clawhub") {
-    return {
-      allow_missing_digest: true,
-      marketplace: "clawhub",
-      marketplace_source: "https://clawhub.ai",
-      source: "",
-      version: "",
-    };
-  }
-  return {
+  return pluginMarketplaceAdapter(provider)?.defaults ?? PLUGIN_MARKETPLACE_FALLBACK.defaults;
+}
+
+interface PluginMarketplaceAdapter {
+  allowMissingDigest: boolean;
+  defaults: Partial<PluginInstallFormValues>;
+  includeDetails: boolean;
+}
+
+const PLUGIN_MARKETPLACE_FALLBACK: PluginMarketplaceAdapter = {
+  allowMissingDigest: false,
+  defaults: {
     allow_missing_digest: false,
     marketplace: "",
     marketplace_source: "",
     source: "",
     version: "",
-  };
+  },
+  includeDetails: false,
+};
+
+const PLUGIN_MARKETPLACE_ADAPTERS: Readonly<Record<string, PluginMarketplaceAdapter>> = {
+  claude: {
+    allowMissingDigest: false,
+    defaults: {
+      allow_missing_digest: false,
+      marketplace: "claude-plugins-official",
+      marketplace_source: "anthropics/claude-plugins-official",
+      source: "",
+      version: "",
+    },
+    includeDetails: false,
+  },
+  clawhub: {
+    allowMissingDigest: true,
+    defaults: {
+      allow_missing_digest: true,
+      marketplace: "clawhub",
+      marketplace_source: "https://clawhub.ai",
+      source: "",
+      version: "",
+    },
+    includeDetails: true,
+  },
+  local_json: PLUGIN_MARKETPLACE_FALLBACK,
+};
+
+const PLUGIN_MARKETPLACE_PROVIDERS = new Set(Object.keys(PLUGIN_MARKETPLACE_ADAPTERS));
+
+function pluginMarketplaceAdapter(
+  provider: string | null | undefined,
+): PluginMarketplaceAdapter | null {
+  return provider === null || provider === undefined
+    ? null
+    : PLUGIN_MARKETPLACE_ADAPTERS[provider] ?? null;
 }
 
 function marketplaceEntriesForInstall(

@@ -669,14 +669,17 @@ function runtimeToolPath(
 }
 
 function runtimeToolIconText(toolId: BinaryToolId): string {
-  if (toolId === "relay-knowledge") {
-    return "RK";
-  }
-  if (toolId === "clawhub") {
-    return "CH";
-  }
-  return toolId.toUpperCase();
+  return RUNTIME_TOOL_PRESENTATION[toolId]?.iconText ?? toolId.toUpperCase();
 }
+
+interface RuntimeToolPresentation {
+  iconText: string;
+}
+
+const RUNTIME_TOOL_PRESENTATION: Readonly<Partial<Record<BinaryToolId, RuntimeToolPresentation>>> = {
+  clawhub: { iconText: "CH" },
+  "relay-knowledge": { iconText: "RK" },
+};
 
 function clampProgress(value: number | null | undefined): number {
   if (value === null || value === undefined || !Number.isFinite(value)) {

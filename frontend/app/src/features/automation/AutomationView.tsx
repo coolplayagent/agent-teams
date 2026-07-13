@@ -55,6 +55,7 @@ import type {
 import { ChoiceControlGroup } from "../../components/ChoiceControl";
 import { useTranslations, type Translate } from "../../i18n";
 import { GitHubSettingsSection } from "../settings/GitHubSettingsSection";
+import { deliveryProviderAdapter } from "./deliveryProviderAdapters";
 
 interface AutomationViewProps {
   /** @deprecated GitHub configuration now renders inside the automation workspace. */
@@ -1363,10 +1364,7 @@ function deliveryBindingValue(binding: AutomationDeliveryBinding | null): string
   if (binding === null) {
     return DISABLED_DELIVERY_TARGET;
   }
-  if (binding.provider === "feishu") {
-    return `feishu::${binding.trigger_id}::${binding.session_id ?? ""}`;
-  }
-  return `xiaoluban::${binding.account_id}`;
+  return deliveryProviderAdapter(binding.provider)?.bindingValue(binding) ?? DISABLED_DELIVERY_TARGET;
 }
 
 function deliveryEventsFromEditor(
@@ -1388,42 +1386,19 @@ function deliveryBindingFromEditor(
   if (candidate === undefined) {
     return null;
   }
-  if (candidate.provider === "feishu") {
-    return {
-      provider: "feishu",
-      chat_id: candidate.chat_id,
-      chat_type: candidate.chat_type,
-      session_id: candidate.session_id,
-      source_label: candidate.source_label,
-      tenant_key: candidate.tenant_key,
-      trigger_id: candidate.trigger_id,
-    };
-  }
-  return {
-    provider: "xiaoluban",
-    account_id: candidate.account_id,
-    derived_uid: candidate.derived_uid,
-    display_name: candidate.display_name,
-    source_label: candidate.source_label,
-  };
+  return deliveryProviderAdapter(candidate.provider)?.toBinding(candidate) ?? null;
 }
 
 function deliveryCandidateValue(
   candidate: AutomationDeliveryBindingCandidate,
 ): string {
-  if (candidate.provider === "feishu") {
-    return `feishu::${candidate.trigger_id}::${candidate.session_id}`;
-  }
-  return `xiaoluban::${candidate.account_id}`;
+  return deliveryProviderAdapter(candidate.provider)?.candidateValue(candidate) ?? "";
 }
 
 function deliveryCandidateLabel(
   candidate: AutomationDeliveryBindingCandidate,
 ): string {
-  if (candidate.provider === "feishu") {
-    return `Feishu / ${candidate.source_label}`;
-  }
-  return `Xiaoluban / ${candidate.display_name}`;
+  return deliveryProviderAdapter(candidate.provider)?.candidateLabel(candidate) ?? candidate.source_label;
 }
 
 function cronExpressionFromEditor(values: AutomationEditorValues): string {
@@ -1617,10 +1592,7 @@ function runStatusLabel(
 function deliveryBindingLabel(
   binding: NonNullable<AutomationProjectRecord["delivery_binding"]>,
 ): string {
-  if (binding.provider === "feishu") {
-    return `Feishu / ${binding.source_label}`;
-  }
-  return `Xiaoluban / ${binding.display_name}`;
+  return deliveryProviderAdapter(binding.provider)?.bindingLabel(binding) ?? binding.source_label;
 }
 
 function formatOptionalDate(value: string | null | undefined, fallback: string): string {

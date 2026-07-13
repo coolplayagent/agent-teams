@@ -1325,6 +1325,45 @@ interface ModelProfileFormValues {
   top_p?: string;
 }
 
+type ModelProviderAuthKind = "codeagent" | "generic" | "maas";
+
+interface ModelProviderAdapter {
+  acceptsGenericApiKey: boolean;
+  authKind: ModelProviderAuthKind;
+  applyAuth: (
+    profile: ModelProfileRecord,
+    values: ModelProfileFormValues,
+    request: ModelProfileSaveRequest,
+  ) => void;
+}
+
+const GENERIC_MODEL_PROVIDER_ADAPTER: ModelProviderAdapter = {
+  acceptsGenericApiKey: true,
+  applyAuth: () => undefined,
+  authKind: "generic",
+};
+
+const MODEL_PROVIDER_ADAPTERS: Readonly<Record<string, ModelProviderAdapter>> = {
+  codeagent: {
+    acceptsGenericApiKey: false,
+    applyAuth: (profile, values, request) => {
+      request.codeagent_auth = modelCodeAgentAuthFromForm(profile.codeagent_auth, values);
+    },
+    authKind: "codeagent",
+  },
+  maas: {
+    acceptsGenericApiKey: false,
+    applyAuth: (profile, values, request) => {
+      request.maas_auth = modelMaasAuthFromForm(profile.maas_auth, values);
+    },
+    authKind: "maas",
+  },
+};
+
+function modelProviderAdapter(provider: string): ModelProviderAdapter {
+  return MODEL_PROVIDER_ADAPTERS[provider] ?? GENERIC_MODEL_PROVIDER_ADAPTER;
+}
+
 type ImageCapabilityMode = "follow" | "supported" | "unsupported";
 
 interface ModelProbeState {
@@ -1396,9 +1435,10 @@ function ModelProfileDetail({
   const normalizedProvider = normalizeModelProvider(
     providerOverride ?? effectiveProfile.provider,
   );
-  const showMaasAuth = normalizedProvider === "maas";
-  const showCodeAgentAuth = normalizedProvider === "codeagent";
-  const showGenericApiKey = !showMaasAuth && !showCodeAgentAuth;
+  const providerAdapter = modelProviderAdapter(normalizedProvider);
+  const showMaasAuth = providerAdapter.authKind === "maas";
+  const showCodeAgentAuth = providerAdapter.authKind === "codeagent";
+  const showGenericApiKey = providerAdapter.acceptsGenericApiKey;
   const providerOptions = modelProviderOptions(effectiveProfile.provider);
   const fallbackPolicyOptions = modelFallbackPolicyOptions(
     fallbackPolicies,
@@ -1755,7 +1795,8 @@ function buildModelProfileSaveRequest(
     request.max_tokens = positiveIntegerOrNullFromText(values.max_tokens);
     const apiKey = textValue(values.api_key);
     const provider = normalizeModelProvider(values.provider ?? profile.provider);
-    if (apiKey.length > 0 && provider !== "maas" && provider !== "codeagent") {
+    const providerAdapter = modelProviderAdapter(provider);
+    if (apiKey.length > 0 && providerAdapter.acceptsGenericApiKey) {
       request.api_key = apiKey;
     }
     const imageCapabilities = modelCapabilitiesForImageMode(
@@ -1769,12 +1810,7 @@ function buildModelProfileSaveRequest(
     if (sslVerify !== null) {
       request.ssl_verify = sslVerify;
     }
-    if (provider === "maas") {
-      request.maas_auth = modelMaasAuthFromForm(profile.maas_auth, values);
-    }
-    if (provider === "codeagent") {
-      request.codeagent_auth = modelCodeAgentAuthFromForm(profile.codeagent_auth, values);
-    }
+    providerAdapter.applyAuth(profile, values, request);
   } else if (profile.max_tokens !== undefined) {
     request.max_tokens = integerOrNull(profile.max_tokens);
   }

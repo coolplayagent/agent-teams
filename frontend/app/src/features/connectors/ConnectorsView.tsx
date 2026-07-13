@@ -12,17 +12,11 @@ import {
 } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Bot,
-  Github,
-  KeyRound,
-  MessageCircle,
-  MessagesSquare,
   PlugZap,
   RefreshCcw,
   Search,
   Settings2,
   TestTube2,
-  Webhook,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
@@ -51,6 +45,11 @@ import {
   type GatewayConnectorProvider,
 } from "./GatewayConnectorEditor";
 import type { SystemSettingsPage } from "../settings/settingsNavigation";
+import {
+  connectorFallbackIcon,
+  connectorPresentationAdapter,
+  type ConnectorAction,
+} from "./connectorPresentationAdapters";
 
 type ConnectorFilter = "all" | ConnectorStatus;
 type ConnectorSection = "connectors" | "tools";
@@ -271,9 +270,10 @@ export function ConnectorsView({ onOpenSettings }: ConnectorsViewProps) {
                   item={item}
                   key={item.connector_id}
                   onAction={() => {
-                    if (isGatewayConnectorProvider(item.provider)) {
+                    const adapter = connectorPresentationAdapter(item);
+                    if (adapter?.editorKind === "gateway" && adapter.gatewayProvider !== undefined) {
                       setSelectedConnectorId(null);
-                      setGatewayConfigProvider(item.provider);
+                      setGatewayConfigProvider(adapter.gatewayProvider);
                       return;
                     }
                     if (connectorActionFor(item) === "open") {
@@ -281,12 +281,14 @@ export function ConnectorsView({ onOpenSettings }: ConnectorsViewProps) {
                       setSelectedConnectorId(item.connector_id);
                       return;
                     }
-                    if (item.provider === "w3") {
+                    if (adapter?.editorKind === "w3") {
                       setSelectedConnectorId(item.connector_id);
                       setW3ConfigOpen(true);
                       return;
                     }
-                    onOpenSettings(connectorSettingsPage(item.provider));
+                    if (adapter?.settingsPage !== undefined) {
+                      onOpenSettings(adapter.settingsPage);
+                    }
                   }}
                   onSelect={() => {
                     setW3ConfigOpen(false);
@@ -336,16 +338,19 @@ export function ConnectorsView({ onOpenSettings }: ConnectorsViewProps) {
             item={selectedConnector}
               language={language}
               onAction={(connector) => {
-                if (isGatewayConnectorProvider(connector.provider)) {
+                const adapter = connectorPresentationAdapter(connector);
+                if (adapter?.editorKind === "gateway" && adapter.gatewayProvider !== undefined) {
                   setSelectedConnectorId(null);
-                  setGatewayConfigProvider(connector.provider);
+                  setGatewayConfigProvider(adapter.gatewayProvider);
                   return;
                 }
-                if (connector.provider === "w3") {
+                if (adapter?.editorKind === "w3") {
                   setW3ConfigOpen(true);
                   return;
                 }
-                onOpenSettings(connectorSettingsPage(connector.provider));
+                if (adapter?.settingsPage !== undefined) {
+                  onOpenSettings(adapter.settingsPage);
+                }
               }}
               onTest={(connectorId) => testMutation.mutate(connectorId)}
               t={t}
@@ -587,7 +592,7 @@ function ConnectorDetail({
               size="small"
               type="default"
             >
-              {item.provider === "w3" ? t("connectorsConfigure") : t("appSettings")}
+              {t(connectorPresentationAdapter(item)?.actionLabel ?? "appSettings")}
             </Button>
           ) : null}
           <Tooltip title={t("connectorsTestTooltip")}>
@@ -672,7 +677,7 @@ function ConnectorDetail({
           )}
         </div>
       </section>
-      {item.provider === "w3" && w3ConfigOpen ? (
+      {connectorPresentationAdapter(item)?.editorKind === "w3" && w3ConfigOpen ? (
         <W3ConnectorEditor
           error={w3ConfigError}
           loading={w3ConfigLoading}
@@ -770,11 +775,10 @@ function Fact({ label, value }: { label: string; value: string }) {
   );
 }
 
-type ConnectorAction = "configure" | "open";
-
 function connectorActionFor(item: ConnectorItem): ConnectorAction | null {
-  if (item.provider === "github" || item.provider === "w3") {
-    return "configure";
+  const adapter = connectorPresentationAdapter(item);
+  if (adapter !== null) {
+    return adapter.action;
   }
   if (item.account_count > 0) {
     return "open";
@@ -783,21 +787,7 @@ function connectorActionFor(item: ConnectorItem): ConnectorAction | null {
 }
 
 function connectorSettingsAvailable(item: ConnectorItem): boolean {
-  return ["discord", "feishu", "github", "w3", "wechat", "xiaoluban"].includes(
-    item.provider,
-  );
-}
-
-function isGatewayConnectorProvider(
-  provider: ConnectorItem["provider"],
-): provider is GatewayConnectorProvider {
-  return provider === "discord" || provider === "xiaoluban";
-}
-
-function connectorSettingsPage(
-  provider: ConnectorItem["provider"],
-): SystemSettingsPage {
-  return provider === "github" ? "github" : "triggers";
+  return connectorPresentationAdapter(item) !== null;
 }
 
 function filterConnectors(
@@ -918,25 +908,7 @@ function connectorCategoryLabel(
 }
 
 function connectorIcon(item: ConnectorItem): ReactNode {
-  if (item.provider === "github") {
-    return <Github size={17} />;
-  }
-  if (item.provider === "discord") {
-    return <MessageCircle size={17} />;
-  }
-  if (item.provider === "feishu" || item.provider === "wechat") {
-    return <MessagesSquare size={17} />;
-  }
-  if (item.provider === "w3") {
-    return <KeyRound size={17} />;
-  }
-  if (item.auth_type === "webhook") {
-    return <Webhook size={17} />;
-  }
-  if (item.category === "im") {
-    return <MessageCircle size={17} />;
-  }
-  return <Bot size={17} />;
+  return connectorPresentationAdapter(item)?.icon ?? connectorFallbackIcon(item);
 }
 
 function formatDateTime(

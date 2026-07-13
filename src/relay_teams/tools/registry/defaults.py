@@ -86,7 +86,7 @@ BUILTIN_TOOL_SEMANTICS: dict[str, ToolSemantics] = {
         ToolSemanticCategory.ORCHESTRATION, ToolActionFamily.ORCHESTRATION
     ),
     "orch_dispatch_task": _semantics(
-        ToolSemanticCategory.ORCHESTRATION, ToolActionFamily.ORCHESTRATION
+        ToolSemanticCategory.ORCHESTRATION, ToolActionFamily.SUBAGENT
     ),
     "orch_list_available_roles": _semantics(
         ToolSemanticCategory.ORCHESTRATION, ToolActionFamily.ORCHESTRATION

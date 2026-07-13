@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from relay_teams.tools.registry import ToolSemanticCategory
+from relay_teams.tools.registry import ToolActionFamily, ToolSemanticCategory
 from relay_teams.tools.registry.defaults import build_default_registry
 
 
@@ -76,6 +76,15 @@ def test_all_builtin_tools_declare_presentation_semantics() -> None:
     )
 
     assert missing == ()
+
+
+def test_orchestration_dispatch_declares_subagent_action_family() -> None:
+    registry = build_default_registry()
+
+    semantics = registry.get_tool_semantics("orch_dispatch_task")
+
+    assert semantics.semantic_category == ToolSemanticCategory.ORCHESTRATION
+    assert semantics.action_family == ToolActionFamily.SUBAGENT
 
 
 def test_registry_hides_im_send_from_manual_role_configuration() -> None:

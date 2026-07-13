@@ -10676,7 +10676,7 @@ describe("MessageTimeline", () => {
           "run-approval": {
             runId: "run-approval",
             status: "closed",
-            lastEventId: 2,
+            lastEventId: 4,
             seenEventKeys: [],
             terminalEventType: null,
             entries: [
@@ -10719,6 +10719,40 @@ describe("MessageTimeline", () => {
                 eventId: 2,
                 occurredAt: "2026-06-23T00:00:01Z",
               },
+              {
+                id: "run-approval:3:2",
+                sessionId: "session-1",
+                runId: "run-approval",
+                roleId: "MainAgent",
+                kind: "tool_approval_resolved",
+                text: "execute_command",
+                payload: {
+                  action: "approve_exact",
+                  tool_call_id: "tool-approval-exact",
+                  action_family: "run",
+                  semantic_category: "execution",
+                  tool_name: "execute_command",
+                },
+                eventId: 3,
+                occurredAt: "2026-06-23T00:00:02Z",
+              },
+              {
+                id: "run-approval:4:3",
+                sessionId: "session-1",
+                runId: "run-approval",
+                roleId: "MainAgent",
+                kind: "tool_approval_resolved",
+                text: "execute_command",
+                payload: {
+                  action: "approve_when_ready",
+                  tool_call_id: "tool-approval-near-match",
+                  action_family: "run",
+                  semantic_category: "execution",
+                  tool_name: "execute_command",
+                },
+                eventId: 4,
+                occurredAt: "2026-06-23T00:00:03Z",
+              },
             ],
           },
         },
@@ -10732,7 +10766,11 @@ describe("MessageTimeline", () => {
     const approvalRequest = await screen.findByText("Approval requested: execute_command");
     expect(approvalRequest).not.toBeVisible();
     const approvalDenied = screen.getByText("Approval denied: execute_command");
+    const approvalApproved = screen.getByText("Approval approved: execute_command");
+    const approvalNearMatch = screen.getByText("Approval resolved: execute_command");
     expect(approvalDenied).not.toBeVisible();
+    expect(approvalApproved).not.toBeVisible();
+    expect(approvalNearMatch).not.toBeVisible();
     openProcessedGroup(container);
     expect(approvalRequest).toBeVisible();
     expect(toolPreviewTexts(screenElement(approvalRequest))).toEqual([
@@ -10743,6 +10781,8 @@ describe("MessageTimeline", () => {
     expect(approvalRequestDetails).toHaveTextContent(/Args: npm test/);
     expect(approvalRequestDetails).toHaveTextContent(/Options: Allow once, Deny/);
     expect(approvalDenied).toBeVisible();
+    expect(approvalApproved).toBeVisible();
+    expect(approvalNearMatch).toBeVisible();
     expect(toolPreviewTexts(screenElement(approvalDenied))).toEqual([
       "Action: deny",
     ]);
@@ -10750,6 +10790,12 @@ describe("MessageTimeline", () => {
     expect(approvalDeniedDetails).not.toBeVisible();
     expect(approvalDeniedDetails).toHaveTextContent(/Action: deny/);
     expect(approvalDeniedDetails).toHaveTextContent(/Feedback: Unsafe command/);
+    expect(toolPreviewTexts(screenElement(approvalApproved))).toEqual([
+      "Action: approve_exact",
+    ]);
+    expect(toolPreviewTexts(screenElement(approvalNearMatch))).toEqual([
+      "Action: approve_when_ready",
+    ]);
 
     fireEvent.click(approvalRequest);
 
@@ -13049,17 +13095,19 @@ describe("MessageTimeline", () => {
     const commandError = await screen.findByText("Run failed: execute_command");
     expect(commandError).not.toBeVisible();
     expect(screen.getByText("Tool validation: execute_command")).not.toBeVisible();
-    expect(screen.getByText("Run failed: shell")).not.toBeVisible();
+    expect(screen.getByText("Ran: shell")).not.toBeVisible();
     openProcessedGroup(container);
     expect(commandError).toBeVisible();
     expect(screen.getByText("Tool validation: execute_command")).toBeVisible();
-    expect(screen.getByText("Run failed: shell")).toBeVisible();
+    expect(screen.getByText("Ran: shell")).toBeVisible();
     expect(toolPreviewTexts(screenElement(screen.getByText("Run failed: execute_command"))))
       .toContain("command failed");
     expect(toolPreviewTexts(screenElement(screen.getByText("Tool validation: execute_command"))))
       .toContain("Input validation failed before tool execution.");
-    expect(toolPreviewTexts(screenElement(screen.getByText("Run failed: shell"))))
+    expect(toolPreviewTexts(screenElement(screen.getByText("Ran: shell"))))
       .toContain("missing");
+    expect(screenElement(screen.getByText("Ran: shell")).closest(".at-message-tool"))
+      .toHaveAttribute("data-status", "completed");
     const errorDetails = toolPreElement(
       screenElement(screen.getByText("Run failed: execute_command")),
     );

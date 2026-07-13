@@ -77,7 +77,12 @@ import {
   immediateTimelineHydrationRowKeys,
   rememberHydratedTimelineRow,
 } from "./timelineRowHydration";
-import { normalizedInjectionStatus } from "./timelineEventContracts";
+import {
+  approvalActionIsApproved,
+  approvalActionIsError,
+  normalizedInjectionStatus,
+  toolOutcomeIsError,
+} from "./timelineEventContracts";
 import {
   recordTerminalDomSnapshot,
   stabilizeTerminalDomLayout,
@@ -10276,25 +10281,6 @@ function runtimeTextDeltaText(entry: TimelineEntry): string {
     || objectRawString(payload, "message");
 }
 
-function approvalActionIsApproved(action: string): boolean {
-  const normalized = action.trim().toLowerCase();
-  return normalized.startsWith("approve") || normalized.startsWith("allow");
-}
-
-function approvalActionIsError(action: string): boolean {
-  const normalized = action.trim().toLowerCase();
-  return (
-    normalized === "cancel" ||
-    normalized === "cancelled" ||
-    normalized === "deny" ||
-    normalized === "denied" ||
-    normalized === "reject" ||
-    normalized === "rejected" ||
-    normalized === "timeout" ||
-    normalized === "timed_out"
-  );
-}
-
 function approvalDeniedLabel(action: string): string {
   const normalized = action.trim().toLowerCase();
   if (normalized === "timeout" || normalized === "timed_out") {
@@ -10678,14 +10664,6 @@ function toolReturnIsError(
   return toolResultIndicatesError(content);
 }
 
-function toolOutcomeIsError(outcome: unknown): boolean {
-  if (typeof outcome !== "string") {
-    return false;
-  }
-  const normalized = outcome.trim().toLowerCase();
-  return normalized === "failed" || normalized === "denied";
-}
-
 function toolResultIndicatesError(value: unknown): boolean {
   const object = unknownJsonObject(value);
   if (object === null) {
@@ -10703,8 +10681,7 @@ function toolResultIndicatesError(value: unknown): boolean {
   if (numericJsonValueIsNonZero(object.exit_code)) {
     return true;
   }
-  const data = unknownJsonObject(object.data);
-  return data !== null && toolResultIndicatesError(data);
+  return false;
 }
 
 function numericJsonValueIsNonZero(value: JsonValue | undefined): boolean {

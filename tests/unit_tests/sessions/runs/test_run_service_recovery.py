@@ -355,7 +355,11 @@ def _build_manager(
     )
     return run_service_module.SessionRunService(
         meta_agent=cast(MetaAgent, meta_agent or cast(object, _MetaAgent())),
-        provider_factory=provider_factory,
+        provider_factory=(
+            provider_factory
+            if provider_factory is not None
+            else lambda _role, _session_id: LLMProvider()
+        ),
         role_registry=role_registry,
         injection_manager=injection,
         run_event_hub=hub,

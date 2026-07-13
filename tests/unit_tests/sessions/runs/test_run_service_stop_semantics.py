@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from inspect import Parameter, signature
 import json
 import logging
 import sqlite3
@@ -27,6 +28,7 @@ from relay_teams.notifications import (
     NotificationService,
     NotificationType,
 )
+from relay_teams.providers.provider_contracts import LLMProvider
 from relay_teams.sessions.runs.injection_queue import RunInjectionManager
 from relay_teams.sessions.runs.run_control_manager import RunControlManager
 from relay_teams.sessions.runs.event_stream import RunEventHub
@@ -190,6 +192,7 @@ def _make_run_service(
     )
     return SessionRunService(
         meta_agent=cast(MetaAgent, cast(object, meta_agent or _MetaAgent())),
+        provider_factory=lambda _role, _session_id: LLMProvider(),
         injection_manager=injection,
         run_event_hub=hub,
         run_control_manager=control,
@@ -202,6 +205,14 @@ def _make_run_service(
             else None
         ),
     )
+
+
+def test_provider_factory_is_a_required_runtime_dependency() -> None:
+    provider_factory_parameter = signature(SessionRunService).parameters[
+        "provider_factory"
+    ]
+
+    assert provider_factory_parameter.default is Parameter.empty
 
 
 def test_create_run_blocked_when_paused_subagent_exists() -> None:
@@ -239,6 +250,7 @@ def test_stop_pending_run_emits_run_stopped_event() -> None:
     )
     manager = SessionRunService(
         meta_agent=cast(MetaAgent, cast(object, _MetaAgent())),
+        provider_factory=lambda _role, _session_id: LLMProvider(),
         injection_manager=injection,
         run_event_hub=hub,
         run_control_manager=control,
@@ -276,6 +288,7 @@ def test_worker_swallows_cleanup_failures_after_runner_exception() -> None:
     injection = RunInjectionManager()
     manager = SessionRunService(
         meta_agent=cast(MetaAgent, cast(object, _MetaAgent())),
+        provider_factory=lambda _role, _session_id: LLMProvider(),
         injection_manager=injection,
         run_event_hub=cast(RunEventHub, cast(object, _FailingRunEventHub())),
         run_control_manager=control,
@@ -441,6 +454,7 @@ def test_completed_notification_uses_final_run_output() -> None:
     )
     manager = SessionRunService(
         meta_agent=cast(MetaAgent, cast(object, _MetaAgent())),
+        provider_factory=lambda _role, _session_id: LLMProvider(),
         injection_manager=injection,
         run_event_hub=hub,
         run_control_manager=control,
@@ -609,6 +623,7 @@ def test_assistant_error_notification_uses_failed_channel() -> None:
     )
     manager = SessionRunService(
         meta_agent=cast(MetaAgent, cast(object, _MetaAgent())),
+        provider_factory=lambda _role, _session_id: LLMProvider(),
         injection_manager=injection,
         run_event_hub=hub,
         run_control_manager=control,

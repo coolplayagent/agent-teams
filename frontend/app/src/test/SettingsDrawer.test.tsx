@@ -3428,6 +3428,107 @@ describe("SettingsDrawer", () => {
     );
   }, 30000);
 
+  it("uses the structured default model profile when creating a role", async () => {
+    getModelProfilesMock.mockResolvedValue({
+      economy: {
+        is_default: false,
+        model: "gpt-5-mini",
+        provider: "openai",
+      },
+      production: {
+        is_default: true,
+        model: "gpt-5",
+        provider: "openai",
+      },
+      vision: {
+        model: "gpt-5-vision",
+        provider: "openai",
+      },
+    });
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "Roles" }));
+    fireEvent.click(await screen.findByRole("button", { name: "New role" }));
+
+    expectSelectedSelectOption("Model profile", "production");
+    fillNewRoleRequiredFields("analyst");
+    listRoleConfigsMock.mockResolvedValue([
+      {
+        description: "Analyzes the current plan.",
+        mode: "primary",
+        model_profile: "production",
+        name: "Analyst",
+        role_id: "analyst",
+        source: "app",
+        version: "1.0.0",
+      },
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(saveRoleConfigMock).toHaveBeenCalledWith(
+        "analyst",
+        expect.objectContaining({ model_profile: "production" }),
+      ),
+    );
+    await waitFor(() =>
+      expectSelectedSelectOption("Model profile", "production"),
+    );
+  }, 30000);
+
+  it("requires an explicit model profile when the registry has no default", async () => {
+    getModelProfilesMock.mockResolvedValue({
+      economy: {
+        model: "gpt-5-mini",
+        provider: "openai",
+      },
+      production: {
+        model: "gpt-5",
+        provider: "openai",
+      },
+    });
+    renderDrawer();
+
+    const sections = await screen.findByRole("navigation", {
+      name: "Settings sections",
+    });
+    fireEvent.click(within(sections).getByRole("button", { name: "Roles" }));
+    fireEvent.click(await screen.findByRole("button", { name: "New role" }));
+    fillNewRoleRequiredFields("analyst");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText("Model profile is required.")).toBeVisible();
+    expect(saveRoleConfigMock).not.toHaveBeenCalled();
+
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "Model profile" }));
+    await clickAntdSelectOption("production");
+    listRoleConfigsMock.mockResolvedValue([
+      {
+        description: "Analyzes the current plan.",
+        mode: "primary",
+        model_profile: "production",
+        name: "Analyst",
+        role_id: "analyst",
+        source: "app",
+        version: "1.0.0",
+      },
+    ]);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(saveRoleConfigMock).toHaveBeenCalledWith(
+        "analyst",
+        expect.objectContaining({ model_profile: "production" }),
+      ),
+    );
+    await waitFor(() =>
+      expectSelectedSelectOption("Model profile", "production"),
+    );
+  }, 30000);
+
   it("sets default and deletes model profiles through real model config clients", async () => {
     renderDrawer();
 
@@ -5068,6 +5169,24 @@ async function clickAntdSelectOption(label: string) {
     throw new Error(`Select option not found: ${label}`);
   }
   fireEvent.click(optionContent);
+}
+
+function fillNewRoleRequiredFields(roleId: string) {
+  fireEvent.change(screen.getByLabelText("Role ID"), {
+    target: { value: roleId },
+  });
+  fireEvent.change(screen.getByLabelText("Role name"), {
+    target: { value: "Analyst" },
+  });
+  fireEvent.change(screen.getByLabelText("Description"), {
+    target: { value: "Analyzes the current plan." },
+  });
+  fireEvent.change(screen.getByLabelText("Version"), {
+    target: { value: "1.0.0" },
+  });
+  fireEvent.change(screen.getByLabelText("System prompt"), {
+    target: { value: "Analyze the plan and report risks." },
+  });
 }
 
 function expectSelectedSelectOption(label: string, value: string) {

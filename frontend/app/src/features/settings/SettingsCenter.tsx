@@ -500,8 +500,8 @@ function SettingsRoles({
     [roleConfigsQuery.data],
   );
   const creatingRoleDocument = useMemo(
-    () => newRoleConfigDraft(),
-    [creatingRole],
+    () => newRoleConfigDraft(modelProfiles),
+    [creatingRole, modelProfiles],
   );
   const selectedRoleSummary =
     selectedRoleId !== null
@@ -2465,7 +2465,9 @@ function updateRoleConfigDocument(
   };
 }
 
-function newRoleConfigDraft(): RoleConfigDocument {
+function newRoleConfigDraft(
+  modelProfiles: Record<string, ModelProfileRecord> | undefined,
+): RoleConfigDocument {
   return {
     bound_agent_id: null,
     description: "",
@@ -2476,7 +2478,7 @@ function newRoleConfigDraft(): RoleConfigDocument {
       enabled: false,
     },
     mode: "primary",
-    model_profile: "default",
+    model_profile: defaultModelProfileId(modelProfiles),
     name: "",
     role_id: "",
     skills: [],
@@ -2485,6 +2487,15 @@ function newRoleConfigDraft(): RoleConfigDocument {
     tools: [],
     version: "1.0.0",
   };
+}
+
+function defaultModelProfileId(
+  modelProfiles: Record<string, ModelProfileRecord> | undefined,
+): string | null {
+  const defaultProfileIds = Object.entries(modelProfiles ?? {})
+    .filter(([profileId, profile]) => profileId.trim() && profile.is_default === true)
+    .map(([profileId]) => profileId);
+  return defaultProfileIds.length === 1 ? defaultProfileIds[0] ?? null : null;
 }
 
 function defaultProfile(entries: Array<[string, ModelProfileRecord]>): string {

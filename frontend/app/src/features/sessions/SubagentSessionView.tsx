@@ -130,9 +130,14 @@ function ActiveSubagentSessionView({
       if (!hasMessageHistoryTarget) {
         return subagentTaskMessages({
           messages: [],
+          promptIdentity: {
+            instanceId,
+            sessionId,
+            taskId: displayedSubagent.taskId ?? "",
+            traceId: timelineRunId,
+          },
           promptText: subagentPromptText,
           scopeToTask: recordAwareSubagent.subagentKind === "orchestration",
-          taskId: displayedSubagent.taskId ?? "",
         });
       }
       const messages = await listScopedAgentMessages(
@@ -142,9 +147,14 @@ function ActiveSubagentSessionView({
       );
       return subagentTaskMessages({
         messages,
+        promptIdentity: {
+          instanceId,
+          sessionId,
+          taskId: displayedSubagent.taskId ?? "",
+          traceId: timelineRunId,
+        },
         promptText: subagentPromptText,
         scopeToTask: recordAwareSubagent.subagentKind === "orchestration",
-        taskId: displayedSubagent.taskId ?? "",
       });
     },
     [
@@ -154,6 +164,7 @@ function ActiveSubagentSessionView({
       messageTaskId,
       sessionId,
       subagentPromptText,
+      timelineRunId,
       recordAwareSubagent.subagentKind,
     ],
   );
@@ -680,16 +691,16 @@ function agentMessagesHaveExpectedToolCalls(
 
 function subagentTaskMessages({
   messages,
+  promptIdentity,
   promptText,
   scopeToTask,
-  taskId,
 }: {
   messages: TimelineMessage[];
+  promptIdentity: SubagentTaskPromptIdentity;
   promptText: string;
   scopeToTask: boolean;
-  taskId: string;
 }): TimelineMessage[] {
-  const normalizedTaskId = taskId.trim() || latestMessageTaskId(messages);
+  const normalizedTaskId = promptIdentity.taskId.trim();
   const scopedMessages = normalizedTaskId.length === 0 || !scopeToTask
     ? messages
     : messages.filter(
@@ -698,45 +709,93 @@ function subagentTaskMessages({
   const normalizedPrompt = promptText.trim();
   if (
     normalizedPrompt.length === 0 ||
-    scopedMessages.some(
-      (message) =>
-        message.role?.trim().toLowerCase() === "user" &&
-        timelineMessageText(message) === normalizedPrompt,
-    )
+    persistedTaskPrompt(scopedMessages, promptIdentity) !== null
   ) {
     return scopedMessages;
   }
+  const syntheticMessageId = taskPromptMessageId(promptIdentity);
   return [
     {
+      message_id: syntheticMessageId,
       content: normalizedPrompt,
+      instance_id: promptIdentity.instanceId.trim() || undefined,
+      presentation_kind: "task_prompt",
       role: "user",
+      source: "subagent_task_prompt",
       task_id: normalizedTaskId || undefined,
+      trace_id: promptIdentity.traceId.trim() || undefined,
     },
     ...scopedMessages,
   ];
 }
 
-function timelineMessageText(message: TimelineMessage): string {
-  const directText = message.content?.trim() || message.message?.content?.trim();
-  if (directText !== undefined && directText.length > 0) {
-    return directText;
-  }
-  return timelineMessageParts(message)
-    .map((part) =>
-      "text" in part && typeof part.text === "string" ? part.text : ""
-    )
-    .join("")
-    .trim();
+interface SubagentTaskPromptIdentity {
+  instanceId: string;
+  sessionId: string;
+  taskId: string;
+  traceId: string;
 }
 
-function latestMessageTaskId(messages: TimelineMessage[]): string {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const taskId = messages[index]?.task_id?.trim() ?? "";
-    if (taskId.length > 0) {
-      return taskId;
+function persistedTaskPrompt(
+  messages: TimelineMessage[],
+  identity: SubagentTaskPromptIdentity,
+): TimelineMessage | null {
+  const taskId = identity.taskId.trim();
+  const traceId = identity.traceId.trim();
+  const instanceId = identity.instanceId.trim();
+  for (const message of messages) {
+    if (!messageMatchesTaskIdentity(message, taskId, traceId, instanceId)) {
+      continue;
+    }
+    if (isExplicitTaskPromptMessage(message) || hasUserPromptPart(message)) {
+      return message;
     }
   }
-  return "";
+  return null;
+}
+
+function messageMatchesTaskIdentity(
+  message: TimelineMessage,
+  taskId: string,
+  traceId: string,
+  instanceId: string,
+): boolean {
+  if (message.role?.trim().toLowerCase() !== "user") {
+    return false;
+  }
+  const messageTaskId = message.task_id?.trim() ?? "";
+  if (taskId.length > 0) {
+    return messageTaskId === taskId;
+  }
+  const messageTraceId = message.trace_id?.trim() ?? "";
+  if (traceId.length > 0 && messageTraceId.length > 0) {
+    return messageTraceId === traceId;
+  }
+  const messageInstanceId = message.instance_id?.trim() ?? "";
+  return instanceId.length > 0 && messageInstanceId === instanceId;
+}
+
+function isExplicitTaskPromptMessage(message: TimelineMessage): boolean {
+  return (
+    message.presentation_kind?.trim() === "task_prompt" ||
+    message.source?.trim() === "subagent_task_prompt"
+  );
+}
+
+function hasUserPromptPart(message: TimelineMessage): boolean {
+  return timelineMessageParts(message).some((part) => {
+    return "part_kind" in part && part.part_kind === "user-prompt";
+  });
+}
+
+function taskPromptMessageId(identity: SubagentTaskPromptIdentity): string {
+  const identityParts = [
+    identity.sessionId,
+    identity.taskId,
+    identity.instanceId,
+    identity.traceId,
+  ].map((value) => encodeURIComponent(value.trim()));
+  return `subagent-task-prompt:${identityParts.join(":")}`;
 }
 
 function timelineMessageParts(message: TimelineMessage): ContentPart[] {

@@ -16,6 +16,7 @@ import {
   listSessionRounds,
   listSessionSubagents,
 } from "../api/client";
+import type { TimelineMessage } from "../api/contracts";
 import { SubagentSessionView } from "../features/sessions/SubagentSessionView";
 import type { ActiveSubagentSession } from "../features/sessions/SessionsSidebar";
 import type { RunEventType } from "../runtime/events";
@@ -405,8 +406,11 @@ describe("SubagentSessionView", () => {
     const prompt = "Execute the streaming verification command once.";
     listAgentMessagesMock.mockResolvedValue([
       {
-        content: prompt,
         created_at: "2026-06-23T10:01:00Z",
+        instance_id: "subagent-instance-1",
+        message: {
+          parts: [{ content: prompt, part_kind: "user-prompt" }],
+        },
         message_id: "subagent-user-prompt",
         role: "user",
         role_id: "Crafter",
@@ -442,6 +446,142 @@ describe("SubagentSessionView", () => {
       .toHaveLength(1);
   });
 
+  it("keeps a later same-text user message distinct from the task prompt", async () => {
+    const prompt = "Repeat this exact instruction.";
+    listAgentMessagesMock.mockResolvedValue([
+      {
+        created_at: "2026-06-23T10:01:00Z",
+        instance_id: "subagent-instance-1",
+        message: {
+          parts: [{ content: prompt, part_kind: "user-prompt" }],
+        },
+        message_id: "persisted-task-prompt",
+        role: "user",
+        task_id: "subagent-task-1",
+        trace_id: "subagent_run_1",
+      },
+      {
+        created_at: "2026-06-23T10:02:00Z",
+        instance_id: "subagent-instance-1",
+        message: {
+          parts: [{ content: prompt, part_kind: "user-prompt" }],
+        },
+        message_id: "later-user-message",
+        role: "user",
+        task_id: "subagent-task-1",
+        trace_id: "subagent_run_1",
+      },
+    ]);
+
+    const { queryClient } = renderSubagentSessionView({
+      subagent: createSubagent({
+        promptText: prompt,
+        runPhase: "completed",
+        runStatus: "completed",
+        status: "completed",
+        taskId: "subagent-task-1",
+      }),
+    });
+
+    await waitFor(() =>
+      expect(
+        queryClient.getQueryData<TimelineMessage[]>([
+          "sessions",
+          "session-parent",
+          "agents",
+          "subagent-instance-1",
+          "messages",
+        ]),
+      ).toHaveLength(2),
+    );
+  });
+
+  it("does not treat a same-text user message from another task as the prompt", async () => {
+    const prompt = "Inspect the current task.";
+    listAgentMessagesMock.mockResolvedValue([
+      {
+        created_at: "2026-06-23T09:01:00Z",
+        instance_id: "subagent-instance-1",
+        message: {
+          parts: [{ content: prompt, part_kind: "user-prompt" }],
+        },
+        message_id: "other-task-user-message",
+        role: "user",
+        task_id: "other-task",
+        trace_id: "older-run",
+      },
+    ]);
+
+    const { queryClient } = renderSubagentSessionView({
+      subagent: createSubagent({
+        promptText: prompt,
+        runPhase: "completed",
+        runStatus: "completed",
+        status: "completed",
+        taskId: "selected-task",
+      }),
+    });
+
+    expect(await screen.findAllByText(prompt)).toHaveLength(2);
+    expect(
+      queryClient.getQueryData<TimelineMessage[]>([
+        "sessions",
+        "session-parent",
+        "agents",
+        "subagent-instance-1",
+        "messages",
+      ])?.[0],
+    ).toMatchObject({
+      message_id:
+        "subagent-task-prompt:session-parent:selected-task:subagent-instance-1:subagent_run_1",
+      presentation_kind: "task_prompt",
+      source: "subagent_task_prompt",
+      task_id: "selected-task",
+    });
+  });
+
+  it("uses the structured orchestration task prompt instead of stale card text", async () => {
+    listAgentMessagesMock.mockResolvedValue([
+      {
+        created_at: "2026-06-23T10:00:00Z",
+        instance_id: "subagent-instance-1",
+        message: {
+          parts: [
+            {
+              content: "Authoritative persisted task prompt.",
+              part_kind: "user-prompt",
+            },
+          ],
+        },
+        message_id: "selected-task-prompt",
+        role: "user",
+        task_id: "selected-task",
+        trace_id: "parent-run",
+      },
+    ]);
+
+    renderSubagentSessionView({
+      subagent: createSubagent({
+        promptText: "Stale tool-card prompt.",
+        runId: "parent-run",
+        runPhase: "completed",
+        runStatus: "completed",
+        status: "completed",
+        subagentKind: "orchestration",
+        taskId: "selected-task",
+      }),
+    });
+
+    expect(await screen.findByText("Authoritative persisted task prompt."))
+      .toBeVisible();
+    expect(screen.queryByText("Stale tool-card prompt.")).not.toBeInTheDocument();
+    expect(listAgentMessagesMock).toHaveBeenCalledWith(
+      "session-parent",
+      "subagent-instance-1",
+      { taskId: "selected-task" },
+    );
+  });
+
   it("loads only the selected task from a reused orchestration instance", async () => {
     listAgentMessagesMock.mockResolvedValue([
       {
@@ -454,8 +594,13 @@ describe("SubagentSessionView", () => {
         task_id: "old-task",
       },
       {
-        content: "Current task prompt.",
         created_at: "2026-06-23T10:00:00Z",
+        instance_id: "subagent-instance-1",
+        message: {
+          parts: [
+            { content: "Current task prompt.", part_kind: "user-prompt" },
+          ],
+        },
         message_id: "current-task-prompt",
         role: "user",
         role_id: "Crafter",

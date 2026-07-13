@@ -2653,12 +2653,10 @@ describe("Composer", () => {
         sessionId: "session-a",
       }),
     );
-    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
-      queryKey: ["sessions", "session-a", "messages"],
-    });
-    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
-      queryKey: ["sessions", "sidebar"],
-    });
+    expect(invalidateQueriesSpy).not.toHaveBeenCalled();
+    expect(queryClient.getQueryData(
+      ["sessions", "topology-lock", "session-a"],
+    )).toBe(true);
   });
 
   it("updates the current session model profile", async () => {

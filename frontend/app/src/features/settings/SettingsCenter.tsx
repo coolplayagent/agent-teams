@@ -316,9 +316,9 @@ function SettingsGeneral({
     title: string;
   }> = [
     {
-      detail: t("settingsAppearanceShowDiagnosticsHelp"),
+      detail: t("settingsAppearanceHelp"),
       key: "appearance",
-      title: t("settingsAppearanceShowDiagnostics"),
+      title: t("settingsAppearance"),
     },
     {
       detail: t("settingsGeneralSpeechDetail"),

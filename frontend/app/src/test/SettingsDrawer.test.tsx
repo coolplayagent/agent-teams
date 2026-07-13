@@ -4360,7 +4360,7 @@ describe("SettingsDrawer", () => {
     const related = screen.getByRole("region", { name: "Related settings" });
     expect(
       within(related).getByRole("button", {
-        name: /Show diagnostic information/,
+        name: /Appearance/,
       }),
     ).toBeVisible();
     expect(within(related).getByRole("button", { name: /Speech/ })).toBeVisible();
@@ -4389,7 +4389,7 @@ describe("SettingsDrawer", () => {
     fireEvent.click(
       within(screen.getByRole("region", { name: "Related settings" })).getByRole(
         "button",
-        { name: /Show diagnostic information/ },
+        { name: /Appearance/ },
       ),
     );
     expect(
@@ -4429,7 +4429,7 @@ describe("SettingsDrawer", () => {
     fireEvent.click(screen.getByText("On"));
     fireEvent.click(screen.getByText("+/-"));
     fireEvent.click(
-      screen.getByRole("switch", { name: "Show diagnostic information" }),
+      screen.getByRole("switch", { name: "Show diagnostic details" }),
     );
 
     expect(document.documentElement.style.getPropertyValue("--at-primary")).toBe(

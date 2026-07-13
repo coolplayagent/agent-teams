@@ -109,6 +109,7 @@ import {
 import type {
   McpServerToolsSummary,
   OrchestrationConfig,
+  OrchestrationPreset,
   RoleConfigOptions,
 } from "../api/contracts";
 import { fetchSpeechConfig, saveSpeechConfig } from "../api/speech";
@@ -1580,17 +1581,6 @@ describe("SettingsDrawer", () => {
       default_orchestration_preset_id: "default",
       presets: [
         {
-          description: "Release flow",
-          name: "Shipping",
-          orchestration_prompt: "Ship the work.",
-          policy: {
-            max_orchestration_cycles: 6,
-            max_parallel_delegated_tasks: 2,
-          },
-          preset_id: "shipping",
-          role_ids: ["reviewer"],
-        },
-        {
           description: "Edited reviewer flow",
           graph: {
             nodes: [
@@ -1610,6 +1600,17 @@ describe("SettingsDrawer", () => {
           },
           preset_id: "default",
           role_ids: ["main", "reviewer"],
+        },
+        {
+          description: "Release flow",
+          name: "Shipping",
+          orchestration_prompt: "Ship the work.",
+          policy: {
+            max_orchestration_cycles: 6,
+            max_parallel_delegated_tasks: 2,
+          },
+          preset_id: "shipping",
+          role_ids: ["reviewer"],
         },
       ],
     });
@@ -2892,6 +2893,131 @@ describe("SettingsDrawer", () => {
           role_ids: ["reviewer"],
         },
       ],
+    });
+  }, 75000);
+
+  it("round-trips inherited orchestration policies across default, rename, and delete", async () => {
+    const inheritedPreset: OrchestrationPreset = {
+      description: "Inherited limits",
+      name: "Inherited",
+      orchestration_prompt: "Use inherited runtime limits.",
+      policy: {
+        auto_plan_long_tasks: null,
+        max_orchestration_cycles: null,
+        planner_role_id: null,
+      },
+      preset_id: "inherited",
+      role_ids: ["reviewer"],
+    };
+    const omittedPolicyPreset: OrchestrationPreset = {
+      description: "Omitted policy",
+      name: "Omitted",
+      orchestration_prompt: "Use the server policy.",
+      preset_id: "omitted",
+      role_ids: ["reviewer"],
+    };
+    const explicitPreset: OrchestrationPreset = {
+      description: "Explicit limits",
+      name: "Explicit",
+      orchestration_prompt: "Use explicit runtime limits.",
+      policy: {
+        coordinator_inline_budget_steps: null,
+        max_orchestration_cycles: 12,
+        max_parallel_delegated_tasks: 3,
+        max_temporary_roles_per_run: null,
+      },
+      preset_id: "explicit",
+      role_ids: ["reviewer"],
+    };
+    let orchestrationConfig: OrchestrationConfig = {
+      default_orchestration_preset_id: "inherited",
+      presets: [inheritedPreset, omittedPolicyPreset, explicitPreset],
+    };
+    getOrchestrationConfigMock.mockImplementation(async () => orchestrationConfig);
+    saveOrchestrationConfigMock.mockImplementation(async (nextConfig) => {
+      orchestrationConfig = nextConfig;
+      return { status: "ok" };
+    });
+    renderDrawer();
+    await openSettingsSection("Orchestration");
+
+    const omittedRow = (await screen.findByText("1 roles · Omitted policy")).closest(
+      ".at-settings-list-row",
+    );
+    expect(omittedRow).not.toBeNull();
+    fireEvent.click(
+      within(omittedRow as HTMLElement).getByRole("button", { name: "Set default" }),
+    );
+    await waitFor(() => expect(saveOrchestrationConfigMock).toHaveBeenCalledTimes(1));
+    expect(saveOrchestrationConfigMock.mock.calls[0]?.[0]).toStrictEqual({
+      default_orchestration_preset_id: "omitted",
+      presets: [inheritedPreset, omittedPolicyPreset, explicitPreset],
+    });
+
+    fireEvent.click(
+      within(omittedRow as HTMLElement).getByRole("button", { name: /Omitted/ }),
+    );
+    const presetIdInput = await screen.findByLabelText("Preset ID");
+    fireEvent.change(presetIdInput, { target: { value: "omitted-renamed" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(saveOrchestrationConfigMock).toHaveBeenCalledTimes(2));
+    const renamedOmittedPreset: OrchestrationPreset = {
+      ...omittedPolicyPreset,
+      preset_id: "omitted-renamed",
+    };
+    expect(saveOrchestrationConfigMock.mock.calls[1]?.[0]).toStrictEqual({
+      default_orchestration_preset_id: "omitted-renamed",
+      presets: [inheritedPreset, renamedOmittedPreset, explicitPreset],
+    });
+    expect(
+      Object.prototype.hasOwnProperty.call(
+        saveOrchestrationConfigMock.mock.calls[1]?.[0].presets?.[1],
+        "policy",
+      ),
+    ).toBe(false);
+
+    const backButton = screen.queryByRole("button", { name: "Back" });
+    if (backButton !== null) {
+      fireEvent.click(backButton);
+    }
+    const inheritedRow = (await screen.findByText("1 roles · Inherited limits")).closest(
+      ".at-settings-list-row",
+    );
+    expect(inheritedRow).not.toBeNull();
+    fireEvent.click(
+      within(inheritedRow as HTMLElement).getByRole("button", { name: /Inherited/ }),
+    );
+    fireEvent.change(await screen.findByLabelText("Preset ID"), {
+      target: { value: "inherited-renamed" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(saveOrchestrationConfigMock).toHaveBeenCalledTimes(3));
+    const renamedInheritedPreset: OrchestrationPreset = {
+      ...inheritedPreset,
+      preset_id: "inherited-renamed",
+    };
+    expect(saveOrchestrationConfigMock.mock.calls[2]?.[0]).toStrictEqual({
+      default_orchestration_preset_id: "omitted-renamed",
+      presets: [renamedInheritedPreset, renamedOmittedPreset, explicitPreset],
+    });
+
+    const renamedBackButton = screen.queryByRole("button", { name: "Back" });
+    if (renamedBackButton !== null) {
+      fireEvent.click(renamedBackButton);
+    }
+    const explicitRow = (await screen.findByText("1 roles · Explicit limits")).closest(
+      ".at-settings-list-row",
+    );
+    expect(explicitRow).not.toBeNull();
+    fireEvent.click(
+      within(explicitRow as HTMLElement).getByRole("button", { name: /Explicit/ }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    fireEvent.click(await screen.findByRole("button", { name: "OK" }));
+    await waitFor(() => expect(saveOrchestrationConfigMock).toHaveBeenCalledTimes(4));
+    expect(saveOrchestrationConfigMock.mock.calls[3]?.[0]).toStrictEqual({
+      default_orchestration_preset_id: "omitted-renamed",
+      presets: [renamedInheritedPreset, renamedOmittedPreset],
     });
   }, 75000);
 

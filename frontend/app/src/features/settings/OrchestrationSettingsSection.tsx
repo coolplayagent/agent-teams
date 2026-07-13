@@ -157,7 +157,6 @@ export function OrchestrationSettingsSection({
       nextConfig: {
         ...config,
         default_orchestration_preset_id: presetId,
-        presets: (config.presets ?? []).map(serializeOrchestrationPreset),
       },
       nextSelectedPresetId: selectedPresetId,
       successMessage: t("settingsOrchestrationDefaultSaved", { name: presetId }),
@@ -396,16 +395,26 @@ function OrchestrationPresetDetail({
               <Form.Item
                 label={t("settingsOrchestrationMaxCycles")}
                 name="max_orchestration_cycles"
-                rules={[{ required: true, message: t("settingsOrchestrationMaxCyclesRequired") }]}
+                rules={[
+                  optionalIntegerRule(
+                    64,
+                    t("settingsOrchestrationMaxCyclesRequired"),
+                  ),
+                ]}
               >
-                <InputNumber max={64} min={0} />
+                <InputNumber max={64} min={0} precision={0} />
               </Form.Item>
               <Form.Item
                 label={t("settingsOrchestrationMaxParallel")}
                 name="max_parallel_delegated_tasks"
-                rules={[{ required: true, message: t("settingsOrchestrationMaxParallelRequired") }]}
+                rules={[
+                  optionalIntegerRule(
+                    16,
+                    t("settingsOrchestrationMaxParallelRequired"),
+                  ),
+                ]}
               >
-                <InputNumber max={16} min={0} />
+                <InputNumber max={16} min={0} precision={0} />
               </Form.Item>
               <Form.Item
                 className="at-settings-form-grid-span"
@@ -482,12 +491,12 @@ function orchestrationPresetDetail(preset: OrchestrationPreset): string {
 function orchestrationPresetFormValues(
   preset: OrchestrationPreset,
 ): OrchestrationPresetForm {
-  const policy = normalizeOrchestrationPolicy(preset.policy);
   return {
     description: preset.description ?? "",
     graph: graphToEditorText(preset.graph),
-    max_orchestration_cycles: policy.max_orchestration_cycles ?? 8,
-    max_parallel_delegated_tasks: policy.max_parallel_delegated_tasks ?? 4,
+    max_orchestration_cycles: preset.policy?.max_orchestration_cycles,
+    max_parallel_delegated_tasks:
+      preset.policy?.max_parallel_delegated_tasks,
     name: preset.name ?? "",
     orchestration_prompt: preset.orchestration_prompt ?? "",
     preset_id: preset.preset_id,
@@ -500,10 +509,18 @@ function upsertOrchestrationPreset(
   sourcePresetId: string | null,
   nextPreset: OrchestrationPreset,
 ): OrchestrationConfig {
-  const nextPresets = (config.presets ?? [])
-    .filter((preset) => preset.preset_id !== sourcePresetId)
-    .map(serializeOrchestrationPreset);
-  nextPresets.push(serializeOrchestrationPreset(nextPreset));
+  const serializedNextPreset = serializeOrchestrationPreset(nextPreset);
+  let replacedSource = false;
+  const nextPresets = (config.presets ?? []).map((preset) => {
+    if (sourcePresetId !== null && preset.preset_id === sourcePresetId) {
+      replacedSource = true;
+      return serializedNextPreset;
+    }
+    return preset;
+  });
+  if (!replacedSource) {
+    nextPresets.push(serializedNextPreset);
+  }
   if (hasDuplicateOrchestrationIds(nextPresets)) {
     throw new Error("Orchestration preset IDs must be unique.");
   }
@@ -524,8 +541,7 @@ function deleteOrchestrationPreset(
   presetId: string,
 ): OrchestrationConfig | null {
   const nextPresets = (config.presets ?? [])
-    .filter((preset) => preset.preset_id !== presetId)
-    .map(serializeOrchestrationPreset);
+    .filter((preset) => preset.preset_id !== presetId);
   if (nextPresets.length === 0) {
     return null;
   }
@@ -545,42 +561,44 @@ function orchestrationPresetFromForm(
   sourcePreset: OrchestrationPreset | undefined,
   graphMessages: GraphParseMessages,
 ): OrchestrationPreset {
-  const policy = normalizeOrchestrationPolicy(sourcePreset?.policy);
-  return serializeOrchestrationPreset({
+  const policy = orchestrationPolicyFromForm(values, sourcePreset?.policy);
+  const nextPreset: OrchestrationPreset = {
     ...sourcePreset,
     description: textValue(values.description),
     graph: parseOptionalGraph(values.graph, graphMessages),
     name: textValue(values.name),
     orchestration_prompt: textValue(values.orchestration_prompt),
-    policy: {
-      ...policy,
-      max_orchestration_cycles: normalizeInteger(
-        values.max_orchestration_cycles,
-        policy.max_orchestration_cycles ?? 8,
-        64,
-      ),
-      max_parallel_delegated_tasks: normalizeInteger(
-        values.max_parallel_delegated_tasks,
-        policy.max_parallel_delegated_tasks ?? 4,
-        16,
-      ),
-    },
+    policy,
     preset_id: textValue(values.preset_id),
     role_ids: uniqueRoleIds(values.role_ids ?? []),
-  });
+  };
+  if (
+    policy === undefined
+    && !hasOwnProperty(sourcePreset, "policy")
+  ) {
+    delete nextPreset.policy;
+  }
+  if (
+    nextPreset.graph === null
+    && !values.graph?.trim()
+    && !hasOwnProperty(sourcePreset, "graph")
+  ) {
+    delete nextPreset.graph;
+  }
+  return serializeOrchestrationPreset(nextPreset);
 }
 
 function serializeOrchestrationPreset(preset: OrchestrationPreset): OrchestrationPreset {
   const serialized: OrchestrationPreset = {
+    ...preset,
     description: textValue(preset.description),
     name: textValue(preset.name),
     orchestration_prompt: textValue(preset.orchestration_prompt),
-    policy: normalizeOrchestrationPolicy(preset.policy),
     preset_id: textValue(preset.preset_id),
     role_ids: uniqueRoleIds(preset.role_ids ?? []),
   };
-  if (isJsonRecord(preset.graph)) {
-    serialized.graph = preset.graph;
+  if (preset.policy !== undefined) {
+    serialized.policy = { ...preset.policy };
   }
   return serialized;
 }
@@ -645,33 +663,82 @@ function isJsonRecord(value: unknown): value is { [key: string]: JsonValue } {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function normalizeOrchestrationPolicy(
-  policy: OrchestrationPolicy | undefined,
-): OrchestrationPolicy {
+function orchestrationPolicyFromForm(
+  values: OrchestrationPresetForm,
+  sourcePolicy: OrchestrationPolicy | undefined,
+): OrchestrationPolicy | undefined {
+  const maxCycles = validateOptionalInteger(
+    values.max_orchestration_cycles,
+    64,
+  );
+  const maxParallel = validateOptionalInteger(
+    values.max_parallel_delegated_tasks,
+    16,
+  );
+  if (
+    sourcePolicy === undefined
+    && maxCycles === undefined
+    && maxParallel === undefined
+  ) {
+    return undefined;
+  }
+  const nextPolicy: OrchestrationPolicy = { ...sourcePolicy };
+  assignOptionalPolicyValue(
+    nextPolicy,
+    sourcePolicy,
+    "max_orchestration_cycles",
+    maxCycles,
+  );
+  assignOptionalPolicyValue(
+    nextPolicy,
+    sourcePolicy,
+    "max_parallel_delegated_tasks",
+    maxParallel,
+  );
+  return nextPolicy;
+}
+
+function assignOptionalPolicyValue(
+  policy: OrchestrationPolicy,
+  sourcePolicy: OrchestrationPolicy | undefined,
+  key: "max_orchestration_cycles" | "max_parallel_delegated_tasks",
+  value: number | null | undefined,
+) {
+  if (value !== undefined || hasOwnProperty(sourcePolicy, key)) {
+    policy[key] = value;
+    return;
+  }
+  delete policy[key];
+}
+
+function validateOptionalInteger(
+  value: number | null | undefined,
+  maxValue: number,
+): number | null | undefined {
+  if (value === null || value === undefined) {
+    return value;
+  }
+  if (!Number.isInteger(value) || value < 0 || value > maxValue) {
+    throw new Error(`Expected an integer from 0 to ${maxValue}.`);
+  }
+  return value;
+}
+
+function optionalIntegerRule(maxValue: number, message: string) {
   return {
-    ...policy,
-    max_orchestration_cycles: normalizeInteger(
-      policy?.max_orchestration_cycles,
-      8,
-      64,
-    ),
-    max_parallel_delegated_tasks: normalizeInteger(
-      policy?.max_parallel_delegated_tasks,
-      4,
-      16,
-    ),
+    validator: (_rule: unknown, value: number | null | undefined) => {
+      if (value === null || value === undefined) {
+        return Promise.resolve();
+      }
+      return Number.isInteger(value) && value >= 0 && value <= maxValue
+        ? Promise.resolve()
+        : Promise.reject(new Error(message));
+    },
   };
 }
 
-function normalizeInteger(
-  value: number | null | undefined,
-  fallback: number,
-  maxValue: number,
-): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return fallback;
-  }
-  return Math.min(Math.max(Math.trunc(value), 0), maxValue);
+function hasOwnProperty(value: object | undefined, key: PropertyKey): boolean {
+  return value !== undefined && Object.prototype.hasOwnProperty.call(value, key);
 }
 
 function uniqueRoleIds(value: string[]): string[] {

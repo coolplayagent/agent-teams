@@ -6878,9 +6878,7 @@ function runtimeEntryIsSubagentToolLifecycle(entry: TimelineEntry): boolean {
   if (payload === null || payloadHasParseError(payload)) {
     return false;
   }
-  return subagentCandidateObjects(entry.payload).some(
-    subagentObjectHasExplicitReferenceFields,
-  );
+  return runtimeToolSemantics(payload).actionFamily === "subagent";
 }
 
 function timelineMessageHasDetachedSubagentPayload(message: TimelineMessage): boolean {

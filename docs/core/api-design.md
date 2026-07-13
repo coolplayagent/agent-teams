@@ -443,6 +443,20 @@ The response flattens effective hook handlers across user, project, and project-
 Each entry includes at least the handler name, hook event, matcher, source scope/path, and any scoped filters such as tool names or role IDs.
 When no hook files are active, the endpoint returns an empty `loaded_hooks` list.
 
+`PUT /system/configs/hooks` and `POST /system/configs/hooks:validate` return
+structured validation details for schema failures. Each detail contains a stable
+`type` code, a `loc` array identifying the hook group/handler/field, and a
+human-readable `msg`. Clients must use `type` and `loc` for field placement and
+must not parse the English message text.
+
+### `GET /speech/config`
+
+Returns the persisted speech input configuration plus backend-resolved model
+profile eligibility. `profile_eligibility[]` contains `profile_name`, effective
+`model`, `eligible`, and a stable optional `reason` code. The backend is the only
+authority for realtime STT eligibility; clients must not infer it from model
+names or provider-name prefixes.
+
 ### `GET /system/configs/plugins`
 
 Returns the persisted plugin configuration registry for user, project,

@@ -96,7 +96,9 @@ export function BoardTodosView({
   const { message } = App.useApp();
   const language = useUiStore((state) => state.language);
   const queryClient = useQueryClient();
-  const [handoffTarget, setHandoffTarget] = useState<BoardTodoItem | null>(null);
+  const [handoffTarget, setHandoffTarget] = useState<BoardTodoItem | null>(
+    null,
+  );
   const [handoffPrompt, setHandoffPrompt] = useState("");
   const [requestChangesTarget, setRequestChangesTarget] =
     useState<BoardTodoItem | null>(null);
@@ -322,15 +324,16 @@ export function BoardTodosView({
     [filteredRows, visibleColumns],
   );
   const activeWorkspaceLabel =
-    workspaceOptions.find((option) => option.value === activeWorkspaceId)?.label ??
+    workspaceOptions.find((option) => option.value === activeWorkspaceId)
+      ?.label ??
     activeWorkspaceId ??
     t("boardNoWorkspace");
   const handoffPreview = previewHandoffMutation.data;
   const requestChangesPreview = previewRequestChangesMutation.data;
   const sourceSettingsBusy =
-    createSourceMutation.isPending
-    || updateSourceMutation.isPending
-    || deleteSourceMutation.isPending;
+    createSourceMutation.isPending ||
+    updateSourceMutation.isPending ||
+    deleteSourceMutation.isPending;
 
   function openStartHandoff(item: BoardTodoItem) {
     setHandoffTarget(item);
@@ -378,7 +381,9 @@ export function BoardTodosView({
   }
 
   function updateSourceEditor(patch: Partial<BoardSourceEditorState>) {
-    setSourceEditor((current) => (current === null ? current : { ...current, ...patch }));
+    setSourceEditor((current) =>
+      current === null ? current : { ...current, ...patch },
+    );
   }
 
   function resetSourceEditor() {
@@ -444,8 +449,8 @@ export function BoardTodosView({
 
   function closeRequestChangesDrawer() {
     if (
-      previewRequestChangesMutation.isPending
-      || requestChangesMutation.isPending
+      previewRequestChangesMutation.isPending ||
+      requestChangesMutation.isPending
     ) {
       return;
     }
@@ -650,9 +655,9 @@ export function BoardTodosView({
                           statusAction={statusActionMutation.variables ?? null}
                           statusBusy={statusActionMutation.isPending}
                           startBusy={
-                            handoffTarget?.todo_id === item.todo_id
-                            && (previewHandoffMutation.isPending
-                              || startHandoffMutation.isPending)
+                            handoffTarget?.todo_id === item.todo_id &&
+                            (previewHandoffMutation.isPending ||
+                              startHandoffMutation.isPending)
                           }
                         />
                       ))
@@ -674,7 +679,10 @@ export function BoardTodosView({
         editor={sourceEditor}
         language={language}
         loadError={sourceSettingsQuery.error}
-        loading={sourceSettingsQuery.isFetching && sourceSettingsQuery.data === undefined}
+        loading={
+          sourceSettingsQuery.isFetching &&
+          sourceSettingsQuery.data === undefined
+        }
         onClose={closeSourceSettings}
         onDelete={(sourceId) => deleteSourceMutation.mutate(sourceId)}
         onEditorChange={updateSourceEditor}
@@ -751,7 +759,10 @@ function BoardTodoCard({
       ? statusAction.action
       : null;
   return (
-    <article className="at-board-card" data-testid={`board-todo-${item.todo_id}`}>
+    <article
+      className="at-board-card"
+      data-testid={`board-todo-${item.todo_id}`}
+    >
       <header className="at-board-card-header">
         <h4 title={item.title}>{item.title}</h4>
         {item.html_url ? (
@@ -776,12 +787,12 @@ function BoardTodoCard({
           </Tag>
         ) : null}
       </div>
-      {item.body.trim()
-      || item.repository_full_name
-      || item.execution_workspace_id
-      || item.session_id
-      || updatedAt
-      || item.last_status_reason ? (
+      {item.body.trim() ||
+      item.repository_full_name ||
+      item.execution_workspace_id ||
+      item.session_id ||
+      updatedAt ||
+      item.last_status_reason ? (
         <details className="at-board-card-details">
           <summary>
             {updatedAt ? `${t("boardUpdated")} ${updatedAt}` : sourceLabel}
@@ -794,7 +805,9 @@ function BoardTodoCard({
               {item.repository_full_name ? (
                 <div>
                   <dt>{t("boardRepository")}</dt>
-                  <dd title={item.repository_full_name}>{item.repository_full_name}</dd>
+                  <dd title={item.repository_full_name}>
+                    {item.repository_full_name}
+                  </dd>
                 </div>
               ) : null}
               {item.execution_workspace_id ? (
@@ -813,7 +826,9 @@ function BoardTodoCard({
               ) : null}
             </dl>
             {item.last_status_reason ? (
-              <div className="at-board-card-reason">{item.last_status_reason}</div>
+              <div className="at-board-card-reason">
+                {item.last_status_reason}
+              </div>
             ) : null}
           </div>
         </details>
@@ -927,10 +942,10 @@ function BoardSourceSettingsModal({
   const t = useTranslations();
   const sourceCount = settings?.sources.length ?? 0;
   const canSave =
-    editor !== null
-    && editor.displayName.trim().length > 0
-    && editor.repositoryFullName.trim().length > 0
-    && !busy;
+    editor !== null &&
+    editor.displayName.trim().length > 0 &&
+    editor.repositoryFullName.trim().length > 0 &&
+    !busy;
   return (
     <Modal
       centered
@@ -1103,8 +1118,14 @@ function BoardSourceRow({
           </span>
         </div>
         <div>
-          <Tag>{source.enabled ? t("boardSourceEnabled") : t("boardSourceDisabled")}</Tag>
-          {source.system_managed ? <Tag>{t("boardSourceSystemManaged")}</Tag> : null}
+          <Tag>
+            {source.enabled
+              ? t("boardSourceEnabled")
+              : t("boardSourceDisabled")}
+          </Tag>
+          {source.system_managed ? (
+            <Tag>{t("boardSourceSystemManaged")}</Tag>
+          ) : null}
           <Tooltip title={t("boardSourceEdit")}>
             <Button
               aria-label={t("boardSourceEdit")}
@@ -1230,8 +1251,8 @@ function BoardHandoffModal({
                 <dt>{t("boardHandoffExecutionPolicy")}</dt>
                 <dd>{formatBoardValue(preview.execution_policy)}</dd>
               </div>
-              {preview.execution_workspace_preview !== null
-              && preview.execution_workspace_preview !== undefined ? (
+              {preview.execution_workspace_preview !== null &&
+              preview.execution_workspace_preview !== undefined ? (
                 <div>
                   <dt>{t("boardHandoffExecutionWorkspace")}</dt>
                   <dd title={preview.execution_workspace_preview.display_name}>
@@ -1393,8 +1414,8 @@ function BoardRequestChangesModal({
                   <dd>{formatBoardValue(preview.execution_policy)}</dd>
                 </div>
               ) : null}
-              {preview.execution_workspace_preview !== null
-              && preview.execution_workspace_preview !== undefined ? (
+              {preview.execution_workspace_preview !== null &&
+              preview.execution_workspace_preview !== undefined ? (
                 <div>
                   <dt>{t("boardHandoffExecutionWorkspace")}</dt>
                   <dd title={preview.execution_workspace_preview.display_name}>
@@ -1518,9 +1539,7 @@ function createEmptyBoardSourceEditor(): BoardSourceEditorState {
 
 function boardStatusActionSuccess(
   action: BoardStatusAction,
-  t: (
-    key: "boardArchived" | "boardMarkedDone" | "boardRestored",
-  ) => string,
+  t: (key: "boardArchived" | "boardMarkedDone" | "boardRestored") => string,
 ): string {
   if (action === "mark-done") {
     return t("boardMarkedDone");
@@ -1540,7 +1559,9 @@ function replaceBoardItem(
     return undefined;
   }
   const shouldKeepItem = includeArchived || item.status !== "archived";
-  const found = board.items.some((candidate) => candidate.todo_id === item.todo_id);
+  const found = board.items.some(
+    (candidate) => candidate.todo_id === item.todo_id,
+  );
   const nextItems = found
     ? board.items.flatMap((candidate) => {
         if (candidate.todo_id !== item.todo_id) {
@@ -1596,13 +1617,16 @@ function formatSourceLabel(
     replacements?: Record<string, string | number>,
   ) => string,
 ) {
-  if (item.pull_request_number !== null && item.pull_request_number !== undefined) {
+  if (
+    item.pull_request_number !== null &&
+    item.pull_request_number !== undefined
+  ) {
     return t("boardPullRequestNumber", { number: item.pull_request_number });
   }
   if (item.issue_number !== null && item.issue_number !== undefined) {
     return t("boardIssueNumber", { number: item.issue_number });
   }
-  if (item.source_provider === "local") {
+  if (item.source_type === "manual") {
     return t("boardManualSource");
   }
   return item.source_key;

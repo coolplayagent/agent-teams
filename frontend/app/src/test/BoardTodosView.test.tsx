@@ -260,6 +260,34 @@ afterEach(() => {
 });
 
 describe("BoardTodosView", () => {
+  it("uses source type semantics when provider identifiers are renamed or unknown", async () => {
+    const manualItem = {
+      ...todoItem,
+      issue_number: undefined,
+      repository_full_name: undefined,
+      source_key: "manual-entry",
+      source_provider: "renamed-board-adapter",
+      source_type: "manual",
+      title: "Manual board task",
+      todo_id: "todo-manual",
+    } as unknown as BoardTodoItem;
+    const futureItem = {
+      ...manualItem,
+      source_key: "future-source-reference",
+      source_type: "future_source_kind",
+      title: "Future source task",
+      todo_id: "todo-future",
+    } as unknown as BoardTodoItem;
+    listBoardTodosMock.mockResolvedValue(
+      boardResponse([manualItem, futureItem], 2),
+    );
+
+    renderView();
+
+    expect(await screen.findByText("Manual")).toBeVisible();
+    expect(screen.getByText("future-source-reference")).toBeVisible();
+  });
+
   it("renders board TODO cards grouped by status", async () => {
     renderView();
 
@@ -270,7 +298,9 @@ describe("BoardTodosView", () => {
     expect(screen.getByText("PR #12")).toBeVisible();
     expect(screen.getByRole("status")).toHaveTextContent(/Showing\s+3/);
     expect(screen.queryByText("Revision")).not.toBeInTheDocument();
-    expect(document.querySelector(".at-board-overview")).not.toBeInTheDocument();
+    expect(
+      document.querySelector(".at-board-overview"),
+    ).not.toBeInTheDocument();
     expect(listBoardTodosMock).toHaveBeenCalledWith({
       includeArchived: false,
       workspaceId: "workspace-1",
@@ -283,12 +313,20 @@ describe("BoardTodosView", () => {
     const card = await screen.findByTestId("board-todo-todo-1");
     expect(within(card).getByText("Issue #401")).toBeVisible();
     expect(
-      within(card).getByText("Match the fixed shell and keep the board in one viewport."),
+      within(card).getByText(
+        "Match the fixed shell and keep the board in one viewport.",
+      ),
     ).not.toBeVisible();
 
-    fireEvent.click(within(card).getByText(/Updated/).closest("summary") as HTMLElement);
+    fireEvent.click(
+      within(card)
+        .getByText(/Updated/)
+        .closest("summary") as HTMLElement,
+    );
     expect(
-      within(card).getByText("Match the fixed shell and keep the board in one viewport."),
+      within(card).getByText(
+        "Match the fixed shell and keep the board in one viewport.",
+      ),
     ).toBeVisible();
     expect(within(card).getByText("openai/agent-teams")).toBeVisible();
   });
@@ -298,9 +336,12 @@ describe("BoardTodosView", () => {
 
     expect(await screen.findByTestId("board-todo-todo-1")).toBeVisible();
 
-    fireEvent.change(screen.getByRole("searchbox", { name: "Search board TODOs" }), {
-      target: { value: "handoff" },
-    });
+    fireEvent.change(
+      screen.getByRole("searchbox", { name: "Search board TODOs" }),
+      {
+        target: { value: "handoff" },
+      },
+    );
 
     expect(screen.queryByTestId("board-todo-todo-1")).not.toBeInTheDocument();
     expect(screen.getByTestId("board-todo-todo-2")).toBeVisible();
@@ -332,11 +373,15 @@ describe("BoardTodosView", () => {
     fireEvent.click(screen.getByRole("button", { name: "Board sources" }));
 
     const drawer = await screen.findByRole("dialog", { name: "Board sources" });
-    expect(await within(drawer).findByText("GitHub issues")).toBeInTheDocument();
+    expect(
+      await within(drawer).findByText("GitHub issues"),
+    ).toBeInTheDocument();
     expect(within(drawer).getByText("openai/agent-teams")).toBeInTheDocument();
     expect(listBoardTodoSourcesMock).toHaveBeenCalledWith("workspace-1");
 
-    fireEvent.click(within(drawer).getByRole("button", { name: "Edit source" }));
+    fireEvent.click(
+      within(drawer).getByRole("button", { name: "Edit source" }),
+    );
     fireEvent.change(within(drawer).getByLabelText("Name"), {
       target: { value: "GitHub issues updated" },
     });
@@ -386,8 +431,9 @@ describe("BoardTodosView", () => {
         view_workspace_id: "workspace-1",
       }),
     );
-    expect(await screen.findByRole("dialog", { name: "Start board TODO" }))
-      .toBeInTheDocument();
+    expect(
+      await screen.findByRole("dialog", { name: "Start board TODO" }),
+    ).toBeInTheDocument();
     const finalPrompt = await screen.findByLabelText("Final prompt");
     expect(finalPrompt).toHaveValue("Preview prompt for board handoff");
 
@@ -412,8 +458,9 @@ describe("BoardTodosView", () => {
     );
     const updatedCard = await screen.findByTestId("board-todo-todo-1");
     expandBoardCardDetails(updatedCard);
-    expect(await within(updatedCard).findByText("Queued for board todo handoff"))
-      .toBeVisible();
+    expect(
+      await within(updatedCard).findByText("Queued for board todo handoff"),
+    ).toBeVisible();
     expect(screen.getByText("In progress")).toBeVisible();
   });
 
@@ -470,8 +517,9 @@ describe("BoardTodosView", () => {
     );
     const updatedCard = await screen.findByTestId("board-todo-todo-2");
     expandBoardCardDetails(updatedCard);
-    expect(await within(updatedCard).findByText("Queued board change request"))
-      .toBeVisible();
+    expect(
+      await within(updatedCard).findByText("Queued board change request"),
+    ).toBeVisible();
     expect(screen.getByText("In progress")).toBeVisible();
   });
 
@@ -479,7 +527,9 @@ describe("BoardTodosView", () => {
     renderView();
 
     const reviewCard = await screen.findByTestId("board-todo-todo-2");
-    fireEvent.click(within(reviewCard).getByRole("button", { name: "Mark done" }));
+    fireEvent.click(
+      within(reviewCard).getByRole("button", { name: "Mark done" }),
+    );
     fireEvent.click(await screen.findByRole("button", { name: "OK" }));
 
     await waitFor(() =>
@@ -487,7 +537,9 @@ describe("BoardTodosView", () => {
     );
     const acceptedCard = await screen.findByTestId("board-todo-todo-2");
     expandBoardCardDetails(acceptedCard);
-    expect(await within(acceptedCard).findByText("Review accepted")).toBeVisible();
+    expect(
+      await within(acceptedCard).findByText("Review accepted"),
+    ).toBeVisible();
 
     const doneCard = await screen.findByTestId("board-todo-todo-3");
     fireEvent.click(within(doneCard).getByRole("button", { name: "Archive" }));

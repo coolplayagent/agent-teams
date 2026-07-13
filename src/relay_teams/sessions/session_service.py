@@ -2289,15 +2289,80 @@ class SessionService:
         return cast(list[dict[str, object]], list(events))
 
     def get_session_messages(self, session_id: str) -> list[dict[str, object]]:
-        return cast(
+        messages = cast(
             list[dict[str, object]],
             self._message_repo.get_messages_by_session(session_id),
+        )
+        return self._with_internal_provider_prompts(
+            session_id=session_id,
+            messages=messages,
         )
 
     async def get_session_messages_async(
         self, session_id: str
     ) -> list[dict[str, object]]:
         return await asyncio.to_thread(self.get_session_messages, session_id)
+
+    def _with_internal_provider_prompts(
+        self,
+        *,
+        session_id: str,
+        messages: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        if self._run_intent_repo is None:
+            return messages
+        intent_run_ids = set(self._run_intent_repo.list_by_session(session_id))
+        if not intent_run_ids:
+            return messages
+        root_task_ids_by_run = {
+            record.envelope.trace_id: record.envelope.task_id
+            for record in self._task_repo.list_by_session(session_id)
+            if record.envelope.parent_task_id is None
+            and record.envelope.trace_id in intent_run_ids
+        }
+        projected_messages: list[dict[str, object]] = []
+        projected_run_ids: set[str] = set()
+        for message in messages:
+            run_id = str(message.get("trace_id") or "").strip()
+            if not self._is_initial_provider_prompt(
+                message,
+                run_id=run_id,
+                root_task_id=root_task_ids_by_run.get(run_id),
+                projected_run_ids=projected_run_ids,
+            ):
+                projected_messages.append(message)
+                continue
+            projected_run_ids.add(run_id)
+            projected_messages.append({**message, "visibility": "internal"})
+        return projected_messages
+
+    @staticmethod
+    def _is_initial_provider_prompt(
+        message: dict[str, object],
+        *,
+        run_id: str,
+        root_task_id: str | None,
+        projected_run_ids: set[str],
+    ) -> bool:
+        if (
+            not run_id
+            or root_task_id is None
+            or run_id in projected_run_ids
+            or str(message.get("role") or "") != "user"
+            or str(message.get("task_id") or "") != root_task_id
+        ):
+            return False
+        raw_message = message.get("message")
+        if not isinstance(raw_message, dict):
+            return False
+        parts = raw_message.get("parts")
+        if not isinstance(parts, list):
+            return False
+        return any(
+            isinstance(part, dict)
+            and str(part.get("part_kind") or "") == "user-prompt"
+            for part in parts
+        )
 
     def get_session_tasks(self, session_id: str) -> list[dict[str, object]]:
         records = self._task_repo.list_by_session(session_id)

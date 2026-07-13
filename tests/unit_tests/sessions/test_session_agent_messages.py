@@ -14,7 +14,10 @@ from pydantic_ai.messages import (
 from relay_teams.agent_runtimes.instances.enums import InstanceStatus
 from relay_teams.agents.tasks.enums import TaskStatus
 from relay_teams.agents.tasks.models import TaskEnvelope, VerificationPlan
+from relay_teams.media import content_parts_from_text
 from relay_teams.sessions.runs.event_stream import RunEventHub
+from relay_teams.sessions.runs.run_intent_repo import RunIntentRepository
+from relay_teams.sessions.runs.run_models import IntentInput
 from relay_teams.sessions.session_service import SessionService
 from relay_teams.agent_runtimes.instances.instance_repository import (
     AgentInstanceRepository,
@@ -46,7 +49,101 @@ def _build_service(db_path: Path) -> SessionService:
         event_log=EventLog(db_path),
         token_usage_repo=TokenUsageRepository(db_path),
         run_event_hub=RunEventHub(),
+        run_intent_repo=RunIntentRepository(db_path),
     )
+
+
+def test_session_messages_hide_provider_prompt_behind_display_intent(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "session_message_display_contract.db"
+    service = _build_service(db_path)
+    _ = service.create_session(session_id="session-1", workspace_id="default")
+
+    task_repo = TaskRepository(db_path)
+    _ = task_repo.create(
+        TaskEnvelope(
+            task_id="task-root-1",
+            session_id="session-1",
+            parent_task_id=None,
+            trace_id="run-1",
+            objective="Review the streaming UI",
+            verification=VerificationPlan(checklist=("non_empty_response",)),
+        )
+    )
+    _ = task_repo.create(
+        TaskEnvelope(
+            task_id="task-child-1",
+            session_id="session-1",
+            parent_task_id="task-root-1",
+            trace_id="run-1",
+            role_id="Explorer",
+            objective="Inspect the timeline implementation",
+            verification=VerificationPlan(checklist=("non_empty_response",)),
+        )
+    )
+    run_intent_repo = service._run_intent_repo
+    assert run_intent_repo is not None
+    run_intent_repo.upsert(
+        run_id="run-1",
+        session_id="session-1",
+        intent=IntentInput(
+            session_id="session-1",
+            input=content_parts_from_text("Review the streaming UI"),
+            display_input=content_parts_from_text("Review the streaming UI"),
+        ),
+    )
+
+    provider_prompt = (
+        "Review the streaming UI\n\n"
+        "## Skill Candidates\n"
+        "If one of these skills looks relevant, load it before acting.\n"
+        "- ui-audit: Inspect the visible product experience."
+    )
+    message_repo = MessageRepository(db_path)
+    message_repo.append(
+        session_id="session-1",
+        workspace_id="default",
+        instance_id="inst-root-1",
+        task_id="task-root-1",
+        trace_id="run-1",
+        messages=[ModelRequest(parts=[UserPromptPart(content=provider_prompt)])],
+    )
+    message_repo.append(
+        session_id="session-1",
+        workspace_id="default",
+        instance_id="inst-child-1",
+        task_id="task-child-1",
+        trace_id="run-1",
+        messages=[
+            ModelRequest(
+                parts=[UserPromptPart(content="Inspect the timeline implementation")]
+            )
+        ],
+    )
+
+    projected = service.get_session_messages("session-1")
+    root_message = next(
+        message for message in projected if message["task_id"] == "task-root-1"
+    )
+    child_message = next(
+        message for message in projected if message["task_id"] == "task-child-1"
+    )
+    stored = message_repo.get_messages_by_session("session-1")
+    stored_root = next(
+        message for message in stored if message["task_id"] == "task-root-1"
+    )
+    stored_root_message = cast(dict[str, object], stored_root["message"])
+    stored_root_parts = cast(list[dict[str, object]], stored_root_message["parts"])
+    page = service.get_session_rounds("session-1", limit=8)
+    items = page.get("items")
+
+    assert root_message["visibility"] == "internal"
+    assert child_message.get("visibility") != "internal"
+    assert "visibility" not in stored_root
+    assert stored_root_parts[0]["content"] == provider_prompt
+    assert isinstance(items, list)
+    assert items[0]["intent"] == "Review the streaming UI"
 
 
 def test_get_agent_messages_includes_role_id(tmp_path: Path) -> None:

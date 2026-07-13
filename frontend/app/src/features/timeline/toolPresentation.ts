@@ -12,6 +12,7 @@ export type ToolSemanticCategory =
 export type ToolActionFamily =
   | "edit"
   | "generic"
+  | "orchestration"
   | "read"
   | "run"
   | "search"
@@ -38,6 +39,7 @@ const EXECUTION_TOKENS = [
 ];
 const WEB_TOKENS = ["browser", "fetch", "search", "url", "web"];
 const ORCHESTRATION_TOKENS = [
+  "orch_",
   "activate_skill_roles",
   "create_task",
   "dispatch_task",
@@ -46,6 +48,7 @@ const ORCHESTRATION_TOKENS = [
   "subagent",
   "update_task",
 ];
+const SUBAGENT_ACTION_TOKENS = ["dispatch_task", "spawn_subagent", "subagent"];
 const INTERACTIVE_TOKENS = ["approval", "ask_question", "confirm", "select"];
 const PLANNING_TOKENS = ["plan", "todo"];
 const MEMORY_ARTIFACT_TOKENS = ["artifact", "attachment", "memory"];
@@ -87,7 +90,9 @@ export function toolSemanticCategory(toolName: string): ToolSemanticCategory {
 export function toolActionFamily(toolName: string): ToolActionFamily {
   const category = toolSemanticCategory(toolName);
   if (category === "orchestration") {
-    return "subagent";
+    return containsToken(normalizedToolName(toolName), SUBAGENT_ACTION_TOKENS)
+      ? "subagent"
+      : "orchestration";
   }
   if (category === "execution") {
     return "run";

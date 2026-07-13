@@ -1208,6 +1208,7 @@ function writeActiveSubagentPanel(subagent: ActiveSubagentSession | null): void 
       sourceToolCallId: subagent.sourceToolCallId,
       status: subagent.status,
       subagentKind: subagent.subagentKind,
+      taskId: subagent.taskId,
       title: subagent.title,
       updatedAt: subagent.updatedAt,
     }),
@@ -1245,6 +1246,7 @@ function activeSubagentPanelFromRecord(
     sourceToolCallId: stringRecordValue(value, "sourceToolCallId"),
     status: stringRecordValue(value, "status"),
     subagentKind: stringRecordValue(value, "subagentKind"),
+    taskId: stringRecordValue(value, "taskId"),
     title,
     updatedAt: stringRecordValue(value, "updatedAt"),
   };
@@ -1375,6 +1377,7 @@ function activeSubagentFromTimelineReference(
     sourceToolCallId: reference.sourceToolCallId ?? "",
     status,
     subagentKind: reference.subagentKind ?? "normal",
+    taskId: "",
     title,
     updatedAt: reference.updatedAt ?? "",
   };
@@ -1407,7 +1410,7 @@ function matchingSubagentFromRecords(
   if (instanceId.length > 0) {
     return normalized.find((record) => record.instanceId === instanceId) ?? null;
   }
-  return normalized.length === 1 ? normalized[0] : null;
+  return null;
 }
 
 function validSidebarSessions(value: unknown): SessionSidebarRecord[] {

@@ -8876,7 +8876,7 @@ function MessageToolBlock({
             callId={tool.callId}
             error={tool.error}
             input={tool.inputBody ?? (tool.phase === "call" ? tool.body : "")}
-            output={tool.outputBody ?? (tool.phase === "call" ? "" : tool.body)}
+            output={tool.outputBody ?? ""}
             raw={tool.body}
             t={t}
             toolName={tool.toolName}

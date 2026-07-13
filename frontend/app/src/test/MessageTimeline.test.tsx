@@ -6509,9 +6509,11 @@ describe("MessageTimeline", () => {
     const toolBlock = screenElement(toolTitle).closest(".at-message-tool");
     expect(toolBlock).toHaveAttribute("data-status", "completed");
     expect(toolBlock?.querySelector(".at-message-tool-spinner")).toBeNull();
-    expect(toolPreElement(screenElement(toolTitle))).toHaveTextContent(
+    const persistedTool = within(toolBlock as HTMLElement);
+    expect(persistedTool.getByText("Input").nextElementSibling).toHaveTextContent(
       /persisted-pressure-1/,
     );
+    expect(persistedTool.queryByText("Output")).not.toBeInTheDocument();
   });
 
   it("renders image media references with previewable images", async () => {

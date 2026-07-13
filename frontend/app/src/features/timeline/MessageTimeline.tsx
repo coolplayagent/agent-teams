@@ -4372,12 +4372,7 @@ function runtimeEntriesToRows(
     rememberResolvedRuntimeToolCall(entry, resolvedToolCallIds);
     if (
       entry.kind === "background_task_updated" &&
-      applyRuntimeBackgroundTaskUpdateEvent(
-        entry,
-        rows,
-        activeText,
-        nextTextSegmentSequence,
-      )
+      applyRuntimeToolOutputDeltaEvent(entry, rows)
     ) {
       continue;
     }
@@ -4466,27 +4461,28 @@ function runtimeEntriesToRows(
   return rows;
 }
 
-function applyRuntimeBackgroundTaskUpdateEvent(
+function applyRuntimeToolOutputDeltaEvent(
   entry: TimelineEntry,
   rows: TimelineRow[],
-  activeText: Map<string, RuntimeTextAccumulator>,
-  nextTextSegmentSequence: () => number,
 ): boolean {
   const payload = jsonObject(entry.payload);
   if (payload === null || payloadHasParseError(payload)) {
-    return false;
+    return true;
   }
   const delta = objectRawString(payload, "delta");
   if (delta.length === 0) {
-    return false;
+    return true;
   }
-  return appendRuntimeTextSegment(
-    entry,
-    delta,
-    rows,
-    activeText,
-    nextTextSegmentSequence,
-  );
+  const callId = objectString(payload, "tool_call_id");
+  if (callId.length === 0) {
+    return true;
+  }
+  const tool = findPendingRuntimeToolPart(rows, entry.runId, callId);
+  if (tool === null) {
+    return true;
+  }
+  tool.outputBody = `${tool.outputBody ?? ""}${delta}`;
+  return true;
 }
 
 function closeTerminalRuntimeTextSegments(

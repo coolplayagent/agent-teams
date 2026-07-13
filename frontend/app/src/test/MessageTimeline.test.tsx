@@ -7741,7 +7741,7 @@ describe("MessageTimeline", () => {
     expect(screen.getAllByText(answerText)).toHaveLength(1);
   });
 
-  it("renders subagent panel background updates as output without internal labels", async () => {
+  it("keeps subagent tool output inside its associated tool disclosure", async () => {
     setRuntimeEntries(
       [
         runtimeGenericEntry({
@@ -7759,14 +7759,13 @@ describe("MessageTimeline", () => {
         }),
         runtimeGenericEntry({
           id: "subagent-panel-noise:2:1",
-          kind: "background_task_started",
-          text: "background task started",
+          kind: "tool_call",
+          text: "shell",
           eventId: 2,
           payload: {
-            background_task_id: "background-task-1",
-            command: "python stream.py",
-            kind: "command",
-            status: "running",
+            args: { command: "python stream.py" },
+            tool_call_id: "call-subagent-shell",
+            tool_name: "shell",
           },
         }),
         runtimeGenericEntry({
@@ -7778,6 +7777,7 @@ describe("MessageTimeline", () => {
             background_task_id: "background-task-1",
             delta: "SUBAGENT_STREAM_1",
             status: "running",
+            tool_call_id: "call-subagent-shell",
           },
         }),
         runtimeGenericEntry({
@@ -7796,16 +7796,29 @@ describe("MessageTimeline", () => {
     );
     listSessionMessagesMock.mockResolvedValue([]);
 
-    renderTimeline("session-1", {
+    const { container } = renderTimeline("session-1", {
       runtimeRunId: "run-output",
       variant: "subagent-panel",
     });
 
-    expect(await screen.findByText("SUBAGENT_STREAM_1")).toBeVisible();
+    const toolDetails = await waitFor(() => {
+      const element = container.querySelector<HTMLDetailsElement>(
+        'details[data-tool-call-id="call-subagent-shell"]',
+      );
+      expect(element).not.toBeNull();
+      return element as HTMLDetailsElement;
+    });
+    expect(container.querySelector(".at-message-text")).toBeNull();
+    expect(toolDetails).not.toHaveAttribute("open");
+    expect(toolDetails.querySelector(".at-message-tool-preview"))
+      .not.toHaveTextContent("SUBAGENT_STREAM_1");
+
+    fireEvent.click(toolDetails.querySelector("summary")!);
+
+    expect(toolDetails).toHaveTextContent("SUBAGENT_STREAM_1");
     expect(screen.queryByText(/Subagent status/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Background task/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Explore skill implementation/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/python stream.py/)).not.toBeInTheDocument();
     expect(screen.queryByText(/SUBAGENT_STREAM_DONE/)).not.toBeInTheDocument();
   });
 
@@ -12589,7 +12602,7 @@ describe("MessageTimeline", () => {
     expect(
       screen.queryByText("Model step finished: model pass complete"),
     ).not.toBeInTheDocument();
-    expect(screen.getByText("Compiled successfully")).toBeVisible();
+    expect(screen.queryByText("Compiled successfully")).not.toBeInTheDocument();
     expect(screen.queryByText("model step started")).not.toBeInTheDocument();
     expect(screen.queryByText("notification requested")).not.toBeInTheDocument();
     expect(screen.queryByText("background task started")).not.toBeInTheDocument();
@@ -12598,29 +12611,28 @@ describe("MessageTimeline", () => {
     expect(screen.queryByText(/Build finished/)).not.toBeInTheDocument();
   });
 
-  it("renders background task deltas as one output stream without internal labels", async () => {
+  it("routes interleaved background deltas to their matching tool calls", async () => {
     setRuntimeEntries([
       runtimeGenericEntry({
         id: "run-background-stream:1:0",
-        kind: "background_task_started",
-        text: "background task started",
+        kind: "tool_call",
+        text: "shell",
         eventId: 1,
         payload: {
-          background_task_id: "background-task-stream",
-          command: "python slow_stream.py",
-          kind: "command",
-          status: "running",
+          args: { command: "python alpha.py" },
+          tool_call_id: "call-alpha",
+          tool_name: "shell",
         },
       }),
       runtimeGenericEntry({
         id: "run-background-stream:2:1",
-        kind: "background_task_updated",
-        text: "background task updated",
+        kind: "tool_call",
+        text: "shell",
         eventId: 2,
         payload: {
-          background_task_id: "background-task-stream",
-          delta: "STREAM_ALPHA ",
-          status: "running",
+          args: { command: "python beta.py" },
+          tool_call_id: "call-beta",
+          tool_name: "shell",
         },
       }),
       runtimeGenericEntry({
@@ -12630,19 +12642,33 @@ describe("MessageTimeline", () => {
         eventId: 3,
         payload: {
           background_task_id: "background-task-stream",
-          delta: "STREAM_BETA",
+          delta: "STREAM_ALPHA ",
           status: "running",
+          tool_call_id: "call-alpha",
         },
       }),
       runtimeGenericEntry({
         id: "run-background-stream:4:3",
-        kind: "background_task_completed",
-        text: "background task completed",
+        kind: "background_task_updated",
+        text: "background task updated",
         eventId: 4,
         payload: {
+          background_task_id: "background-task-beta",
+          delta: "STREAM_BETA_ONLY",
+          status: "running",
+          tool_call_id: "call-beta",
+        },
+      }),
+      runtimeGenericEntry({
+        id: "run-background-stream:5:4",
+        kind: "background_task_updated",
+        text: "background task updated",
+        eventId: 5,
+        payload: {
           background_task_id: "background-task-stream",
-          output_excerpt: "STREAM_ALPHA STREAM_BETA",
-          status: "completed",
+          delta: "STREAM_ALPHA_DONE",
+          status: "running",
+          tool_call_id: "call-alpha",
         },
       }),
     ]);
@@ -12650,12 +12676,126 @@ describe("MessageTimeline", () => {
 
     const { container } = renderTimeline();
 
-    expect(await screen.findByText("STREAM_ALPHA STREAM_BETA")).toBeVisible();
-    expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
-    expect(container.querySelector(".at-message-streaming-text")).toBeNull();
-    expect(container.querySelector(".streaming-cursor")).toBeNull();
-    expect(screen.queryByText(/Background task/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/python slow_stream.py/)).not.toBeInTheDocument();
+    const toolDetails = await waitFor(() => {
+      const elements = container.querySelectorAll<HTMLDetailsElement>(
+        "details[data-tool-call-id]",
+      );
+      expect(elements).toHaveLength(2);
+      return elements;
+    });
+    expect(container.querySelectorAll(".at-message-text")).toHaveLength(0);
+
+    const alphaDetails = Array.from(toolDetails).find(
+      (element) => element.dataset.toolCallId === "call-alpha",
+    );
+    expect(alphaDetails).toBeDefined();
+    fireEvent.click(alphaDetails!.querySelector("summary")!);
+    expect(alphaDetails).toHaveTextContent("STREAM_ALPHA STREAM_ALPHA_DONE");
+    expect(alphaDetails).not.toHaveTextContent("STREAM_BETA_ONLY");
+
+    const betaDetails = Array.from(toolDetails).find(
+      (element) => element.dataset.toolCallId === "call-beta",
+    );
+    expect(betaDetails).toBeDefined();
+    fireEvent.click(betaDetails!.querySelector("summary")!);
+    expect(betaDetails).toHaveTextContent("STREAM_BETA_ONLY");
+    expect(betaDetails).not.toHaveTextContent("STREAM_ALPHA_DONE");
+  });
+
+  it("does not promote an unassociated background delta to assistant text", async () => {
+    setRuntimeEntries([
+      runtimeGenericEntry({
+        id: "run-orphan-background:1:0",
+        kind: "background_task_updated",
+        text: "background task updated",
+        eventId: 1,
+        payload: {
+          background_task_id: "background-task-orphan",
+          delta: "ORPHAN_TOOL_OUTPUT",
+          status: "running",
+        },
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    await waitFor(() => expect(listSessionMessagesMock).toHaveBeenCalled());
+    expect(container.querySelector("article.at-message")).toBeNull();
+    expect(screen.queryByText("ORPHAN_TOOL_OUTPUT")).not.toBeInTheDocument();
+  });
+
+  it("keeps child tool lifecycle and output out of the primary timeline", async () => {
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [{
+        coordinator_messages: [],
+        instance_role_map: {
+          "child-instance": "Crafter",
+          "root-instance": "MainAgent",
+        },
+        primary_role_id: "MainAgent",
+        role_instance_map: {
+          Crafter: "child-instance",
+          MainAgent: "root-instance",
+        },
+        run_id: "run-output",
+        run_status: "running",
+      }],
+      next_cursor: null,
+    });
+    setRuntimeEntries([
+      runtimeGenericEntry({
+        id: "root-output:1:0",
+        instanceId: "root-instance",
+        kind: "text_delta",
+        roleId: "MainAgent",
+        text: "ROOT_OUTPUT_VISIBLE",
+        eventId: 1,
+        payload: { text: "ROOT_OUTPUT_VISIBLE" },
+      }),
+      runtimeGenericEntry({
+        id: "child-shell:2:1",
+        instanceId: "child-instance",
+        kind: "tool_call",
+        roleId: "Crafter",
+        text: "shell",
+        eventId: 2,
+        payload: {
+          args: { command: "child command" },
+          tool_call_id: "call-child-shell",
+          tool_name: "shell",
+        },
+      }),
+      runtimeGenericEntry({
+        id: "child-shell:3:2",
+        instanceId: "child-instance",
+        kind: "background_task_updated",
+        roleId: "Crafter",
+        text: "background task updated",
+        eventId: 3,
+        payload: {
+          background_task_id: "background-child-shell",
+          delta: "CHILD_STDOUT_HIDDEN",
+          instance_id: "child-instance",
+          role_id: "Crafter",
+          status: "running",
+          tool_call_id: "call-child-shell",
+        },
+      }),
+    ], "open");
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline("session-1", {
+      primaryRoleId: "MainAgent",
+    });
+
+    expect(await screen.findByText("ROOT_OUTPUT_VISIBLE")).toBeVisible();
+    await waitFor(() => {
+      expect(container.querySelector('[data-instance-id="child-instance"]')).toBeNull();
+    });
+    expect(screen.queryByText("Running: shell")).not.toBeInTheDocument();
+    expect(screen.queryByText("CHILD_STDOUT_HIDDEN")).not.toBeInTheDocument();
   });
 
   it("hides internal coordination events from the transcript while keeping recovery events visible", async () => {
@@ -13919,22 +14059,27 @@ function runtimeThinkingDeltaEntry({
 
 function runtimeGenericEntry({
   id,
+  instanceId,
   kind,
+  roleId = "MainAgent",
   text,
   eventId,
   payload,
 }: {
   id: string;
+  instanceId?: string;
   kind: TimelineEntry["kind"];
+  roleId?: string;
   text: string;
   eventId: number;
   payload?: TimelineEntry["payload"];
 }): TimelineEntry {
   return {
     id,
+    instanceId,
     sessionId: "session-1",
     runId: "run-output",
-    roleId: "MainAgent",
+    roleId,
     kind,
     text,
     payload: payload ?? { title: text },

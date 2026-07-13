@@ -1351,14 +1351,14 @@ function activeSubagentFromTimelineReference(
   const runPhase = firstNonBlank(reference.runPhase);
   const runStatus = firstNonBlank(reference.runStatus, reference.status, "running");
   const status = firstNonBlank(reference.status, reference.runStatus, "running");
+  const hasExplicitIdentity = [
+    runId,
+    instanceId,
+    reference.sourceRunId?.trim() ?? "",
+    reference.sourceToolCallId?.trim() ?? "",
+  ].some((value) => value.length > 0);
   if (
-    reference.sessionId.trim().length === 0 ||
-    (
-      runId.length === 0 &&
-      instanceId.length === 0 &&
-      roleId.length === 0 &&
-      title === "Subagent"
-    )
+    reference.sessionId.trim().length === 0 || !hasExplicitIdentity
   ) {
     return null;
   }

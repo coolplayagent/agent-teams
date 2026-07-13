@@ -345,6 +345,7 @@ vi.mock("../features/timeline/MessageTimeline", () => ({
             description: "Explore skills implementation",
             prompt: "Explore skills without editing files.",
             roleId: "explorer",
+            runId: "subagent-run-pending",
             sessionId: sessionId ?? "session-1",
             title: "Explore skills implementation",
           });
@@ -1645,7 +1646,7 @@ describe("AppShell", () => {
     }
   });
 
-  it("opens running subagent timeline cards before backend ids hydrate", async () => {
+  it("opens running subagent timeline cards before backend instance ids hydrate", async () => {
     let resolveSubagents: ((records: SessionSubagentRecord[]) => void) | undefined;
     listSessionSubagentsMock.mockReturnValue(
       new Promise<SessionSubagentRecord[]>((resolve) => {
@@ -1660,7 +1661,7 @@ describe("AppShell", () => {
     const subagentSurface = await screen.findByTestId("subagent-session-view");
     expect(subagentSurface).toHaveAttribute("data-session-id", "session-1");
     expect(subagentSurface).toHaveAttribute("data-instance-id", "");
-    expect(subagentSurface).toHaveAttribute("data-run-id", "");
+    expect(subagentSurface).toHaveAttribute("data-run-id", "subagent-run-pending");
     expect(subagentSurface).toHaveAttribute("data-run-status", "running");
     expect(screen.getByText("Explore skills implementation")).toBeVisible();
 
@@ -1678,14 +1679,14 @@ describe("AppShell", () => {
           instance_id: "subagent-instance-running",
           last_event_id: 11,
           role_id: "explorer",
-          run_id: "subagent_run_running",
+          run_id: "subagent-run-pending",
           run_status: "running",
           session_id: "session-1",
           status: "running",
           subagent_instance_id: "subagent-instance-running",
           subagent_kind: "normal",
           subagent_role_id: "explorer",
-          subagent_run_id: "subagent_run_running",
+          subagent_run_id: "subagent-run-pending",
           title: "Explore skills implementation",
           updated_at: "2026-06-23T10:03:00Z",
         },
@@ -1699,7 +1700,7 @@ describe("AppShell", () => {
     );
     expect(screen.getByTestId("subagent-session-view")).toHaveAttribute(
       "data-run-id",
-      "subagent_run_running",
+      "subagent-run-pending",
     );
   });
 
@@ -1722,7 +1723,7 @@ describe("AppShell", () => {
       instance_id: "subagent-instance-event",
       last_event_id: 12,
       role_id: "explorer",
-      run_id: "subagent-run-event",
+      run_id: "subagent-run-pending",
       run_status: "running",
       session_id: "session-1",
       status: "running",

@@ -8737,7 +8737,6 @@ function MessageThinkingBlock({
           <MarkdownMessage
             resizeTimelineRow={resizeTimelineRow}
             streaming={thinking.streaming}
-            streamingPresentation="plain"
             text={thinking.text}
           />
         </div>

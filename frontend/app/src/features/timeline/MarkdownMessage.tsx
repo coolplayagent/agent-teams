@@ -1,11 +1,10 @@
-import { memo, useLayoutEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { rehypeCodeHighlight } from "./markdownHighlight";
 
 interface MarkdownMessageProps {
   resizeTimelineRow?: (index: number, size: number) => void;
-  streamingPresentation?: "markdown" | "plain";
   streaming?: boolean;
   text: string;
 }
@@ -30,15 +29,13 @@ const markdownComponents: Components = {
 
 export const MarkdownMessage = memo(function MarkdownMessage({
   resizeTimelineRow,
-  streamingPresentation = "markdown",
   streaming = false,
   text,
 }: MarkdownMessageProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const lastMeasuredSizeRef = useRef<number | null>(null);
-  const renderPlainStreaming = streaming && streamingPresentation === "plain";
   const visibleText = stripMarkdownFrontmatter(text);
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (resizeTimelineRow === undefined) {
       return;
     }
@@ -49,33 +46,41 @@ export const MarkdownMessage = memo(function MarkdownMessage({
     if (timelineRow === null || !Number.isInteger(index) || index < 0) {
       return;
     }
-    const offsetHeight = timelineRow.offsetHeight;
-    const size = offsetHeight > 0
-      ? offsetHeight
-      : timelineRow.getBoundingClientRect().height;
-    if (
-      Number.isFinite(size) &&
-      size > 0 &&
-      lastMeasuredSizeRef.current !== size
-    ) {
-      lastMeasuredSizeRef.current = size;
-      resizeTimelineRow(index, size);
+    if (typeof ResizeObserver === "undefined") {
+      return;
     }
-  }, [visibleText, resizeTimelineRow]);
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries.find((candidate) => candidate.target === timelineRow);
+      if (entry === undefined) {
+        return;
+      }
+      const size = entry.borderBoxSize[0]?.blockSize ?? entry.contentRect.height;
+      if (
+        Number.isFinite(size) &&
+        size > 0 &&
+        lastMeasuredSizeRef.current !== size
+      ) {
+        lastMeasuredSizeRef.current = size;
+        resizeTimelineRow(index, size);
+      }
+    });
+    observer.observe(timelineRow);
+    return () => observer.disconnect();
+  }, [resizeTimelineRow]);
   return (
     <div
       className="at-message-markdown"
       data-streaming={streaming ? "true" : undefined}
       ref={containerRef}
     >
-      {renderPlainStreaming ? (
+      {streaming ? (
         <span className="at-message-streaming-plain">
           {visibleText}
         </span>
       ) : (
         <ReactMarkdown
           components={markdownComponents}
-          rehypePlugins={streaming ? [] : [rehypeCodeHighlight]}
+          rehypePlugins={[rehypeCodeHighlight]}
           remarkPlugins={[remarkGfm]}
         >
           {visibleText}

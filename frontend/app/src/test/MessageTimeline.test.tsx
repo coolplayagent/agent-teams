@@ -1806,7 +1806,7 @@ describe("MessageTimeline", () => {
     const finalAnswer = [
       "LIVE_STREAM_ALPHA",
       "LIVE_STREAM_BETA",
-      "LIVE_STREAM_GAMMA",
+      "**LIVE_STREAM_GAMMA**",
       "LIVE_STREAM_DELTA",
     ].join(" ");
     const textEvent = relayRunEvent({
@@ -1825,9 +1825,14 @@ describe("MessageTimeline", () => {
     const rowBefore = container.querySelector<HTMLElement>("article.at-message");
     const textNodeBefore = container.querySelector<HTMLElement>(".at-message-text");
     const markdownBefore = container.querySelector<HTMLElement>(".at-message-markdown");
+    const plainTextBefore = container.querySelector<HTMLElement>(
+      ".at-message-streaming-plain",
+    );
     expect(rowBefore).not.toBeNull();
     expect(textNodeBefore).not.toBeNull();
     expect(markdownBefore).not.toBeNull();
+    expect(plainTextBefore).not.toBeNull();
+    expect(container.querySelector("strong")).toBeNull();
     expect(textNodeBefore).toHaveClass("at-message-streaming-text");
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(1);
 
@@ -1849,13 +1854,16 @@ describe("MessageTimeline", () => {
       .toBe(textNodeBefore);
     const markdownAfter = container.querySelector<HTMLElement>(".at-message-markdown");
     expect(markdownAfter).toBe(markdownBefore);
-    expect(markdownAfter?.querySelector("p")).toBe(
-      markdownBefore?.querySelector("p"),
+    expect(markdownAfter?.querySelector("p")).toHaveTextContent(
+      "LIVE_STREAM_ALPHA LIVE_STREAM_BETA LIVE_STREAM_GAMMA LIVE_STREAM_DELTA",
     );
-    expect(markdownAfter?.querySelector("p")).toHaveTextContent(finalAnswer);
+    expect(markdownAfter?.querySelector("strong")).toHaveTextContent(
+      "LIVE_STREAM_GAMMA",
+    );
+    expect(container.querySelector(".at-message-streaming-plain")).toBeNull();
     expect(textNodeBefore).not.toHaveClass("at-message-streaming-text");
     expect(container.querySelectorAll(".streaming-cursor")).toHaveLength(0);
-    expect(screen.getByText(finalAnswer)).toBeVisible();
+    expect(markdownAfter?.querySelector("p")).toBeVisible();
   });
 
   it("does not re-render a completed runtime text segment after the full delta arrives", async () => {
@@ -9382,26 +9390,43 @@ describe("MessageTimeline", () => {
   });
 
   it("keeps a renamed orchestration root stream when the normal-mode role differs", async () => {
-    setRuntimeEntries([{
+    const orchestrationRootEntry: TimelineEntry = {
       eventId: 1,
       id: "renamed-root:1:0",
       kind: "text_delta",
       occurredAt: "2026-07-12T14:03:08Z",
-      payload: { text: "renamed root live output" },
+      payload: { text: "renamed root **live** output" },
       roleId: "RenamedPrimaryAgent",
       runId: "renamed-root",
       sessionId: "session-1",
-      text: "renamed root live output",
-    }], "open", {
+      text: "renamed root **live** output",
+    };
+    setRuntimeEntries([orchestrationRootEntry], "open", {
       targetRoleId: "RenamedPrimaryAgent",
     });
     listSessionMessagesMock.mockResolvedValue([]);
 
-    renderTimeline("session-1", {
+    const { container } = renderTimeline("session-1", {
       primaryRoleId: "NormalModeDefault",
     });
 
-    expect(await screen.findByText("renamed root live output")).toBeVisible();
+    expect(await screen.findByText("renamed root **live** output")).toBeVisible();
+    const markdownBefore = container.querySelector<HTMLElement>(".at-message-markdown");
+    expect(markdownBefore).not.toBeNull();
+    expect(container.querySelector(".at-message-streaming-plain")).not.toBeNull();
+    expect(container.querySelector("strong")).toBeNull();
+
+    act(() => {
+      setRuntimeEntries([orchestrationRootEntry], "closed", {
+        targetRoleId: "RenamedPrimaryAgent",
+      });
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector(".at-message-markdown")).toBe(markdownBefore);
+      expect(container.querySelector(".at-message-streaming-plain")).toBeNull();
+      expect(container.querySelector("strong")).toHaveTextContent("live");
+    });
   });
 
   it("does not expose an unscoped partial transcript while round identity is loading", async () => {

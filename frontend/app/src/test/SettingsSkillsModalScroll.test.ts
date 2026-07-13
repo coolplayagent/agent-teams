@@ -20,6 +20,13 @@ const skillsCss = readFileSync(
 describe("settings and skills modal scroll ownership", () => {
   it("makes the settings modal body the only vertical scroll owner", () => {
     expect(settingsSource).toContain('classNames={{ body: "at-scroll-region" }}');
+    const modalContentRule = settingsCss.match(
+      /\.at-settings-modal \.ant-modal-content\s*\{([^}]*)\}/,
+    );
+    expect(modalContentRule?.[1]).toMatch(/overflow:\s*clip;/);
+    expect(modalContentRule?.[1]).not.toMatch(
+      /overflow(?:-y)?:\s*(?:auto|hidden|scroll);/,
+    );
     expect(settingsCss).toMatch(
       /\.at-settings-modal \.ant-modal-body\s*{[\s\S]*?overflow-y:\s*auto;/,
     );

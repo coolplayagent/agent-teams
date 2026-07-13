@@ -8,7 +8,10 @@
   flex-direction: column;
   height: min(860px, calc(100dvh - 48px));
   max-height: calc(100dvh - 48px);
-  overflow: hidden;
+  /* `hidden` still creates a programmatically scrollable ancestor. When a
+     control in the scrolled body receives focus, Chromium can scroll both the
+     body and this element. `clip` keeps the body as the sole scroll owner. */
+  overflow: clip;
   padding: 0;
 }
 

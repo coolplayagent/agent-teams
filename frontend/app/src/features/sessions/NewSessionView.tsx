@@ -6,6 +6,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   createRun,
   createSession,
+  getGeneralConfig,
   getModelProfiles,
   getOrchestrationConfig,
   getRoleConfigOptions,
@@ -13,6 +14,7 @@ import {
 } from "../../api/client";
 import type {
   RunCreateResponse,
+  RunThinkingConfig,
   SessionRecord,
   ThinkingEffort,
   WorkspaceRecord,
@@ -22,6 +24,13 @@ import { useOptimisticRunStore } from "../../runtime/optimisticRunStore";
 import { DisclosureMotion } from "../../components/AsyncFeedback";
 import { ModelRequestStatus } from "../timeline/ModelRequestStatus";
 import { workspaceDisplayLabel } from "../workspaces/workspaceLabels";
+import {
+  GENERAL_RUN_PREFERENCES_QUERY_KEY,
+  persistThinkingState,
+  readSavedThinkingState,
+  shellSafetyPolicyPreference,
+  updateThinkingState,
+} from "../composer/runPreferences";
 
 type SessionMode = "normal" | "orchestration";
 
@@ -73,11 +82,12 @@ export function NewSessionView({
   const [targetRoleId, setTargetRoleId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [promptText, setPromptText] = useState("");
-  const [thinkingEnabled, setThinkingEnabled] = useState(false);
-  const [thinkingEffort, setThinkingEffort] =
-    useState<ThinkingEffort>("medium");
-  const [shellSafetyPolicyEnabled, setShellSafetyPolicyEnabled] =
-    useState(true);
+  const [thinking, setThinking] = useState<RunThinkingConfig>(() =>
+    readSavedThinkingState(),
+  );
+  const [shellSafetyPolicyEnabled, setShellSafetyPolicyEnabled] = useState<
+    boolean | null
+  >(null);
   const [yolo, setYolo] = useState(true);
   const [pendingSession, setPendingSession] =
     useState<PendingNewSession | null>(null);
@@ -93,6 +103,11 @@ export function NewSessionView({
   const orchestrationQuery = useQuery({
     queryKey: ["orchestration", "config"],
     queryFn: getOrchestrationConfig,
+  });
+  const generalConfigQuery = useQuery({
+    queryKey: GENERAL_RUN_PREFERENCES_QUERY_KEY,
+    queryFn: getGeneralConfig,
+    staleTime: 30000,
   });
   const workspaceOptions = useMemo(
     () =>
@@ -169,6 +184,14 @@ export function NewSessionView({
     }
   }, [orchestrationPresetId, orchestrationQuery.data]);
 
+  useEffect(() => {
+    if (generalConfigQuery.data !== undefined) {
+      setShellSafetyPolicyEnabled(
+        shellSafetyPolicyPreference(generalConfigQuery.data),
+      );
+    }
+  }, [generalConfigQuery.data]);
+
   const createMutation = useMutation({
     mutationFn: async (): Promise<NewSessionResult> => {
       let progress = sessionProgressRef.current;
@@ -202,16 +225,16 @@ export function NewSessionView({
       if (!normalizedPrompt) {
         return { promptText: "", run: null, session };
       }
+      if (shellSafetyPolicyEnabled === null) {
+        throw new Error("Run preferences are not ready.");
+      }
       const input = [{ kind: "text" as const, text: normalizedPrompt }];
       const run = await createRun({
         session_id: session.session_id,
         input,
         display_input: input,
         target_role_id: targetRoleId,
-        thinking: {
-          enabled: thinkingEnabled,
-          effort: thinkingEnabled ? thinkingEffort : null,
-        },
+        thinking,
         shell_safety_policy_enabled: shellSafetyPolicyEnabled,
         yolo,
       });
@@ -249,9 +272,17 @@ export function NewSessionView({
   });
 
   const queryError =
-    rolesQuery.error ?? profilesQuery.error ?? orchestrationQuery.error;
+    rolesQuery.error ??
+    profilesQuery.error ??
+    orchestrationQuery.error ??
+    generalConfigQuery.error;
   const submit = () => {
-    if (workspaceId && !createMutation.isPending) {
+    const promptNeedsPreferences = promptText.trim().length > 0;
+    if (
+      workspaceId &&
+      !createMutation.isPending &&
+      (!promptNeedsPreferences || shellSafetyPolicyEnabled !== null)
+    ) {
       setPendingSession({ error: null, promptText: promptText.trim() });
       createMutation.mutate();
     }
@@ -463,28 +494,31 @@ export function NewSessionView({
               <label className="at-new-session-toggle">
                 <span>{t("composerThinking")}</span>
                 <Switch
-                  checked={thinkingEnabled}
-                  onChange={setThinkingEnabled}
+                  checked={thinking.enabled}
+                  onChange={(enabled) => updateThinking({ enabled })}
                 />
               </label>
-              {thinkingEnabled ? (
+              {thinking.enabled ? (
                 <label>
                   <span>{t("composerThinkingEffort")}</span>
                   <Select
                     aria-label={t("composerThinkingEffort")}
-                    onChange={setThinkingEffort}
+                    onChange={(effort: ThinkingEffort) =>
+                      updateThinking({ effort })
+                    }
                     options={["minimal", "low", "medium", "high"].map(
                       (value) => ({
                         label: value,
                         value,
                       }),
                     )}
-                    value={thinkingEffort}
+                    value={thinking.effort}
                   />
                 </label>
               ) : null}
               <Checkbox
-                checked={shellSafetyPolicyEnabled}
+                checked={shellSafetyPolicyEnabled === true}
+                disabled={!generalConfigQuery.isSuccess}
                 onChange={(event) =>
                   setShellSafetyPolicyEnabled(event.target.checked)
                 }
@@ -506,7 +540,11 @@ export function NewSessionView({
             {t("sidebarDeleteCancel")}
           </Button>
           <Button
-            disabled={!workspaceId}
+            disabled={
+              !workspaceId ||
+              (promptText.trim().length > 0 &&
+                shellSafetyPolicyEnabled === null)
+            }
             htmlType="submit"
             loading={createMutation.isPending}
             type="primary"
@@ -519,4 +557,12 @@ export function NewSessionView({
       </form>
     </section>
   );
+
+  function updateThinking(patch: Partial<RunThinkingConfig>): void {
+    setThinking((current) => {
+      const updated = updateThinkingState(current, patch);
+      persistThinkingState(updated);
+      return updated;
+    });
+  }
 }

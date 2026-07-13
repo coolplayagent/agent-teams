@@ -17,6 +17,7 @@ import { useUiStore } from "../runtime/uiStore";
 const api = vi.hoisted(() => ({
   createRun: vi.fn(),
   createSession: vi.fn(),
+  getGeneralConfig: vi.fn(),
   getModelProfiles: vi.fn(),
   getOrchestrationConfig: vi.fn(),
   getRoleConfigOptions: vi.fn(),
@@ -34,6 +35,7 @@ const session: SessionRecord = {
 };
 
 beforeEach(() => {
+  localStorage.clear();
   useUiStore.setState({ language: "en" });
   api.getRoleConfigOptions.mockResolvedValue({
     main_agent_role_id: "main",
@@ -46,6 +48,9 @@ beforeEach(() => {
   api.getOrchestrationConfig.mockResolvedValue({
     default_orchestration_preset_id: "standard",
     presets: [{ preset_id: "standard", name: "Standard" }],
+  });
+  api.getGeneralConfig.mockResolvedValue({
+    shell_safety_policy_enabled: true,
   });
   api.createSession.mockResolvedValue(session);
   api.createRun.mockResolvedValue({
@@ -128,7 +133,7 @@ describe("NewSessionView", () => {
       input: [{ kind: "text", text: "Plan the release" }],
       display_input: [{ kind: "text", text: "Plan the release" }],
       target_role_id: null,
-      thinking: { enabled: false, effort: null },
+      thinking: { enabled: false, effort: "medium" },
       shell_safety_policy_enabled: true,
       yolo: true,
     });
@@ -181,6 +186,48 @@ describe("NewSessionView", () => {
     );
     expect(api.createSession).toHaveBeenCalledOnce();
     expect(api.createRun).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses the saved thinking effort and global shell policy for the first run", async () => {
+    localStorage.setItem("agent_teams_thinking_enabled", "true");
+    localStorage.setItem("agent_teams_thinking_effort", "high");
+    api.getGeneralConfig.mockResolvedValue({
+      shell_safety_policy_enabled: false,
+    });
+    renderView();
+
+    fireEvent.change(
+      await screen.findByRole("textbox", { name: "Initial task (optional)" }),
+      { target: { value: "Use my run preferences" } },
+    );
+    const submit = screen.getByRole("button", { name: "Create and run" });
+    await waitFor(() => expect(submit).toBeEnabled());
+    fireEvent.click(submit);
+
+    await waitFor(() => expect(api.createRun).toHaveBeenCalledOnce());
+    expect(api.createRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        shell_safety_policy_enabled: false,
+        thinking: { enabled: true, effort: "high" },
+        yolo: true,
+      }),
+    );
+  });
+
+  it("does not submit a first run before general run preferences load", async () => {
+    api.getGeneralConfig.mockReturnValue(new Promise(() => undefined));
+    renderView();
+
+    fireEvent.change(
+      await screen.findByRole("textbox", { name: "Initial task (optional)" }),
+      { target: { value: "Wait for preferences" } },
+    );
+    const submit = screen.getByRole("button", { name: "Create and run" });
+    expect(submit).toBeDisabled();
+    fireEvent.click(submit);
+
+    expect(api.createSession).not.toHaveBeenCalled();
+    expect(api.createRun).not.toHaveBeenCalled();
   });
 
   it("can create an empty session without starting a run", async () => {

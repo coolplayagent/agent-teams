@@ -2921,6 +2921,38 @@ describe("Composer", () => {
     expect(localStorage.getItem("agent_teams_thinking_effort")).toBe("high");
   });
 
+  it("uses saved thinking effort with the global shell policy without degrading it", async () => {
+    localStorage.setItem("agent_teams_thinking_enabled", "true");
+    localStorage.setItem("agent_teams_thinking_effort", "high");
+    getGeneralConfigMock.mockResolvedValue({
+      shell_safety_policy_enabled: false,
+    });
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+
+    renderComposer();
+
+    await waitFor(() => expect(getGeneralConfigMock).toHaveBeenCalledOnce());
+    fireEvent.change(await screen.findByLabelText("Prompt"), {
+      target: { value: "Keep the saved run preferences" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(createRunMock).toHaveBeenCalledOnce());
+    expect(createRunMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        shell_safety_policy_enabled: false,
+        thinking: { enabled: true, effort: "high" },
+        yolo: true,
+      }),
+    );
+  });
+
   it("passes the selected YOLO mode to AG-UI run creation", async () => {
     getRoleConfigOptionsMock.mockResolvedValue({
       normal_mode_roles: [],

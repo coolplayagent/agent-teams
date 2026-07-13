@@ -93,6 +93,14 @@ import {
   type PromptSkillMentionOption,
 } from "./PromptMentions";
 import { useVoiceInput } from "./useVoiceInput";
+import {
+  DEFAULT_THINKING_EFFORT,
+  GENERAL_RUN_PREFERENCES_QUERY_KEY,
+  persistThinkingState,
+  readSavedThinkingState,
+  shellSafetyPolicyPreference,
+  updateThinkingState,
+} from "./runPreferences";
 import "./Composer.css";
 
 interface ComposerProps {
@@ -100,9 +108,6 @@ interface ComposerProps {
   sessionId: string | null;
 }
 
-const THINKING_MODE_STORAGE_KEY = "agent_teams_thinking_enabled";
-const THINKING_EFFORT_STORAGE_KEY = "agent_teams_thinking_effort";
-const DEFAULT_THINKING_EFFORT: ThinkingEffort = "medium";
 const MENTION_PAGE_SIZE = 8;
 
 interface ModelProfileOption {
@@ -312,7 +317,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     staleTime: Number.POSITIVE_INFINITY,
   });
   const generalConfigQuery = useQuery({
-    queryKey: ["settings", "general"],
+    queryKey: GENERAL_RUN_PREFERENCES_QUERY_KEY,
     queryFn: getGeneralConfig,
     staleTime: 30000,
   });
@@ -590,7 +595,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
   useEffect(() => {
     if (generalConfigQuery.data !== undefined) {
       setShellSafetyPolicyEnabled(
-        generalConfigQuery.data.shell_safety_policy_enabled !== false,
+        shellSafetyPolicyPreference(generalConfigQuery.data),
       );
     }
   }, [generalConfigQuery.data]);
@@ -1402,10 +1407,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
 
   function updateThinking(nextState: Partial<RunThinkingConfig>) {
     setThinking((current) => {
-      const updated = normalizeThinkingState({
-        enabled: nextState.enabled ?? current.enabled,
-        effort: nextState.effort ?? current.effort ?? DEFAULT_THINKING_EFFORT,
-      });
+      const updated = updateThinkingState(current, nextState);
       persistThinkingState(updated);
       return updated;
     });
@@ -1601,32 +1603,6 @@ function appendComposerToken(draft: string, token: string): string {
   return /\s$/.test(draft) ? `${draft}${token}` : `${draft} ${token}`;
 }
 
-function readSavedThinkingState(): RunThinkingConfig {
-  try {
-    const storage = globalThis.localStorage;
-    const enabled = storage.getItem(THINKING_MODE_STORAGE_KEY) === "true";
-    const effort = normalizeThinkingEffort(
-      storage.getItem(THINKING_EFFORT_STORAGE_KEY),
-    );
-    return { enabled, effort };
-  } catch (_error) {
-    return { enabled: false, effort: DEFAULT_THINKING_EFFORT };
-  }
-}
-
-function persistThinkingState(state: RunThinkingConfig) {
-  try {
-    const storage = globalThis.localStorage;
-    storage.setItem(THINKING_MODE_STORAGE_KEY, state.enabled ? "true" : "false");
-    storage.setItem(
-      THINKING_EFFORT_STORAGE_KEY,
-      state.effort ?? DEFAULT_THINKING_EFFORT,
-    );
-  } catch (_error) {
-    return;
-  }
-}
-
 function composerSendDisabledReason({
   activeRunId,
   attachmentValidationMessage,
@@ -1691,23 +1667,6 @@ function composerInjectDisabledReason({
     return t("composerRunActionBusy");
   }
   return t("composerQueue");
-}
-
-function normalizeThinkingState(state: RunThinkingConfig): RunThinkingConfig {
-  return {
-    enabled: state.enabled,
-    effort: normalizeThinkingEffort(state.effort),
-  };
-}
-
-function normalizeThinkingEffort(value: string | null | undefined): ThinkingEffort {
-  const normalized = String(value ?? "")
-    .trim()
-    .toLowerCase();
-  if (normalized === "minimal" || normalized === "low" || normalized === "high") {
-    return normalized;
-  }
-  return DEFAULT_THINKING_EFFORT;
 }
 
 function buildModelProfileOptions(

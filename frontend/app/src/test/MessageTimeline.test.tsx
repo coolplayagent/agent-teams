@@ -9303,6 +9303,128 @@ describe("MessageTimeline", () => {
       .toHaveLength(0);
   });
 
+  it("keeps repeated short main-agent answers distinct while merging round projections by sequence", async () => {
+    const runId = "run-repeated-short-answers";
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        agent_role_id: "PrimaryAgent",
+        content: "OK",
+        instance_id: "instance-primary",
+        message_id: "short-answer-1",
+        role: "assistant",
+        trace_id: runId,
+      },
+      {
+        agent_role_id: "PrimaryAgent",
+        content: "OK",
+        instance_id: "instance-primary",
+        message_id: "short-answer-2",
+        role: "assistant",
+        trace_id: runId,
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [{
+        coordinator_messages: [{
+          agent_role_id: "PrimaryAgent",
+          content: "OK",
+          instance_id: "instance-primary",
+          role: "assistant",
+        }, {
+          agent_role_id: "PrimaryAgent",
+          content: "OK",
+          instance_id: "instance-primary",
+          role: "assistant",
+        }],
+        intent: "Return two acknowledgements",
+        primary_instance_id: "instance-primary",
+        primary_role_id: "PrimaryAgent",
+        run_id: runId,
+        run_status: "completed",
+      }],
+      next_cursor: null,
+    });
+
+    renderTimeline();
+
+    expect(await screen.findAllByText("OK")).toHaveLength(2);
+  });
+
+  it("keeps equal main-agent answers from separate rounds distinct", async () => {
+    const rounds = ["run-equal-answer-1", "run-equal-answer-2"];
+    listSessionMessagesMock.mockResolvedValue(rounds.map((runId, index) => ({
+      agent_role_id: "PrimaryAgent",
+      content: "Same answer",
+      instance_id: `instance-primary-${index + 1}`,
+      message_id: `same-answer-${index + 1}`,
+      role: "assistant",
+      trace_id: runId,
+    })));
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: rounds.map((runId, index) => ({
+        coordinator_messages: [{
+          agent_role_id: "PrimaryAgent",
+          content: "Same answer",
+          instance_id: `instance-primary-${index + 1}`,
+          role: "assistant" as const,
+        }],
+        intent: `Round ${index + 1}`,
+        primary_instance_id: `instance-primary-${index + 1}`,
+        primary_role_id: "PrimaryAgent",
+        run_id: runId,
+        run_status: "completed",
+      })),
+      next_cursor: null,
+    });
+
+    renderTimeline();
+
+    expect(await screen.findAllByText("Same answer")).toHaveLength(2);
+  });
+
+  it("does not confuse equal worker and primary text when merging round projections", async () => {
+    const runId = "run-equal-worker-primary-text";
+    listSessionMessagesMock.mockResolvedValue([{
+      agent_role_id: "WorkerAgent",
+      content: "Done",
+      instance_id: "instance-worker",
+      message_id: "worker-done",
+      role: "assistant",
+      trace_id: runId,
+    }, {
+      agent_role_id: "PrimaryAgent",
+      content: "Done",
+      instance_id: "instance-primary",
+      message_id: "primary-done",
+      role: "assistant",
+      trace_id: runId,
+    }]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [{
+        coordinator_messages: [{
+          agent_role_id: "PrimaryAgent",
+          content: "Done",
+          instance_id: "instance-primary",
+          role: "assistant",
+        }],
+        intent: "Delegate then summarize",
+        primary_instance_id: "instance-primary",
+        primary_role_id: "PrimaryAgent",
+        run_id: runId,
+        run_status: "completed",
+      }],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findAllByText("Done")).toHaveLength(1);
+    expect(container.querySelector('[data-instance-id="instance-worker"]')).toBeNull();
+  });
+
   it("keeps persisted worker tools out when the main session has an active fallback run", async () => {
     const runId = "run-active-orchestration-projection";
     const workerToolMessage = {

@@ -6995,10 +6995,17 @@ function mergeTimelineMessages(
   messages: TimelineMessage[],
   rounds: SessionRound[],
 ): TimelineMessage[] {
-  const merged = messages.map((message, index) => ({ index, message }));
-  const mergedByKey = new Map<string, { index: number; message: TimelineMessage }>();
+  const roundLookup = createMessageRoundLookup(rounds);
+  const messageSequences = new Map<string, number>();
+  const roundMessageSequences = new Map<string, number>();
+  const merged: TimelineMessageMergeItem[] = messages.map((message, index) => ({
+    index,
+    keys: timelineMessageDedupeKeys(message, roundLookup, messageSequences),
+    message,
+  }));
+  const mergedByKey = new Map<string, TimelineMessageMergeItem>();
   for (const item of merged) {
-    for (const key of timelineMessageDedupeKeys(item.message)) {
+    for (const key of item.keys) {
       mergedByKey.set(key, item);
     }
   }
@@ -7010,20 +7017,29 @@ function mergeTimelineMessages(
     for (const roundMessage of roundMessages(round)) {
       const message = roundMessageToTimelineMessage(roundMessage, round.run_id);
       removeSupersededTimelineMessages(merged, mergedByKey, message);
-      const keys = timelineMessageDedupeKeys(message);
+      const keys = timelineMessageDedupeKeys(
+        message,
+        roundLookup,
+        roundMessageSequences,
+      );
       const existingItem = keys
         .map((key) => mergedByKey.get(key))
-        .find((item): item is { index: number; message: TimelineMessage } =>
+        .find((item): item is TimelineMessageMergeItem =>
           item !== undefined,
         );
       if (existingItem !== undefined) {
         existingItem.message = mergeTimelineMessageData(existingItem.message, message);
-        for (const key of timelineMessageDedupeKeys(existingItem.message)) {
+        existingItem.keys = Array.from(new Set([
+          ...existingItem.keys,
+          ...keys,
+          ...timelineMessageStableDedupeKeys(existingItem.message),
+        ]));
+        for (const key of existingItem.keys) {
           mergedByKey.set(key, existingItem);
         }
         continue;
       }
-      const item = { index: nextIndex, message };
+      const item: TimelineMessageMergeItem = { index: nextIndex, keys, message };
       for (const key of keys) {
         mergedByKey.set(key, item);
       }
@@ -7037,8 +7053,8 @@ function mergeTimelineMessages(
 }
 
 function removeSupersededTimelineMessages(
-  merged: Array<{ index: number; message: TimelineMessage }>,
-  mergedByKey: Map<string, { index: number; message: TimelineMessage }>,
+  merged: TimelineMessageMergeItem[],
+  mergedByKey: Map<string, TimelineMessageMergeItem>,
   message: TimelineMessage,
 ): void {
   const runId = (message.run_id ?? message.trace_id ?? "").trim();
@@ -7377,16 +7393,37 @@ function roundMessagePartText(part: SessionRoundMessagePart): string {
   return jsonValueText(part.content ?? null);
 }
 
-function timelineMessageDedupeKeys(message: TimelineMessage): string[] {
-  const stableIdentityKeys = [
+interface TimelineMessageMergeItem {
+  index: number;
+  keys: string[];
+  message: TimelineMessage;
+}
+
+function timelineMessageDedupeKeys(
+  message: TimelineMessage,
+  roundLookup: MessageRoundLookup,
+  sequenceByLane: Map<string, number>,
+): string[] {
+  const stableIdentityKeys = timelineMessageStableDedupeKeys(message);
+  if (timelineMessageIsInjection(message)) {
+    return stableIdentityKeys;
+  }
+  const sequenceKey = timelineMessageSequenceDedupeKey(
+    message,
+    roundLookup,
+    sequenceByLane,
+  );
+  return Array.from(new Set([
+    ...stableIdentityKeys,
+    ...(sequenceKey === null ? [] : [sequenceKey]),
+  ]));
+}
+
+function timelineMessageStableDedupeKeys(message: TimelineMessage): string[] {
+  return [
     ...timelineMessageInjectionDedupeKeys(message),
     timelineMessageIdDedupeKey(message),
   ].filter((key): key is string => key !== null);
-  if (stableIdentityKeys.length > 0) {
-    return stableIdentityKeys;
-  }
-  const fingerprint = timelineMessageFingerprintDedupeKey(message);
-  return fingerprint === null ? [] : [fingerprint];
 }
 
 function timelineMessageInjectionDedupeKeys(message: TimelineMessage): string[] {
@@ -7410,22 +7447,55 @@ function timelineMessageIdDedupeKey(message: TimelineMessage): string | null {
   return null;
 }
 
-function timelineMessageFingerprintDedupeKey(message: TimelineMessage): string | null {
-  const runId = (message.run_id ?? message.trace_id ?? "").trim();
-  const occurredAt = timelineMessageOccurredAt(message);
-  if (runId.length === 0 || occurredAt.length === 0) {
+function timelineMessageSequenceDedupeKey(
+  message: TimelineMessage,
+  roundLookup: MessageRoundLookup,
+  sequenceByLane: Map<string, number>,
+): string | null {
+  const runId = timelineMessageRunIdForDedupe(message, roundLookup);
+  if (runId.length === 0) {
     return null;
   }
-  return [
-    "fingerprint",
+  const lane = [
+    "sequence",
     runId,
-    occurredAt,
     message.entry_type ?? "",
-    timelineMessageAgentRoleId(message),
+    stableTimelineRole(timelineMessageAgentRoleId(message)),
     message.instance_id ?? "",
-    message.role ?? "",
-    timelineMessagePrimaryText(message),
+    message.task_id ?? "",
+    stableTimelineRole(message.role ?? ""),
   ].join(":");
+  const sequence = sequenceByLane.get(lane) ?? 0;
+  sequenceByLane.set(lane, sequence + 1);
+  return `${lane}:${sequence}`;
+}
+
+function timelineMessageRunIdForDedupe(
+  message: TimelineMessage,
+  roundLookup: MessageRoundLookup,
+): string {
+  const runId = message.run_id?.trim() ?? "";
+  if (runId.length > 0) {
+    return runId;
+  }
+  const traceId = message.trace_id?.trim() ?? "";
+  if (traceId.length > 0) {
+    return traceId;
+  }
+  const messageId = message.message_id?.trim() ?? "";
+  if (messageId.length > 0) {
+    const runId = roundLookup.runIdByMessageId.get(messageId)?.trim() ?? "";
+    if (runId.length > 0) {
+      return runId;
+    }
+  }
+  const createdAt = timestampMs(timelineMessageOccurredAt(message));
+  if (createdAt === null) {
+    return "";
+  }
+  return roundLookup.runIdByCreatedAt.get(createdAt) ??
+    runIdForTimestamp(createdAt, roundLookup.boundaries) ??
+    "";
 }
 
 function timelineMessageAgentRoleId(message: TimelineMessage): string {

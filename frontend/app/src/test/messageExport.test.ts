@@ -114,6 +114,27 @@ describe("messageExport", () => {
     expect(document.querySelector("img")).toBeNull();
   });
 
+  it("preserves user text that resembles an internal code-block marker", () => {
+    const html = buildMessagesHtml("session-1", [{
+      coordinator_messages: [{
+        message: { parts: [{
+          content: "MESSAGE_EXPORT_CODE_BLOCK_0\n\n```text\nactual code\n```",
+          part_kind: "text",
+        }] },
+        role: "assistant",
+      }],
+      run_id: "run-1",
+    }]);
+
+    const document = new DOMParser().parseFromString(html, "text/html");
+    const content = document.querySelector(".entry[data-kind='assistant'] .content");
+    expect(content?.querySelector("p")?.textContent).toBe(
+      "MESSAGE_EXPORT_CODE_BLOCK_0",
+    );
+    expect(content?.querySelector("pre code")?.textContent).toBe("actual code");
+    expect(content?.querySelectorAll("pre code")).toHaveLength(1);
+  });
+
   it("exports coordinator messages that store content on the nested message object", () => {
     const html = buildMessagesHtml("session-1", [
       {

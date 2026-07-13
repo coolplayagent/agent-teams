@@ -181,25 +181,39 @@ function transcriptEntryHtml(entry: TranscriptEntry): string {
 }
 
 function renderSafeMarkdown(markdown: string): string {
-  const codeBlocks: string[] = [];
-  const withoutCode = markdown.replace(/```([^\n]*)\n([\s\S]*?)```/g, (_match, language: string, code: string) => {
-    const token = `MESSAGE_EXPORT_CODE_BLOCK_${codeBlocks.length}`;
-    const languageClass = language.trim()
-      ? ` class="language-${escapeHtml(language.trim().replace(/[^a-zA-Z0-9_-]/g, ""))}"`
+  const rendered: string[] = [];
+  const fencePattern = /```([^\n]*)\n([\s\S]*?)```/g;
+  let cursor = 0;
+  for (const match of markdown.matchAll(fencePattern)) {
+    const matchIndex = match.index;
+    if (matchIndex === undefined) {
+      continue;
+    }
+    rendered.push(renderSafeMarkdownText(markdown.slice(cursor, matchIndex)));
+    const language = match[1]?.trim().replace(/[^a-zA-Z0-9_-]/g, "") ?? "";
+    const code = match[2] ?? "";
+    const languageClass = language
+      ? ` class="language-${escapeHtml(language)}"`
       : "";
-    codeBlocks.push(`<pre><code${languageClass}>${escapeHtml(code.replace(/\n$/, ""))}</code></pre>`);
-    return `\n${token}\n`;
-  });
-  const escaped = escapeHtml(withoutCode)
+    rendered.push(
+      `<pre><code${languageClass}>${escapeHtml(code.replace(/\n$/, ""))}</code></pre>`,
+    );
+    cursor = matchIndex + match[0].length;
+  }
+  rendered.push(renderSafeMarkdownText(markdown.slice(cursor)));
+  return rendered.join("");
+}
+
+function renderSafeMarkdownText(markdown: string): string {
+  const escaped = escapeHtml(markdown)
     .replace(/`([^`\n]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
   return escaped
     .split(/\n{2,}/)
     .map((block) => {
       const trimmed = block.trim();
-      const codeIndex = codeBlocks.findIndex((_value, index) => trimmed === `MESSAGE_EXPORT_CODE_BLOCK_${index}`);
-      if (codeIndex >= 0) {
-        return codeBlocks[codeIndex] ?? "";
+      if (!trimmed) {
+        return "";
       }
       const lines = trimmed.split("\n");
       if (lines.every((line) => /^[-*] /.test(line))) {

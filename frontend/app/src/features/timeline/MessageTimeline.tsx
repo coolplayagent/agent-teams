@@ -69,6 +69,7 @@ import {
   type ToolActionFamily,
   type ToolSemanticCategory,
 } from "./toolPresentation";
+import { fileReadResultText } from "./toolResultPresentation";
 import { roundPromptText, roundTitle } from "./roundMetadata";
 import {
   boundedStringCacheValue,
@@ -10498,64 +10499,7 @@ function toolSuccessSummary(
 }
 
 function readToolPayloadSummary(value: unknown): string {
-  for (const candidate of readToolPayloadCandidates(value)) {
-    const parsed = parseTaggedReadPayload(candidate);
-    if (parsed.length > 0) {
-      return parsed;
-    }
-    const trimmed = candidate.trim();
-    if (trimmed.length > 0) {
-      return trimmed;
-    }
-  }
-  return "";
-}
-
-function readToolPayloadCandidates(value: unknown): string[] {
-  if (typeof value === "string") {
-    return [value];
-  }
-  if (Array.isArray(value)) {
-    return value.flatMap(readToolPayloadCandidates);
-  }
-  const object = unknownJsonObject(value);
-  if (object === null) {
-    return [];
-  }
-  const candidates: string[] = [];
-  for (const key of ["content", "data", "output", "result", "text"] as const) {
-    const child = object[key];
-    if (child !== undefined) {
-      candidates.push(...readToolPayloadCandidates(child));
-    }
-  }
-  return candidates;
-}
-
-function parseTaggedReadPayload(text: string): string {
-  const metadata = [
-    taggedMetadataLine(text, "path", "Path"),
-    taggedMetadataLine(text, "type", "Type"),
-  ].filter((line) => line.length > 0);
-  const content = extractTaggedSection(text, "content");
-  if (content.length > 0) {
-    return [...metadata, "", content].join("\n").trim();
-  }
-  const entries = extractTaggedSection(text, "entries");
-  if (entries.length > 0) {
-    return [...metadata, "", entries].join("\n").trim();
-  }
-  return metadata.join("\n").trim();
-}
-
-function taggedMetadataLine(text: string, tagName: string, label: string): string {
-  const value = extractTaggedSection(text, tagName);
-  return value.length > 0 ? `${label}: ${value}` : "";
-}
-
-function extractTaggedSection(text: string, tagName: string): string {
-  const match = new RegExp(`<${tagName}>([\\s\\S]*?)<\\/${tagName}>`, "i").exec(text);
-  return match?.[1]?.trim() ?? "";
+  return fileReadResultText(value);
 }
 
 function boundedToolBody(text: string): string {

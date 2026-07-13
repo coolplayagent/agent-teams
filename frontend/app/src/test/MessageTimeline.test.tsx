@@ -10825,14 +10825,19 @@ describe("MessageTimeline", () => {
         message: {
           parts: [
             {
-              content: [
-                "<path>src/main.py</path>",
-                "<type>text</type>",
-                "<content>",
-                "def main():",
-                "    return 'ok'",
-                "</content>",
-              ].join("\n"),
+              content: {
+                data: {
+                  output: "provider-facing payload",
+                  presentation: {
+                    content: "def main():\n    return 'ok'",
+                    entries: [],
+                    kind: "workspace-read",
+                    path: "src/main.py",
+                    resource_type: "file",
+                  },
+                },
+                ok: true,
+              },
               action_family: "read",
               part_kind: "tool-return",
               semantic_category: "file-read",
@@ -10870,7 +10875,7 @@ describe("MessageTimeline", () => {
     const readDetails = toolPreElement(screenElement(readTitle));
     expect(readDetails).toBeVisible();
     expect(readDetails).toHaveTextContent(/Path: src\/main\.py/);
-    expect(readDetails).toHaveTextContent(/Type: text/);
+    expect(readDetails).toHaveTextContent(/Type: file/);
     expect(readDetails).toHaveTextContent(/def main\(\):/);
     expect(readDetails).not.toHaveTextContent(/<content>/);
 

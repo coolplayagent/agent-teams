@@ -2287,6 +2287,17 @@ or plugin-provided tools without declared semantics use
 `semantic_category="unknown"` and `action_family="generic"`. Tool display
 semantics therefore remain stable when a registered tool is renamed.
 
+Workspace file-read results additionally expose `data.presentation` for UI
+rendering without parsing the provider-facing text payload. The projection is
+discriminated by `kind="workspace-read"` and contains `path`, `resource_type`
+(`file | directory | image | notebook`), plus either `content` or `entries`.
+Resolved workspace instructions, when present, are carried in `instructions`
+for the model but omitted from the primary UI body. The legacy protocol text is
+kept only in the internal tool projection, avoiding a duplicate large payload
+in model context and browser events. Clients must prefer the structured
+presentation when it is present and treat older or third-party string results
+as plain text.
+
 ### `GET /runs/{run_id}/tool-approvals`
 
 Lists pending tool approvals.

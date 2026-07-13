@@ -683,19 +683,18 @@ export function MessageTimeline({
   );
 
 function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
-  const persistedTextByRunId = new Map<string, Set<string>>();
+  const persistedRowKeysByRunId = new Map<string, Set<string>>();
   for (const row of rows) {
     if (row.source !== "message" || !isAnswerRole(row.role)) {
       continue;
     }
     const runId = row.runId?.trim() ?? "";
-    const text = normalizedTimelineText(row.text);
-    if (runId.length === 0 || text.length === 0) {
+    if (runId.length === 0 || row.key.length === 0) {
       continue;
     }
-    const texts = persistedTextByRunId.get(runId) ?? new Set<string>();
-    texts.add(text);
-    persistedTextByRunId.set(runId, texts);
+    const rowKeys = persistedRowKeysByRunId.get(runId) ?? new Set<string>();
+    rowKeys.add(row.key);
+    persistedRowKeysByRunId.set(runId, rowKeys);
   }
   const cursorsByRunId = new Map<string, TimelineRow[]>();
   const remainingRows = rows.filter((row) => {
@@ -707,8 +706,10 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
       return true;
     }
     const runId = row.runId?.trim() ?? "";
-    const text = normalizedTimelineText(row.text);
-    if (runId.length === 0 || !persistedTextByRunId.get(runId)?.has(text)) {
+    if (
+      runId.length === 0 ||
+      !persistedRowKeysByRunId.get(runId)?.has(row.key)
+    ) {
       return true;
     }
     const cursorParts = row.parts.map((part) => ({
@@ -4250,6 +4251,11 @@ function dropDuplicateFinalPartsFromWorkRows(rows: TimelineRow[]): TimelineRow[]
 }
 
 function timelineRowNonToolContentDedupeKey(row: TimelineRow): string | null {
+  // Injection rows are user-visible events. Their stable delivery identities,
+  // not their text, decide whether two rows describe the same event.
+  if (row.injection !== undefined) {
+    return null;
+  }
   const runId = row.runId?.trim() ?? "";
   if (runId.length === 0) {
     return null;
@@ -6894,17 +6900,14 @@ function roundCoordinatorMessagesForConversation(
       primaryTaskId,
     );
   });
-  const terminalPresentation = round.run_user_message?.trim() ?? "";
   if (
-    (round.verification_status ?? "").trim().toLowerCase() !== "failed" ||
-    terminalPresentation.length === 0
+    (round.verification_status ?? "").trim().toLowerCase() !== "failed"
   ) {
     return messages;
   }
   return messages.filter((message) => {
     const projected = roundMessageToTimelineMessage(message, round.run_id);
-    return stableTimelineRole(projected.role ?? "") !== "assistant" ||
-      timelineMessagePrimaryText(projected) !== terminalPresentation;
+    return !timelineMessageIsVerificationFailurePresentation(projected);
   });
 }
 
@@ -7111,15 +7114,22 @@ function timelineMessageIsSupersededTerminalPresentation(
   if (runId.length === 0 || stableTimelineRole(message.role ?? "") !== "assistant") {
     return false;
   }
-  const text = timelineMessagePrimaryText(message);
-  if (text.length === 0) {
+  if (!timelineMessageIsVerificationFailurePresentation(message)) {
     return false;
   }
   return rounds.some((round) =>
     round.run_id.trim() === runId &&
-    (round.verification_status ?? "").trim().toLowerCase() === "failed" &&
-    (round.run_user_message?.trim() ?? "") === text
+    (round.verification_status ?? "").trim().toLowerCase() === "failed"
   );
+}
+
+function timelineMessageIsVerificationFailurePresentation(
+  message: TimelineMessage,
+): boolean {
+  const nestedPresentationKind = message.message?.metadata?.presentation_kind;
+  return (message.presentation_kind ?? nestedPresentationKind ?? "")
+    .trim()
+    .toLowerCase() === "verification_failure";
 }
 
 function mergeTimelineMessages(
@@ -7416,9 +7426,13 @@ function roundMessageToTimelineMessage(
     instance_id: message.instance_id,
     message: {
       ...(bodyContent.trim().length > 0 ? { content: bodyContent } : {}),
+      ...(message.message?.metadata === undefined
+        ? {}
+        : { metadata: message.message.metadata }),
       ...(bodyParts.length > 0 ? { parts: bodyParts } : {}),
     },
     message_id: message.message_id,
+    presentation_kind: message.presentation_kind,
     parts: contentParts.length > 0 ? contentParts : undefined,
     role: message.role,
     role_id: message.role_id,
@@ -7505,12 +7519,15 @@ function roundMessagePartText(part: SessionRoundMessagePart): string {
 }
 
 function timelineMessageDedupeKeys(message: TimelineMessage): string[] {
-  return [
+  const stableIdentityKeys = [
     ...timelineMessageInjectionDedupeKeys(message),
     timelineMessageIdDedupeKey(message),
-    timelineMessageFingerprintDedupeKey(message),
-    timelineMessageContentDedupeKey(message),
   ].filter((key): key is string => key !== null);
+  if (stableIdentityKeys.length > 0) {
+    return stableIdentityKeys;
+  }
+  const fingerprint = timelineMessageFingerprintDedupeKey(message);
+  return fingerprint === null ? [] : [fingerprint];
 }
 
 function timelineMessageInjectionDedupeKeys(message: TimelineMessage): string[] {
@@ -7534,38 +7551,22 @@ function timelineMessageIdDedupeKey(message: TimelineMessage): string | null {
   return null;
 }
 
-function timelineMessageFingerprintDedupeKey(message: TimelineMessage): string {
+function timelineMessageFingerprintDedupeKey(message: TimelineMessage): string | null {
+  const runId = (message.run_id ?? message.trace_id ?? "").trim();
+  const occurredAt = timelineMessageOccurredAt(message);
+  if (runId.length === 0 || occurredAt.length === 0) {
+    return null;
+  }
   return [
     "fingerprint",
-    message.run_id ?? message.trace_id ?? "",
-    timelineMessageOccurredAt(message),
+    runId,
+    occurredAt,
     message.entry_type ?? "",
     timelineMessageAgentRoleId(message),
     message.instance_id ?? "",
     message.role ?? "",
     timelineMessagePrimaryText(message),
   ].join(":");
-}
-
-function timelineMessageContentDedupeKey(message: TimelineMessage): string | null {
-  const runId = (message.run_id ?? message.trace_id ?? "").trim();
-  const text = normalizedTimelineText(timelineMessagePrimaryText(message));
-  if (runId.length === 0 || text.length === 0) {
-    return null;
-  }
-  return [
-    "content",
-    runId,
-    message.entry_type ?? "",
-    timelineMessageAgentRoleId(message),
-    message.instance_id ?? "",
-    timelineMessageStableRole(message),
-    text,
-  ].join(":");
-}
-
-function timelineMessageStableRole(message: TimelineMessage): string {
-  return stableTimelineRole(message.role ?? "");
 }
 
 function timelineMessageAgentRoleId(message: TimelineMessage): string {

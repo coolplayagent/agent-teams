@@ -126,7 +126,12 @@ class TaskPersistenceHarness(BaseModel):
                 instance_id=instance_id,
                 task_id=task.task_id,
                 trace_id=task.trace_id,
-                messages=[build_assistant_error_response(assistant_message)],
+                messages=[
+                    build_assistant_error_response(
+                        assistant_message,
+                        error_code=error_code,
+                    )
+                ],
             )
         await task_repo.update_status_async(
             task.task_id,

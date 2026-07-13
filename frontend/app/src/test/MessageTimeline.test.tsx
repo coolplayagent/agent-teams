@@ -4477,20 +4477,32 @@ describe("MessageTimeline", () => {
                     semantic_category: "file-read",
                     tool_name: "read",
                   },
-                  {
-                    content: "read complete",
-                    part_kind: "tool-return",
-                    tool_call_id: "call-round-mirror",
-                    action_family: "read",
-                    semantic_category: "file-read",
-                    tool_name: "read",
-                  },
-                  {
-                    content: finalText,
-                    part_kind: "text",
-                  },
                 ],
               },
+              message_id: "message-mirrored-work",
+              role_id: "MainAgent",
+            },
+            {
+              created_at: "2026-06-23T12:42:35Z",
+              message: {
+                parts: [{
+                  content: "read complete",
+                  part_kind: "tool-return",
+                  tool_call_id: "call-round-mirror",
+                  action_family: "read",
+                  semantic_category: "file-read",
+                  tool_name: "read",
+                }],
+              },
+              message_id: "message-mirrored-result",
+              role_id: "MainAgent",
+            },
+            {
+              created_at: "2026-06-23T12:42:36Z",
+              message: {
+                parts: [{ content: finalText, part_kind: "text" }],
+              },
+              message_id: "message-mirrored-final",
               role_id: "MainAgent",
             },
           ],
@@ -8990,6 +9002,9 @@ describe("MessageTimeline", () => {
       },
       {
         content: verificationPresentation,
+        message: {
+          metadata: { presentation_kind: "verification_failure" },
+        },
         message_id: "assistant-verification-presentation",
         role: "assistant",
         role_id: "Coordinator",
@@ -9008,6 +9023,9 @@ describe("MessageTimeline", () => {
             },
             {
               content: verificationPresentation,
+              message: {
+                metadata: { presentation_kind: "verification_failure" },
+              },
               role: "assistant",
               role_id: "Coordinator",
             },
@@ -9041,6 +9059,63 @@ describe("MessageTimeline", () => {
     expect(container.querySelector(".at-round-marker")).toHaveTextContent(
       "Build the requested feature",
     );
+  });
+
+  it("keeps a legal assistant message whose text matches terminal presentation text", async () => {
+    const sharedText = "Review the result before continuing.";
+    listSessionMessagesMock.mockResolvedValue([
+      {
+        content: sharedText,
+        created_at: "2026-07-13T01:00:01Z",
+        message_id: "assistant-legal-shared-text",
+        role: "assistant",
+        trace_id: "run-structured-presentation",
+      },
+      {
+        content: sharedText,
+        created_at: "2026-07-13T01:00:02Z",
+        message: {
+          metadata: { presentation_kind: "verification_failure" },
+        },
+        message_id: "assistant-verification-shared-text",
+        role: "assistant",
+        trace_id: "run-structured-presentation",
+      },
+    ]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [{
+        coordinator_messages: [
+          {
+            content: sharedText,
+            created_at: "2026-07-13T01:00:01Z",
+            message_id: "assistant-legal-shared-text",
+            role: "assistant",
+          },
+          {
+            content: sharedText,
+            created_at: "2026-07-13T01:00:02Z",
+            message: {
+              metadata: { presentation_kind: "verification_failure" },
+            },
+            message_id: "assistant-verification-shared-text",
+            role: "assistant",
+          },
+        ],
+        run_id: "run-structured-presentation",
+        run_status: "completed",
+        run_user_message: sharedText,
+        verification_status: "failed",
+      }],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findByText(sharedText)).toBeVisible();
+    const matchingRows = Array.from(container.querySelectorAll("article.at-message"))
+      .filter((row) => row.textContent?.includes(sharedText));
+    expect(matchingRows).toHaveLength(1);
   });
 
   it("projects only the structured orchestration main agent into the session transcript", async () => {
@@ -9085,6 +9160,9 @@ describe("MessageTimeline", () => {
         content: verificationPresentation,
         created_at: "2026-07-12T14:03:12Z",
         instance_id: "instance-primary",
+        message: {
+          metadata: { presentation_kind: "verification_failure" },
+        },
         role: "assistant",
         trace_id: runId,
       },
@@ -9102,6 +9180,9 @@ describe("MessageTimeline", () => {
           agent_role_id: "RenamedPrimaryAgent",
           content: verificationPresentation,
           instance_id: "instance-primary",
+          message: {
+            metadata: { presentation_kind: "verification_failure" },
+          },
           role: "assistant",
           role_id: "RenamedPrimaryAgent",
         }],
@@ -12052,6 +12133,43 @@ describe("MessageTimeline", () => {
       .toHaveLength(1);
   });
 
+  it("keeps equal live injection text when stable injection identities differ", async () => {
+    setRuntimeStateFromEvents([
+      relayRunEvent({
+        event_id: 31,
+        event_type: "injection_enqueued",
+        payload_json: JSON.stringify({
+          client_message_id: "client-equal-a",
+          content: "Apply the same instruction",
+          injection_id: "inj-equal-a",
+          source: "user",
+          visibility: "public",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 32,
+        event_type: "injection_enqueued",
+        payload_json: JSON.stringify({
+          client_message_id: "client-equal-b",
+          content: "Apply the same instruction",
+          injection_id: "inj-equal-b",
+          source: "user",
+          visibility: "public",
+        }),
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderTimeline();
+
+    expect(await screen.findAllByText(/Injection queued: Apply the same instruction/))
+      .toHaveLength(2);
+    expect(container.querySelectorAll('[data-injection-id="inj-equal-a"]'))
+      .toHaveLength(1);
+    expect(container.querySelectorAll('[data-injection-id="inj-equal-b"]'))
+      .toHaveLength(1);
+  });
+
   it("classifies injection statuses only from the exact status contract", async () => {
     setRuntimeStateFromEvents([
       relayRunEvent({
@@ -12172,6 +12290,51 @@ describe("MessageTimeline", () => {
     expect(
       container.querySelectorAll('[data-injection-id="inj-persisted-new"]'),
     ).toHaveLength(1);
+  });
+
+  it("keeps equal replayed injection text when stable injection identities differ", async () => {
+    listSessionMessagesMock.mockResolvedValue([]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [{
+        injection_messages: [
+          {
+            client_message_id: "client-replay-equal-a",
+            content: "Persist this same instruction",
+            entry_type: "injection",
+            injection_id: "inj-replay-equal-a",
+            injection_status: "applied",
+            queued_at: "2026-07-13T01:00:01Z",
+            source: "user",
+            visibility: "public",
+          },
+          {
+            client_message_id: "client-replay-equal-b",
+            content: "Persist this same instruction",
+            entry_type: "injection",
+            injection_id: "inj-replay-equal-b",
+            injection_status: "applied",
+            queued_at: "2026-07-13T01:00:02Z",
+            source: "user",
+            visibility: "public",
+          },
+        ],
+        run_id: "run-output",
+        run_status: "completed",
+      }],
+      next_cursor: null,
+    });
+
+    const { container } = renderTimeline();
+
+    await waitFor(() =>
+      expect(screen.getAllByText(/Injection applied: Persist this same instruction/))
+        .toHaveLength(2)
+    );
+    expect(container.querySelectorAll('[data-injection-id="inj-replay-equal-a"]'))
+      .toHaveLength(1);
+    expect(container.querySelectorAll('[data-injection-id="inj-replay-equal-b"]'))
+      .toHaveLength(1);
   });
 
   it("keeps replay-deduped injection events visible once between runtime text rows", async () => {

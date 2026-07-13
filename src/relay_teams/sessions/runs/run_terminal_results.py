@@ -108,7 +108,12 @@ class RunTerminalResultService:
                 instance_id=resolved_instance_id or resolved_conversation_id,
                 task_id=resolved_root_task_id,
                 trace_id=run_id,
-                messages=[build_assistant_error_response(assistant_message)],
+                messages=[
+                    build_assistant_error_response(
+                        assistant_message,
+                        error_code=error_code,
+                    )
+                ],
             )
         if resolved_instance_id is not None and resolved_role_id is not None:
             self._event_publisher.safe_publish_run_event(

@@ -136,7 +136,12 @@ class FailureHandlingService:
             instance_id=request.instance_id,
             task_id=request.task_id,
             trace_id=request.trace_id,
-            messages=[build_assistant_error_response(assistant_message)],
+            messages=[
+                build_assistant_error_response(
+                    assistant_message,
+                    error_code=error_code,
+                )
+            ],
         )
         publish_text_delta_event(request=request, text=assistant_message)
         raise AssistantRunError(

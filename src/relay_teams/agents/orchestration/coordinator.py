@@ -57,6 +57,7 @@ from relay_teams.sessions.runs.run_models import (
 from relay_teams.sessions.runs.assistant_errors import (
     RunCompletionReason,
     build_assistant_error_message,
+    build_assistant_error_response,
 )
 from relay_teams.agent_runtimes.instances.instance_repository import (
     AgentInstanceRepository,
@@ -2541,7 +2542,12 @@ class CoordinatorGraph(BaseModel):
                 instance_id=root_instance_id,
                 task_id=root_task.task_id,
                 trace_id=trace_id,
-                messages=[ModelResponse(parts=[TextPart(content=assistant_message)])],
+                messages=[
+                    build_assistant_error_response(
+                        assistant_message,
+                        error_code="verification_failed",
+                    )
+                ],
             )
             if self.run_event_hub is not None:
                 await self._publish_run_event_async(

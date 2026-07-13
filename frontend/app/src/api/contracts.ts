@@ -1976,6 +1976,7 @@ export interface TimelineMessage {
   content?: string;
   message?: {
     content?: string;
+    metadata?: SessionRoundMessageMetadata;
     parts?: ContentPart[];
   };
   parts?: ContentPart[];
@@ -1988,6 +1989,7 @@ export interface TimelineMessage {
   entry_type?: string;
   injection_id?: string;
   injection_status?: string;
+  presentation_kind?: string;
   recipient_instance_id?: string;
   superseded_client_message_ids?: string[];
   superseded_injection_ids?: string[];
@@ -2016,8 +2018,13 @@ export interface SessionRoundMessagePart {
 
 export interface SessionRoundMessageBody {
   content?: JsonValue;
+  metadata?: SessionRoundMessageMetadata;
   parts?: SessionRoundMessagePart[];
   usage?: SessionRoundMessageUsage;
+}
+
+export interface SessionRoundMessageMetadata {
+  presentation_kind?: string;
 }
 
 export interface SessionRoundMessageUsage {
@@ -2055,6 +2062,7 @@ export interface SessionRoundMessage {
   label?: string;
   message?: SessionRoundMessageBody;
   message_id?: string;
+  presentation_kind?: string;
   role?: string;
   role_id?: string;
   sender_instance_id?: string;

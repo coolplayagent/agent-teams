@@ -6,9 +6,24 @@ from relay_teams.sessions.runs.assistant_errors import (
     INVALID_TOOL_ARGS_RECOVERY_MESSAGE,
     NETWORK_EXCEPTION_RECOVERY_MESSAGE,
     build_assistant_error_message,
+    build_assistant_error_response,
     build_auto_recovery_prompt,
     build_error_presentation,
 )
+
+
+def test_build_assistant_error_response_marks_presentation_kind() -> None:
+    verification = build_assistant_error_response(
+        "Verification did not pass",
+        error_code="verification_failed",
+    )
+    provider_failure = build_assistant_error_response(
+        "Provider failed",
+        error_code="network_error",
+    )
+
+    assert verification.metadata == {"presentation_kind": "verification_failure"}
+    assert provider_failure.metadata == {"presentation_kind": "run_error"}
 
 
 def test_build_auto_recovery_prompt_reuses_invalid_tool_args_guidance() -> None:

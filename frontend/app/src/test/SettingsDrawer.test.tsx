@@ -1818,6 +1818,18 @@ describe("SettingsDrawer", () => {
   });
 
   it("links migrated model and proxy labels to real controls", async () => {
+    getModelProfilesMock.mockResolvedValueOnce({
+      default: {
+        is_default: true,
+        model: "gpt-5-mini",
+        provider: "openai",
+      },
+      vision: {
+        input_modalities: ["text", "image"],
+        model: "gpt-5-vision",
+        provider: "openai_compatible",
+      },
+    });
     renderDrawer();
 
     const sections = await screen.findByRole("navigation", {
@@ -1830,7 +1842,7 @@ describe("SettingsDrawer", () => {
     expect(await screen.findByLabelText("Profile ID")).toBeVisible();
     expect(screen.getByLabelText("Model")).toBeVisible();
     expect(screen.getByLabelText("Base URL")).toBeVisible();
-    expect(screen.getByLabelText("API Key")).toBeVisible();
+    expect(await screen.findByLabelText("API Key")).toBeVisible();
     expect(screen.getByLabelText("Image Input")).toBeInTheDocument();
     expect(screen.getByLabelText("Temperature")).toBeVisible();
     expect(screen.getByLabelText("Top P")).toBeVisible();

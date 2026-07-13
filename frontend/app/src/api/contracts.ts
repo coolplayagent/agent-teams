@@ -1677,6 +1677,8 @@ export interface SessionSubagentRecord {
   subagent_kind?: string;
   subagent_role_id?: string;
   subagent_run_id?: string;
+  subagent_task_id?: string;
+  task_id?: string;
   title?: string;
   updated_at?: string;
   workspace_id?: string;

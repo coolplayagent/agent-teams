@@ -326,8 +326,10 @@ describe("SubagentSessionView", () => {
         content: prompt,
         created_at: "2026-06-23T10:01:00Z",
         message_id: "subagent-user-prompt",
+        role: "user",
         role_id: "Crafter",
         run_id: "subagent_run_1",
+        task_id: "subagent-task-1",
       },
       {
         content: "Subagent answer after the command.",
@@ -346,6 +348,7 @@ describe("SubagentSessionView", () => {
         runPhase: "completed",
         runStatus: "completed",
         status: "completed",
+        taskId: "subagent-task-1",
       }),
     });
 

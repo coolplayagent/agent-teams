@@ -95,6 +95,16 @@ describe("SessionsSidebar", () => {
     });
   });
 
+  it("preserves the explicit subagent task identity for message binding", () => {
+    expect(normalizeSessionSubagent({
+      instance_id: "instance-1",
+      role_id: "explorer",
+      run_id: "run-1",
+      session_id: "session-1",
+      task_id: "task-1",
+    }, "session-1")).toMatchObject({ taskId: "task-1" });
+  });
+
   it("does not recompute session timestamps for an unrelated parent update", async () => {
     listWorkspacesMock.mockResolvedValue([
       {

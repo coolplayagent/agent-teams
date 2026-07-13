@@ -5,7 +5,6 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { listAgentMessages, listSessionSubagents } from "../../api/client";
 import {
-  contentPartText,
   type ContentPart,
   type JsonValue,
   type TimelineMessage,
@@ -113,9 +112,9 @@ export const SubagentSessionView = memo(function SubagentSessionView({
         return [];
       }
       const messages = await listAgentMessages(sessionId, instanceId);
-      return filterDuplicatePromptMessages(messages, subagentPromptText);
+      return filterStructuredSubagentPrompt(messages, displayedSubagent.taskId ?? "");
     },
-    [hasMessageHistoryTarget, instanceId, sessionId, subagentPromptText],
+    [displayedSubagent.taskId, hasMessageHistoryTarget, instanceId, sessionId],
   );
 
   useEffect(() => {
@@ -340,7 +339,6 @@ export const SubagentSessionView = memo(function SubagentSessionView({
             runtimeRunId={timelineRunId}
             sessionId={sessionId}
             subagentScopeRoleId={runId.length > 0 ? null : recordAwareSubagent.roleId}
-            suppressExactText={subagentPromptText}
             variant="subagent-panel"
             visible={visible}
           />
@@ -624,38 +622,18 @@ function agentMessagesHaveExpectedToolCalls(
   );
 }
 
-function filterDuplicatePromptMessages(
+function filterStructuredSubagentPrompt(
   messages: TimelineMessage[],
-  promptText: string,
+  taskId: string,
 ): TimelineMessage[] {
-  const normalizedPrompt = normalizedSubagentPromptText(promptText);
-  if (normalizedPrompt.length === 0) {
+  const normalizedTaskId = taskId.trim();
+  if (normalizedTaskId.length === 0) {
     return messages;
   }
-  let removedDuplicatePrompt = false;
   return messages.filter((message) => {
-    if (removedDuplicatePrompt) {
-      return true;
-    }
-    if (normalizedTimelineMessageText(message) !== normalizedPrompt) {
-      return true;
-    }
-    removedDuplicatePrompt = true;
-    return false;
+    const role = message.role?.trim().toLowerCase() ?? "";
+    return message.task_id?.trim() !== normalizedTaskId || role !== "user";
   });
-}
-
-function normalizedTimelineMessageText(message: TimelineMessage): string {
-  const texts = [
-    message.content ?? "",
-    message.message?.content ?? "",
-    ...timelineMessageParts(message).map(contentPartText),
-  ];
-  return normalizedSubagentPromptText(texts.join("\n"));
-}
-
-function normalizedSubagentPromptText(text: string): string {
-  return text.replace(/\s+/g, " ").trim();
 }
 
 function timelineMessageParts(message: TimelineMessage): ContentPart[] {
@@ -695,25 +673,12 @@ function matchingSubagentFromRecords(
     .filter((record): record is ActiveSubagentSession => record !== null);
   const runId = subagent.runId.trim();
   const instanceId = subagent.instanceId.trim();
-  const roleId = subagent.roleId.trim().toLowerCase();
   for (const record of normalized) {
     if (runId.length > 0 && record.runId === runId) {
       return record;
     }
     if (instanceId.length > 0 && record.instanceId === instanceId) {
       return record;
-    }
-  }
-  if (normalized.length === 1) {
-    const onlyRecord = normalized[0];
-    if (
-      onlyRecord !== undefined &&
-      (
-        roleId.length === 0 ||
-        onlyRecord.roleId.trim().toLowerCase() === roleId
-      )
-    ) {
-      return onlyRecord;
     }
   }
   return null;
@@ -731,6 +696,7 @@ function mergeSubagentRecordContext(
       record.sourceToolCallId,
       source.sourceToolCallId,
     ),
+    taskId: firstNonEmpty(record.taskId, source.taskId),
     title: firstNonEmpty(record.title, source.title),
   };
 }

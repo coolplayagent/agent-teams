@@ -106,6 +106,7 @@ export interface ActiveSubagentSession {
   sourceToolCallId?: string;
   status: string;
   subagentKind: string;
+  taskId?: string;
   title: string;
   updatedAt: string;
 }
@@ -1483,6 +1484,7 @@ export function normalizeSessionSubagent(
     sessionId,
     status,
     subagentKind,
+    taskId: firstTrimmed(record.subagent_task_id, record.task_id),
     title: firstTrimmed(record.title),
     updatedAt: firstTrimmed(record.updated_at, record.created_at),
   };

@@ -1870,6 +1870,7 @@ Response fields include:
 - `instance_id`
 - `role_id`
 - `run_id`
+- `task_id`: stable task identity used to bind task-authored messages without comparing message text
 - `status`
 - `run_status`
 - `run_phase`

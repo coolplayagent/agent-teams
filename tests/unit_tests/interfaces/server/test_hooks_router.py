@@ -152,3 +152,30 @@ def test_validate_hooks_config() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_validate_hooks_config_returns_structured_error_location_and_code() -> None:
+    client = _create_client(_FakeHookService())
+
+    response = client.post(
+        "/api/system/configs/hooks:validate",
+        json={
+            "hooks": {
+                "Stop": [
+                    {
+                        "hooks": [
+                            {
+                                "type": "prompt",
+                                "prompt": "",
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+    )
+
+    assert response.status_code == 422
+    detail = response.json()["detail"][0]
+    assert detail["type"] == "hook_prompt_required"
+    assert detail["loc"] == ["hooks", "Stop", 0, "hooks", 0]

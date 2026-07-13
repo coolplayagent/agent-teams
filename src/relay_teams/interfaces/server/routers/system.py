@@ -8,7 +8,7 @@ from typing import Annotated, NoReturn
 
 import httpx
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, ConfigDict, JsonValue
+from pydantic import BaseModel, ConfigDict, JsonValue, ValidationError
 
 from relay_teams.interfaces.server.async_call import (
     call_maybe_async_in_isolated_thread,
@@ -187,7 +187,12 @@ from relay_teams.skills.skill_models import (
 )
 from relay_teams.skills.skill_registry import SkillRegistry
 from relay_teams.triggers import GitHubTriggerService
-from relay_teams.hooks import HookRuntimeView, HookService, HooksConfig
+from relay_teams.hooks import (
+    HookConfigReferenceError,
+    HookRuntimeView,
+    HookService,
+    HooksConfig,
+)
 from relay_teams.plugins import PluginInstallSourceKind, PluginRegistry, PluginScope
 from relay_teams.plugins.marketplace_models import (
     PluginMarketplaceIndex,
@@ -2112,6 +2117,23 @@ async def save_hooks_config(
 ) -> HooksConfig:
     try:
         return await asyncio.to_thread(service.save_user_config, req)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=exc.errors(include_context=False, include_url=False),
+        ) from exc
+    except HookConfigReferenceError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=[
+                {
+                    "type": exc.code,
+                    "loc": list(exc.loc),
+                    "msg": str(exc),
+                    "ctx": {"role_id": exc.role_id},
+                }
+            ],
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -2124,5 +2146,22 @@ async def validate_hooks_config(
     try:
         _ = await asyncio.to_thread(service.validate_config, req)
         return {"status": "ok"}
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=exc.errors(include_context=False, include_url=False),
+        ) from exc
+    except HookConfigReferenceError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=[
+                {
+                    "type": exc.code,
+                    "loc": list(exc.loc),
+                    "msg": str(exc),
+                    "ctx": {"role_id": exc.role_id},
+                }
+            ],
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -1218,8 +1218,7 @@ function hooksMutationError(error: unknown, action: HookMutationAction, t: Trans
   const detail = hookErrorDetail(error);
   const normalizedDetail = formatHookErrorDetail(detail, t);
   const fallbackMessage = error instanceof Error ? error.message.trim() : "";
-  const reason =
-    normalizedDetail ?? humanizeHookBackendMessage(fallbackMessage, null, t).text;
+  const reason = normalizedDetail ?? fallbackMessage;
   const safeReason = reason.trim() !== "" ? reason : t("settingsHooksActionFailed");
   if (action === "validate") {
     return t("settingsHooksValidateFailedDetail", { error: safeReason });
@@ -1248,7 +1247,7 @@ function hookErrorDetail(error: unknown): JsonValue | undefined {
 
 function formatHookErrorDetail(detail: JsonValue | undefined, t: Translate): string | null {
   if (typeof detail === "string") {
-    return formatHookErrorText(detail, t);
+    return detail.trim() || null;
   }
   if (!Array.isArray(detail)) {
     return null;
@@ -1265,9 +1264,13 @@ function formatStructuredHookError(entry: JsonValue, t: Translate): string | nul
     return null;
   }
   const location = hookErrorLocation(record.loc);
-  const fieldLabel = hookFieldLabel(location.fieldName, t);
+  const code = typeof record.type === "string" ? record.type : "";
+  const context = asJsonRecord(record.ctx);
+  const roleId = typeof context?.role_id === "string" ? context.role_id : "";
+  const codedFieldName = hookErrorFieldName(code);
+  const fieldLabel = hookFieldLabel(location.fieldName ?? codedFieldName, t);
   const message = typeof record.msg === "string" ? record.msg : "";
-  const reason = humanizeHookBackendMessage(message, fieldLabel, t);
+  const reason = structuredHookErrorReason(code, message, fieldLabel, roleId, t);
   const locationText = reason.includeLocation ? hookLocationText(location, t) : "";
   if (locationText !== "" && reason.text !== "") {
     return `${locationText}: ${reason.text}`;
@@ -1275,75 +1278,26 @@ function formatStructuredHookError(entry: JsonValue, t: Translate): string | nul
   return reason.text !== "" ? reason.text : locationText || null;
 }
 
-function formatHookErrorText(message: string, t: Translate): string | null {
-  const trimmed = message.trim();
-  if (trimmed === "") {
-    return null;
-  }
-  const splitIndex = trimmed.indexOf(":");
-  if (!trimmed.startsWith("hooks.") || splitIndex < 0) {
-    return humanizeHookBackendMessage(trimmed, null, t).text;
-  }
-  const location = hookErrorLocation(
-    trimmed
-      .slice(0, splitIndex)
-      .split(".")
-      .map((part) => {
-        const numeric = Number(part);
-        return Number.isInteger(numeric) ? numeric : part;
-      }),
-  );
-  const fieldLabel = hookFieldLabel(location.fieldName, t);
-  const reason = humanizeHookBackendMessage(trimmed.slice(splitIndex + 1), fieldLabel, t);
-  if (!reason.includeLocation) {
-    return reason.text;
-  }
-  const locationText = hookLocationText(location, t);
-  if (locationText !== "" && reason.text !== "") {
-    return `${locationText}: ${reason.text}`;
-  }
-  return reason.text || locationText || null;
-}
-
-function humanizeHookBackendMessage(
+function structuredHookErrorReason(
+  code: string,
   message: string,
   fieldLabel: string | null,
+  roleId: string,
   t: Translate,
 ): HookErrorReason {
-  const cleaned = message.trim().replace(/^Value error,\s*/i, "");
-  const lower = cleaned.toLowerCase();
-  const roleId = trailingValue(cleaned);
-  if (lower.includes("unknown agent hook role_id")) {
+  if (code === "hook_agent_role_not_subagent") {
     return {
       includeLocation: false,
-      text: t("settingsHooksUnknownAgentRole", { roleId: roleId ?? "" }),
+      text: t("settingsHooksAgentRoleMustBeSubagent", { roleId }),
     };
   }
-  if (lower.includes("must reference a subagent role")) {
+  if (code === "hook_agent_role_unknown") {
     return {
       includeLocation: false,
-      text: t("settingsHooksAgentRoleMustBeSubagent", { roleId: roleId ?? "" }),
+      text: t("settingsHooksUnknownAgentRole", { roleId }),
     };
   }
-  if (lower.includes("agent hook role_id is required")) {
-    return {
-      includeLocation: true,
-      text: t("settingsHooksRequiredField", { field: t("settingsHooksAgentRole") }),
-    };
-  }
-  if (lower.includes("agent hook requires prompt")) {
-    return {
-      includeLocation: true,
-      text: t("settingsHooksRequiredField", { field: t("settingsHooksPrompt") }),
-    };
-  }
-  if (lower.includes("http hook requires url")) {
-    return {
-      includeLocation: true,
-      text: t("settingsHooksRequiredField", { field: t("settingsHooksUrl") }),
-    };
-  }
-  if (lower === "field required" || lower.includes("field required")) {
+  if (code === "missing" || code.endsWith("_required")) {
     return {
       includeLocation: true,
       text:
@@ -1352,7 +1306,16 @@ function humanizeHookBackendMessage(
           : t("settingsHooksFieldRequired"),
     };
   }
-  return { includeLocation: true, text: cleaned };
+  return { includeLocation: true, text: message.trim() };
+}
+
+function hookErrorFieldName(code: string): string | null {
+  const fields: Record<string, string> = {
+    hook_command_required: "command",
+    hook_prompt_required: "prompt",
+    hook_url_required: "url",
+  };
+  return fields[code] ?? null;
 }
 
 function hookErrorLocation(value: JsonValue | undefined): HookErrorLocation {
@@ -1410,14 +1373,6 @@ function hookFieldLabel(fieldName: string | null, t: Translate): string | null {
     url: t("settingsHooksUrl"),
   };
   return labels[fieldName] ?? fieldName;
-}
-
-function trailingValue(message: string): string | null {
-  const index = message.lastIndexOf(":");
-  if (index < 0 || index === message.length - 1) {
-    return null;
-  }
-  return message.slice(index + 1).trim();
 }
 
 function matcherPlaceholder(eventName: string): string {

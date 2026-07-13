@@ -311,6 +311,7 @@ describe("HooksSettingsSection", () => {
         {
           loc: ["hooks", "PreToolUse", 0, "hooks", 0, "command"],
           msg: "Field required",
+          type: "missing",
         },
       ]),
     );
@@ -325,18 +326,26 @@ describe("HooksSettingsSection", () => {
     );
   });
 
-  it("maps flattened agent hook backend details before showing validate and save errors", async () => {
+  it("maps structured role reference codes without parsing backend messages", async () => {
     validateHooksConfigMock.mockRejectedValueOnce(
-      hookBackendError(
-        "generic failure",
-        "hooks.Stop.0.hooks.0.role_id: Value error, Agent hook role_id must reference a subagent role: MainAgent",
-      ),
+      hookBackendError("generic failure", [
+        {
+          ctx: { role_id: "MainAgent" },
+          loc: ["hooks", "Stop", 0, "hooks", 0, "role_id"],
+          msg: "此角色不能作为子代理",
+          type: "hook_agent_role_not_subagent",
+        },
+      ]),
     );
     saveHooksConfigMock.mockRejectedValueOnce(
-      hookBackendError(
-        "generic failure",
-        "hooks.Stop.0.hooks.0.role_id: Value error, Unknown agent hook role_id: MissingReviewer",
-      ),
+      hookBackendError("generic failure", [
+        {
+          ctx: { role_id: "MissingReviewer" },
+          loc: ["hooks", "Stop", 0, "hooks", 0, "role_id"],
+          msg: "角色不存在",
+          type: "hook_agent_role_unknown",
+        },
+      ]),
     );
     getHooksConfigMock.mockResolvedValue({
       hooks: {

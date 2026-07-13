@@ -18,14 +18,20 @@ describe("appearance settings controls", () => {
     document.documentElement.removeAttribute("style");
   });
 
-  it("persists a cursor choice once without moving its scroll container", async () => {
+  it("persists a cursor choice from its visible row without moving the modal scroll owner", async () => {
     const changed = vi.fn();
     window.addEventListener(appearanceChangedEvent, changed);
     const { container } = renderAppearance();
-    const scrollContainer = container.firstElementChild as HTMLElement;
+    const scrollContainer = container.querySelector<HTMLElement>(".ant-modal-body");
+    const controlRow = screen.getByText("Use pointer cursor").closest("label");
+    expect(scrollContainer).not.toBeNull();
+    expect(controlRow).not.toBeNull();
+    if (scrollContainer === null || controlRow === null) {
+      return;
+    }
     scrollContainer.scrollTop = 72;
 
-    fireEvent.click(screen.getByRole("switch", { name: "Use pointer cursor" }));
+    fireEvent.click(controlRow);
 
     await waitFor(() =>
       expect(document.documentElement.dataset.pointerCursor).toBe("true"),
@@ -37,16 +43,30 @@ describe("appearance settings controls", () => {
     window.removeEventListener(appearanceChangedEvent, changed);
   });
 
-  it("persists the diagnostic-detail choice used by failed-run rendering", async () => {
+  it("persists both diagnostic-detail states used by failed-run rendering", async () => {
     renderAppearance();
 
-    fireEvent.click(screen.getByRole("switch", { name: "Show diagnostic details" }));
+    const controlRow = screen.getByText("Show diagnostic details").closest("label");
+    expect(controlRow).not.toBeNull();
+    if (controlRow === null) {
+      return;
+    }
+
+    fireEvent.click(controlRow);
 
     await waitFor(() =>
       expect(document.documentElement.dataset.diagnosticsVisible).toBe("true"),
     );
     expect(JSON.parse(window.localStorage.getItem(appearanceStorageKey) ?? "{}"))
       .toMatchObject({ showDiagnostics: true });
+
+    fireEvent.click(controlRow);
+
+    await waitFor(() =>
+      expect(document.documentElement.dataset.diagnosticsVisible).toBeUndefined(),
+    );
+    expect(JSON.parse(window.localStorage.getItem(appearanceStorageKey) ?? "{}"))
+      .toMatchObject({ showDiagnostics: false });
   });
 
   it("opens the absolutely positioned preset menu without scheduling scroll repairs", () => {
@@ -82,7 +102,7 @@ function renderAppearance() {
     JSON.stringify(defaultAppearanceSettings),
   );
   return render(
-    <div style={{ height: 120, overflow: "auto" }}>
+    <div className="ant-modal-body" style={{ height: 120, overflow: "auto" }}>
       <ConfigProvider button={{ autoInsertSpace: false }}>
         <AntApp>
           <SettingsAppearanceSection setThemeMode={vi.fn()} themeMode="light" />

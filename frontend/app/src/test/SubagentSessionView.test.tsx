@@ -1522,7 +1522,9 @@ function runtimeToolCallEntry({
     payload: {
       args: { command: "date" },
       tool_call_id: toolCallId,
-      tool_name: "shell",
+            action_family: "run",
+            semantic_category: "execution",
+            tool_name: "shell",
     },
     roleId: "explorer",
     runId,

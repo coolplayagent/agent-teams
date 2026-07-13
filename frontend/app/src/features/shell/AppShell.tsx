@@ -82,12 +82,9 @@ import type { Language } from "../../runtime/uiStore";
 import { oppositeThemeMode } from "../../runtime/themeMode";
 import { useResolvedThemeMode } from "../../runtime/useResolvedThemeMode";
 import { useTranslations } from "../../i18n";
-import { ApiError } from "../../api/http";
 
 const { Header, Sider, Content } = Layout;
 const healthyBackendStatuses = new Set(["alive", "ok", "ready"]);
-const terminalViewMarkMaxAttempts = 3;
-const terminalViewMarkRetryDelayMs = 120;
 const sidebarOverlayMediaQuery = "(max-width: 640px)";
 const shellViewHistoryKey = "agentTeamsShellView";
 const shellViewStorageKey = "agentTeams.shellView";
@@ -98,8 +95,6 @@ const subagentPanelMainMinWidth = 480;
 const subagentPanelResizerWidth = 8;
 const subagentPanelWidthStorageKey = "agentTeams.subagentPanelWidth";
 const activeSubagentPanelStorageKey = "agentTeams.activeSubagentPanel";
-const subagentTimelineResolveAttempts = 8;
-const subagentTimelineResolveDelayMs = 500;
 const uiLanguageSettingsQueryKey = ["ui-language-settings"] as const;
 
 type ShellPrimaryView =
@@ -132,6 +127,8 @@ export function AppShell() {
   const [activeSubagent, setActiveSubagent] = useState<ActiveSubagentSession | null>(
     readActiveSubagentPanel,
   );
+  const [timelineSubagentReference, setTimelineSubagentReference] =
+    useState<TimelineSubagentReference | null>(null);
   const [retainedSubagent, setRetainedSubagent] =
     useState<ActiveSubagentSession | null>(activeSubagent);
   const [subagentPanelVisible, setSubagentPanelVisible] = useState(
@@ -153,8 +150,7 @@ export function AppShell() {
   const [settingsSystemPage, setSettingsSystemPage] =
     useState<SystemSettingsPage | null>(null);
   const terminalViewMarksRef = useRef(new Set<string>());
-  const terminalViewRetryTimersRef = useRef(new Set<number>());
-  const subagentOpenGenerationRef = useRef(0);
+  const terminalViewFailureKeysRef = useRef(new Set<string>());
   const chatShellRef = useRef<HTMLDivElement | null>(null);
   const runStreamController = useRunStreamController();
   const sidebarCollapsed = useUiStore((state) => state.sidebarCollapsed);
@@ -169,6 +165,9 @@ export function AppShell() {
     sessionId: selectedSessionId,
   });
   const previousSelectedSessionIdRef = useRef(selectedSessionId);
+  useEffect(() => {
+    terminalViewFailureKeysRef.current.clear();
+  }, [selectedSessionId]);
   const selectedWorkspaceId = useUiStore((state) => state.selectedWorkspaceId);
   const setSidebarCollapsed = useUiStore((state) => state.setSidebarCollapsed);
   const setSidebarWidth = useUiStore((state) => state.setSidebarWidth);
@@ -227,9 +226,8 @@ export function AppShell() {
   );
   const handleTimelineSubagentOpen = useCallback(
     (reference: TimelineSubagentReference) => {
-      const openGeneration = subagentOpenGenerationRef.current + 1;
-      subagentOpenGenerationRef.current = openGeneration;
       const provisionalSubagent = activeSubagentFromTimelineReference(reference);
+      setTimelineSubagentReference(reference);
       setActiveSubagentAutoRestoreBlocked(false);
       if (provisionalSubagent !== null) {
         setActiveSubagent((current) =>
@@ -240,56 +238,11 @@ export function AppShell() {
         );
         setSubagentPanelVisible(true);
       }
-      const resolveAuthoritativeSubagent = (attempt: number) => {
-        if (subagentOpenGenerationRef.current !== openGeneration) {
-          return;
-        }
-        void queryClient.fetchQuery({
-          queryKey: ["sessions", reference.sessionId, "subagents"],
-          queryFn: () => listSessionSubagents(reference.sessionId, true),
-          staleTime: 0,
-        })
-          .then((records) => {
-            if (subagentOpenGenerationRef.current !== openGeneration) {
-              return;
-            }
-            const authoritative = matchingSubagentFromRecords(reference, records);
-            if (authoritative !== null) {
-              setActiveSubagent((current) =>
-                current === null ||
-                activeSubagentStillMatchesTimelineReference(current, reference)
-                  ? mergeActiveSubagentPanelContext(
-                    authoritative,
-                    current ?? provisionalSubagent,
-                  )
-                  : current,
-              );
-              return;
-            }
-            if (attempt + 1 < subagentTimelineResolveAttempts) {
-              window.setTimeout(
-                () => resolveAuthoritativeSubagent(attempt + 1),
-                subagentTimelineResolveDelayMs,
-              );
-            }
-          })
-          .catch(() => {
-            if (subagentOpenGenerationRef.current !== openGeneration) {
-              return;
-            }
-            if (attempt + 1 < subagentTimelineResolveAttempts) {
-              window.setTimeout(
-                () => resolveAuthoritativeSubagent(attempt + 1),
-                subagentTimelineResolveDelayMs,
-              );
-            }
-          });
-      };
-      resolveAuthoritativeSubagent(0);
     },
-    [queryClient],
+    [],
   );
   const closeActiveSubagent = useCallback(() => {
+    setTimelineSubagentReference(null);
     setSubagentPanelVisible(false);
   }, []);
   const updateSubagentPanelLayoutMax = useCallback((containerWidth: number) => {
@@ -311,6 +264,25 @@ export function AppShell() {
     queryKey: ["sessions", "sidebar"],
     queryFn: () => listSidebarSessions(false),
   });
+  const sidebarSessions = useMemo(
+    () => validSidebarSessions(sidebarSessionsQuery.data),
+    [sidebarSessionsQuery.data],
+  );
+  const timelineSubagentRecordsQuery = useQuery({
+    queryKey: [
+      "sessions",
+      timelineSubagentReference?.sessionId ?? "",
+      "subagents",
+    ],
+    queryFn: () => {
+      if (timelineSubagentReference === null) {
+        throw new Error("Timeline subagent reference is required.");
+      }
+      return listSessionSubagents(timelineSubagentReference.sessionId, true);
+    },
+    enabled: timelineSubagentReference !== null && subagentPanelVisible,
+    staleTime: 0,
+  });
   const workspacesQuery = useQuery({
     queryKey: ["workspaces"],
     queryFn: listWorkspaces,
@@ -326,6 +298,34 @@ export function AppShell() {
     enabled: selectedSessionId !== null,
     staleTime: 10000,
   });
+
+  useEffect(() => {
+    if (
+      timelineSubagentReference === null ||
+      timelineSubagentRecordsQuery.data === undefined
+    ) {
+      return;
+    }
+    const authoritative = matchingSubagentFromRecords(
+      timelineSubagentReference,
+      timelineSubagentRecordsQuery.data,
+    );
+    if (authoritative === null) {
+      return;
+    }
+    const provisional = activeSubagentFromTimelineReference(
+      timelineSubagentReference,
+    );
+    setActiveSubagent((current) => {
+      const matchingCurrent =
+        current !== null &&
+        provisional !== null &&
+        subagentPanelIdentityMatches(current, provisional)
+          ? current
+          : provisional;
+      return mergeActiveSubagentPanelContext(authoritative, matchingCurrent);
+    });
+  }, [timelineSubagentRecordsQuery.data, timelineSubagentReference]);
 
   const healthLabel = useMemo(() => {
     if (healthQuery.isLoading) {
@@ -357,10 +357,10 @@ export function AppShell() {
   );
   const selectedSession = useMemo(
     () =>
-      sidebarSessionsQuery.data?.find(
+      sidebarSessions.find(
         (session) => session.session_id === selectedSessionId,
       ) ?? null,
-    [selectedSessionId, sidebarSessionsQuery.data],
+    [selectedSessionId, sidebarSessions],
   );
   const latestTerminalRunId =
     sessionDetailQuery.data?.latest_terminal_run_id ??
@@ -440,7 +440,7 @@ export function AppShell() {
     if (selectedSessionId !== null) {
       return;
     }
-    const firstSession = sidebarSessionsQuery.data?.find((session) =>
+    const firstSession = sidebarSessions.find((session) =>
       session.session_id.trim(),
     );
     if (firstSession === undefined) {
@@ -454,7 +454,7 @@ export function AppShell() {
     selectedSessionId,
     setSelectedSessionId,
     setSelectedWorkspaceId,
-    sidebarSessionsQuery.data,
+    sidebarSessions,
   ]);
 
   useEffect(() => {
@@ -504,7 +504,10 @@ export function AppShell() {
       return;
     }
     const terminalMarkKey = terminalViewMarkKey(selectedSession);
-    if (terminalViewMarksRef.current.has(terminalMarkKey)) {
+    if (
+      terminalViewMarksRef.current.has(terminalMarkKey) ||
+      terminalViewFailureKeysRef.current.has(terminalMarkKey)
+    ) {
       return;
     }
     terminalViewMarksRef.current.add(terminalMarkKey);
@@ -513,79 +516,31 @@ export function AppShell() {
       (current) => markSidebarTerminalRunViewed(current, sessionId),
     );
 
-    const invalidateSessionTerminalView = () => {
+    const releaseTerminalViewMark = () => {
+      terminalViewMarksRef.current.delete(terminalMarkKey);
+    };
+    const invalidateFailedTerminalView = () => {
       void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
-      void queryClient.invalidateQueries({ queryKey: ["sessions", sessionId] });
       void queryClient.invalidateQueries({
         queryKey: ["sessions", "detail", sessionId],
       });
     };
-    const releaseTerminalViewMark = () => {
-      terminalViewMarksRef.current.delete(terminalMarkKey);
-    };
-    const scheduleRetry = (nextAttempt: number) => {
-      const timerId = window.setTimeout(() => {
-        terminalViewRetryTimersRef.current.delete(timerId);
-        markTerminalView(nextAttempt);
-      }, terminalViewMarkRetryDelayMs);
-      terminalViewRetryTimersRef.current.add(timerId);
-    };
-    const markTerminalView = (attempt: number) => {
-      void markSessionTerminalRunViewed(sessionId)
-        .then((result) => {
-          if (result.status === "deferred") {
-            if (attempt < terminalViewMarkMaxAttempts) {
-              scheduleRetry(attempt + 1);
-              return;
-            }
-            releaseTerminalViewMark();
-            invalidateSessionTerminalView();
-            return;
-          }
-          releaseTerminalViewMark();
-        })
-        .catch((error: unknown) => {
-          if (
-            isRetryableTerminalViewMarkError(error) &&
-            attempt < terminalViewMarkMaxAttempts
-          ) {
-            scheduleRetry(attempt + 1);
-            return;
-          }
-          releaseTerminalViewMark();
-          invalidateSessionTerminalView();
-        });
-    };
-
-    markTerminalView(1);
+    void markSessionTerminalRunViewed(sessionId)
+      .then(() => {
+        releaseTerminalViewMark();
+      })
+      .catch(() => {
+        releaseTerminalViewMark();
+        terminalViewFailureKeysRef.current.add(terminalMarkKey);
+        invalidateFailedTerminalView();
+      });
   }, [queryClient, selectedSession]);
-
-  useEffect(() => {
-    return () => {
-      for (const timerId of terminalViewRetryTimersRef.current) {
-        window.clearTimeout(timerId);
-      }
-      terminalViewRetryTimersRef.current.clear();
-    };
-  }, []);
 
   useEffect(() => {
     writeActiveSubagentPanel(
       subagentPanelVisible ? activeSubagent : null,
     );
   }, [activeSubagent, subagentPanelVisible]);
-
-  function isRetryableTerminalViewMarkError(error: unknown): boolean {
-    if (!(error instanceof ApiError)) {
-      return false;
-    }
-    return (
-      error.status === 429 ||
-      error.status === 502 ||
-      error.status === 503 ||
-      error.status === 504
-    );
-  }
 
   const topbarWorkspaceId =
     selectedWorkspaceId ??
@@ -1103,7 +1058,7 @@ export function AppShell() {
           onClose={() => setSessionSearchOpen(false)}
           onSessionSelected={handleSearchSessionSelected}
           selectedSessionId={selectedSessionId}
-          sessions={sidebarSessionsQuery.data ?? []}
+          sessions={sidebarSessions}
           workspaces={workspacesQuery.data ?? []}
         />
       </Modal>
@@ -1427,11 +1382,17 @@ function activeSubagentFromTimelineReference(
 
 function matchingSubagentFromRecords(
   reference: TimelineSubagentReference,
-  records: SessionSubagentRecord[],
+  records: SessionSubagentRecord[] | null | undefined,
 ): ActiveSubagentSession | null {
+  if (!Array.isArray(records)) {
+    return null;
+  }
   const runId = reference.runId?.trim() ?? "";
   const instanceId = reference.instanceId?.trim() ?? "";
   const normalized = records
+    .filter((record): record is SessionSubagentRecord =>
+      record !== null && typeof record === "object"
+    )
     .map((record) => normalizeSessionSubagent(record, reference.sessionId))
     .filter((record): record is ActiveSubagentSession =>
       record !== null && record.sessionId === reference.sessionId,
@@ -1440,28 +1401,25 @@ function matchingSubagentFromRecords(
       ...record,
       promptText: firstNonBlank(record.promptText, reference.prompt),
     }));
-  if (runId.length === 0 && instanceId.length === 0 && normalized.length === 1) {
-    return normalized.length === 1 ? normalized[0] : null;
+  if (runId.length > 0) {
+    return normalized.find((record) => record.runId === runId) ?? null;
   }
-  let bestMatch: { record: ActiveSubagentSession; score: number } | null = null;
-  for (const record of normalized) {
-    const score = timelineReferenceSubagentMatchScore(reference, record);
-    if (score <= 0) {
-      continue;
-    }
-    if (
-      bestMatch === null ||
-      score > bestMatch.score ||
-      (
-        score === bestMatch.score &&
-        subagentIsRunning(record) &&
-        !subagentIsRunning(bestMatch.record)
-      )
-    ) {
-      bestMatch = { record, score };
-    }
+  if (instanceId.length > 0) {
+    return normalized.find((record) => record.instanceId === instanceId) ?? null;
   }
-  return bestMatch?.record ?? null;
+  return normalized.length === 1 ? normalized[0] : null;
+}
+
+function validSidebarSessions(value: unknown): SessionSidebarRecord[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((session): session is SessionSidebarRecord =>
+    session !== null &&
+    typeof session === "object" &&
+    typeof (session as Partial<SessionSidebarRecord>).session_id === "string" &&
+    (session as Partial<SessionSidebarRecord>).session_id?.trim().length !== 0
+  );
 }
 
 function subagentTitleFromReference(reference: TimelineSubagentReference): string {
@@ -1494,84 +1452,6 @@ function mergeActiveSubagentPanelContext(
   };
 }
 
-function activeSubagentStillMatchesTimelineReference(
-  subagent: ActiveSubagentSession | null,
-  reference: TimelineSubagentReference,
-): boolean {
-  if (subagent === null || subagent.sessionId !== reference.sessionId) {
-    return false;
-  }
-  const runId = reference.runId?.trim() ?? "";
-  const instanceId = reference.instanceId?.trim() ?? "";
-  if (runId.length > 0) {
-    return subagent.runId === runId || subagent.runId.length === 0;
-  }
-  if (instanceId.length > 0) {
-    return subagent.instanceId === instanceId || subagent.instanceId.length === 0;
-  }
-  const currentTitle = normalizedSubagentMatchText(subagent.title);
-  const referenceTitle = normalizedSubagentMatchText(subagentTitleFromReference(reference));
-  const currentRole = normalizedSubagentMatchText(subagent.roleId);
-  const referenceRole = normalizedSubagentMatchText(reference.roleId ?? "");
-  return (
-    (referenceTitle.length > 0 && currentTitle === referenceTitle) ||
-    (referenceRole.length > 0 && currentRole === referenceRole)
-  );
-}
-
-function timelineReferenceSubagentMatchScore(
-  reference: TimelineSubagentReference,
-  subagent: ActiveSubagentSession,
-): number {
-  const runId = reference.runId?.trim() ?? "";
-  if (runId.length > 0 && subagent.runId === runId) {
-    return 100;
-  }
-  const instanceId = reference.instanceId?.trim() ?? "";
-  if (instanceId.length > 0 && subagent.instanceId === instanceId) {
-    return 100;
-  }
-  let score = 0;
-  const referenceRole = normalizedSubagentMatchText(reference.roleId ?? "");
-  if (
-    referenceRole.length > 0 &&
-    referenceRole === normalizedSubagentMatchText(subagent.roleId)
-  ) {
-    score += 3;
-  }
-  const referenceTexts = [
-    reference.title ?? "",
-    reference.description ?? "",
-  ]
-    .map(normalizedSubagentMatchText)
-    .filter((text) => text.length > 0);
-  const subagentTexts = [
-    subagent.title,
-    subagent.roleId,
-  ]
-    .map(normalizedSubagentMatchText)
-    .filter((text) => text.length > 0);
-  if (referenceTexts.some((text) => subagentTexts.includes(text))) {
-    score += 4;
-  } else if (
-    referenceTexts.some((referenceText) =>
-      subagentTexts.some((subagentText) =>
-        subagentText.includes(referenceText) || referenceText.includes(subagentText),
-      ),
-    )
-  ) {
-    score += 2;
-  }
-  if (subagentIsRunning(subagent)) {
-    score += 1;
-  }
-  return score;
-}
-
-function normalizedSubagentMatchText(value: string): string {
-  return value.trim().replace(/\s+/g, " ").toLowerCase();
-}
-
 function firstNonBlank(...values: Array<string | null | undefined>): string {
   for (const value of values) {
     const trimmed = value?.trim() ?? "";
@@ -1582,15 +1462,13 @@ function firstNonBlank(...values: Array<string | null | undefined>): string {
   return "";
 }
 
-function subagentIsRunning(subagent: ActiveSubagentSession): boolean {
-  const status = `${subagent.runStatus} ${subagent.status}`.toLowerCase();
-  return status.includes("running") || status.includes("starting");
-}
-
 function subagentPanelIdentityMatches(
   left: ActiveSubagentSession,
   right: ActiveSubagentSession,
 ): boolean {
+  if (left === right) {
+    return true;
+  }
   if (left.sessionId !== right.sessionId) {
     return false;
   }
@@ -1608,12 +1486,7 @@ function subagentPanelIdentityMatches(
   ) {
     return left.sourceToolCallId === right.sourceToolCallId;
   }
-  return (
-    normalizedSubagentMatchText(left.title) ===
-      normalizedSubagentMatchText(right.title) &&
-    normalizedSubagentMatchText(left.roleId) ===
-      normalizedSubagentMatchText(right.roleId)
-  );
+  return false;
 }
 
 function terminalViewMarkKey(session: SessionSidebarRecord): string {

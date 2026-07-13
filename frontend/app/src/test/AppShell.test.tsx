@@ -439,6 +439,25 @@ afterEach(() => {
 });
 
 describe("AppShell", () => {
+  it("keeps the shell usable while optional sidebar and subagent data is malformed", async () => {
+    listSidebarSessionsMock.mockResolvedValue(
+      [undefined] as unknown as SessionSidebarRecord[],
+    );
+    listSessionSubagentsMock.mockResolvedValue(
+      [undefined] as unknown as SessionSubagentRecord[],
+    );
+
+    renderShell();
+
+    expect(await screen.findByTestId("sessions-sidebar")).toBeVisible();
+    expect(screen.getByTestId("timeline")).toBeVisible();
+    fireEvent.click(screen.getByTestId("open-pending-subagent-from-timeline"));
+    expect(await screen.findByTestId("subagent-session-view")).toHaveAttribute(
+      "data-instance-id",
+      "",
+    );
+  });
+
   it("toggles the session sidebar without unmounting the workspace", async () => {
     renderShell();
 
@@ -824,7 +843,7 @@ describe("AppShell", () => {
     expect(markSessionTerminalRunViewedMock).not.toHaveBeenCalled();
   });
 
-  it("retries deferred terminal view marks before invalidating session data", async () => {
+  it("lets the server finish one deferred terminal view mark without polling", async () => {
     const firstTerminalSession: SessionSidebarRecord = {
       has_unread_terminal_run: true,
       latest_terminal_run_id: "run-deferred",
@@ -835,28 +854,22 @@ describe("AppShell", () => {
       workspace_id: "workspace-1",
     };
     listSidebarSessionsMock.mockResolvedValue([firstTerminalSession]);
-    markSessionTerminalRunViewedMock
-      .mockResolvedValueOnce({ status: "deferred" })
-      .mockResolvedValueOnce({ status: "ok" });
+    markSessionTerminalRunViewedMock.mockResolvedValue({ status: "deferred" });
     const queryClient = renderShell();
     const invalidateQueriesSpy = vi.spyOn(queryClient, "invalidateQueries");
 
     await waitFor(() =>
-      expect(markSessionTerminalRunViewedMock).toHaveBeenCalledTimes(2),
+      expect(markSessionTerminalRunViewedMock).toHaveBeenCalledTimes(1),
     );
 
     expect(markSessionTerminalRunViewedMock).toHaveBeenNthCalledWith(
       1,
       "session-1",
     );
-    expect(markSessionTerminalRunViewedMock).toHaveBeenNthCalledWith(
-      2,
-      "session-1",
-    );
     expect(invalidateQueriesSpy).not.toHaveBeenCalled();
   });
 
-  it("refreshes authoritative session data when terminal view deferral is exhausted", async () => {
+  it("does not timer-retry a persistently deferred terminal view mark", async () => {
     listSidebarSessionsMock.mockResolvedValue([{
       has_unread_terminal_run: true,
       latest_terminal_run_id: "run-deferred-exhausted",
@@ -871,18 +884,13 @@ describe("AppShell", () => {
     const invalidateQueriesSpy = vi.spyOn(queryClient, "invalidateQueries");
 
     await waitFor(() =>
-      expect(markSessionTerminalRunViewedMock).toHaveBeenCalledTimes(3),
+      expect(markSessionTerminalRunViewedMock).toHaveBeenCalledTimes(1),
     );
-
-    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
-      queryKey: ["sessions", "sidebar"],
-    });
-    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
-      queryKey: ["sessions", "detail", "session-1"],
-    });
+    expect(markSessionTerminalRunViewedMock).toHaveBeenCalledTimes(1);
+    expect(invalidateQueriesSpy).not.toHaveBeenCalled();
   });
 
-  it("retries overloaded terminal view marks without logging a visible failure", async () => {
+  it("invalidates after one failed terminal view mark without timer retry", async () => {
     const firstTerminalSession: SessionSidebarRecord = {
       has_unread_terminal_run: true,
       latest_terminal_run_id: "run-overloaded",
@@ -893,25 +901,26 @@ describe("AppShell", () => {
       workspace_id: "workspace-1",
     };
     listSidebarSessionsMock.mockResolvedValue([firstTerminalSession]);
-    markSessionTerminalRunViewedMock
-      .mockRejectedValueOnce(new ApiError("Backend overloaded", 503, null))
-      .mockResolvedValueOnce({ status: "ok" });
+    markSessionTerminalRunViewedMock.mockRejectedValue(
+      new ApiError("Backend overloaded", 503, null),
+    );
     const queryClient = renderShell();
     const invalidateQueriesSpy = vi.spyOn(queryClient, "invalidateQueries");
 
     await waitFor(() =>
-      expect(markSessionTerminalRunViewedMock).toHaveBeenCalledTimes(2),
+      expect(markSessionTerminalRunViewedMock).toHaveBeenCalledTimes(1),
     );
 
     expect(markSessionTerminalRunViewedMock).toHaveBeenNthCalledWith(
       1,
       "session-1",
     );
-    expect(markSessionTerminalRunViewedMock).toHaveBeenNthCalledWith(
-      2,
-      "session-1",
-    );
-    expect(invalidateQueriesSpy).not.toHaveBeenCalled();
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "sidebar"],
+    });
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "detail", "session-1"],
+    });
   });
 
   it("keeps only primary feature destinations in the sidebar navigation", async () => {
@@ -1692,6 +1701,48 @@ describe("AppShell", () => {
       "data-run-id",
       "subagent_run_running",
     );
+  });
+
+  it("hydrates a pending timeline subagent from activity-driven query invalidation", async () => {
+    listSessionSubagentsMock.mockResolvedValueOnce([]);
+    const queryClient = renderShell();
+
+    expect(await screen.findByTestId("timeline")).toBeVisible();
+    fireEvent.click(screen.getByTestId("open-pending-subagent-from-timeline"));
+    expect(await screen.findByTestId("subagent-session-view")).toHaveAttribute(
+      "data-instance-id",
+      "",
+    );
+    await waitFor(() =>
+      expect(listSessionSubagentsMock).toHaveBeenCalledTimes(1),
+    );
+
+    listSessionSubagentsMock.mockResolvedValueOnce([{
+      created_at: "2026-06-23T10:02:00Z",
+      instance_id: "subagent-instance-event",
+      last_event_id: 12,
+      role_id: "explorer",
+      run_id: "subagent-run-event",
+      run_status: "running",
+      session_id: "session-1",
+      status: "running",
+      subagent_kind: "normal",
+      title: "Explore skills implementation",
+      updated_at: "2026-06-23T10:03:00Z",
+    }]);
+    await act(async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["sessions", "session-1", "subagents"],
+      });
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("subagent-session-view")).toHaveAttribute(
+        "data-instance-id",
+        "subagent-instance-event",
+      ),
+    );
+    expect(listSessionSubagentsMock).toHaveBeenCalledTimes(2);
   });
 
   it("does not reopen a closed subagent when authoritative hydration arrives late", async () => {

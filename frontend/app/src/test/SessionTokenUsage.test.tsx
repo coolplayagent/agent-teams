@@ -61,7 +61,7 @@ describe("SessionTokenUsage", () => {
     expect(screen.queryByText("1k / 2k")).not.toBeInTheDocument();
   });
 
-  it("falls back to MainAgent context when no primary role is provided", async () => {
+  it("falls back to the first reported context when no primary role is provided", async () => {
     getSessionTokenUsageMock.mockResolvedValue(
       usage({
         input: 900,
@@ -76,6 +76,34 @@ describe("SessionTokenUsage", () => {
 
     expect(await screen.findByText("900 / 10k")).toBeVisible();
     expect(screen.queryByText("1k / 2k")).not.toBeInTheDocument();
+  });
+
+  it("does not infer the primary context from a fixed role name", async () => {
+    const payload = usage({
+      input: 900,
+      output: 500,
+      total: 1400,
+      secondaryContextWindow: 2000,
+      secondaryInput: 1000,
+    });
+    const main = payload.by_role?.MainAgent;
+    const helper = payload.by_role?.HelperAgent;
+    if (main === undefined || helper === undefined) {
+      throw new Error("Expected both usage roles.");
+    }
+    payload.by_role = {
+      RenamedPrimary: {
+        ...helper,
+        role_id: "RenamedPrimary",
+      },
+      MainAgent: main,
+    };
+    getSessionTokenUsageMock.mockResolvedValue(payload);
+
+    renderUsage();
+
+    expect(await screen.findByText("1k / 2k")).toBeVisible();
+    expect(screen.queryByText("900 / 10k")).not.toBeInTheDocument();
   });
 
   it("uses explicit context titles for loading, error, and missing windows", async () => {

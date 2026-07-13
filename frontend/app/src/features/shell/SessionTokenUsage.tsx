@@ -141,12 +141,6 @@ function selectContextUsage(
       return requested;
     }
   }
-  const mainAgent = candidates.find(
-    (candidate) => normalizeRoleId(candidate.roleId) === "mainagent",
-  );
-  if (mainAgent !== undefined) {
-    return mainAgent;
-  }
   return candidates[0];
 }
 
@@ -196,10 +190,6 @@ function formatContextLabel(contextUsage: ContextUsageSummary | null): string {
       ? "--"
       : formatCompact(contextUsage.contextWindow);
   return `${formatCompact(contextUsage.latestInputTokens)} / ${upper}`;
-}
-
-function normalizeRoleId(roleId: string): string {
-  return roleId.replaceAll(/[\s_-]/g, "").toLowerCase();
 }
 
 function formatInteger(value: number | undefined): string {

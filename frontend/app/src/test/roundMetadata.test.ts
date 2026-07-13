@@ -73,20 +73,20 @@ describe("roundMetadata", () => {
   it("normalizes marker titles while preserving multiline prompt text", () => {
     const summary = roundSummary(
       round({
-        run_user_message: "Plan the React shell\nKeep V1 navigation intact",
+        intent: "Plan the React shell\nKeep navigation intact",
       }),
       0,
     );
 
-    expect(summary.title).toBe("Plan the React shell Keep V1 navigation intact");
-    expect(summary.promptText).toBe("Plan the React shell\nKeep V1 navigation intact");
+    expect(summary.title).toBe("Plan the React shell Keep navigation intact");
+    expect(summary.promptText).toBe("Plan the React shell\nKeep navigation intact");
     expect(summary.promptCollapsible).toBe(true);
   });
 
   it("keeps short round prompts as plain marker titles", () => {
     const summary = roundSummary(
       round({
-        run_user_message: "Review deployment",
+        intent: "Review deployment",
       }),
       0,
     );
@@ -94,6 +94,21 @@ describe("roundMetadata", () => {
     expect(summary.title).toBe("Review deployment");
     expect(summary.promptText).toBe("Review deployment");
     expect(summary.promptCollapsible).toBe(false);
+  });
+
+  it("never projects runtime presentation text as user-authored input", () => {
+    const summary = roundSummary(
+      round({
+        intent: undefined,
+        intent_parts: undefined,
+        run_diagnostic_message: "The run timed out.",
+        run_user_message: "Generated recovery instructions.",
+      }),
+      0,
+    );
+
+    expect(summary.promptText).toBe("");
+    expect(summary.title).toBe("The run timed out.");
   });
 
   it("projects the submitted intent instead of a verification recovery message", () => {

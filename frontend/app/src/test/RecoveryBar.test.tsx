@@ -71,6 +71,33 @@ describe("RecoveryBar", () => {
     );
   });
 
+  it("refreshes recovery from session activity invalidation without business polling", async () => {
+    getRecoverySnapshotMock.mockResolvedValue(recoverySnapshot());
+    const queryClient = renderRecoveryBar();
+
+    await waitFor(() => expect(getRecoverySnapshotMock).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["sessions", "session-1", "recovery"],
+      });
+    });
+
+    await waitFor(() => expect(getRecoverySnapshotMock).toHaveBeenCalledTimes(2));
+  });
+
+  it("accepts a partial recovery snapshot without paused_subagent", async () => {
+    const snapshot = recoverySnapshot();
+    delete snapshot.paused_subagent;
+    getRecoverySnapshotMock.mockResolvedValue(snapshot);
+
+    renderRecoveryBar();
+
+    await waitFor(() =>
+      expect(getRecoverySnapshotMock).toHaveBeenCalledWith("session-1"),
+    );
+    expect(screen.queryByText("Subagent paused")).not.toBeInTheDocument();
+  });
+
   it("does not refetch a fresh idle recovery snapshot on repeated focus", async () => {
     getRecoverySnapshotMock.mockResolvedValue(recoverySnapshot());
 
@@ -1507,7 +1534,7 @@ describe("RecoveryBar", () => {
     );
   });
 
-  it("ignores reserved paused subagent roles from recovery snapshots", async () => {
+  it("treats structured paused-subagent role ids as opaque values", async () => {
     getRecoverySnapshotMock.mockResolvedValue(
       recoverySnapshot({
         active_run: {
@@ -1519,17 +1546,19 @@ describe("RecoveryBar", () => {
           should_show_recover: true,
         },
         paused_subagent: {
-          instance_id: "main-inst",
-          role_id: "MainAgent",
-          task_id: "task-main",
+          instance_id: "coordinator-inst",
+          role_id: "CoordinatorAgent",
+          task_id: "task-coordinator",
         },
       }),
     );
 
     renderRecoveryBar();
 
-    await screen.findByText("Run paused");
-    expect(screen.queryByText(/Paused subagent:/)).not.toBeInTheDocument();
+    await screen.findByText("Paused subagent: CoordinatorAgent");
+    expect(
+      screen.getByText("instance: coordinator-inst | task: task-coordinator"),
+    ).toBeInTheDocument();
   });
 
   it("shows active background tasks and stops them through the run API", async () => {
@@ -1717,8 +1746,9 @@ function renderRecoveryBar(
   onPausedSubagentOpen?: ComponentProps<typeof RecoveryBar>["onPausedSubagentOpen"],
   visible = true,
 ) {
+  const queryClient = createTestQueryClient();
   render(
-    <TestProviders>
+    <TestProviders queryClient={queryClient}>
       <RecoveryBar
         onPausedSubagentOpen={onPausedSubagentOpen}
         runStreamController={controller}
@@ -1727,10 +1757,11 @@ function renderRecoveryBar(
       />
     </TestProviders>,
   );
+  return queryClient;
 }
 
-function TestProviders({ children }: { children: ReactNode }) {
-  const queryClient = new QueryClient({
+function createTestQueryClient(): QueryClient {
+  return new QueryClient({
     defaultOptions: {
       queries: {
         retry: false,
@@ -1738,6 +1769,15 @@ function TestProviders({ children }: { children: ReactNode }) {
       },
     },
   });
+}
+
+function TestProviders({
+  children,
+  queryClient = createTestQueryClient(),
+}: {
+  children: ReactNode;
+  queryClient?: QueryClient;
+}) {
   return (
     <QueryClientProvider client={queryClient}>
       <ConfigProvider>

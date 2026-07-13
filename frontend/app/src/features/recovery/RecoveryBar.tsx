@@ -86,11 +86,6 @@ export function RecoveryBar({
     queryFn: () => getRecoverySnapshot(sessionId ?? ""),
     enabled: recoveryQueryEnabled,
     refetchOnWindowFocus: true,
-    refetchInterval: (query) =>
-      recoveryQueryEnabled &&
-      recoverySnapshotNeedsPolling(query.state.data as RecoverySnapshot | undefined)
-        ? 30000
-        : false,
     staleTime: 30000,
   });
 
@@ -532,15 +527,6 @@ export function SubagentQuestionBar({
     queryFn: () => getRecoverySnapshot(sessionId),
     refetchOnWindowFocus: true,
     enabled,
-    refetchInterval: (query) =>
-      enabled &&
-      subagentRecoveryNeedsPolling(
-        query.state.data as RecoverySnapshot | undefined,
-        runId,
-        instanceId,
-      )
-        ? 30000
-        : false,
     staleTime: 30000,
   });
   const questions = (recoveryQuery.data?.pending_user_questions ?? []).filter(
@@ -1235,16 +1221,13 @@ function removeQuestionInputKeys<Value>(
 }
 
 function visiblePausedSubagent(
-  pausedSubagent: RecoveryPausedSubagent | null,
+  pausedSubagent: RecoveryPausedSubagent | null | undefined,
 ): RecoveryPausedSubagent | null {
-  if (pausedSubagent === null) {
+  if (pausedSubagent == null) {
     return null;
   }
   const roleId = pausedSubagent.role_id?.trim() ?? "";
   const instanceId = pausedSubagent.instance_id?.trim() ?? "";
-  if (isReservedPausedSubagentRole(roleId)) {
-    return null;
-  }
   if (!roleId && !instanceId) {
     return null;
   }
@@ -1260,15 +1243,6 @@ function pausedSubagentLabel(pausedSubagent: RecoveryPausedSubagent): string {
   const roleId = pausedSubagent.role_id?.trim() ?? "";
   const instanceId = pausedSubagent.instance_id?.trim() ?? "";
   return roleId || instanceId || "unknown";
-}
-
-function isReservedPausedSubagentRole(roleId: string): boolean {
-  const compactRoleId = roleId.trim().toLowerCase().replace(/[\s_-]+/g, "");
-  return (
-    compactRoleId === "mainagent" ||
-    compactRoleId === "coordinator" ||
-    compactRoleId === "coordinatoragent"
-  );
 }
 
 function pausedSubagentDetail(pausedSubagent: RecoveryPausedSubagent): string {
@@ -1376,58 +1350,6 @@ function isStreamingRunStatus(status: string | undefined): boolean {
     default:
       return false;
   }
-}
-
-function recoverySnapshotNeedsPolling(
-  snapshot: RecoverySnapshot | undefined,
-): boolean {
-  if (snapshot === undefined) {
-    return false;
-  }
-  const activeRun = snapshot.active_run;
-  return (
-    activeRun?.should_show_recover === true ||
-    shouldStreamActiveRun(activeRun) ||
-    snapshot.pending_tool_approvals.length > 0 ||
-    snapshot.pending_user_questions.length > 0 ||
-    visiblePausedSubagent(snapshot.paused_subagent) !== null ||
-    snapshot.background_tasks.some(isActiveBackgroundTask)
-  );
-}
-
-function subagentRecoveryNeedsPolling(
-  snapshot: RecoverySnapshot | undefined,
-  runId: string,
-  instanceId: string,
-): boolean {
-  if (snapshot === undefined) {
-    return false;
-  }
-  const normalizedRunId = runId.trim();
-  const normalizedInstanceId = instanceId.trim();
-  const activeRun = snapshot.active_run;
-  if (
-    activeRun?.run_id.trim() === normalizedRunId &&
-    (activeRun.should_show_recover === true || shouldStreamActiveRun(activeRun))
-  ) {
-    return true;
-  }
-  if (
-    snapshot.pending_user_questions.some(
-      (question) =>
-        question.run_id.trim() === normalizedRunId &&
-        (!question.instance_id?.trim() ||
-          question.instance_id.trim() === normalizedInstanceId),
-    )
-  ) {
-    return true;
-  }
-  const pausedSubagent = visiblePausedSubagent(snapshot.paused_subagent);
-  return (
-    pausedSubagent !== null &&
-    normalizedInstanceId.length > 0 &&
-    pausedSubagent.instance_id?.trim() === normalizedInstanceId
-  );
 }
 
 interface BackgroundRecoveryRunStreamTarget {

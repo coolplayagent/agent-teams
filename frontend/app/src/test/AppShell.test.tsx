@@ -2073,8 +2073,7 @@ describe("AppShell", () => {
 
       fireEvent.click(screen.getByTestId("select-session-from-sidebar"));
       expect(await screen.findByTestId("timeline")).toBeVisible();
-      expect(screen.getByText("Loading session...")).toBeVisible();
-      expect(animationFrame.pendingCount()).toBeGreaterThanOrEqual(1);
+      expect(screen.queryByText("Loading session...")).not.toBeInTheDocument();
 
       fireEvent.click(screen.getByTestId("open-subagent-from-timeline"));
       expect(await screen.findByTestId("subagent-session-view")).toBeVisible();

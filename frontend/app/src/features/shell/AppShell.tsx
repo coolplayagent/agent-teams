@@ -123,7 +123,6 @@ export function AppShell() {
   const [specLineageTaskId, setSpecLineageTaskId] = useState<string | null>(
     initialSpecLineageTaskId,
   );
-  const [chatContentLoadingKey, setChatContentLoadingKey] = useState(0);
   const [activeSubagent, setActiveSubagent] = useState<ActiveSubagentSession | null>(
     readActiveSubagentPanel,
   );
@@ -210,15 +209,10 @@ export function AppShell() {
       setSettingsOpen(false);
       if (nextView === "chat") {
         setSessionSearchOpen(false);
-        if (activeView === "chat" && activeSubagentForSelectedSession !== null) {
-          setChatContentLoadingKey((currentKey) => currentKey + 1);
-        }
       }
       navigateShellView(nextView, historyMode);
     },
     [
-      activeSubagentForSelectedSession,
-      activeView,
       navigateShellView,
       runStreamController,
       selectedSessionId,
@@ -893,7 +887,6 @@ export function AppShell() {
             style={subagentPanelStyle(subagentPanelWidth)}
           >
             <ChatWorkspace
-              contentLoadingKey={chatContentLoadingKey}
               latestTerminalRunId={latestTerminalRunId}
               latestTerminalRunStatus={latestTerminalRunStatus}
               onSubagentOpen={handleTimelineSubagentOpen}

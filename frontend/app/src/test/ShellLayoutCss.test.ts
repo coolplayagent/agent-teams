@@ -298,6 +298,9 @@ describe("shell layout CSS", () => {
     expect(themeCss).toMatch(
       /\.at-message-streaming-plain\s*{[^}]*display:\s*block;[^}]*overflow-wrap:\s*anywhere;[^}]*white-space:\s*pre-wrap;/s,
     );
+    expect(themeCss).toMatch(
+      /\.at-message-markdown p\s*{[^}]*white-space:\s*pre-wrap;/s,
+    );
     expect(themeCss).not.toMatch(
       /\.at-message-streaming-text \.at-message-markdown[\s\S]*?display:\s*inline;/,
     );

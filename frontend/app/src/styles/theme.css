@@ -5814,6 +5814,10 @@ body {
   margin: 0 0 10px;
 }
 
+.at-message-markdown p {
+  white-space: pre-wrap;
+}
+
 .at-message-markdown h1,
 .at-message-markdown h2,
 .at-message-markdown h3 {

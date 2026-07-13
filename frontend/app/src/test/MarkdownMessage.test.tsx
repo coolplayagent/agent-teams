@@ -20,13 +20,13 @@ describe("MarkdownMessage", () => {
     expect(markdownContainer?.querySelector("strong")).toHaveTextContent("answer");
   });
 
-  it("uses terminal markdown soft-break semantics", () => {
+  it("keeps terminal markdown soft breaks in the same text node", () => {
     const { container } = render(
       <MarkdownMessage text={"LINE_001\nLINE_002"} />,
     );
 
-    expect(container.querySelector(".at-message-markdown > p"))
-      .toHaveTextContent("LINE_001 LINE_002");
+    expect(container.querySelector(".at-message-markdown > p")?.textContent)
+      .toBe("LINE_001\nLINE_002");
     expect(container.querySelectorAll(".at-message-markdown > p")).toHaveLength(1);
   });
 

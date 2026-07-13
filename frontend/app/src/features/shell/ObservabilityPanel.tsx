@@ -526,28 +526,25 @@ function formatCount(value: number): string {
 }
 
 function observabilityCopy(t: Translate) {
-  const isZh = t("observabilityTitle") === "观测";
   return {
-    avgRetrievalMs: isZh ? "平均检索耗时 ms" : "Avg retrieval ms",
-    cachedInputTokens: isZh ? "缓存输入 tokens" : "Cached input tokens",
-    cachedRatio: isZh ? "缓存占比" : "Cached ratio",
-    gatewayAvgDurationMs: isZh ? "Gateway 平均时延 ms" : "Gateway Avg ms",
-    gatewayFailureRate: isZh ? "Gateway 失败率" : "Gateway Failure Rate",
-    gatewayMcpCalls: isZh ? "Gateway MCP 调用" : "Gateway MCP Calls",
-    gatewayPromptStartMs: isZh ? "Prompt 启动 ms" : "Prompt Start ms",
-    mcpCalls: isZh ? "MCP 调用" : "MCP calls",
-    role: isZh ? "角色" : "Role",
-    roleBreakdown: isZh ? "角色分解" : "Role breakdown",
-    roleTagMissing: isZh
-      ? "未记录角色 · 历史指标缺少 role_id"
-      : "Unattributed role · legacy metric missing role_id",
-    retrievalDocumentCount: isZh ? "检索文档数" : "Retrieved docs",
-    retrievalFailureRate: isZh ? "检索失败率" : "Retrieval failure rate",
-    retrievalSearches: isZh ? "检索搜索次数" : "Retrieval searches",
-    skillCalls: isZh ? "技能调用" : "Skill calls",
-    source: isZh ? "来源" : "Source",
-    tool: isZh ? "工具" : "Tool",
-    toolBreakdown: isZh ? "工具分解" : "Tool breakdown",
-    uncachedInputTokens: isZh ? "未缓存输入 tokens" : "Uncached input tokens",
+    avgRetrievalMs: t("observabilityAvgRetrievalMs"),
+    cachedInputTokens: t("observabilityCachedInputTokens"),
+    cachedRatio: t("observabilityCachedRatio"),
+    gatewayAvgDurationMs: t("observabilityGatewayAvgDurationMs"),
+    gatewayFailureRate: t("observabilityGatewayFailureRate"),
+    gatewayMcpCalls: t("observabilityGatewayMcpCalls"),
+    gatewayPromptStartMs: t("observabilityGatewayPromptStartMs"),
+    mcpCalls: t("observabilityMcpCalls"),
+    role: t("observabilityRole"),
+    roleBreakdown: t("observabilityRoleBreakdown"),
+    roleTagMissing: t("observabilityRoleTagMissing"),
+    retrievalDocumentCount: t("observabilityRetrievalDocumentCount"),
+    retrievalFailureRate: t("observabilityRetrievalFailureRate"),
+    retrievalSearches: t("observabilityRetrievalSearches"),
+    skillCalls: t("observabilitySkillCalls"),
+    source: t("observabilitySource"),
+    tool: t("observabilityTool"),
+    toolBreakdown: t("observabilityToolBreakdown"),
+    uncachedInputTokens: t("observabilityUncachedInputTokens"),
   };
 }

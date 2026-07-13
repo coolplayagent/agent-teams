@@ -1913,6 +1913,9 @@ export interface AgUiActionResponse {
 export interface TimelineMessage {
   message_id?: string;
   client_message_id?: string;
+  agent_role_id?: string;
+  conversation_id?: string;
+  task_id?: string;
   role?: string;
   role_id?: string;
   instance_id?: string;
@@ -1979,8 +1982,10 @@ export interface SessionRoundMessageUsageDetails {
 }
 
 export interface SessionRoundMessage {
+  agent_role_id?: string;
   applied_at?: string;
   client_message_id?: string;
+  conversation_id?: string;
   content?: string;
   content_parts?: ContentPart[];
   created_at?: string;
@@ -1998,6 +2003,7 @@ export interface SessionRoundMessage {
   role_id?: string;
   source?: string;
   status?: string;
+  task_id?: string;
   superseded_client_message_ids?: string[];
   superseded_injection_ids?: string[];
   visibility?: "public" | "internal" | string;
@@ -2036,13 +2042,17 @@ export interface SessionRound {
   has_final_output?: boolean;
   has_user_messages?: boolean;
   injection_messages?: SessionRoundMessage[];
+  instance_role_map?: Record<string, string>;
   intent?: string;
   intent_parts?: ContentPart[];
   microcompact?: SessionRoundMicrocompact | null;
   pending_tool_approval_count?: number;
   pending_tool_approvals?: JsonValue[];
   pending_user_question_count?: number;
+  primary_instance_id?: string | null;
   primary_role_id?: string | null;
+  primary_task_id?: string | null;
+  role_instance_map?: Record<string, string>;
   retry_events?: JsonValue[];
   run_diagnostic_message?: string | null;
   run_error_code?: string | null;
@@ -2182,7 +2192,7 @@ export interface RecoverySnapshot {
   background_tasks: RecoveryBackgroundTask[];
   pending_tool_approvals: PendingToolApproval[];
   pending_user_questions: PendingUserQuestion[];
-  paused_subagent: RecoveryPausedSubagent | null;
+  paused_subagent?: RecoveryPausedSubagent | null;
   round_snapshot: JsonValue | null;
 }
 

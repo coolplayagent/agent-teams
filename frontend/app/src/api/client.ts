@@ -917,6 +917,10 @@ export function validateRoleConfig(
 }
 
 function roleConfigSaveRequest(config: RoleConfigDocument): RoleConfigSaveRequest {
+  const modelProfile = config.model_profile?.trim() ?? "";
+  if (modelProfile.length === 0) {
+    throw new Error("Role model profile is required.");
+  }
   return {
     bound_agent_id: config.bound_agent_id ?? null,
     contract: config.contract ?? undefined,
@@ -925,7 +929,7 @@ function roleConfigSaveRequest(config: RoleConfigDocument): RoleConfigSaveReques
     mcp_servers: config.mcp_servers ?? [],
     memory_profile: config.memory_profile ?? undefined,
     mode: config.mode ?? "primary",
-    model_profile: config.model_profile ?? "default",
+    model_profile: modelProfile,
     name: config.name ?? "",
     role_id: config.role_id,
     skills: config.skills ?? [],

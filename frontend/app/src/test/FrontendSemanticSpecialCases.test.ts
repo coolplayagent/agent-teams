@@ -47,12 +47,7 @@ interface KnownSemanticDebt {
 // prohibited special case. Removing one requires deleting its ledger entry; adding
 // or moving a special case to another file fails the gate. Provider-specific UI
 // dispatch must ultimately move behind typed adapter/registry boundaries.
-const KNOWN_SEMANTIC_DEBT: Readonly<Record<string, KnownSemanticDebt>> = {
-  "api/client.ts|Do not replace a missing model profile with the literal \"default\".": {
-    count: 1,
-    reason: "Role saves still invent a profile ID instead of preserving the missing selection.",
-  },
-};
+const KNOWN_SEMANTIC_DEBT: Readonly<Record<string, KnownSemanticDebt>> = {};
 
 const SENSITIVE_RECEIVER_PARTS = new Set([
   "connectorid",

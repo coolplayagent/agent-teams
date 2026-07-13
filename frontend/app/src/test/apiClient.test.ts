@@ -3603,6 +3603,20 @@ describe("api client", () => {
     );
   });
 
+  it("rejects a missing model profile before sending a role save request", async () => {
+    const roleConfig = {
+      model_profile: null,
+      role_id: "reviewer",
+    };
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(() => saveRoleConfig("reviewer", roleConfig)).toThrow(
+      "Role model profile is required.",
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("manages model profiles through the model config endpoints", async () => {
     const profilePayload = {
       base_url: "https://models.example/v1",

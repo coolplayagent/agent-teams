@@ -2103,21 +2103,7 @@ function newModelProfileDraft(): ModelProfileRecord {
 }
 
 function modelCatalogBaseUrl(provider: ModelCatalogProvider): string {
-  const providerApi = provider.api?.trim() ?? "";
-  if (providerApi) {
-    return providerApi;
-  }
-  const runtimeProvider = provider.runtime_provider?.trim() ?? "";
-  if (runtimeProvider === "anthropic") {
-    return "https://api.anthropic.com";
-  }
-  if (runtimeProvider === "maas") {
-    return "http://snapengine.cida.cce.prod-szv-g.dragon.tools.huawei.com/api/v2/";
-  }
-  if (runtimeProvider === "codeagent") {
-    return "https://codeagentcli.rnd.huawei.com/codeAgentPro";
-  }
-  return "";
+  return provider.default_base_url?.trim() || provider.api?.trim() || "";
 }
 
 function formatModelProbeResult(

@@ -267,7 +267,10 @@ Response fields:
 - `fetched_at`: timestamp for the cached directory, when available.
 - `cache_age_seconds`: age of the cached directory, when available.
 - `stale`: `true` when the returned cache is older than the freshness window, or when the backend returned stale cache after a refresh/fetch failure.
-- `providers[]`: normalized providers. Each provider includes `id`, `name`, optional `api`, optional `doc`, `env[]`, and `models[]`.
+- `providers[]`: normalized providers. Each provider includes `id`, `name`,
+  optional catalog `api`, optional backend-resolved `default_base_url`, optional
+  `doc`, `env[]`, and `models[]`. Settings clients use `default_base_url` instead
+  of maintaining provider-name-specific endpoint tables.
 - `error_code` and `error_message`: populated when `ok` is `false`.
 
 Model entries include `id`, `name`, optional family/date/limit fields, capability flags, normalized `capabilities`, and `input_modalities[]`.

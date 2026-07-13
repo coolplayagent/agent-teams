@@ -1540,6 +1540,7 @@ export interface ModelCatalogProvider {
   name: string;
   runtime_provider?: string;
   api?: string | null;
+  default_base_url?: string | null;
   doc?: string | null;
   env?: string[];
   models?: ModelCatalogModel[];

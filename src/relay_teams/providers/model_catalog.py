@@ -16,7 +16,13 @@ from relay_teams.logger import get_logger
 from relay_teams.media import MediaModality
 from relay_teams.net.clients import create_async_http_client
 from relay_teams.providers.model_capabilities import resolve_model_capabilities
-from relay_teams.providers.model_config import ModelCapabilities, ProviderType
+from relay_teams.providers.model_config import (
+    DEFAULT_ANTHROPIC_BASE_URL,
+    DEFAULT_CODEAGENT_BASE_URL,
+    DEFAULT_MAAS_BASE_URL,
+    ModelCapabilities,
+    ProviderType,
+)
 
 DEFAULT_MODEL_CATALOG_SOURCE_URL = "https://models.dev/api.json"
 DEFAULT_MODEL_CATALOG_TTL_SECONDS = 300
@@ -53,6 +59,7 @@ class ModelCatalogProvider(BaseModel):
     name: str = Field(min_length=1)
     runtime_provider: ProviderType = ProviderType.OPENAI_COMPATIBLE
     api: str | None = None
+    default_base_url: str | None = None
     doc: str | None = None
     env: tuple[str, ...] = ()
     models: tuple[ModelCatalogModel, ...] = ()
@@ -313,10 +320,29 @@ def _parse_provider(
         name=name,
         runtime_provider=runtime_provider,
         api=_string_field(payload.get("api")),
+        default_base_url=_catalog_provider_default_base_url(
+            runtime_provider=runtime_provider,
+            catalog_api=_string_field(payload.get("api")),
+        ),
         doc=_string_field(payload.get("doc")),
         env=_string_tuple(payload.get("env")),
         models=tuple(models),
     )
+
+
+def _catalog_provider_default_base_url(
+    *,
+    runtime_provider: ProviderType,
+    catalog_api: str | None,
+) -> str | None:
+    if catalog_api is not None:
+        return catalog_api
+    defaults = {
+        ProviderType.ANTHROPIC: DEFAULT_ANTHROPIC_BASE_URL,
+        ProviderType.CODEAGENT: DEFAULT_CODEAGENT_BASE_URL,
+        ProviderType.MAAS: DEFAULT_MAAS_BASE_URL,
+    }
+    return defaults.get(runtime_provider)
 
 
 def _parse_model(

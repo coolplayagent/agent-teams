@@ -112,7 +112,6 @@ interface Notice {
   message: string;
 }
 
-const DEFAULT_WORKSPACE_ID = "default";
 const DEFAULT_TRIGGER_RULE: FeishuTriggerRule = "mention_only";
 const DEFAULT_SESSION_MODE: SessionMode = "normal";
 const DEFAULT_THINKING_EFFORT: ThinkingEffort = "medium";
@@ -1452,7 +1451,7 @@ function wechatFormValuesFromEditor(
 }
 
 function defaultWorkspaceId(workspaces: WorkspaceRecord[]): string {
-  return workspaces[0]?.workspace_id ?? DEFAULT_WORKSPACE_ID;
+  return workspaces[0]?.workspace_id ?? "";
 }
 
 function defaultNormalRoleId(roles: RoleConfigOptions | undefined): string {
@@ -1475,14 +1474,10 @@ function defaultOrchestrationPresetId(
 }
 
 function workspaceOptions(workspaces: WorkspaceRecord[]) {
-  const options = workspaces.map((workspace) => ({
+  return workspaces.map((workspace) => ({
     label: workspaceLabel(workspace),
     value: workspace.workspace_id,
   }));
-  if (options.length === 0) {
-    return [{ label: DEFAULT_WORKSPACE_ID, value: DEFAULT_WORKSPACE_ID }];
-  }
-  return options;
 }
 
 function normalRoleOptions(roles: RoleConfigOptions | undefined) {
@@ -1525,7 +1520,7 @@ function roleLabel(role: RoleOption): string {
 
 function accountDetail(account: FeishuGatewayAccountRecord): string {
   const appName = account.source_config.app_name || "-";
-  const workspaceId = account.target_config?.workspace_id ?? DEFAULT_WORKSPACE_ID;
+  const workspaceId = account.target_config?.workspace_id ?? "-";
   return `${appName} · ${workspaceId} · ${account.source_config.trigger_rule}`;
 }
 
@@ -1533,7 +1528,7 @@ function wechatAccountDetail(
   account: WeChatGatewayAccountRecord,
   t: Translate,
 ): string {
-  const workspaceId = account.workspace_id || DEFAULT_WORKSPACE_ID;
+  const workspaceId = account.workspace_id || "-";
   const routeTag = account.route_tag ? ` · ${account.route_tag}` : "";
   return `${workspaceId}${routeTag} · ${
     account.running ? t("settingsTriggersRunning") : t("settingsTriggersStopped")

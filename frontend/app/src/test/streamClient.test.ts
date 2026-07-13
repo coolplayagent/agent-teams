@@ -402,7 +402,8 @@ describe("openRunStream", () => {
       terminalEventType: "run_completed",
     });
     expect(stream.states[2].runs["run-1"].entries.map((entry) => entry.eventId))
-      .toEqual([2, 3]);
+      .toEqual([1, 3]);
+    expect(stream.states[2].runs["run-1"].entries[0]?.lastMergedEventId).toBe(2);
     expect(stream.states[2].runs["run-1"].entries.map((entry) => entry.text).join(""))
       .toContain("prefix final");
     expect(stream.closedStates).toHaveLength(1);
@@ -604,8 +605,9 @@ describe("openRunStream", () => {
       (entry) => entry.kind === "text_delta",
     );
     expect(compactedTextEntry).toMatchObject({
-      eventId: chunks.length,
+      eventId: 1,
       id: "run-1:1:0",
+      lastMergedEventId: chunks.length,
       payload: {
         metadata: "first",
         part_index: 0,

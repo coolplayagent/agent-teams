@@ -8404,9 +8404,8 @@ describe("MessageTimeline", () => {
     expect(toolTitle).toBeVisible();
     expect(screen.queryByText("Tool call: spawn_subagent")).not.toBeInTheDocument();
     expect(screen.queryByText("No messages yet")).not.toBeInTheDocument();
-    expect(toolPreviewTexts(container)).toEqual([
-      "Explore skills implementation",
-    ]);
+    expect(toolPreviewTexts(container)).toEqual([]);
+    expect(screen.getAllByText("Explore skills implementation")).toHaveLength(1);
     expect(container.querySelectorAll("article.at-message")).toHaveLength(1);
 
     const toolRow = messageArticle(toolTitle);
@@ -8589,7 +8588,8 @@ describe("MessageTimeline", () => {
     const tool = title.closest(".at-message-tool");
     expect(tool).toHaveClass("is-openable-subagent");
     expect(tool).toHaveAttribute("data-tool-name", "spawn_subagent");
-    expect(toolPreviewTexts(container)).toEqual(["Explorer review"]);
+    expect(toolPreviewTexts(container)).toEqual([]);
+    expect(screen.getAllByText("Explorer review")).toHaveLength(1);
 
     fireEvent.click(title);
 
@@ -8713,7 +8713,7 @@ describe("MessageTimeline", () => {
       return candidate as HTMLElement;
     });
     expect(tool).toHaveAttribute("data-subagent-instance-id", "child-instance");
-    expect(within(tool).getAllByText("Timeline inspection")).toHaveLength(2);
+    expect(within(tool).getAllByText("Timeline inspection")).toHaveLength(1);
 
     fireEvent.click(tool.querySelector("summary") as HTMLElement);
 

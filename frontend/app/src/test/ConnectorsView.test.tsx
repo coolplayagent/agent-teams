@@ -548,9 +548,8 @@ describe("ConnectorsView", () => {
     );
     expect(dialog).toBeDefined();
     fireEvent.click(within(dialog as HTMLElement).getByRole("button", { name: "Delete" }));
-    await waitFor(() =>
-      expect(deleteDiscordGatewayAccountMock).toHaveBeenCalledWith("discord-main"),
-    );
+    await waitFor(() => expect(deleteDiscordGatewayAccountMock).toHaveBeenCalled());
+    expect(deleteDiscordGatewayAccountMock.mock.calls[0]?.[0]).toBe("discord-main");
   }, 20_000);
 
   it("shows gateway mutation failures instead of failing silently", async () => {
@@ -603,8 +602,9 @@ describe("ConnectorsView", () => {
     fireEvent.click(
       within(confirmDialog as HTMLElement).getByRole("button", { name: "Delete" }),
     );
-    await waitFor(() =>
-      expect(deleteXiaolubanGatewayAccountMock).toHaveBeenCalledWith("xiaoluban-main"),
+    await waitFor(() => expect(deleteXiaolubanGatewayAccountMock).toHaveBeenCalled());
+    expect(deleteXiaolubanGatewayAccountMock.mock.calls[0]?.[0]).toBe(
+      "xiaoluban-main",
     );
 
     disableXiaolubanGatewayAccountMock.mockRejectedValueOnce(new Error("Xiaoluban disable failed."));

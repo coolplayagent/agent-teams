@@ -57,6 +57,7 @@ from relay_teams.sessions.runs.background_tasks.projection import (
     build_background_task_result_payload,
 )
 from relay_teams.sessions.runs.enums import RunEventType
+from relay_teams.tools.registry import ToolRegistry
 from relay_teams.tools.runtime.persisted_state import (
     PersistedToolCallBatchState,
     PersistedToolCallState,
@@ -1965,9 +1966,13 @@ class SessionSupportMixin(AgentLlmSessionMixinBase):
         )
 
     def _event_publishing_service(self) -> EventPublishingService:
+        tool_registry = getattr(self, "_tool_registry", None)
         return EventPublishingService(
             run_event_hub=getattr(self, "_run_event_hub", None),
             shared_store=getattr(self, "_shared_store", None),
+            tool_registry=(
+                tool_registry if isinstance(tool_registry, ToolRegistry) else None
+            ),
         )
 
     def _message_commit_service(self) -> MessageCommitService:

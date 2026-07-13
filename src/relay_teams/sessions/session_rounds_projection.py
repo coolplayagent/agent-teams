@@ -142,7 +142,12 @@ def build_session_rounds(
         envelope = getattr(root_task, "envelope", None)
         role_id = getattr(envelope, "role_id", None)
         instance_id = getattr(root_task, "assigned_instance_id", None)
-        if isinstance(role_id, str) and role_id and isinstance(instance_id, str) and instance_id:
+        if (
+            isinstance(role_id, str)
+            and role_id
+            and isinstance(instance_id, str)
+            and instance_id
+        ):
             role_instance_by_run[run_id][role_id] = instance_id
 
     messages_by_run: dict[str, list[dict[str, object]]] = defaultdict(list)
@@ -1012,6 +1017,8 @@ def _project_tool_messages_from_events(
                 "run_id": run_id,
                 "tool_call_id": tool_call_id,
                 "tool_name": tool_name,
+                "semantic_category": str(payload.get("semantic_category") or ""),
+                "action_family": str(payload.get("action_family") or ""),
                 "args": payload.get("args") or {},
                 "role_id": role_id,
                 "instance_id": instance_id,
@@ -1029,6 +1036,8 @@ def _project_tool_messages_from_events(
             "run_id": run_id,
             "tool_call_id": tool_call_id,
             "tool_name": tool_name,
+            "semantic_category": str(payload.get("semantic_category") or ""),
+            "action_family": str(payload.get("action_family") or ""),
             "result": payload.get("result"),
             "error": payload.get("error") is True,
             "role_id": role_id,
@@ -1059,6 +1068,10 @@ def _project_tool_messages_from_events(
                 and call_tool_name != result_tool_name
             ):
                 continue
+            if not str(result.get("semantic_category") or ""):
+                result["semantic_category"] = call.get("semantic_category") or ""
+            if not str(result.get("action_family") or ""):
+                result["action_family"] = call.get("action_family") or ""
             projected_by_run[run_id].append(_event_tool_call_message(call))
             projected_by_run[run_id].append(_event_tool_result_message(result))
     return dict(projected_by_run)
@@ -1110,6 +1123,10 @@ def _event_tool_call_message(record: dict[str, object]) -> dict[str, object]:
                 {
                     "part_kind": "tool-call",
                     "tool_name": tool_name,
+                    "semantic_category": str(
+                        record.get("semantic_category") or "unknown"
+                    ),
+                    "action_family": str(record.get("action_family") or "generic"),
                     "tool_call_id": tool_call_id,
                     "args": record.get("args") or {},
                 }
@@ -1140,6 +1157,10 @@ def _event_tool_result_message(record: dict[str, object]) -> dict[str, object]:
                 {
                     "part_kind": "tool-return",
                     "tool_name": tool_name,
+                    "semantic_category": str(
+                        record.get("semantic_category") or "unknown"
+                    ),
+                    "action_family": str(record.get("action_family") or "generic"),
                     "tool_call_id": tool_call_id,
                     "content": record.get("result"),
                     "is_error": record.get("error") is True,
@@ -1821,15 +1842,12 @@ def _round_coordinator_message_projection(
         return None
     instance_id = str(message.get("instance_id") or "")
     task_id = str(message.get("task_id") or "")
-    if (
-        coordinator_instance_id is not None
-        and (
-            (instance_id and instance_id != coordinator_instance_id)
-            or (
-                not instance_id
-                and coordinator_task_id is not None
-                and task_id != coordinator_task_id
-            )
+    if coordinator_instance_id is not None and (
+        (instance_id and instance_id != coordinator_instance_id)
+        or (
+            not instance_id
+            and coordinator_task_id is not None
+            and task_id != coordinator_task_id
         )
     ):
         return None

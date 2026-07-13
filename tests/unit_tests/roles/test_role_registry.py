@@ -379,8 +379,9 @@ def test_role_registry_lists_normal_mode_roles_with_main_agent_first() -> None:
 
     roles = registry.list_normal_mode_roles()
 
-    assert [role.role_id for role in roles] == ["MainAgent", "Crafter"]
-    assert registry.resolve_normal_mode_role_id("Crafter") == "Crafter"
+    assert [role.role_id for role in roles] == ["MainAgent"]
+    with pytest.raises(ValueError, match="Role cannot be used in normal mode"):
+        _ = registry.resolve_normal_mode_role_id("Crafter")
     with pytest.raises(ValueError, match="Role cannot be used in normal mode"):
         _ = registry.resolve_normal_mode_role_id("DelegationPlanner")
 
@@ -466,7 +467,7 @@ def test_role_registry_rejects_coordinator_in_normal_mode() -> None:
         _ = registry.resolve_normal_mode_role_id("Coordinator")
 
 
-def test_role_registry_resolves_subagent_role_in_normal_mode() -> None:
+def test_role_registry_rejects_subagent_role_in_normal_mode() -> None:
     registry = RoleRegistry()
     registry.register(
         RoleDefinition(
@@ -502,7 +503,8 @@ def test_role_registry_resolves_subagent_role_in_normal_mode() -> None:
         )
     )
 
-    assert registry.resolve_normal_mode_role_id("Crafter") == "Crafter"
+    with pytest.raises(ValueError, match="Role cannot be used in normal mode"):
+        _ = registry.resolve_normal_mode_role_id("Crafter")
 
 
 def test_role_registry_resolves_subagent_only_role_for_subagent_use() -> None:

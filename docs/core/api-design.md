@@ -251,6 +251,9 @@ Returns normalized model profiles.
 Each profile includes `has_api_key` and always returns `api_key: null`; the read endpoint never exposes the stored API key. Secret `headers[]` similarly return `value: null` plus `configured: true`, while non-secret header values remain visible for editing. The settings UI leaves credential fields blank and uses configured flags to preserve saved secrets until the user explicitly enters a replacement or clears them. Profiles also include `is_default` to mark the runtime default profile, optional `context_window` for next-send context preview UI, optional `fallback_policy_id` to bind that profile to a fallback policy, `fallback_priority` to rank it as a fallback candidate, structured `capabilities.input/output.*`, and a derived `input_modalities[]` compatibility field so the UI can label profiles that accept direct media input.
 Profiles created from the shared model directory may also include optional `catalog_provider_id`, `catalog_provider_name`, and `catalog_model_name` metadata. These fields are descriptive and do not change provider transport selection.
 `provider` currently supports `openai_compatible`, `anthropic`, `bigmodel`, `minimax`, `maas`, `codeagent`, and the internal/testing-only `echo`. `anthropic` means the profile uses an Anthropic Messages API-compatible transport, including marketplace providers such as MiniMax entries that publish an `/anthropic/v1` API. MAAS profiles return `maas_auth` with `auth_source`, `username`, `has_password`, and `password: "••••••••••••"` when a profile password is saved so the web UI can preserve the stored password without exposing it. CodeAgent profiles return `codeagent_auth`; `auth_method = "sso"` exposes `has_access_token` and `has_refresh_token`, while `auth_method = "password"` exposes `auth_source`, `username`, `has_password`, and `password: "••••••••••••"` when a profile password is saved. The MaaS login endpoint and `app-id`, and the CodeAgent OAuth/login endpoints and inference base URL, are fixed by the backend.
+The startup bootstrap reader omits persisted profiles whose `provider` is not a
+declared provider type. It never substitutes an unknown provider with an
+OpenAI-compatible transport.
 When no profile is explicitly marked default, the backend resolves the default in this order: a profile named `default`, the only configured profile, then the first profile by name.
 
 ### `GET /system/configs/model/catalog`
@@ -3281,6 +3284,7 @@ Response fields:
   - `input_modalities[]`
 - `normal_mode_roles[]`
   - `role_id`
+  - `system_role`: `main_agent` for the explicit main-agent option, otherwise `null`
   - `name`
   - `description`
   - `model_profile`
@@ -3288,6 +3292,7 @@ Response fields:
   - `input_modalities[]`
 - `subagent_roles[]`
   - `role_id`
+  - `system_role`: `null`
   - `name`
   - `description`
   - `model_profile`
@@ -3328,8 +3333,13 @@ Notes:
   This grants all currently configured MCP servers or all currently discovered
   skills at runtime, including entries added after config reload. Partial glob
   patterns such as `docs-*` or `builtin:*` are not supported.
-- `normal_mode_roles[]` contains non-system roles whose `mode` is `primary` or `all`.
+- `normal_mode_roles[]` starts with the explicit `main_agent` role and then
+  contains non-system roles whose `mode` is `primary` or `all`.
 - `subagent_roles[]` contains non-system roles whose `mode` is `subagent` or `all`.
+- During startup hydration, the bootstrap response resolves `coordinator_role`
+  and `main_agent_role` only from explicit `system_role` manifest metadata. Role
+  IDs, names, and tool combinations never imply system identity. Missing or
+  duplicate required identities return `503`; placeholder roles are not emitted.
 - Returns `503` when required builtin/system roles such as `Coordinator` or
   `MainAgent` are unavailable in the current runtime.
 

@@ -25,7 +25,6 @@ from relay_teams.roles.role_models import (
 COORDINATOR_REQUIRED_TOOLS = frozenset(
     ("orch_create_tasks", "orch_update_task", "orch_dispatch_task")
 )
-NORMAL_MODE_EXCLUDED_ROLE_IDS = frozenset(("DelegationPlanner",))
 LOGGER = get_logger(__name__)
 
 
@@ -421,9 +420,8 @@ def ensure_required_system_roles(registry: RoleRegistry) -> None:
 
 
 def _role_available_in_normal_mode(role: RoleDefinition) -> bool:
-    return role.role_id not in NORMAL_MODE_EXCLUDED_ROLE_IDS and role.mode in {
+    return role.mode in {
         RoleMode.PRIMARY,
-        RoleMode.SUBAGENT,
         RoleMode.ALL,
     }
 

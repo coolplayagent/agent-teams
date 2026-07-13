@@ -929,6 +929,7 @@ def _role_draft_payload(record: dict[str, object]) -> dict[str, object]:
         "model_profile": record["model_profile"],
         "bound_agent_id": record.get("bound_agent_id"),
         "execution_surface": record.get("execution_surface", "api"),
+        "system_role": record.get("system_role"),
         "memory_profile": record["memory_profile"],
         "system_prompt": record["system_prompt"],
     }
@@ -982,6 +983,7 @@ def _role_markdown_content(
         (
             f"execution_surface: {json.dumps(str(record.get('execution_surface', 'api')), ensure_ascii=False)}"
         ),
+        f"system_role: {json.dumps(record.get('system_role'), ensure_ascii=False)}",
         (f"memory_profile: {json.dumps(record['memory_profile'], ensure_ascii=False)}"),
         hooks_block.rstrip(),
         "---",

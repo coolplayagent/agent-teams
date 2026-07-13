@@ -42,6 +42,7 @@ from relay_teams.logger import shutdown_logging
 from relay_teams.paths import get_app_config_dir
 from relay_teams.providers.model_capabilities import resolve_model_capabilities
 from relay_teams.providers.model_config import ProviderType
+from relay_teams.roles.role_models import RoleMode, SystemRoleIdentity
 from relay_teams.trace import bind_trace_context
 
 SERVER_VERSION = "0.1.0"
@@ -281,7 +282,11 @@ async def bootstrap_frontend_logs(request: Request) -> JSONResponse:
 
 async def bootstrap_role_options(request: Request) -> JSONResponse:
     _ = request
-    return JSONResponse(_read_bootstrap_role_options())
+    try:
+        options = _read_bootstrap_role_options()
+    except ValueError as exc:
+        return JSONResponse(status_code=503, content={"detail": str(exc)})
+    return JSONResponse(options)
 
 
 async def hydration_gate_middleware(
@@ -746,13 +751,31 @@ def _read_bootstrap_model_profiles(config_dir: Path) -> dict[str, dict[str, obje
             continue
         profiles[name] = raw_profile
 
-    default_name = _resolve_bootstrap_default_model_profile_name(profiles)
+    valid_profiles: dict[str, dict[str, object]] = {}
+    for name, profile in profiles.items():
+        provider = _bootstrap_profile_str(
+            profile,
+            "provider",
+            ProviderType.OPENAI_COMPATIBLE.value,
+        )
+        try:
+            _ = ProviderType(provider)
+        except ValueError:
+            logger.warning(
+                "Ignoring bootstrap model profile %s with unknown provider %s",
+                name,
+                provider,
+            )
+            continue
+        valid_profiles[name] = profile
+
+    default_name = _resolve_bootstrap_default_model_profile_name(valid_profiles)
     return {
         name: _bootstrap_model_profile_payload(
             profile,
             is_default=name == default_name,
         )
-        for name, profile in profiles.items()
+        for name, profile in valid_profiles.items()
     }
 
 
@@ -779,7 +802,11 @@ def _bootstrap_model_profile_payload(
     *,
     is_default: bool,
 ) -> dict[str, object]:
-    provider = _bootstrap_profile_str(profile, "provider", "openai_compatible")
+    provider = _bootstrap_profile_str(
+        profile,
+        "provider",
+        ProviderType.OPENAI_COMPATIBLE.value,
+    )
     model = _bootstrap_profile_str(profile, "model", "")
     base_url = _bootstrap_profile_str(profile, "base_url", "")
     resolved_capabilities = _bootstrap_profile_resolved_capabilities(
@@ -832,19 +859,12 @@ def _bootstrap_profile_resolved_capabilities(
 ) -> dict[str, object]:
     raw_capabilities = profile.get("capabilities")
     capabilities = resolve_model_capabilities(
-        provider=_bootstrap_provider_type(provider),
+        provider=ProviderType(provider),
         base_url=base_url,
         model_name=model,
         metadata=raw_capabilities if isinstance(raw_capabilities, dict) else None,
     )
     return cast(dict[str, object], capabilities.model_dump(mode="json"))
-
-
-def _bootstrap_provider_type(provider: str) -> ProviderType:
-    try:
-        return ProviderType(provider)
-    except ValueError:
-        return ProviderType.OPENAI_COMPATIBLE
 
 
 def _bootstrap_profile_input_modalities(
@@ -884,18 +904,27 @@ def _bootstrap_profile_str(
 def _read_bootstrap_role_options() -> dict[str, object]:
     entries = _read_bootstrap_role_entries()
     role_options = [role for _mode, role in entries]
-    coordinator_role = _find_bootstrap_role(role_options, "Coordinator")
-    main_agent_role = _find_bootstrap_role(role_options, "MainAgent")
-    coordinator_role_id = str(coordinator_role.get("role_id", "Coordinator"))
-    main_agent_role_id = str(main_agent_role.get("role_id", "MainAgent"))
+    coordinator_role = _require_bootstrap_system_role(
+        role_options,
+        SystemRoleIdentity.COORDINATOR,
+    )
+    main_agent_role = _require_bootstrap_system_role(
+        role_options,
+        SystemRoleIdentity.MAIN_AGENT,
+    )
+    coordinator_role_id = str(coordinator_role["role_id"])
+    main_agent_role_id = str(main_agent_role["role_id"])
     normal_mode_roles = [
         role
-        for _mode, role in entries
-        if str(role.get("role_id", "")).strip()
-        not in {coordinator_role_id, main_agent_role_id, "DelegationPlanner"}
+        for mode, role in entries
+        if mode in {RoleMode.PRIMARY, RoleMode.ALL} and role.get("system_role") is None
     ]
     normal_mode_roles.insert(0, main_agent_role)
-    subagent_roles = [role for mode, role in entries if mode in {"subagent", "all"}]
+    subagent_roles = [
+        role
+        for mode, role in entries
+        if mode in {RoleMode.SUBAGENT, RoleMode.ALL} and role.get("system_role") is None
+    ]
     return {
         "coordinator_role_id": coordinator_role_id,
         "main_agent_role_id": main_agent_role_id,
@@ -913,14 +942,21 @@ def _read_bootstrap_role_options() -> dict[str, object]:
     }
 
 
-def _read_bootstrap_role_entries() -> list[tuple[str, dict[str, object]]]:
+def _read_bootstrap_role_entries() -> list[tuple[RoleMode, dict[str, object]]]:
     roles_dir = Path(__file__).resolve().parents[2] / "builtin" / "roles"
-    rows: list[tuple[str, dict[str, object]]] = []
+    rows: list[tuple[RoleMode, dict[str, object]]] = []
     for manifest in sorted(roles_dir.glob("*.md")):
         metadata = _read_bootstrap_role_metadata(manifest)
         if metadata is None:
             continue
-        mode = str(metadata.get("mode", "primary") or "primary")
+        try:
+            mode = RoleMode(str(metadata.get("mode", RoleMode.PRIMARY.value)))
+        except ValueError:
+            logger.warning(
+                "Ignoring bootstrap role manifest %s with invalid mode",
+                manifest,
+            )
+            continue
         rows.append((mode, _bootstrap_role_option(metadata)))
     return rows
 
@@ -962,8 +998,15 @@ def _split_bootstrap_frontmatter(text: str) -> str | None:
 
 
 def _bootstrap_role_option(metadata: dict[str, object]) -> dict[str, object]:
+    raw_system_role = metadata.get("system_role")
+    system_role = (
+        SystemRoleIdentity(str(raw_system_role)).value
+        if raw_system_role is not None
+        else None
+    )
     return {
         "role_id": str(metadata.get("role_id", "")),
+        "system_role": system_role,
         "name": str(metadata.get("name", "")),
         "description": str(metadata.get("description", "")),
         "model_profile": str(metadata.get("model_profile", "default") or "default"),
@@ -988,20 +1031,22 @@ def _bootstrap_role_option(metadata: dict[str, object]) -> dict[str, object]:
     }
 
 
-def _find_bootstrap_role(
-    role_options: list[dict[str, object]], role_id: str
+def _require_bootstrap_system_role(
+    role_options: list[dict[str, object]],
+    identity: SystemRoleIdentity,
 ) -> dict[str, object]:
-    for role in role_options:
-        if role.get("role_id") == role_id:
-            return role
-    return _bootstrap_role_option(
-        {
-            "role_id": role_id,
-            "name": role_id,
-            "description": f"{role_id} role is still loading.",
-            "model_profile": "default",
-            "mode": "primary",
-        }
+    candidates = [
+        role for role in role_options if role.get("system_role") == identity.value
+    ]
+    if len(candidates) == 1:
+        return candidates[0]
+    if not candidates:
+        raise ValueError(
+            f"Required bootstrap system role is unavailable: {identity.value}"
+        )
+    role_ids = ", ".join(sorted(str(role["role_id"]) for role in candidates))
+    raise ValueError(
+        f"Multiple bootstrap system roles found for {identity.value}: {role_ids}"
     )
 
 

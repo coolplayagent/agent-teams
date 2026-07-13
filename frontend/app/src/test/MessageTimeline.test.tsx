@@ -1290,7 +1290,7 @@ describe("MessageTimeline", () => {
     expect(groupBefore?.querySelector("details.at-message-thinking"))
       .toBe(thinkingBefore);
     expect(thinkingBefore).toHaveAttribute("data-streaming", "false");
-    expect(thinkingBefore).not.toHaveAttribute("open");
+    expect(thinkingBefore).toHaveAttribute("open");
     expect(thinkingBefore).toHaveTextContent("Stable thought 4 5 6");
     expect(groupBefore).not.toHaveTextContent("Stable answer");
     expect(screen.getAllByText("Stable answer")).toHaveLength(1);

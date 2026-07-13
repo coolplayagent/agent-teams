@@ -3,7 +3,7 @@ import type {
   MouseEvent,
   SyntheticEvent,
 } from "react";
-import { useEffect, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 
 interface TimelineDisclosureProps
   extends Omit<DetailsHTMLAttributes<HTMLDetailsElement>, "onToggle" | "open"> {
@@ -25,13 +25,29 @@ export function TimelineDisclosure({
   const [forcedOpenOverride, setForcedOpenOverride] = useState<boolean | null>(
     null,
   );
-  const open = forceOpen ? forcedOpenOverride ?? true : expanded;
+  const wasForceOpenRef = useRef(forceOpen);
+  const handingOffForcedState = wasForceOpenRef.current && !forceOpen;
+  const forcedOpenState = forcedOpenOverride ?? true;
+  const open = forceOpen || handingOffForcedState
+    ? forcedOpenState
+    : expanded;
 
-  useEffect(() => {
-    if (!forceOpen && forcedOpenOverride !== null) {
-      setForcedOpenOverride(null);
+  useLayoutEffect(() => {
+    const wasForceOpen = wasForceOpenRef.current;
+    wasForceOpenRef.current = forceOpen;
+    if (wasForceOpen && !forceOpen) {
+      onExpandedChange(disclosureId, forcedOpenState);
+      if (forcedOpenOverride !== null) {
+        setForcedOpenOverride(null);
+      }
     }
-  }, [forceOpen, forcedOpenOverride]);
+  }, [
+    disclosureId,
+    forceOpen,
+    forcedOpenOverride,
+    forcedOpenState,
+    onExpandedChange,
+  ]);
 
   const handleClick = (event: MouseEvent<HTMLDetailsElement>) => {
     if (!forceOpen || event.defaultPrevented) {

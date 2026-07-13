@@ -544,6 +544,7 @@ export interface WorkspaceRecord {
   default_mount_name?: string;
   name?: string;
   display_name?: string;
+  system_workspace?: boolean;
   mounts?: WorkspaceMountRecord[];
   created_at?: string;
   updated_at?: string;

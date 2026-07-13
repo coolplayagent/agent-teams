@@ -3479,6 +3479,11 @@ Response:
 - `next_cursor`: cursor for the next page, or `null` when no further page exists.
 - `has_more`: `true` when another page is available.
 
+Workspace records expose optional `display_name` and `system_workspace`. Clients
+must not treat a particular `workspace_id` or user-defined name such as
+`default` as a system workspace. The built-in workspace carries its product
+display name explicitly.
+
 Clients that need the complete workspace set must follow `next_cursor` until
 `has_more` is `false`. Sidebar callers should render the first page immediately
 and request additional pages only from a load-more interaction.

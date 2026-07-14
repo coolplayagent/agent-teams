@@ -1,8 +1,9 @@
 /// <reference types="node" />
 
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, normalize } from "node:path";
 import { describe, expect, it } from "vitest";
+import ts from "typescript";
 
 const distAppRoot = join("..", "dist");
 const appIndexHtmlPath = join(distAppRoot, "index.html");
@@ -42,6 +43,25 @@ describe("React app build artifacts", () => {
 });
 
 describe("legacy app source", () => {
+  it("parses every V1 JavaScript module before it is copied into the build", () => {
+    const diagnostics = legacyJavaScriptFiles(legacySourceRoot).flatMap((filePath) => {
+      const result = ts.transpileModule(readFileSync(filePath, "utf8"), {
+        compilerOptions: {
+          module: ts.ModuleKind.ESNext,
+          target: ts.ScriptTarget.ES2022,
+        },
+        fileName: filePath,
+        reportDiagnostics: true,
+      });
+
+      return (result.diagnostics ?? [])
+        .filter((diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error)
+        .map((diagnostic) => `${filePath}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n")}`);
+    });
+
+    expect(diagnostics).toEqual([]);
+  });
+
   it("keeps V1 assets scoped to its independent route", () => {
     const html = readFileSync(legacyIndexHtmlPath, "utf8");
     const assetPaths = Array.from(
@@ -70,5 +90,17 @@ function appAssetReferences(html: string): string[] {
   return Array.from(html.matchAll(/\b(?:src|href)="(\/assets\/[^"]+)"/g))
     .map((match) => match[1])
     .filter((value): value is string => value !== undefined)
+    .sort((left, right) => left.localeCompare(right));
+}
+
+function legacyJavaScriptFiles(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true })
+    .flatMap((entry) => {
+      const entryPath = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        return legacyJavaScriptFiles(entryPath);
+      }
+      return entry.isFile() && entry.name.endsWith(".js") ? [entryPath] : [];
+    })
     .sort((left, right) => left.localeCompare(right));
 }

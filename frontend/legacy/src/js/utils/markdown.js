@@ -19,8 +19,7 @@ export function renderMarkdownToHtml(source = '') {
 }
 
 export function stripMarkdownFrontmatter(source = '') {
-    const normalized = String(source || '').replace(/
-?/g, '\n');
+    const normalized = String(source || '').replace(/\r?\n/g, '\n');
     if (!normalized.startsWith('---\n')) {
         return normalized;
     }
@@ -142,8 +141,7 @@ function getHighlightRuntime() {
 }
 
 function renderFallbackMarkdown(source) {
-    const normalized = String(source || '').replace(/
-?/g, '\n').trim();
+    const normalized = String(source || '').replace(/\r?\n/g, '\n').trim();
     if (!normalized) return '';
 
     const fencePattern = /```([^\n`]*)\n?([\s\S]*?)```/g;

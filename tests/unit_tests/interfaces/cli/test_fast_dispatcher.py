@@ -3370,6 +3370,48 @@ def test_root_message_fast_path_resolves_slash_command(
     assert capsys.readouterr().out == "\n"
 
 
+def test_root_message_fast_path_sends_model_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requests: list[tuple[str, str, str, dict[str, object] | None]] = []
+
+    def fake_request_json(
+        *,
+        base_url: str,
+        method: str,
+        path: str,
+        payload: dict[str, object] | None,
+    ) -> object:
+        requests.append((base_url, method, path, payload))
+        if path == "/api/workspaces/pick":
+            return {"workspace": {"workspace_id": "workspace-1"}}
+        if path == "/api/sessions":
+            return {"session_id": "session-1"}
+        if path == "/api/runs":
+            return {"run_id": "run-1"}
+        raise AssertionError(f"unexpected request: {method} {path}")
+
+    monkeypatch.setattr(cli_app, "_is_agent_teams_healthy", lambda *, host, port: True)
+    monkeypatch.setattr(cli_app, "_http_request_json", fake_request_json)
+    monkeypatch.setattr(cli_app, "_stream_fast_prompt_events", lambda **_kwargs: None)
+
+    handled = cli_app._handle_fast_local_command(["-m", "hello", "--model", "precise"])
+
+    assert handled is True
+    assert requests[-1] == (
+        "http://127.0.0.1:8000",
+        "POST",
+        "/api/runs",
+        {
+            "session_id": "session-1",
+            "input": [{"kind": "text", "text": "hello"}],
+            "execution_mode": "ai",
+            "yolo": True,
+            "normal_model_profile": "precise",
+        },
+    )
+
+
 def test_root_message_fast_path_configures_role_and_workspace(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -3464,6 +3506,7 @@ def test_root_message_fast_path_autostarts_server(
         (["-m", "hi", "--mode", "bad"], "--mode must be normal or orchestration"),
         (["-m", "hi", "--role", ""], "--role must not be empty"),
         (["-m", "hi", "--orchestration", ""], "--orchestration must not be empty"),
+        (["-m", "hi", "--model", ""], "--model must not be empty"),
         (
             ["-m", "hi", "--mode", "orchestration", "--role", "dev"],
             "--role can only be used with --mode normal",
@@ -3471,6 +3514,10 @@ def test_root_message_fast_path_autostarts_server(
         (
             ["-m", "hi", "--mode", "normal", "--orchestration", "preset"],
             "--orchestration can only be used with --mode orchestration",
+        ),
+        (
+            ["-m", "hi", "--mode", "orchestration", "--model", "precise"],
+            "--model can only be used with --mode normal",
         ),
     ),
 )
@@ -3484,6 +3531,13 @@ def test_fast_prompt_argument_errors(
 
     assert exc_info.value.code == 2
     assert expected_error in capsys.readouterr().err
+
+
+def test_fast_prompt_parses_inline_model_profile() -> None:
+    options = _PARSE_FAST_PROMPT_ARGS(["-m", "hello", "--model=precise"])
+
+    assert options.message == "hello"
+    assert options.model_profile == "precise"
 
 
 def test_fast_prompt_rejects_non_local_autostart(
@@ -3675,6 +3729,7 @@ def test_fast_prompt_stream_line_prints_text_delta(
 
 
 def test_fast_prompt_stream_events_reads_sse_until_completion(
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -3723,6 +3778,8 @@ def test_fast_prompt_stream_events_reads_sse_until_completion(
             self.closed = True
 
     monkeypatch.setattr(http.client, "HTTPConnection", FakeConnection)
+    monkeypatch.setenv("RELAY_TEAMS_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.delenv(cli_app.FAST_PROMPT_STREAM_TIMEOUT_SECONDS_ENV, raising=False)
 
     _STREAM_FAST_PROMPT_EVENTS(base_url="http://0.0.0.0:8000/root", run_id="run 1")
 
@@ -3744,6 +3801,167 @@ def test_fast_prompt_stream_events_reads_sse_until_completion(
     ]
     assert connection.closed is True
     assert capsys.readouterr().out == "hi"
+
+
+def test_fast_prompt_stream_events_uses_configured_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeSseResponse:
+        status = 200
+
+        def readline(self) -> bytes:
+            return b'data: {"event_type":"run_completed","payload_json":"{}"}\n'
+
+        def read(self) -> bytes:
+            return b""
+
+    class FakeConnection:
+        instances: list[FakeConnection] = []
+
+        def __init__(self, address: str, port: int, timeout: float) -> None:
+            self.address = address
+            self.port = port
+            self.timeout = timeout
+            self.requests: list[tuple[str, str, dict[str, str]]] = []
+            FakeConnection.instances.append(self)
+
+        def request(
+            self,
+            method: str,
+            path: str,
+            *,
+            headers: dict[str, str],
+        ) -> None:
+            self.requests.append((method, path, headers))
+
+        def getresponse(self) -> FakeSseResponse:
+            return FakeSseResponse()
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(http.client, "HTTPConnection", FakeConnection)
+    monkeypatch.setenv(cli_app.FAST_PROMPT_STREAM_TIMEOUT_SECONDS_ENV, "1800")
+
+    _STREAM_FAST_PROMPT_EVENTS(base_url="http://127.0.0.1:8000", run_id="run-1")
+
+    assert FakeConnection.instances[0].timeout == 1800.0
+
+
+def test_fast_prompt_stream_events_uses_app_env_timeout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeSseResponse:
+        status = 200
+
+        def readline(self) -> bytes:
+            return b'data: {"event_type":"run_completed","payload_json":"{}"}\n'
+
+        def read(self) -> bytes:
+            return b""
+
+    class FakeConnection:
+        instances: list[FakeConnection] = []
+
+        def __init__(self, address: str, port: int, timeout: float) -> None:
+            self.address = address
+            self.port = port
+            self.timeout = timeout
+            FakeConnection.instances.append(self)
+
+        def request(
+            self,
+            method: str,
+            path: str,
+            *,
+            headers: dict[str, str],
+        ) -> None:
+            pass
+
+        def getresponse(self) -> FakeSseResponse:
+            return FakeSseResponse()
+
+        def close(self) -> None:
+            pass
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / ".env").write_text(
+        f"{cli_app.FAST_PROMPT_STREAM_TIMEOUT_SECONDS_ENV}=1800\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(http.client, "HTTPConnection", FakeConnection)
+    monkeypatch.setenv("RELAY_TEAMS_CONFIG_DIR", str(config_dir))
+    monkeypatch.delenv(cli_app.FAST_PROMPT_STREAM_TIMEOUT_SECONDS_ENV, raising=False)
+
+    _STREAM_FAST_PROMPT_EVENTS(base_url="http://127.0.0.1:8000", run_id="run-1")
+
+    assert FakeConnection.instances[0].timeout == 1800.0
+
+
+def test_fast_prompt_stream_timeout_process_env_overrides_app_env(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / ".env").write_text(
+        f"{cli_app.FAST_PROMPT_STREAM_TIMEOUT_SECONDS_ENV}=1800\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("RELAY_TEAMS_CONFIG_DIR", str(config_dir))
+    monkeypatch.setenv(cli_app.FAST_PROMPT_STREAM_TIMEOUT_SECONDS_ENV, "1200")
+
+    assert cli_app._resolve_fast_prompt_stream_timeout_seconds() == 1200.0
+
+
+def test_fast_prompt_stream_timeout_process_env_skips_invalid_app_env(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / ".env").write_bytes(b"\xff")
+    monkeypatch.setenv("RELAY_TEAMS_CONFIG_DIR", str(config_dir))
+    monkeypatch.setenv(cli_app.FAST_PROMPT_STREAM_TIMEOUT_SECONDS_ENV, "1200")
+
+    assert cli_app._resolve_fast_prompt_stream_timeout_seconds() == 1200.0
+
+
+def test_fast_prompt_stream_timeout_defaults_when_app_env_invalid(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / ".env").write_text(
+        f"{cli_app.FAST_PROMPT_STREAM_TIMEOUT_SECONDS_ENV}=not-a-number\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("RELAY_TEAMS_CONFIG_DIR", str(config_dir))
+    monkeypatch.delenv(cli_app.FAST_PROMPT_STREAM_TIMEOUT_SECONDS_ENV, raising=False)
+
+    assert (
+        cli_app._resolve_fast_prompt_stream_timeout_seconds()
+        == cli_app.DEFAULT_FAST_PROMPT_STREAM_TIMEOUT_SECONDS
+    )
+
+
+@pytest.mark.parametrize(
+    "raw_value",
+    [" ", "not-a-number", "0", "-1", "nan", "inf"],
+)
+def test_fast_prompt_stream_timeout_defaults_when_invalid(
+    raw_value: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(cli_app.FAST_PROMPT_STREAM_TIMEOUT_SECONDS_ENV, raw_value)
+
+    assert (
+        cli_app._resolve_fast_prompt_stream_timeout_seconds()
+        == cli_app.DEFAULT_FAST_PROMPT_STREAM_TIMEOUT_SECONDS
+    )
 
 
 def test_fast_prompt_stream_events_delegates_when_proxy_required(

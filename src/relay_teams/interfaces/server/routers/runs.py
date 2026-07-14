@@ -14,6 +14,7 @@ from relay_teams.general import GeneralConfigService
 from relay_teams.agents.orchestration.policy_models import OrchestrationPolicy
 from relay_teams.interfaces.server.deps import (
     get_general_config_service,
+    get_model_config_service,
     get_run_service,
     get_skill_registry,
 )
@@ -33,6 +34,7 @@ from relay_teams.sessions.runs.enums import (
     InjectionDeliveryMode,
     InjectionSource,
 )
+from relay_teams.providers.model_config_service import ModelConfigService
 from relay_teams.sessions.runs.user_question_models import (
     UserQuestionAnswerSubmission,
 )
@@ -136,6 +138,7 @@ class CreateRunRequest(BaseModel):
     shell_safety_policy_enabled: bool | None = None
     thinking: RunThinkingConfig = Field(default_factory=RunThinkingConfig)
     target_role_id: OptionalIdentifierStr = None
+    normal_model_profile: OptionalIdentifierStr = None
     skills: tuple[str, ...] | None = None
     orchestration_policy: OrchestrationPolicy | None = None
 
@@ -151,6 +154,7 @@ class CreateRunResponse(BaseModel):
     run_id: RequiredIdentifierStr
     session_id: RequiredIdentifierStr
     target_role_id: OptionalIdentifierStr = None
+    normal_model_profile: OptionalIdentifierStr = None
 
 
 class InjectMessageRequest(BaseModel):
@@ -247,6 +251,22 @@ class MonitorResponse(BaseModel):
     monitor: dict[str, object]
 
 
+def _validate_normal_model_profile(
+    normal_model_profile: str | None,
+    *,
+    model_config_service: ModelConfigService,
+) -> None:
+    profile_name = str(normal_model_profile or "").strip()
+    if not profile_name:
+        return
+    runtime = model_config_service.runtime
+    if profile_name in runtime.llm_profiles:
+        return
+    raise HTTPException(
+        status_code=422, detail=f"Unknown model profile: {profile_name}"
+    )
+
+
 @router.post(
     "",
     response_model=CreateRunResponse,
@@ -260,9 +280,16 @@ async def create_run(
     general_config_service: Annotated[
         GeneralConfigService, Depends(get_general_config_service)
     ],
+    model_config_service: Annotated[
+        ModelConfigService, Depends(get_model_config_service)
+    ],
 ) -> CreateRunResponse:
     started = time.perf_counter()
     try:
+        _validate_normal_model_profile(
+            req.normal_model_profile,
+            model_config_service=model_config_service,
+        )
         normalized_content = normalize_run_create_content_parts(
             request=request,
             session_id=req.session_id,
@@ -296,6 +323,7 @@ async def create_run(
             shell_safety_policy_override_provided=shell_safety_policy_override_provided,
             thinking=req.thinking,
             target_role_id=req.target_role_id,
+            normal_model_profile=req.normal_model_profile,
             skills=resolved_skills,
             orchestration_policy=req.orchestration_policy,
         )
@@ -303,6 +331,12 @@ async def create_run(
         run_id, session_id = await _create_and_schedule_run_start(
             service,
             intent_input,
+        )
+        prepared_intent = await service.get_run_intent_snapshot_async(run_id)
+        normal_model_profile = (
+            prepared_intent.normal_model_profile
+            if prepared_intent is not None
+            else None
         )
         elapsed_ms = int((time.perf_counter() - started) * 1000)
         with bind_trace_context(trace_id=run_id, run_id=run_id, session_id=session_id):
@@ -316,12 +350,14 @@ async def create_run(
                     "execution_mode": req.execution_mode.value,
                     "yolo": req.yolo,
                     "shell_safety_policy_enabled": shell_safety_policy_enabled,
+                    "normal_model_profile": normal_model_profile,
                 },
             )
         return CreateRunResponse(
             run_id=run_id,
             session_id=session_id,
             target_role_id=req.target_role_id,
+            normal_model_profile=normal_model_profile,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

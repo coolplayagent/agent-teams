@@ -19,6 +19,10 @@ from relay_teams.sessions.runs.background_tasks.models import (
 from relay_teams.persistence.scope_models import ScopeRef, ScopeType, StateMutation
 from relay_teams.persistence.shared_state_repo import SharedStateRepository
 from relay_teams.agents.execution import session_support as session_support_module
+from relay_teams.agents.execution.tool_args_recovery import (
+    ToolArgsAssistantRunErrorRaiser,
+    ToolArgsRecoveryMessageRepository,
+)
 from relay_teams.tools.runtime.context import ToolDeps
 from relay_teams.tools.runtime.persisted_state import (
     PersistedToolCallBatchState,
@@ -50,6 +54,14 @@ from .agent_llm_session_test_support import (
     _FakeMessageRepo,
     _build_request,
 )
+
+
+class _ToolArgsRecoveryMessageRepository(ToolArgsRecoveryMessageRepository):
+    pass
+
+
+class _ToolArgsAssistantRunErrorRaiser(ToolArgsAssistantRunErrorRaiser):
+    pass
 
 
 class _FakeEventLog:
@@ -583,6 +595,28 @@ async def test_maybe_recover_from_tool_args_parse_failure_returns_none_without_p
 
 
 @pytest.mark.asyncio
+async def test_tool_args_protocol_default_methods_are_explicit_noops() -> None:
+    repo = _ToolArgsRecoveryMessageRepository()
+    await repo.prune_conversation_history_to_safe_boundary_async("conv-1")
+    await repo.append_async(
+        session_id="session-1",
+        workspace_id="workspace-1",
+        conversation_id="conv-1",
+        agent_role_id="writer",
+        instance_id="inst-1",
+        task_id="task-1",
+        trace_id="trace-1",
+        messages=[],
+    )
+    raiser = _ToolArgsAssistantRunErrorRaiser()
+    await raiser(
+        request=_build_request(),
+        error_code=None,
+        error_message=None,
+    )
+
+
+@pytest.mark.asyncio
 async def test_maybe_recover_from_tool_args_parse_failure_persists_recovery_and_retries() -> (
     None
 ):
@@ -592,13 +626,24 @@ async def test_maybe_recover_from_tool_args_parse_failure_persists_recovery_and_
     published_tool_call_messages: list[list[object]] = []
     committed_tool_outcome_messages: list[list[object]] = []
     generate_calls: list[dict[str, object]] = []
-    session.__dict__["_publish_tool_call_events_from_messages"] = lambda **kwargs: (
+
+    async def _publish_tool_call_events_from_messages_async(
+        **kwargs: object,
+    ) -> bool:
         published_tool_call_messages.append(cast(list[object], kwargs["messages"]))
+        return True
+
+    async def _publish_committed_tool_outcome_events_from_messages_async(
+        **kwargs: object,
+    ) -> bool:
+        committed_tool_outcome_messages.append(cast(list[object], kwargs["messages"]))
+        return True
+
+    session.__dict__["_publish_tool_call_events_from_messages_async"] = (
+        _publish_tool_call_events_from_messages_async
     )
-    session.__dict__["_publish_committed_tool_outcome_events_from_messages"] = (
-        lambda **kwargs: committed_tool_outcome_messages.append(
-            cast(list[object], kwargs["messages"])
-        )
+    session.__dict__["_publish_committed_tool_outcome_events_from_messages_async"] = (
+        _publish_committed_tool_outcome_events_from_messages_async
     )
 
     async def _generate_async(
@@ -666,17 +711,34 @@ async def test_maybe_recover_from_tool_args_parse_failure_raises_terminal_error_
     message_repo = _FakeMessageRepo(history=[])
     session.__dict__["_message_repo"] = cast(MessageRepository, message_repo)
     raised_errors: list[dict[str, object]] = []
-    session.__dict__["_publish_tool_call_events_from_messages"] = lambda **kwargs: None
-    session.__dict__["_publish_committed_tool_outcome_events_from_messages"] = (
-        lambda **kwargs: None
+
+    async def _publish_tool_call_events_from_messages_async(
+        **kwargs: object,
+    ) -> bool:
+        _ = kwargs
+        return False
+
+    async def _publish_committed_tool_outcome_events_from_messages_async(
+        **kwargs: object,
+    ) -> bool:
+        _ = kwargs
+        return False
+
+    session.__dict__["_publish_tool_call_events_from_messages_async"] = (
+        _publish_tool_call_events_from_messages_async
+    )
+    session.__dict__["_publish_committed_tool_outcome_events_from_messages_async"] = (
+        _publish_committed_tool_outcome_events_from_messages_async
     )
     session.__dict__["_generate_async"] = lambda *args, **kwargs: (_ for _ in ()).throw(
         AssertionError("recovery exhaustion should not retry")
     )
-    session.__dict__["_raise_assistant_run_error"] = lambda **kwargs: (
-        raised_errors.append(kwargs),
-        (_ for _ in ()).throw(RuntimeError("terminal")),
-    )
+
+    async def _raise_assistant_run_error(**kwargs: object) -> None:
+        raised_errors.append(kwargs)
+        raise RuntimeError("terminal")
+
+    session.__dict__["_raise_assistant_run_error"] = _raise_assistant_run_error
 
     with pytest.raises(RuntimeError, match="terminal"):
         await AgentLlmSession._maybe_recover_from_tool_args_parse_failure(

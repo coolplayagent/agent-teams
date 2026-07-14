@@ -565,7 +565,7 @@ class AgentLlmSessionMixinBase:  # pragma: no cover
     ) -> AttemptRecoveryOutcome:
         raise NotImplementedError
 
-    def _raise_terminal_model_api_failure(
+    async def _raise_terminal_model_api_failure(
         self,
         *,
         request: LLMRequest,
@@ -578,7 +578,7 @@ class AgentLlmSessionMixinBase:  # pragma: no cover
     ) -> None:
         raise NotImplementedError
 
-    def _raise_terminal_generic_failure(
+    async def _raise_terminal_generic_failure(
         self,
         *,
         request: LLMRequest,
@@ -617,7 +617,7 @@ class AgentLlmSessionMixinBase:  # pragma: no cover
     ) -> bool:
         raise NotImplementedError
 
-    def _close_pending_tool_calls_for_retry(
+    async def _close_pending_tool_calls_for_retry(
         self,
         *,
         request: LLMRequest,
@@ -712,7 +712,28 @@ class AgentLlmSessionMixinBase:  # pragma: no cover
     ) -> None:
         raise NotImplementedError
 
+    async def _handle_fallback_activated_async(
+        self,
+        *,
+        request: LLMRequest,
+        retry_number: int,
+        total_attempts: int,
+        decision: LlmFallbackDecision,
+    ) -> None:
+        raise NotImplementedError
+
     def _handle_fallback_exhausted(
+        self,
+        *,
+        request: LLMRequest,
+        retry_number: int,
+        total_attempts: int,
+        error: LlmRetryErrorInfo,
+        fallback_state: FallbackAttemptState,
+    ) -> None:
+        raise NotImplementedError
+
+    async def _handle_fallback_exhausted_async(
         self,
         *,
         request: LLMRequest,
@@ -733,7 +754,17 @@ class AgentLlmSessionMixinBase:  # pragma: no cover
     ) -> None:
         raise NotImplementedError
 
-    def _raise_assistant_run_error(
+    async def _handle_retry_exhausted_async(
+        self,
+        *,
+        request: LLMRequest,
+        retry_number: int,
+        total_attempts: int,
+        error: LlmRetryErrorInfo,
+    ) -> None:
+        raise NotImplementedError
+
+    async def _raise_assistant_run_error(
         self,
         *,
         request: LLMRequest,
@@ -743,6 +774,16 @@ class AgentLlmSessionMixinBase:  # pragma: no cover
         raise NotImplementedError
 
     def _publish_synthetic_tool_results_for_pending_calls(
+        self,
+        *,
+        request: LLMRequest,
+        pending_messages: Sequence[ModelRequest | ModelResponse],
+        error_code: str,
+        message: str,
+    ) -> int:
+        raise NotImplementedError
+
+    async def _publish_synthetic_tool_results_for_pending_calls_async(
         self,
         *,
         request: LLMRequest,

@@ -122,10 +122,29 @@ function getMarkedRuntime() {
         if (typeof runtime.setOptions === 'function') {
             runtime.setOptions({ gfm: true, breaks: true });
         }
+        if (typeof runtime.use === 'function') {
+            runtime.use({
+                renderer: {
+                    html(token) {
+                        return escapeHtml(extractMarkedHtmlTokenText(token));
+                    },
+                },
+            });
+        }
         markedConfigured = true;
     }
 
     return runtime;
+}
+
+function extractMarkedHtmlTokenText(token) {
+    if (typeof token === 'string') {
+        return token;
+    }
+    if (!token) {
+        return '';
+    }
+    return token.text || token.raw || '';
 }
 
 function getHighlightRuntime() {

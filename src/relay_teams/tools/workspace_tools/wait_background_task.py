@@ -9,7 +9,7 @@ from relay_teams.tools.runtime.context import (
     ToolContext,
     ToolDeps,
 )
-from relay_teams.tools.runtime.execution import execute_tool
+from relay_teams.tools.runtime.execution import ToolActionCapacity, execute_tool
 from relay_teams.tools.workspace_tools.background_task_tool_support import (
     project_background_task_tool_result,
     require_background_task_service,
@@ -43,4 +43,5 @@ def register(agent: Agent[ToolDeps, str]) -> None:
                 "background_task_id": background_task_id,
             },
             action=_action,
+            action_capacity=ToolActionCapacity.WAIT,
         )

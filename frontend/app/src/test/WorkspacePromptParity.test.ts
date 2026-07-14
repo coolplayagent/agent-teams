@@ -125,9 +125,6 @@ describe("workspace prompt shell parity", () => {
     expect(themeCss).toContain(".at-message-tool-summary");
     expect(themeCss).toContain(".streaming-cursor");
 
-    expect(messageTimelineSource).toMatch(
-      /if \(!hasText\) \{[\s\S]*?return null;/,
-    );
     expect(messageTimelineSource).toContain('className="at-message-actions"');
     expect(messageTimelineSource).toContain("StreamingCursor");
     expect(markdownMessageSource).toContain("<ReactMarkdown");

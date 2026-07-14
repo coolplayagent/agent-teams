@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from json import dumps
 from typing import Protocol, cast
 
@@ -27,6 +27,11 @@ from relay_teams.sessions.runs.assistant_errors import (
     build_assistant_error_response,
 )
 from relay_teams.sessions.runs.enums import RunEventType
+from relay_teams.sessions.runs.event_stream import (
+    AsyncRunEventPublisher,
+    SyncRunEventPublisher,
+    publish_run_event_async,
+)
 from relay_teams.sessions.runs.run_models import RunEvent
 from relay_teams.sessions.runs.recoverable_pause import (
     RecoverableRunPauseError,
@@ -47,13 +52,18 @@ _ENTERPRISE_PROXY_BLOCK_MARKERS = (
 )
 
 
+class RunEventPublisher(AsyncRunEventPublisher, SyncRunEventPublisher, Protocol):
+    pass
+
+
 class FailureMessageRepository(Protocol):
-    def prune_conversation_history_to_safe_boundary(
+    async def prune_conversation_history_to_safe_boundary_async(
         self,
         conversation_id: str,
-    ) -> None: ...
+    ) -> None:
+        pass
 
-    def append(
+    async def append_async(
         self,
         *,
         session_id: str,
@@ -63,12 +73,20 @@ class FailureMessageRepository(Protocol):
         instance_id: str,
         task_id: str,
         trace_id: str,
-        messages: list[ModelResponse],
-    ) -> None: ...
+        messages: Sequence[ModelResponse],
+    ) -> None:
+        pass
 
 
-class RunEventPublisher(Protocol):
-    def publish(self, event: RunEvent) -> None: ...
+class AssistantRunErrorRaiser(Protocol):
+    async def __call__(
+        self,
+        *,
+        request: LLMRequest,
+        error_code: str | None,
+        error_message: str | None,
+    ) -> None:
+        pass
 
 
 class FailureHandlingService:
@@ -110,13 +128,13 @@ class FailureHandlingService:
             )
         )
 
-    def raise_assistant_run_error(
+    async def raise_assistant_run_error(
         self,
         *,
         request: LLMRequest,
         error_code: str | None,
         error_message: str | None,
-        publish_text_delta_event: Callable[..., None],
+        publish_text_delta_event: Callable[..., Awaitable[None]],
         conversation_id: Callable[[LLMRequest], str],
         workspace_id: Callable[[LLMRequest], str],
     ) -> None:
@@ -125,10 +143,10 @@ class FailureHandlingService:
             error_message=error_message,
         )
         resolved_conversation_id = conversation_id(request)
-        self._message_repo.prune_conversation_history_to_safe_boundary(
+        await self._message_repo.prune_conversation_history_to_safe_boundary_async(
             resolved_conversation_id
         )
-        self._message_repo.append(
+        await self._message_repo.append_async(
             session_id=request.session_id,
             workspace_id=workspace_id(request),
             conversation_id=resolved_conversation_id,
@@ -143,7 +161,7 @@ class FailureHandlingService:
                 )
             ],
         )
-        publish_text_delta_event(request=request, text=assistant_message)
+        await publish_text_delta_event(request=request, text=assistant_message)
         raise AssistantRunError(
             AssistantRunErrorPayload(
                 trace_id=request.trace_id,
@@ -176,6 +194,46 @@ class FailureHandlingService:
             "status_code": error.status_code,
         }
         self._publish_run_event(
+            request=request,
+            event_type=RunEventType.LLM_RETRY_EXHAUSTED,
+            payload=payload,
+        )
+        log_event(
+            LOGGER,
+            logging.ERROR,
+            event="llm.request.retry_exhausted",
+            message="LLM request retries exhausted",
+            payload={
+                "run_id": request.run_id,
+                "task_id": request.task_id,
+                "role_id": request.role_id,
+                "instance_id": request.instance_id,
+                "retries_used": retry_number,
+                "attempt_number": retry_number + 1,
+                "total_attempts": total_attempts,
+                "status_code": error.status_code,
+                "error_code": error.error_code,
+            },
+        )
+
+    async def handle_retry_exhausted_async(
+        self,
+        *,
+        request: LLMRequest,
+        retry_number: int,
+        total_attempts: int,
+        error: LlmRetryErrorInfo,
+    ) -> None:
+        payload = {
+            "role_id": request.role_id,
+            "instance_id": request.instance_id,
+            "attempt_number": retry_number + 1,
+            "total_attempts": total_attempts,
+            "error_code": error.error_code or "",
+            "error_message": error.message,
+            "status_code": error.status_code,
+        }
+        await self._publish_run_event_async(
             request=request,
             event_type=RunEventType.LLM_RETRY_EXHAUSTED,
             payload=payload,
@@ -234,6 +292,42 @@ class FailureHandlingService:
             payload=payload,
         )
 
+    async def handle_fallback_activated_async(
+        self,
+        *,
+        request: LLMRequest,
+        retry_number: int,
+        total_attempts: int,
+        decision: LlmFallbackDecision,
+    ) -> None:
+        payload = {
+            "role_id": request.role_id,
+            "instance_id": request.instance_id,
+            "attempt_number": retry_number + 1,
+            "total_attempts": total_attempts,
+            "strategy_id": decision.policy_id,
+            "from_profile_id": decision.from_profile_name,
+            "to_profile_id": decision.to_profile_name,
+            "from_provider": decision.from_provider.value,
+            "to_provider": decision.to_provider.value,
+            "from_model": decision.from_model,
+            "to_model": decision.to_model,
+            "hop": decision.hop,
+            "reason": decision.reason,
+        }
+        await self._publish_run_event_async(
+            request=request,
+            event_type=RunEventType.LLM_FALLBACK_ACTIVATED,
+            payload=payload,
+        )
+        log_event(
+            LOGGER,
+            logging.WARNING,
+            event="llm.request.fallback_activated",
+            message="LLM request fallback activated after rate limit exhaustion",
+            payload=payload,
+        )
+
     def handle_fallback_exhausted(
         self,
         *,
@@ -270,7 +364,43 @@ class FailureHandlingService:
             payload=payload,
         )
 
-    def raise_terminal_model_api_failure(
+    async def handle_fallback_exhausted_async(
+        self,
+        *,
+        request: LLMRequest,
+        retry_number: int,
+        total_attempts: int,
+        error: LlmRetryErrorInfo,
+        fallback_state: FallbackAttemptState,
+    ) -> None:
+        payload = {
+            "role_id": request.role_id,
+            "instance_id": request.instance_id,
+            "attempt_number": retry_number + 1,
+            "total_attempts": total_attempts,
+            "from_profile_id": self._profile_name or "",
+            "from_provider": self._config.provider.value,
+            "from_model": self._config.model,
+            "hop": fallback_state.hop,
+            "visited_profiles": list(fallback_state.visited_profiles),
+            "error_code": error.error_code or "",
+            "error_message": error.message,
+            "status_code": error.status_code,
+        }
+        await self._publish_run_event_async(
+            request=request,
+            event_type=RunEventType.LLM_FALLBACK_EXHAUSTED,
+            payload=payload,
+        )
+        log_event(
+            LOGGER,
+            logging.ERROR,
+            event="llm.request.fallback_exhausted",
+            message="No fallback candidate succeeded after LLM rate limit exhaustion",
+            payload=payload,
+        )
+
+    async def raise_terminal_model_api_failure(
         self,
         *,
         request: LLMRequest,
@@ -280,8 +410,8 @@ class FailureHandlingService:
         total_attempts: int,
         error_message: str,
         fallback_status: FallbackAttemptStatus,
-        handle_retry_exhausted: Callable[..., None],
-        raise_assistant_run_error: Callable[..., None],
+        handle_retry_exhausted: Callable[..., Awaitable[None]],
+        raise_assistant_run_error: AssistantRunErrorRaiser,
     ) -> None:
         if retry_error is not None and retry_error.retryable:
             if (
@@ -289,18 +419,18 @@ class FailureHandlingService:
                 and self._retry_config.enabled
                 and retry_number >= self._retry_config.max_retries
             ):
-                handle_retry_exhausted(
+                await handle_retry_exhausted(
                     request=request,
                     retry_number=retry_number,
                     total_attempts=total_attempts,
                     error=retry_error,
                 )
-            raise_assistant_run_error(
+            await raise_assistant_run_error(
                 request=request,
                 error_code=retry_error.error_code,
                 error_message=error_message,
             )
-        raise_assistant_run_error(
+        await raise_assistant_run_error(
             request=request,
             error_code=(
                 retry_error.error_code
@@ -310,7 +440,7 @@ class FailureHandlingService:
             error_message=error_message,
         )
 
-    def raise_terminal_generic_failure(
+    async def raise_terminal_generic_failure(
         self,
         *,
         request: LLMRequest,
@@ -320,8 +450,8 @@ class FailureHandlingService:
         total_attempts: int,
         fallback_status: FallbackAttemptStatus,
         log_provider_request_failed: Callable[..., None],
-        handle_retry_exhausted: Callable[..., None],
-        raise_assistant_run_error: Callable[..., None],
+        handle_retry_exhausted: Callable[..., Awaitable[None]],
+        raise_assistant_run_error: AssistantRunErrorRaiser,
     ) -> None:
         if retry_error is not None:
             log_provider_request_failed(request=request, error=error)
@@ -330,18 +460,18 @@ class FailureHandlingService:
                 and self._retry_config.enabled
                 and retry_number >= self._retry_config.max_retries
             ):
-                handle_retry_exhausted(
+                await handle_retry_exhausted(
                     request=request,
                     retry_number=retry_number,
                     total_attempts=total_attempts,
                     error=retry_error,
                 )
-            raise_assistant_run_error(
+            await raise_assistant_run_error(
                 request=request,
                 error_code=retry_error.error_code,
                 error_message=retry_error.message,
             )
-        raise_assistant_run_error(
+        await raise_assistant_run_error(
             request=request,
             error_code="internal_execution_error",
             error_message=str(error) or error.__class__.__name__,
@@ -846,4 +976,27 @@ class FailureHandlingService:
                 event_type=event_type,
                 payload_json=dumps(payload),
             )
+        )
+
+    async def _publish_run_event_async(
+        self,
+        *,
+        request: LLMRequest,
+        event_type: RunEventType,
+        payload: dict[str, object],
+    ) -> None:
+        if self._run_event_hub is None:
+            return
+        await publish_run_event_async(
+            self._run_event_hub,
+            RunEvent(
+                session_id=request.session_id,
+                run_id=request.run_id,
+                trace_id=request.trace_id,
+                task_id=request.task_id,
+                instance_id=request.instance_id,
+                role_id=request.role_id,
+                event_type=event_type,
+                payload_json=dumps(payload),
+            ),
         )

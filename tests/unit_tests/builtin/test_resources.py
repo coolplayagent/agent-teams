@@ -87,6 +87,27 @@ def test_deepresearch_sources_include_papers_with_code() -> None:
     assert "论文、代码实现、数据集、任务排行榜和 SOTA 基准" in methodology_content
 
 
+def test_deepresearch_sources_include_speakerdeck_and_openreview() -> None:
+    skills_dir = get_builtin_skills_dir() / "deepresearch"
+
+    news_source_content = (skills_dir / "news_source.md").read_text(encoding="utf-8")
+    methodology_content = (skills_dir / "methodology.md").read_text(encoding="utf-8")
+
+    assert "- [Speaker Deck](https://speakerdeck.com/)" in news_source_content
+    assert "Site: <https://speakerdeck.com/>" in news_source_content
+    assert "技术演讲、会议分享、产品实践和研究型 PPT 材料" in news_source_content
+    assert "- [OpenReview](https://openreview.net/)" in news_source_content
+    assert "Site: <https://openreview.net/>" in news_source_content
+    assert "论文、评审意见、讨论线索和投稿版本追踪" in news_source_content
+    assert (
+        "使用 Speaker Deck 补充技术演讲、会议分享和 PPT 材料线索" in methodology_content
+    )
+    assert (
+        "使用 OpenReview 补充论文、评审意见、会议讨论和版本追踪线索"
+        in methodology_content
+    )
+
+
 def test_deepresearch_recent_research_guidance_uses_rolling_dates() -> None:
     skills_dir = get_builtin_skills_dir() / "deepresearch"
 

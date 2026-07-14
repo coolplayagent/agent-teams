@@ -6112,6 +6112,16 @@ Object.assign(TRANSLATIONS['zh-CN'], {
     'settings.action.done': '完成',
 });
 
+Object.assign(TRANSLATIONS['en-US'], {
+    'rounds.model_profile': '{model}',
+    'rounds.model_profile_title': 'Model profile used for this run: {model}',
+});
+
+Object.assign(TRANSLATIONS['zh-CN'], {
+    'rounds.model_profile': '{model}',
+    'rounds.model_profile_title': '\u672c\u6b21\u8fd0\u884c\u4f7f\u7528\u7684\u6a21\u578b profile\uff1a{model}',
+});
+
 function updateLanguageButton() {
     const button = document?.getElementById?.('language-toggle-btn');
     if (!button) {

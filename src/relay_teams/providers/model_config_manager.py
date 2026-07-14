@@ -278,6 +278,22 @@ class ModelConfigManager:
         if source_name is not None and source_name != name:
             config.pop(source_name, None)
         _normalize_default_profile_flags(config, preferred_name=name)
+        self._preflight_profile_password_storage(
+            name=name,
+            source_name=source_name,
+            field_name=_MODEL_PROFILE_MAAS_PASSWORD_FIELD,
+            next_password=next_maas_password,
+            preserve_password=preserve_maas_password,
+            preserved_password=current_maas_password,
+        )
+        self._preflight_profile_password_storage(
+            name=name,
+            source_name=source_name,
+            field_name=_MODEL_PROFILE_CODEAGENT_PASSWORD_FIELD,
+            next_password=next_codeagent_password,
+            preserve_password=preserve_codeagent_password,
+            preserved_password=current_codeagent_password,
+        )
         _ = model_file.write_text(dumps(config, indent=2), encoding="utf-8")
         self._apply_profile_secret_update(
             name=name,
@@ -432,6 +448,24 @@ class ModelConfigManager:
             if pending_oauth_session_id is not None:
                 pending_codeagent_oauth_sessions[name] = pending_oauth_session_id
         _normalize_default_profile_flags(next_config)
+        for profile_name, (
+            next_maas_password,
+            _preserve_password,
+        ) in maas_password_updates.items():
+            self._preflight_profile_password_storage(
+                name=profile_name,
+                field_name=_MODEL_PROFILE_MAAS_PASSWORD_FIELD,
+                next_password=next_maas_password,
+            )
+        for profile_name, (
+            next_codeagent_password,
+            _preserve_password,
+        ) in codeagent_password_updates.items():
+            self._preflight_profile_password_storage(
+                name=profile_name,
+                field_name=_MODEL_PROFILE_CODEAGENT_PASSWORD_FIELD,
+                next_password=next_codeagent_password,
+            )
         for profile_name, oauth_session_id in pending_codeagent_oauth_sessions.items():
             token_result = consume_codeagent_oauth_tokens(oauth_session_id)
             if token_result is None:
@@ -1531,6 +1565,32 @@ class ModelConfigManager:
         if preserve_secret:
             return
         self._delete_profile_secret(name)
+
+    def _preflight_profile_password_storage(
+        self,
+        *,
+        name: str,
+        source_name: str | None = None,
+        field_name: str,
+        next_password: str | None,
+        preserve_password: bool = False,
+        preserved_password: str | None = None,
+    ) -> None:
+        value = next_password
+        if (
+            value is None
+            and preserve_password
+            and source_name is not None
+            and source_name != name
+        ):
+            value = preserved_password
+        self._secret_store.preflight_secret_storage(
+            self._config_dir,
+            namespace=_MODEL_PROFILE_SECRET_NAMESPACE,
+            owner_id=name,
+            field_name=field_name,
+            value=value,
+        )
 
     def _apply_profile_maas_password_update(
         self,

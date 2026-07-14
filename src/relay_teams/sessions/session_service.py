@@ -2492,6 +2492,13 @@ class SessionService:
         selected_run_ids = (
             tuple(sorted(included_run_ids)) if included_run_ids is not None else None
         )
+        run_intents_by_run = self._session_run_intents_by_run(session_id)
+        if included_run_ids is not None:
+            run_intents_by_run = {
+                run_id: intent
+                for run_id, intent in run_intents_by_run.items()
+                if run_id in included_run_ids
+            }
         todos_by_run_id = (
             {
                 snapshot.run_id: snapshot.model_dump(mode="json")
@@ -2501,16 +2508,9 @@ class SessionService:
             if self._todo_service is not None
             else {}
         )
-        intent_input_parts_by_run = (
-            self._session_run_intent_input_parts_by_run(session_id)
-            if included_run_ids is None
-            else {
-                run_id: parts
-                for run_id, parts in self._session_run_intent_input_parts_by_run(
-                    session_id
-                ).items()
-                if run_id in included_run_ids
-            }
+        intent_input_parts_by_run = self._intent_input_parts_by_run(run_intents_by_run)
+        normal_model_profiles_by_run = self._intent_normal_model_profiles_by_run(
+            run_intents_by_run
         )
         runtime_by_run = {
             run_id: runtime
@@ -2575,7 +2575,11 @@ class SessionService:
         )
         question_counts_by_run = self._pending_user_question_counts_by_run(session_id)
         for round_item in rounds:
-            runtime = runtime_by_run.get(str(round_item.get("run_id") or ""))
+            round_run_id = str(round_item.get("run_id") or "")
+            normal_model_profile = normal_model_profiles_by_run.get(round_run_id)
+            if normal_model_profile is not None:
+                round_item["normal_model_profile"] = normal_model_profile
+            runtime = runtime_by_run.get(round_run_id)
             pending = round_item.get("pending_tool_approvals")
             approval_count = len(pending) if isinstance(pending, list) else 0
             if runtime is None:
@@ -2591,7 +2595,7 @@ class SessionService:
             round_item["is_recoverable"] = self._is_runtime_publicly_recoverable(
                 runtime
             )
-            todo = todos_by_run_id.get(str(round_item.get("run_id") or ""))
+            todo = todos_by_run_id.get(round_run_id)
             if todo is not None:
                 round_item["todo"] = todo
         return rounds
@@ -2606,8 +2610,10 @@ class SessionService:
             if self._todo_service is not None
             else {}
         )
-        intent_input_parts_by_run = self._session_run_intent_input_parts_by_run(
-            session_id
+        run_intents_by_run = self._session_run_intents_by_run(session_id)
+        intent_input_parts_by_run = self._intent_input_parts_by_run(run_intents_by_run)
+        normal_model_profiles_by_run = self._intent_normal_model_profiles_by_run(
+            run_intents_by_run
         )
         runtime_by_run = self._session_run_runtime_by_run(session_id)
         rounds = build_session_timeline_rounds(
@@ -2633,7 +2639,11 @@ class SessionService:
         )
         question_counts_by_run = self._pending_user_question_counts_by_run(session_id)
         for round_item in rounds:
-            runtime = runtime_by_run.get(str(round_item.get("run_id") or ""))
+            round_run_id = str(round_item.get("run_id") or "")
+            normal_model_profile = normal_model_profiles_by_run.get(round_run_id)
+            if normal_model_profile is not None:
+                round_item["normal_model_profile"] = normal_model_profile
+            runtime = runtime_by_run.get(round_run_id)
             raw_approval_count = round_item.get("pending_tool_approval_count")
             approval_count = (
                 raw_approval_count
@@ -2654,7 +2664,7 @@ class SessionService:
             round_item["is_recoverable"] = self._is_runtime_publicly_recoverable(
                 runtime
             )
-            todo = todos_by_run_id.get(str(round_item.get("run_id") or ""))
+            todo = todos_by_run_id.get(round_run_id)
             if todo is not None:
                 round_item["todo"] = todo
         return rounds
@@ -2682,13 +2692,32 @@ class SessionService:
     def _session_run_intent_input_parts_by_run(
         self, session_id: str
     ) -> dict[str, tuple[ContentPart, ...]]:
+        return self._intent_input_parts_by_run(
+            self._session_run_intents_by_run(session_id)
+        )
+
+    def _session_run_intents_by_run(self, session_id: str) -> dict[str, IntentInput]:
         if self._run_intent_repo is None:
             return {}
+        return self._run_intent_repo.list_by_session(session_id)
+
+    @staticmethod
+    def _intent_input_parts_by_run(
+        run_intents_by_run: Mapping[str, IntentInput],
+    ) -> dict[str, tuple[ContentPart, ...]]:
         return {
             run_id: intent.display_input or intent.input
-            for run_id, intent in self._run_intent_repo.list_by_session(
-                session_id
-            ).items()
+            for run_id, intent in run_intents_by_run.items()
+        }
+
+    @staticmethod
+    def _intent_normal_model_profiles_by_run(
+        run_intents_by_run: Mapping[str, IntentInput],
+    ) -> dict[str, str]:
+        return {
+            run_id: profile
+            for run_id, intent in run_intents_by_run.items()
+            if (profile := str(intent.normal_model_profile or "").strip())
         }
 
     def get_session_rounds(
@@ -2895,6 +2924,11 @@ class SessionService:
             round_snapshot = None
         if isinstance(round_snapshot, dict):
             active_run["primary_role_id"] = round_snapshot.get("primary_role_id")
+            normal_model_profile = str(
+                round_snapshot.get("normal_model_profile") or ""
+            ).strip()
+            if normal_model_profile:
+                active_run["normal_model_profile"] = normal_model_profile
             round_snapshot["background_task_count"] = len(background_tasks)
         return {
             "active_run": active_run,

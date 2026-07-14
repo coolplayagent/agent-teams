@@ -164,6 +164,7 @@ export async function startIntentStream(promptText, sessionId, onCompleted, opti
             displayInputParts: Array.isArray(options.displayInputParts)
                 ? options.displayInputParts
                 : null,
+            normalModelProfile: options.normalModelProfile || null,
         });
         return;
     }
@@ -194,6 +195,7 @@ export async function startIntentStream(promptText, sessionId, onCompleted, opti
             Array.isArray(options.displayInputParts)
                 ? options.displayInputParts
                 : null,
+            options.normalModelProfile || null,
         );
         runId = run.run_id;
         runStart.runId = runId;
@@ -288,6 +290,7 @@ async function startDetachedIntentStream(promptText, sessionId, options) {
             options.inputParts,
             options.skills,
             options.displayInputParts,
+            options.normalModelProfile || null,
         );
         const runId = String(run?.run_id || '').trim();
         if (!runId) {

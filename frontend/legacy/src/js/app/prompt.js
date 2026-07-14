@@ -399,6 +399,10 @@ export async function handleSend(options = {}) {
     sysLog(message, "log-error");
     return;
   }
+  const submissionNormalModelProfile =
+    state.currentSessionMode === "normal"
+      ? resolveKnownSelectedNormalModelProfile()
+      : "";
   const attachmentSnapshot = snapshotPromptAttachments();
   const displayInputParts = buildPromptInputPartsFromAttachments(
     text,
@@ -423,6 +427,9 @@ export async function handleSend(options = {}) {
   }
   state.isGenerating = true;
   const submission = beginForegroundSubmission();
+  const submissionActiveRunId = String(
+    state.activeRunId || state.currentRecoverySnapshot?.activeRun?.run_id || "",
+  ).trim();
   if (els.sendBtn) els.sendBtn.disabled = true;
   if (els.promptInput) els.promptInput.disabled = true;
   refreshSessionTopologyControls();
@@ -442,6 +449,7 @@ export async function handleSend(options = {}) {
       const sessionId = await ensureSessionForNewSessionDraft({
         shouldCommit: () => isForegroundSubmissionActive(submission),
         allowDetachedRun: true,
+        normalModelProfile: submissionNormalModelProfile,
       });
       continueDetachedDraftRun = !isForegroundSubmissionActive(submission);
       if (!sessionId) {
@@ -514,6 +522,10 @@ export async function handleSend(options = {}) {
     resolvedPrompt.text,
     attachmentSnapshot,
   );
+  const runWillAttachToActiveRun = Boolean(submissionActiveRunId) && !isDraftSend;
+  const runNormalModelProfile = runWillAttachToActiveRun
+    ? ""
+    : submissionNormalModelProfile;
 
   if (detachedRun) {
     try {
@@ -525,6 +537,9 @@ export async function handleSend(options = {}) {
         thinking: state.thinking,
         targetRoleId,
         detached: true,
+        ...(runNormalModelProfile
+          ? { normalModelProfile: runNormalModelProfile }
+          : {}),
       });
     } finally {
       finishForegroundSubmission(submission);
@@ -576,6 +591,9 @@ export async function handleSend(options = {}) {
         thinking: state.thinking,
         targetRoleId,
         detached: continueDetachedDraftRun,
+        ...(runNormalModelProfile
+          ? { normalModelProfile: runNormalModelProfile }
+          : {}),
         onRunCreated: continueDetachedDraftRun ? null : (run) => {
           if (!isForegroundSubmissionActive(submission)) {
             return;
@@ -583,7 +601,9 @@ export async function handleSend(options = {}) {
           state.currentSessionCanSwitchMode = false;
           refreshSessionTopologyControls();
           emitSessionTitlePreview(runSessionId, promptPreviewText);
-          roundsTimeline.createLiveRound(run.run_id, promptPreviewText, displayInputParts);
+          roundsTimeline.createLiveRound(run.run_id, promptPreviewText, displayInputParts, {
+            normalModelProfile: run?.normal_model_profile || null,
+          });
         },
       },
     );
@@ -2125,6 +2145,20 @@ function resolveSelectedNormalRoleId() {
 
 function resolveSelectedNormalModelProfile() {
   return String(state.currentNormalModelProfile || "").trim();
+}
+
+function resolveKnownSelectedNormalModelProfile() {
+  return resolveKnownNormalModelProfile(resolveSelectedNormalModelProfile());
+}
+
+function resolveKnownNormalModelProfile(modelProfile) {
+  const selectedProfile = String(modelProfile || "").trim();
+  if (!selectedProfile) {
+    return "";
+  }
+  return normalModelProfiles.some((profile) => profile.name === selectedProfile)
+    ? selectedProfile
+    : "";
 }
 
 function getNormalRoleMenuOptions(selectedRoleId) {

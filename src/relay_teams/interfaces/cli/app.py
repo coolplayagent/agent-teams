@@ -4,6 +4,8 @@ from __future__ import annotations
 import http.client
 import ipaddress
 import json
+import logging
+import math
 import os
 from pathlib import Path
 import re
@@ -30,6 +32,7 @@ from relay_teams.interfaces.cli.manifest import (
     CLI_ROOT_HELP,
     CliCommandSpec,
 )
+from relay_teams.logger import get_logger, log_event
 
 try:
     import keyring
@@ -37,6 +40,11 @@ except ImportError:  # pragma: no cover - import availability depends on environ
     keyring = None
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8000"
+DEFAULT_FAST_PROMPT_STREAM_TIMEOUT_SECONDS = 600.0
+FAST_PROMPT_STREAM_TIMEOUT_SECONDS_ENV = (
+    "RELAY_TEAMS_FAST_PROMPT_STREAM_TIMEOUT_SECONDS"
+)
+LOGGER = get_logger(__name__)
 _APP_ENV_SECRET_NAMESPACE = "app_env"
 _KEYRING_SERVICE_NAME = "agent-teams"
 _SECRETS_FILE_NAME = "secrets.json"
@@ -75,6 +83,7 @@ _OPTIONS_WITH_VALUES = frozenset(
         "--marketplace-source",
         "--memory-id",
         "--message",
+        "--model",
         "--mode",
         "--objective",
         "--option-id",
@@ -551,6 +560,7 @@ class FastPromptOptions(NamedTuple):
     mode: str
     role_id: str | None
     orchestration_id: str | None
+    model_profile: str | None
     workspace: Path | None
     yolo: bool
     daemon: bool
@@ -1280,17 +1290,21 @@ def _run_fast_prompt(args: list[str]) -> None:
     )
     session_id = _require_json_string(session, "session_id")
     _configure_fast_prompt_topology(session_id=session_id, options=options)
+    run_payload: dict[str, object] = {
+        "session_id": session_id,
+        "input": [{"kind": "text", "text": resolved_message}],
+        "execution_mode": "ai",
+        "yolo": options.yolo,
+    }
+    if options.model_profile is not None:
+        run_payload["normal_model_profile"] = options.model_profile
+
     run = _require_json_object(
         _http_request_json(
             base_url=options.base_url,
             method="POST",
             path="/api/runs",
-            payload={
-                "session_id": session_id,
-                "input": [{"kind": "text", "text": resolved_message}],
-                "execution_mode": "ai",
-                "yolo": options.yolo,
-            },
+            payload=run_payload,
         ),
         "/api/runs",
     )
@@ -1316,6 +1330,7 @@ def _parse_fast_prompt_args(args: list[str]) -> FastPromptOptions:
         value_option_names = {
             "-m",
             "--message",
+            "--model",
             "--mode",
             "--role",
             "--orchestration",
@@ -1375,12 +1390,19 @@ def _parse_fast_prompt_args(args: list[str]) -> FastPromptOptions:
         orchestration_id = orchestration_id.strip()
         if not orchestration_id:
             _raise_fast_prompt_usage("--orchestration must not be empty")
+    model_profile = values.get("--model")
+    if model_profile is not None:
+        model_profile = model_profile.strip()
+        if not model_profile:
+            _raise_fast_prompt_usage("--model must not be empty")
     if mode == "orchestration" and role_id is not None:
         _raise_fast_prompt_usage("--role can only be used with --mode normal")
     if mode != "orchestration" and orchestration_id is not None:
         _raise_fast_prompt_usage(
             "--orchestration can only be used with --mode orchestration"
         )
+    if mode == "orchestration" and model_profile is not None:
+        _raise_fast_prompt_usage("--model can only be used with --mode normal")
     workspace = None
     raw_workspace = values.get("--workspace")
     if raw_workspace is not None:
@@ -1390,6 +1412,7 @@ def _parse_fast_prompt_args(args: list[str]) -> FastPromptOptions:
         mode=mode,
         role_id=role_id,
         orchestration_id=orchestration_id,
+        model_profile=model_profile,
         workspace=workspace,
         yolo=yolo,
         daemon=daemon,
@@ -1532,7 +1555,11 @@ def _stream_fast_prompt_events(*, base_url: str, run_id: str) -> None:
         if parsed.scheme == "https"
         else http.client.HTTPConnection
     )
-    connection = connection_class(address, port, timeout=600.0)
+    connection = connection_class(
+        address,
+        port,
+        timeout=_resolve_fast_prompt_stream_timeout_seconds(),
+    )
     try:
         connection.request(
             "GET",
@@ -1557,6 +1584,41 @@ def _stream_fast_prompt_events(*, base_url: str, run_id: str) -> None:
                 return
     finally:
         connection.close()
+
+
+def _resolve_fast_prompt_stream_timeout_seconds() -> float:
+    raw_value = _load_fast_prompt_stream_timeout_env_value()
+    if raw_value is None or not raw_value.strip():
+        return DEFAULT_FAST_PROMPT_STREAM_TIMEOUT_SECONDS
+    normalized = raw_value.strip()
+    try:
+        timeout_seconds = float(normalized)
+    except ValueError:
+        _log_invalid_fast_prompt_stream_timeout(raw_value)
+        return DEFAULT_FAST_PROMPT_STREAM_TIMEOUT_SECONDS
+    if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+        _log_invalid_fast_prompt_stream_timeout(raw_value)
+        return DEFAULT_FAST_PROMPT_STREAM_TIMEOUT_SECONDS
+    return timeout_seconds
+
+
+def _load_fast_prompt_stream_timeout_env_value() -> str | None:
+    process_value = os.environ.get(FAST_PROMPT_STREAM_TIMEOUT_SECONDS_ENV)
+    if process_value is not None:
+        return process_value
+    return _load_fast_env_file(_app_config_dir() / ".env").get(
+        FAST_PROMPT_STREAM_TIMEOUT_SECONDS_ENV
+    )
+
+
+def _log_invalid_fast_prompt_stream_timeout(raw_value: str) -> None:
+    log_event(
+        LOGGER,
+        logging.WARNING,
+        event="cli.fast_prompt.stream_timeout.invalid_env",
+        message="Ignoring invalid fast prompt stream timeout",
+        payload={FAST_PROMPT_STREAM_TIMEOUT_SECONDS_ENV: raw_value},
+    )
 
 
 def _handle_fast_prompt_stream_line(line: str) -> bool:

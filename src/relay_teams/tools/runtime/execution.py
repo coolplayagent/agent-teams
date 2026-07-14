@@ -9,6 +9,7 @@ import contextvars
 import inspect
 import json
 import logging
+import os
 import sqlite3
 import threading
 import time
@@ -118,11 +119,72 @@ from relay_teams.hooks import (
 LOGGER = get_logger(__name__)
 ParamT = ParamSpec("ParamT")
 ResultT = TypeVar("ResultT")
-TOOL_ACTION_WORKER_COUNT = 16
 TOOL_STATE_WORKER_COUNT = 4
 TOOL_APPROVAL_WORKER_COUNT = 4
-PER_RUN_TOOL_ACTION_CONCURRENCY = 8
-GLOBAL_TOOL_ACTION_CONCURRENCY = 16
+DEFAULT_TOOL_ACTION_WORKER_COUNT = 16
+DEFAULT_PER_RUN_TOOL_ACTION_CONCURRENCY = 8
+DEFAULT_GLOBAL_TOOL_ACTION_CONCURRENCY = 16
+DEFAULT_WAIT_TOOL_ACTION_CONCURRENCY = 64
+TOOL_ACTION_WORKER_COUNT_ENV = "RELAY_TEAMS_TOOL_ACTION_WORKER_COUNT"
+PER_RUN_TOOL_ACTION_CONCURRENCY_ENV = "RELAY_TEAMS_PER_RUN_TOOL_ACTION_CONCURRENCY"
+GLOBAL_TOOL_ACTION_CONCURRENCY_ENV = "RELAY_TEAMS_GLOBAL_TOOL_ACTION_CONCURRENCY"
+WAIT_TOOL_ACTION_CONCURRENCY_ENV = "RELAY_TEAMS_WAIT_TOOL_ACTION_CONCURRENCY"
+
+
+def _resolve_positive_int_env(name: str, default: int) -> int:
+    raw_value = os.environ.get(name)
+    if raw_value is None or not raw_value.strip():
+        return default
+    try:
+        value = int(raw_value.strip())
+    except ValueError:
+        log_event(
+            LOGGER,
+            logging.WARNING,
+            event="tools.runtime.invalid_env",
+            message="Ignoring invalid tool runtime environment override",
+            payload={"name": name, "value": raw_value, "default": default},
+        )
+        return default
+    if value < 1:
+        log_event(
+            LOGGER,
+            logging.WARNING,
+            event="tools.runtime.invalid_env",
+            message="Ignoring non-positive tool runtime environment override",
+            payload={"name": name, "value": raw_value, "default": default},
+        )
+        return default
+    return value
+
+
+def _resolve_tool_runtime_limits() -> tuple[int, int, int, int]:
+    return (
+        _resolve_positive_int_env(
+            TOOL_ACTION_WORKER_COUNT_ENV,
+            DEFAULT_TOOL_ACTION_WORKER_COUNT,
+        ),
+        _resolve_positive_int_env(
+            PER_RUN_TOOL_ACTION_CONCURRENCY_ENV,
+            DEFAULT_PER_RUN_TOOL_ACTION_CONCURRENCY,
+        ),
+        _resolve_positive_int_env(
+            GLOBAL_TOOL_ACTION_CONCURRENCY_ENV,
+            DEFAULT_GLOBAL_TOOL_ACTION_CONCURRENCY,
+        ),
+        _resolve_positive_int_env(
+            WAIT_TOOL_ACTION_CONCURRENCY_ENV,
+            DEFAULT_WAIT_TOOL_ACTION_CONCURRENCY,
+        ),
+    )
+
+
+(
+    TOOL_ACTION_WORKER_COUNT,
+    PER_RUN_TOOL_ACTION_CONCURRENCY,
+    GLOBAL_TOOL_ACTION_CONCURRENCY,
+    WAIT_TOOL_ACTION_CONCURRENCY,
+) = _resolve_tool_runtime_limits()
 _TOOL_ACTION_EXECUTOR = ThreadPoolExecutor(
     max_workers=TOOL_ACTION_WORKER_COUNT,
     thread_name_prefix="tool-action",
@@ -136,6 +198,7 @@ _TOOL_APPROVAL_EXECUTOR = ThreadPoolExecutor(
     thread_name_prefix="tool-approval",
 )
 _GLOBAL_TOOL_ACTION_SEMAPHORE = asyncio.Semaphore(GLOBAL_TOOL_ACTION_CONCURRENCY)
+_WAIT_TOOL_ACTION_SEMAPHORE = asyncio.Semaphore(WAIT_TOOL_ACTION_CONCURRENCY)
 _RUN_TOOL_ACTION_GATES_LOCK = threading.Lock()
 _RUN_TOOL_ACTION_GATES: dict[str, _RunToolActionGate] = {}
 _AUDITED_FILE_WRITE_TOOLS = frozenset({"write", "write_tmp", "edit", "notebook_edit"})
@@ -143,6 +206,11 @@ _AUDITED_TOOL_NAMES = _AUDITED_FILE_WRITE_TOOLS | frozenset(
     {"shell", "orch_dispatch_task"}
 )
 _AUDIT_REASON_LIMIT = 4_000
+
+
+class ToolActionCapacity(str, Enum):
+    STANDARD = "standard"
+    WAIT = "wait"
 
 
 class _RunToolActionGate:
@@ -233,6 +301,7 @@ async def execute_tool(
     | None = None,
     keep_approval_ticket_reusable: bool = False,
     force_approval: bool = False,
+    action_capacity: ToolActionCapacity = ToolActionCapacity.STANDARD,
     allow_tool_return: Literal[False] = False,
 ) -> dict[str, JsonValue]: ...
 
@@ -260,6 +329,7 @@ async def execute_tool(
     | None = None,
     keep_approval_ticket_reusable: bool = False,
     force_approval: bool = False,
+    action_capacity: ToolActionCapacity = ToolActionCapacity.STANDARD,
     allow_tool_return: Literal[True] = True,
 ) -> ToolReturn | dict[str, JsonValue]: ...
 
@@ -286,6 +356,7 @@ async def execute_tool(
     | None = None,
     keep_approval_ticket_reusable: bool = False,
     force_approval: bool = False,
+    action_capacity: ToolActionCapacity = ToolActionCapacity.STANDARD,
     allow_tool_return: bool = False,
 ) -> ToolReturn | dict[str, JsonValue]:
     """Run a tool action with approval, logging, and normalized envelopes."""
@@ -515,6 +586,7 @@ async def execute_tool(
                     ctx=ctx,
                     action=action,
                     tool_input=effective_tool_input,
+                    action_capacity=action_capacity,
                 )
             finally:
                 reset_tool_hook_runtime_env(hook_env_token)
@@ -1646,32 +1718,75 @@ async def _invoke_tool_action_with_limits(
     ctx: ToolContext,
     action: Callable[..., object | Awaitable[object]] | object,
     tool_input: dict[str, JsonValue],
+    action_capacity: ToolActionCapacity = ToolActionCapacity.STANDARD,
 ) -> object:
+    if action_capacity is ToolActionCapacity.WAIT:
+        return await _invoke_wait_tool_action_with_limits(
+            ctx=ctx,
+            action=action,
+            tool_input=tool_input,
+        )
+
     run_gate = _retain_run_tool_action_gate(ctx.deps.run_id)
     queued_at = time.perf_counter()
     try:
         async with run_gate.semaphore:
             async with _GLOBAL_TOOL_ACTION_SEMAPHORE:
                 wait_ms = int((time.perf_counter() - queued_at) * 1000)
-                if wait_ms >= 250:
-                    log_event(
-                        LOGGER,
-                        logging.DEBUG,
-                        event="tool.action.queue_wait",
-                        message="Tool action waited for execution capacity",
-                        duration_ms=wait_ms,
-                        payload={
-                            "run_id": ctx.deps.run_id,
-                            "session_id": ctx.deps.session_id,
-                            "tool_call_id": ctx.tool_call_id,
-                        },
-                    )
+                _log_tool_action_queue_wait(
+                    ctx=ctx,
+                    action_capacity=ToolActionCapacity.STANDARD,
+                    wait_ms=wait_ms,
+                )
                 return await _invoke_tool_action_async(
                     action=action,
                     tool_input=tool_input,
                 )
     finally:
         _release_run_tool_action_gate(ctx.deps.run_id, run_gate)
+
+
+async def _invoke_wait_tool_action_with_limits(
+    *,
+    ctx: ToolContext,
+    action: Callable[..., object | Awaitable[object]] | object,
+    tool_input: dict[str, JsonValue],
+) -> object:
+    queued_at = time.perf_counter()
+    async with _WAIT_TOOL_ACTION_SEMAPHORE:
+        wait_ms = int((time.perf_counter() - queued_at) * 1000)
+        _log_tool_action_queue_wait(
+            ctx=ctx,
+            action_capacity=ToolActionCapacity.WAIT,
+            wait_ms=wait_ms,
+        )
+        return await _invoke_tool_action_async(
+            action=action,
+            tool_input=tool_input,
+        )
+
+
+def _log_tool_action_queue_wait(
+    *,
+    ctx: ToolContext,
+    action_capacity: ToolActionCapacity,
+    wait_ms: int,
+) -> None:
+    if wait_ms < 250:
+        return
+    log_event(
+        LOGGER,
+        logging.DEBUG,
+        event="tool.action.queue_wait",
+        message="Tool action waited for execution capacity",
+        duration_ms=wait_ms,
+        payload={
+            "run_id": ctx.deps.run_id,
+            "session_id": ctx.deps.session_id,
+            "tool_call_id": ctx.tool_call_id,
+            "capacity": action_capacity.value,
+        },
+    )
 
 
 def _retain_run_tool_action_gate(run_id: str) -> _RunToolActionGate:

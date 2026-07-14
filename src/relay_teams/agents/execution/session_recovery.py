@@ -157,7 +157,7 @@ class SessionRecoveryMixin(AgentLlmSessionMixinBase):
         )
         closed_pending_tool_call_count = 0
         if should_retry:
-            closed_pending_tool_call_count = self._close_pending_tool_calls_for_retry(
+            closed_pending_tool_call_count = await self._close_pending_tool_calls_for_retry(
                 request=request,
                 pending_messages=pending_messages,
                 attempt_tool_call_event_emitted=attempt_tool_call_event_emitted,
@@ -321,7 +321,37 @@ class SessionRecoveryMixin(AgentLlmSessionMixinBase):
         )
         return len(pending_tool_calls)
 
-    def _close_pending_tool_calls_for_retry(
+    async def _publish_synthetic_tool_results_for_pending_calls_async(
+        self,
+        *,
+        request: LLMRequest,
+        pending_messages: Sequence[ModelRequest | ModelResponse],
+        error_code: str,
+        message: str,
+    ) -> int:
+        pending_tool_calls = self._collect_pending_tool_calls(pending_messages)
+        if not pending_tool_calls:
+            return 0
+        synthetic_request = ModelRequest(
+            parts=[
+                ToolReturnPart(
+                    tool_name=tool_name,
+                    tool_call_id=tool_call_id,
+                    content=build_tool_error_result(
+                        error_code=error_code,
+                        message=message,
+                    ),
+                )
+                for tool_call_id, tool_name in pending_tool_calls
+            ]
+        )
+        await self._publish_committed_tool_outcome_events_from_messages_async(
+            request=request,
+            messages=[synthetic_request],
+        )
+        return len(pending_tool_calls)
+
+    async def _close_pending_tool_calls_for_retry(
         self,
         *,
         request: LLMRequest,
@@ -336,7 +366,7 @@ class SessionRecoveryMixin(AgentLlmSessionMixinBase):
             or attempt_messages_committed
         ):
             return 0
-        return self._publish_synthetic_tool_results_for_pending_calls(
+        return await self._publish_synthetic_tool_results_for_pending_calls_async(
             request=request,
             pending_messages=pending_messages,
             error_code=RETRY_SUPERSEDED_TOOL_CALL_ERROR_CODE,
@@ -393,14 +423,14 @@ class SessionRecoveryMixin(AgentLlmSessionMixinBase):
             restore_pending_tool_results_from_state=(
                 self._restore_pending_tool_results_from_state
             ),
-            commit_all_safe_messages=self._commit_all_safe_messages,
+            commit_all_safe_messages=self._commit_all_safe_messages_async,
             publish_synthetic_tool_results_for_pending_calls=(
-                self._publish_synthetic_tool_results_for_pending_calls
+                self._publish_synthetic_tool_results_for_pending_calls_async
             ),
             generate_async=self._generate_async,
         )
 
-    def _raise_terminal_model_api_failure(
+    async def _raise_terminal_model_api_failure(
         self,
         *,
         request: LLMRequest,
@@ -411,7 +441,7 @@ class SessionRecoveryMixin(AgentLlmSessionMixinBase):
         error_message: str,
         fallback_status: FallbackAttemptStatus,
     ) -> None:
-        self._failure_handling_service().raise_terminal_model_api_failure(
+        await self._failure_handling_service().raise_terminal_model_api_failure(
             request=request,
             error=error,
             retry_error=retry_error,
@@ -419,11 +449,11 @@ class SessionRecoveryMixin(AgentLlmSessionMixinBase):
             total_attempts=total_attempts,
             error_message=error_message,
             fallback_status=fallback_status,
-            handle_retry_exhausted=self._handle_retry_exhausted,
+            handle_retry_exhausted=self._handle_retry_exhausted_async,
             raise_assistant_run_error=self._raise_assistant_run_error,
         )
 
-    def _raise_terminal_generic_failure(
+    async def _raise_terminal_generic_failure(
         self,
         *,
         request: LLMRequest,
@@ -433,7 +463,7 @@ class SessionRecoveryMixin(AgentLlmSessionMixinBase):
         total_attempts: int,
         fallback_status: FallbackAttemptStatus,
     ) -> None:
-        self._failure_handling_service().raise_terminal_generic_failure(
+        await self._failure_handling_service().raise_terminal_generic_failure(
             request=request,
             error=error,
             retry_error=retry_error,
@@ -441,7 +471,7 @@ class SessionRecoveryMixin(AgentLlmSessionMixinBase):
             total_attempts=total_attempts,
             fallback_status=fallback_status,
             log_provider_request_failed=self._log_provider_request_failed,
-            handle_retry_exhausted=self._handle_retry_exhausted,
+            handle_retry_exhausted=self._handle_retry_exhausted_async,
             raise_assistant_run_error=self._raise_assistant_run_error,
         )
 
@@ -500,8 +530,8 @@ class SessionRecoveryMixin(AgentLlmSessionMixinBase):
                 attempt_messages_committed=attempt_messages_committed,
                 skip_initial_user_prompt_persist=skip_initial_user_prompt_persist,
                 clone_with_config=self._clone_with_config,
-                handle_fallback_activated=self._handle_fallback_activated,
-                handle_fallback_exhausted=self._handle_fallback_exhausted,
+                handle_fallback_activated=self._handle_fallback_activated_async,
+                handle_fallback_exhausted=self._handle_fallback_exhausted_async,
             )
         )
 
@@ -522,18 +552,18 @@ class SessionRecoveryMixin(AgentLlmSessionMixinBase):
             error_message=error_message,
         )
 
-    def _raise_assistant_run_error(
+    async def _raise_assistant_run_error(
         self,
         *,
         request: LLMRequest,
         error_code: str | None,
         error_message: str | None,
     ) -> None:
-        self._failure_handling_service().raise_assistant_run_error(
+        await self._failure_handling_service().raise_assistant_run_error(
             request=request,
             error_code=error_code,
             error_message=error_message,
-            publish_text_delta_event=self._publish_text_delta_event,
+            publish_text_delta_event=self._publish_text_delta_event_async,
             conversation_id=self._conversation_id,
             workspace_id=self._workspace_id,
         )
@@ -547,6 +577,21 @@ class SessionRecoveryMixin(AgentLlmSessionMixinBase):
         error: LlmRetryErrorInfo,
     ) -> None:
         self._failure_handling_service().handle_retry_exhausted(
+            request=request,
+            retry_number=retry_number,
+            total_attempts=total_attempts,
+            error=error,
+        )
+
+    async def _handle_retry_exhausted_async(
+        self,
+        *,
+        request: LLMRequest,
+        retry_number: int,
+        total_attempts: int,
+        error: LlmRetryErrorInfo,
+    ) -> None:
+        await self._failure_handling_service().handle_retry_exhausted_async(
             request=request,
             retry_number=retry_number,
             total_attempts=total_attempts,
@@ -568,6 +613,21 @@ class SessionRecoveryMixin(AgentLlmSessionMixinBase):
             decision=decision,
         )
 
+    async def _handle_fallback_activated_async(
+        self,
+        *,
+        request: LLMRequest,
+        retry_number: int,
+        total_attempts: int,
+        decision: LlmFallbackDecision,
+    ) -> None:
+        await self._failure_handling_service().handle_fallback_activated_async(
+            request=request,
+            retry_number=retry_number,
+            total_attempts=total_attempts,
+            decision=decision,
+        )
+
     def _handle_fallback_exhausted(
         self,
         *,
@@ -578,6 +638,23 @@ class SessionRecoveryMixin(AgentLlmSessionMixinBase):
         fallback_state: FallbackAttemptState,
     ) -> None:
         self._failure_handling_service().handle_fallback_exhausted(
+            request=request,
+            retry_number=retry_number,
+            total_attempts=total_attempts,
+            error=error,
+            fallback_state=fallback_state,
+        )
+
+    async def _handle_fallback_exhausted_async(
+        self,
+        *,
+        request: LLMRequest,
+        retry_number: int,
+        total_attempts: int,
+        error: LlmRetryErrorInfo,
+        fallback_state: FallbackAttemptState,
+    ) -> None:
+        await self._failure_handling_service().handle_fallback_exhausted_async(
             request=request,
             retry_number=retry_number,
             total_attempts=total_attempts,

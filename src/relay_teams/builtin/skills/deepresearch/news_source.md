@@ -6,7 +6,9 @@
 - [Block AI News](https://block.xyz/news/ai)
 - [AI Engineer](https://www.ai.engineer/)
 - [AI Engineer Europe](https://www.ai.engineer/europe)
+- [Speaker Deck](https://speakerdeck.com/)
 - [Papers with Code](https://paperswithcode.co/)
+- [OpenReview](https://openreview.net/)
 
 ## 会议与演讲内容
 
@@ -16,9 +18,15 @@
 - `ai.engineer/europe`
   Site: <https://www.ai.engineer/europe>
   用途：AI Engineer Europe 的议程、演讲主题、讲者和相关会议内容。
+- `speakerdeck.com`
+  Site: <https://speakerdeck.com/>
+  用途：技术演讲、会议分享、产品实践和研究型 PPT 材料。
 
 ## 学术论文、代码与基准
 
+- `openreview.net`
+  Site: <https://openreview.net/>
+  用途：机器学习、人工智能和相关学术会议的论文、评审意见、讨论线索和投稿版本追踪。
 - `paperswithcode.co`
   Site: <https://paperswithcode.co/>
   用途：机器学习论文、关联代码实现、数据集、任务排行榜、SOTA 基准和方法对比线索。

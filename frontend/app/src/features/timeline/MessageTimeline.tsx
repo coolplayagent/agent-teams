@@ -38,7 +38,6 @@ import {
 } from "../../api/contracts";
 import {
   isBackgroundTaskEventType,
-  isRunLifecycleEventType,
   type RunEventType,
 } from "../../runtime/events";
 import {
@@ -119,6 +118,12 @@ import {
   projectRuntimeEntriesForScope,
   type RuntimeEntryScopeProjection,
 } from "./runtimeScopeProjection";
+import {
+  injectionStatusLabel,
+  runtimeBackgroundTaskPrimaryText,
+  runtimeInjectionSummary,
+  runtimeStructuredEventText,
+} from "./runtimeEventPresentation";
 import {
   approvalActionIsApproved,
   approvalActionIsError,
@@ -646,6 +651,7 @@ export function MessageTimeline({
                   messageRoundLookup,
                   fallbackRunId,
                   workspaceId,
+                  t,
                 ),
               )
               .filter(timelineRowHasRenderableContent),
@@ -653,7 +659,7 @@ export function MessageTimeline({
           ),
         );
       },
-      identities: [messages, rounds],
+      identities: [messages, rounds, t],
       key: persistedRowsCacheKey({
         fallbackRunId,
         primaryRoleId,
@@ -681,6 +687,7 @@ export function MessageTimeline({
       subagentScopeInstanceId,
       subagentScopeRoleId,
       subagentScopeTaskId,
+      t,
       variant,
       workspaceId,
     ],
@@ -752,6 +759,7 @@ export function MessageTimeline({
             hydratedOutputSourcesByRunId,
             hydratedThinkingTextByRunId,
             hydratedToolStatesByRunId,
+            t,
           ),
         ),
     [
@@ -760,6 +768,7 @@ export function MessageTimeline({
       hydratedThinkingTextByRunId,
       hydratedToolStatesByRunId,
       runtimeRunsForRows,
+      t,
       variant,
     ],
   );
@@ -772,6 +781,7 @@ export function MessageTimeline({
           variant,
           terminalRunIdOverrides,
           terminalScopeOverride,
+          t,
         ),
       ),
     [
@@ -779,6 +789,7 @@ export function MessageTimeline({
       runtimeRunsForRows,
       terminalRunIdOverrides,
       terminalScopeOverride,
+      t,
       variant,
     ],
   );
@@ -2878,12 +2889,13 @@ function messageToRow(
   roundLookup: MessageRoundLookup,
   fallbackRunId: string | null,
   workspaceId: string | null,
+  t: Translate,
 ): TimelineRow {
   const injection = timelineMessageInjectionRow(message);
   const role = injection === undefined
     ? message.role ?? "agent"
     : "user";
-  const parts = messageParts(message, workspaceId);
+  const parts = messageParts(message, workspaceId, t);
   const text = rowCopyText(parts);
   const runIdentity = messageRunIdentity(message, roundLookup, fallbackRunId);
   return {
@@ -5052,6 +5064,7 @@ function runtimeEntriesToRows(
   variant: "session" | "subagent-panel",
   terminalRunIdOverrides: ReadonlySet<string> = new Set(),
   terminalScopeOverride = false,
+  t: Translate,
 ): TimelineRow[] {
   const rows: TimelineRow[] = [];
   const activeThinking = new Map<string, RuntimeThinkingAccumulator>();
@@ -5090,7 +5103,7 @@ function runtimeEntriesToRows(
         continue;
       }
       closeRuntimeTextSegment(entry, rows, activeText);
-      rows.push(runtimeEntryToRow(entry, variant));
+      rows.push(runtimeEntryToRow(entry, variant, t));
       continue;
     }
     if (entry.kind === "output_delta") {
@@ -5105,13 +5118,13 @@ function runtimeEntriesToRows(
         continue;
       }
       closeRuntimeTextSegment(entry, rows, activeText);
-      rows.push(runtimeEntryToRow(entry, variant));
+      rows.push(runtimeEntryToRow(entry, variant, t));
       continue;
     }
     if (isThinkingEvent(entry.kind)) {
       closeRuntimeTextSegment(entry, rows, activeText);
       if (!applyRuntimeThinkingEvent(entry, rows, activeThinking)) {
-        rows.push(runtimeEntryToRow(entry, variant));
+        rows.push(runtimeEntryToRow(entry, variant, t));
       }
       continue;
     }
@@ -5126,7 +5139,7 @@ function runtimeEntriesToRows(
     }
     if (runtimeEntryIsInjection(entry)) {
       closeRuntimeTextSegment(entry, rows, activeText);
-      applyRuntimeInjectionEvent(entry, rows, injectionRowsByIdentity);
+      applyRuntimeInjectionEvent(entry, rows, injectionRowsByIdentity, t);
       if (runtimeInjectionSupersedesPendingToolCalls(entry)) {
         removeSupersededPendingToolRows(rows, entry, resolvedToolCallIds);
       }
@@ -5145,7 +5158,7 @@ function runtimeEntriesToRows(
     if (mergeRuntimeToolResultIntoPendingRow(rows, entry)) {
       continue;
     }
-    rows.push(runtimeEntryToRow(entry, variant));
+    rows.push(runtimeEntryToRow(entry, variant, t));
   }
   closeTerminalRuntimeTextSegments(
     rows,
@@ -5357,6 +5370,7 @@ function applyRuntimeInjectionEvent(
   entry: TimelineEntry,
   rows: TimelineRow[],
   rowsByIdentity: Map<string, TimelineRow>,
+  t: Translate,
 ): void {
   const payload = jsonObject(entry.payload);
   if (payload === null || payloadHasParseError(payload)) {
@@ -5371,7 +5385,7 @@ function applyRuntimeInjectionEvent(
   const existing = identityKeys
     .map((key) => rowsByIdentity.get(key))
     .find((row): row is TimelineRow => row !== undefined);
-  const text = runtimeInjectionRowText(payload, injection.status);
+  const text = runtimeInjectionRowText(payload, injection.status, t);
   if (text.length === 0) {
     return;
   }
@@ -5379,7 +5393,9 @@ function applyRuntimeInjectionEvent(
     const nextInjection = mergedTimelineInjectionRow(existing.injection, injection);
     existing.injection = nextInjection;
     existing.kind = entry.kind;
-    existing.parts = [timelineTextPart(runtimeInjectionRowText(payload, nextInjection.status))];
+    existing.parts = [
+      timelineTextPart(runtimeInjectionRowText(payload, nextInjection.status, t)),
+    ];
     existing.text = rowCopyText(existing.parts);
     registerRuntimeInjectionRow(rowsByIdentity, entry.runId, existing);
     return;
@@ -5430,9 +5446,10 @@ function runtimeInjectionRow(
 function runtimeInjectionRowText(
   payload: Record<string, JsonValue>,
   status: TimelineInjectionRow["status"],
+  t: Translate,
 ): string {
-  const summary = runtimeInjectionSummary(payload);
-  return summary.length > 0 ? `${injectionStatusLabel(status)}: ${summary}` : "";
+  const summary = runtimeInjectionSummary(payload, t);
+  return summary.length > 0 ? `${injectionStatusLabel(status, t)}: ${summary}` : "";
 }
 
 function mergedTimelineInjectionRow(
@@ -5682,8 +5699,9 @@ function runtimeToolCallKey(runId: string, callId: string): string {
 function runtimeEntryToRow(
   entry: TimelineEntry,
   variant: "session" | "subagent-panel",
+  t: Translate,
 ): TimelineRow {
-  const parts = runtimeEntryParts(entry, variant);
+  const parts = runtimeEntryParts(entry, variant, t);
   return runtimeEntryToRowWithParts(entry, parts, `runtime:${entry.id}`);
 }
 
@@ -6398,6 +6416,7 @@ function runtimeEntriesAfterHydration(
   hydratedOutputSourcesByRunId: Map<string, Set<TimelineRunIdSource>>,
   hydratedThinkingTextByRunId: Map<string, string>,
   hydratedToolStatesByRunId: Map<string, Map<string, TimelineToolHydrationState>>,
+  t: Translate,
 ): TimelineEntry[] {
   const scopedEntries = runState.entries;
   const hydratedText = hydratedOutputTextByRunId.get(runState.runId);
@@ -6411,7 +6430,7 @@ function runtimeEntriesAfterHydration(
     hydratedThinkingText === undefined &&
     hydratedToolStates.size === 0
   ) {
-    return openRuntimeEntriesWithIdleCursor(runState, scopedEntries, variant);
+    return openRuntimeEntriesWithIdleCursor(runState, scopedEntries, variant, false, t);
   }
   const closedRuntimeTextAnchorKey = closedRuntimeTextAnchorKeyForHydration(
     runState,
@@ -6478,6 +6497,7 @@ function runtimeEntriesAfterHydration(
     hydratedEntries,
     variant,
     safeHydratedText.trim().length > 0,
+    t,
   );
 }
 
@@ -6486,6 +6506,7 @@ function openRuntimeEntriesWithIdleCursor(
   entries: TimelineEntry[],
   variant: "session" | "subagent-panel",
   suppressPendingCursor = false,
+  t: Translate,
 ): TimelineEntry[] {
   if (runState.status === "closed" || entries.length === 0) {
     return entries;
@@ -6493,13 +6514,13 @@ function openRuntimeEntriesWithIdleCursor(
   const visibleEntries = entries.filter(
     (entry) =>
       runtimeEntryShouldRenderChatContent(entry) &&
-      !runtimeSilentOpenLifecycleEntry(entry, variant),
+      !runtimeSilentOpenLifecycleEntry(entry, variant, t),
   );
   const rowPipelineEntries = entries.filter(
     (entry) =>
       (
         runtimeEntryShouldRenderChatContent(entry) &&
-        !runtimeSilentOpenLifecycleEntry(entry, variant)
+        !runtimeSilentOpenLifecycleEntry(entry, variant, t)
       ) ||
       runtimeHiddenEntryClosesText(entry),
   );
@@ -6510,7 +6531,7 @@ function openRuntimeEntriesWithIdleCursor(
   ) {
     return [...rowPipelineEntries, runtimeIdleCursorEntry(latestVisibleEntry)];
   }
-  if (visibleEntries.some((entry) => runtimeEntryProducesRenderableRow(entry, variant))) {
+  if (visibleEntries.some((entry) => runtimeEntryProducesRenderableRow(entry, variant, t))) {
     return rowPipelineEntries;
   }
   const latestEntry = entries.at(-1);
@@ -6541,20 +6562,22 @@ function terminalRuntimeTextSupersededByHydratedAnswer(
 function runtimeSilentOpenLifecycleEntry(
   entry: TimelineEntry,
   variant: "session" | "subagent-panel",
+  t: Translate,
 ): boolean {
   if (entry.kind !== "run_started" && entry.kind !== "run_resumed") {
     return false;
   }
-  return runtimeStructuredEventText(entry, variant) === null;
+  return runtimeStructuredEventText(entry, t) === null;
 }
 
 function runtimeEntryProducesRenderableRow(
   entry: TimelineEntry,
   variant: "session" | "subagent-panel",
+  t: Translate,
 ): boolean {
   return (
     runtimeEntryShouldRenderChatContent(entry) &&
-    runtimeEntryParts(entry, variant).length > 0
+    runtimeEntryParts(entry, variant, t).length > 0
   );
 }
 
@@ -8353,6 +8376,7 @@ function runtimeStreamKey(entry: TimelineEntry): string {
 function runtimeEntryParts(
   entry: TimelineEntry,
   variant: "session" | "subagent-panel",
+  t: Translate,
 ): TimelineRenderPart[] {
   if (!runtimeEntryShouldRenderChatContent(entry)) {
     return [];
@@ -8373,11 +8397,11 @@ function runtimeEntryParts(
   if (approval !== null) {
     return [approval];
   }
-  const subagentPanelParts = runtimeSubagentPanelStructuredEventParts(entry, variant);
+  const subagentPanelParts = runtimeSubagentPanelStructuredEventParts(entry, variant, t);
   if (subagentPanelParts !== null) {
     return subagentPanelParts;
   }
-  const structuredText = runtimeStructuredEventText(entry, variant);
+  const structuredText = runtimeStructuredEventText(entry, t);
   if (structuredText !== null) {
     return [timelineTextPart(structuredText)];
   }
@@ -8471,6 +8495,7 @@ function runtimeFallbackText(entry: TimelineEntry): string {
 function runtimeSubagentPanelStructuredEventParts(
   entry: TimelineEntry,
   variant: "session" | "subagent-panel",
+  t: Translate,
 ): TimelineRenderPart[] | null {
   if (variant !== "subagent-panel") {
     return null;
@@ -8490,480 +8515,8 @@ function runtimeSubagentPanelStructuredEventParts(
   if (payload === null || payloadHasParseError(payload)) {
     return [];
   }
-  const text = runtimeBackgroundTaskPrimaryText(entry.kind, payload);
+  const text = runtimeBackgroundTaskPrimaryText(entry.kind, payload, t);
   return text.trim().length > 0 ? [timelineTextPart(text)] : [];
-}
-
-function runtimeStructuredEventText(
-  entry: TimelineEntry,
-  variant: "session" | "subagent-panel",
-): string | null {
-  if (
-    variant === "subagent-panel" &&
-    (
-      entry.kind === "subagent_session_status_changed" ||
-      isBackgroundTaskEventType(entry.kind)
-    )
-  ) {
-    return null;
-  }
-  if (entry.kind === "token_usage") {
-    return runtimeTokenUsageText(entry);
-  }
-  if (entry.kind === "state_snapshot" || entry.kind === "state_delta") {
-    return runtimeStateEventText(entry);
-  }
-  if (entry.kind === "todo_updated") {
-    return runtimeTodoUpdatedText(entry);
-  }
-  const lifecycleText = runtimeLifecycleEventText(entry);
-  if (lifecycleText !== null) {
-    return lifecycleText;
-  }
-  const coordinationText = runtimeCoordinationEventText(entry);
-  if (coordinationText !== null) {
-    return coordinationText;
-  }
-  return null;
-}
-
-function runtimeTokenUsageText(entry: TimelineEntry): string | null {
-  const payload = jsonObject(entry.payload);
-  if (payload === null || payloadHasParseError(payload)) {
-    return null;
-  }
-  const total = objectNumber(payload, "total_tokens");
-  const input = objectNumber(payload, "input_tokens");
-  const output = objectNumber(payload, "output_tokens");
-  const cached = objectNumber(payload, "cached_input_tokens");
-  const reasoning = objectNumber(payload, "reasoning_output_tokens");
-  const parts = [
-    total > 0 ? `Total ${formatRuntimeCount(total)}` : "",
-    input > 0 ? `Input ${formatRuntimeCount(input)}` : "",
-    cached > 0 ? `Cached ${formatRuntimeCount(cached)}` : "",
-    output > 0 ? `Output ${formatRuntimeCount(output)}` : "",
-    reasoning > 0 ? `Reasoning ${formatRuntimeCount(reasoning)}` : "",
-  ].filter(Boolean);
-  if (parts.length === 0) {
-    return null;
-  }
-  return `Token usage: ${parts.join(" · ")}`;
-}
-
-function runtimeStateEventText(entry: TimelineEntry): string | null {
-  const payload = jsonObject(entry.payload);
-  if (payload === null || payloadHasParseError(payload)) {
-    return null;
-  }
-  const summary = runtimePayloadSummary(payload);
-  if (summary.length === 0) {
-    return null;
-  }
-  const label = entry.kind === "state_snapshot" ? "State snapshot" : "State delta";
-  return `${label}: ${summary}`;
-}
-
-function runtimePayloadSummary(payload: Record<string, JsonValue>): string {
-  return objectString(payload, "summary")
-    || objectString(payload, "title")
-    || objectString(payload, "message")
-    || objectString(payload, "status")
-    || runtimeScalarFieldSummary(payload)
-    || truncatePreview(firstNonEmptyLine(jsonValueText(payload)));
-}
-
-function runtimeScalarFieldSummary(payload: Record<string, JsonValue>): string {
-  return Object.entries(payload)
-    .flatMap(([key, value]) => {
-      const text = jsonScalarText(value);
-      return text.length > 0 ? [`${key}: ${text}`] : [];
-    })
-    .slice(0, 3)
-    .join(" · ");
-}
-
-function runtimeTodoUpdatedText(entry: TimelineEntry): string | null {
-  const payload = jsonObject(entry.payload);
-  if (payload === null || payloadHasParseError(payload)) {
-    return null;
-  }
-  const items = Array.isArray(payload.items)
-    ? payload.items.flatMap((item) => {
-        const todo = jsonObject(item);
-        return todo === null ? [] : [todo];
-      })
-    : [];
-  const counts = runtimeTodoStatusCounts(items);
-  const activeItem = runtimeTodoActiveItem(items);
-  const version = objectNumber(payload, "version");
-  const updatedBy = objectString(payload, "updated_by_instance_id")
-    || objectString(payload, "updated_by_role_id");
-  const fallbackSummary = objectString(payload, "summary")
-    || objectString(payload, "title")
-    || objectString(payload, "message");
-  const parts = [
-    items.length > 0 ? `${items.length} ${items.length === 1 ? "item" : "items"}` : "",
-    counts.length > 0 ? counts.join(", ") : "",
-    activeItem.length > 0 ? `Current ${activeItem}` : "",
-    version > 0 ? `v${formatRuntimeCount(version)}` : "",
-    updatedBy.length > 0 ? `by ${updatedBy}` : "",
-    items.length === 0 ? fallbackSummary : "",
-  ].filter(Boolean);
-  if (parts.length === 0) {
-    return null;
-  }
-  return `Todo updated: ${parts.join(" · ")}`;
-}
-
-function runtimeTodoStatusCounts(items: Record<string, JsonValue>[]): string[] {
-  const counts = new Map<string, number>();
-  items.forEach((item) => {
-    const status = objectString(item, "status");
-    if (status.length > 0) {
-      counts.set(status, (counts.get(status) ?? 0) + 1);
-    }
-  });
-  return Array.from(counts.entries()).map(
-    ([status, count]) => `${formatRuntimeCount(count)} ${status}`,
-  );
-}
-
-function runtimeTodoActiveItem(items: Record<string, JsonValue>[]): string {
-  const inProgress = items.find((item) => objectString(item, "status") === "in_progress");
-  const pending = items.find((item) => objectString(item, "status") === "pending");
-  const firstItem = inProgress ?? pending ?? items.at(0);
-  return firstItem === undefined ? "" : objectString(firstItem, "content");
-}
-
-function runtimeLifecycleEventText(entry: TimelineEntry): string | null {
-  const label = runtimeLifecycleEventLabel(entry.kind);
-  if (label === null) {
-    return null;
-  }
-  const payload = jsonObject(entry.payload);
-  if (payload === null || payloadHasParseError(payload)) {
-    return null;
-  }
-  const summary = runtimeLifecycleEventSummary(entry.kind, payload);
-  if (summary.length === 0) {
-    return null;
-  }
-  return `${label}: ${summary}`;
-}
-
-function runtimeLifecycleEventLabel(kind: string): string | null {
-  switch (kind) {
-    case "model_step_started":
-      return "Model step started";
-    case "model_step_finished":
-      return "Model step finished";
-    case "notification_requested":
-      return "Notification";
-    case "background_task_started":
-      return "Background task started";
-    case "background_task_updated":
-      return "Background task updated";
-    case "background_task_completed":
-      return "Background task completed";
-    case "background_task_stopped":
-      return "Background task stopped";
-    default:
-      return null;
-  }
-}
-
-function runtimeLifecycleEventSummary(
-  kind: string,
-  payload: Record<string, JsonValue>,
-): string {
-  if (kind === "model_step_started" || kind === "model_step_finished") {
-    return runtimeModelStepSummary(payload);
-  }
-  if (kind === "notification_requested") {
-    return runtimeNotificationSummary(payload);
-  }
-  if (isBackgroundTaskEventType(kind)) {
-    return runtimeBackgroundTaskSummary(kind, payload);
-  }
-  return runtimePayloadSummary(payload);
-}
-
-function runtimeModelStepSummary(payload: Record<string, JsonValue>): string {
-  const roleId = objectString(payload, "role_id");
-  const instanceId = objectString(payload, "instance_id");
-  const parts = [
-    roleId.length > 0 ? `role ${roleId}` : "",
-    instanceId.length > 0 ? `instance ${instanceId}` : "",
-  ].filter(Boolean);
-  return parts.length > 0 ? parts.join(" · ") : runtimePayloadSummary(payload);
-}
-
-function runtimeNotificationSummary(payload: Record<string, JsonValue>): string {
-  const title = objectString(payload, "title")
-    || objectString(payload, "body")
-    || runtimePayloadSummary(payload);
-  const notificationType = objectString(payload, "notification_type")
-    || objectString(payload, "type");
-  const channels = jsonStringArrayInlineText(payload.channels);
-  return [
-    title,
-    notificationType.length > 0 ? `type ${notificationType}` : "",
-    channels.length > 0 ? `channels ${channels}` : "",
-  ].filter(Boolean).join(" · ");
-}
-
-function runtimeBackgroundTaskSummary(
-  kind: string,
-  payload: Record<string, JsonValue>,
-): string {
-  const primary = runtimeBackgroundTaskPrimaryText(kind, payload);
-  const status = objectString(payload, "status");
-  const exitCode = jsonScalarText(payload.exit_code);
-  const taskKind = objectString(payload, "kind");
-  const taskId = objectString(payload, "background_task_id");
-  return [
-    primary.length > 0 ? truncatePreview(primary) : "",
-    status.length > 0 ? `status ${status}` : "",
-    exitCode.length > 0 ? `exit ${exitCode}` : "",
-    taskKind.length > 0 ? `kind ${taskKind}` : "",
-    taskId.length > 0 ? `#${taskId}` : "",
-  ].filter(Boolean).join(" · ");
-}
-
-function runtimeBackgroundTaskPrimaryText(
-  kind: string,
-  payload: Record<string, JsonValue>,
-): string {
-  if (kind === "background_task_updated") {
-    return objectString(payload, "delta")
-      || objectString(payload, "output_excerpt")
-      || objectString(payload, "title")
-      || objectString(payload, "command")
-      || runtimePayloadSummary(payload);
-  }
-  return objectString(payload, "title")
-    || objectString(payload, "input_text")
-    || objectString(payload, "command")
-    || objectString(payload, "output_excerpt")
-    || runtimePayloadSummary(payload);
-}
-
-function runtimeCoordinationEventText(entry: TimelineEntry): string | null {
-  const label = runtimeCoordinationEventLabel(entry.kind);
-  if (label === null) {
-    return null;
-  }
-  const payload = jsonObject(entry.payload);
-  if (payload === null || payloadHasParseError(payload)) {
-    return null;
-  }
-  const summary = runtimeCoordinationEventSummary(entry.kind, payload);
-  if (summary.length === 0) {
-    return null;
-  }
-  return `${label}: ${summary}`;
-}
-
-function runtimeCoordinationEventLabel(kind: string): string | null {
-  switch (kind) {
-    case "user_question_requested":
-      return "User question";
-    case "user_question_answered":
-      return "User question answered";
-    case "injection_enqueued":
-      return "Injection queued";
-    case "injection_applied":
-      return "Injection applied";
-    case "subagent_session_status_changed":
-      return "Subagent status";
-    case "subagent_stopped":
-      return "Subagent stopped";
-    case "subagent_resumed":
-      return "Subagent resumed";
-    case "awaiting_manual_action":
-      return "Awaiting manual action";
-    case "run_started":
-      return "Run started";
-    case "run_paused":
-      return "Run paused";
-    case "run_resumed":
-      return "Run resumed";
-    case "run_completed":
-      return "Run completed";
-    case "run_stopped":
-      return "Run stopped";
-    case "run_failed":
-      return "Run failed";
-    default:
-      return null;
-  }
-}
-
-function runtimeCoordinationEventSummary(
-  kind: string,
-  payload: Record<string, JsonValue>,
-): string {
-  if (kind === "user_question_requested") {
-    return runtimeUserQuestionRequestedSummary(payload);
-  }
-  if (kind === "user_question_answered") {
-    return runtimeUserQuestionAnsweredSummary(payload);
-  }
-  if (kind === "injection_enqueued" || kind === "injection_applied") {
-    return runtimeInjectionSummary(payload);
-  }
-  if (kind === "subagent_session_status_changed") {
-    return runtimeSubagentStatusSummary(payload);
-  }
-  if (kind === "subagent_stopped" || kind === "subagent_resumed") {
-    return runtimeSubagentLifecycleSummary(payload);
-  }
-  if (kind === "awaiting_manual_action") {
-    return runtimeManualActionSummary(payload);
-  }
-  if (kind === "run_failed") {
-    return runtimeRunFailureSummary(payload);
-  }
-  if (isRunLifecycleEventType(kind)) {
-    return runtimeRunLifecycleSummary(payload);
-  }
-  return runtimePayloadSummary(payload);
-}
-
-function runtimeUserQuestionRequestedSummary(payload: Record<string, JsonValue>): string {
-  const questions = Array.isArray(payload.questions)
-    ? payload.questions.flatMap((item) => {
-        const question = jsonObject(item);
-        return question === null ? [] : [question];
-      })
-    : [];
-  const firstQuestion = questions.at(0);
-  const text = firstQuestion === undefined
-    ? runtimePayloadSummary(payload)
-    : objectString(firstQuestion, "question")
-      || objectString(firstQuestion, "header")
-      || runtimePayloadSummary(firstQuestion);
-  const questionId = objectString(payload, "question_id");
-  return [
-    text.length > 0 ? truncatePreview(text) : "",
-    questions.length > 1 ? `${questions.length} questions` : "",
-    questionId.length > 0 ? `#${questionId}` : "",
-  ].filter(Boolean).join(" · ");
-}
-
-function runtimeUserQuestionAnsweredSummary(payload: Record<string, JsonValue>): string {
-  const questionId = objectString(payload, "question_id");
-  const status = objectString(payload, "status");
-  const answerCount = Array.isArray(payload.answers) ? payload.answers.length : 0;
-  return [
-    status.length > 0 ? `status ${status}` : "",
-    answerCount > 0 ? `${answerCount} ${answerCount === 1 ? "answer" : "answers"}` : "",
-    questionId.length > 0 ? `#${questionId}` : "",
-    status.length === 0 && answerCount === 0 ? runtimePayloadSummary(payload) : "",
-  ].filter(Boolean).join(" · ");
-}
-
-function runtimeInjectionSummary(payload: Record<string, JsonValue>): string {
-  const content = runtimeContentValueText(payload.content);
-  const redactedLength = objectNumber(payload, "content_length");
-  const source = objectString(payload, "source");
-  const deliveryMode = objectString(payload, "delivery_mode")
-    || objectString(payload, "internal_delivery_mode");
-  const recipient = objectString(payload, "recipient_instance_id");
-  return [
-    content.length > 0 ? truncatePreview(content) : "",
-    content.length === 0 && redactedLength > 0 ? `redacted ${formatRuntimeCount(redactedLength)} chars` : "",
-    source.length > 0 ? `source ${source}` : "",
-    deliveryMode.length > 0 ? `mode ${deliveryMode}` : "",
-    recipient.length > 0 ? `to ${recipient}` : "",
-  ].filter(Boolean).join(" · ");
-}
-
-function runtimeSubagentStatusSummary(payload: Record<string, JsonValue>): string {
-  const title = objectString(payload, "title");
-  const status = objectString(payload, "status")
-    || objectString(payload, "run_status");
-  const phase = objectString(payload, "run_phase");
-  const roleId = objectString(payload, "subagent_role_id")
-    || objectString(payload, "role_id");
-  const instanceId = objectString(payload, "subagent_instance_id")
-    || objectString(payload, "instance_id");
-  return [
-    title.length > 0 ? truncatePreview(title) : "",
-    status.length > 0 ? `status ${status}` : "",
-    phase.length > 0 ? `phase ${phase}` : "",
-    roleId.length > 0 ? `role ${roleId}` : "",
-    instanceId.length > 0 ? `instance ${instanceId}` : "",
-  ].filter(Boolean).join(" · ");
-}
-
-function runtimeSubagentLifecycleSummary(payload: Record<string, JsonValue>): string {
-  const reason = objectString(payload, "reason");
-  const roleId = objectString(payload, "role_id");
-  const instanceId = objectString(payload, "instance_id");
-  const taskId = objectString(payload, "task_id");
-  return [
-    reason.length > 0 ? `reason ${reason}` : "",
-    roleId.length > 0 ? `role ${roleId}` : "",
-    instanceId.length > 0 ? `instance ${instanceId}` : "",
-    taskId.length > 0 ? `task ${taskId}` : "",
-  ].filter(Boolean).join(" · ");
-}
-
-function runtimeManualActionSummary(payload: Record<string, JsonValue>): string {
-  const rootTaskId = objectString(payload, "root_task_id")
-    || objectString(payload, "root_task");
-  return rootTaskId.length > 0 ? `root task ${rootTaskId}` : runtimePayloadSummary(payload);
-}
-
-function runtimeRunLifecycleSummary(payload: Record<string, JsonValue>): string {
-  const status = objectString(payload, "status");
-  const output = objectString(payload, "output")
-    || objectString(payload, "message")
-    || objectString(payload, "error")
-    || objectString(payload, "reason");
-  const rootTaskId = objectString(payload, "root_task_id")
-    || objectString(payload, "root_task");
-  const hasPrimarySummary =
-    status.length > 0 || output.length > 0 || rootTaskId.length > 0;
-  return [
-    status.length > 0 ? `status ${status}` : "",
-    output.length > 0 ? truncatePreview(output) : "",
-    rootTaskId.length > 0 ? `root task ${rootTaskId}` : "",
-    hasPrimarySummary || Object.keys(payload).length === 0
-      ? ""
-      : runtimePayloadSummary(payload),
-  ].filter(Boolean).join(" · ");
-}
-
-function runtimeRunFailureSummary(payload: Record<string, JsonValue>): string {
-  const status = objectString(payload, "status");
-  const errorCode = objectString(payload, "error_code")
-    || objectString(payload, "code");
-  const statusCode = objectNumber(payload, "status_code");
-  const modelName = objectString(payload, "model_name");
-  const detail = toolErrorSummary(payload);
-  const rootTaskId = objectString(payload, "root_task_id")
-    || objectString(payload, "root_task");
-  return [
-    status.length > 0 ? `status ${status}` : "",
-    errorCode.length > 0 ? `code ${errorCode}` : "",
-    statusCode > 0 ? `HTTP ${formatRuntimeCount(statusCode)}` : "",
-    modelName.length > 0 ? `model ${modelName}` : "",
-    detail.length > 0 ? truncatePreview(detail) : "",
-    rootTaskId.length > 0 ? `root task ${rootTaskId}` : "",
-  ].filter(Boolean).join(" · ");
-}
-
-function runtimeContentValueText(value: JsonValue | undefined): string {
-  if (typeof value === "string") {
-    return value.trim();
-  }
-  return jsonContentParts(value)
-    .map(contentPartText)
-    .filter((text): text is string => text !== null && text.trim().length > 0)
-    .join("\n")
-    .trim();
 }
 
 function runtimeOutputParts(entry: TimelineEntry): TimelineRenderPart[] | null {
@@ -9618,8 +9171,9 @@ function MessageMediaPreview({
 function messageParts(
   message: TimelineMessage,
   workspaceId: string | null,
+  t: Translate,
 ): TimelineRenderPart[] {
-  const injection = persistedInjectionPart(message);
+  const injection = persistedInjectionPart(message, t);
   if (injection !== null) {
     return [injection];
   }
@@ -9633,7 +9187,10 @@ function messageParts(
   );
 }
 
-function persistedInjectionPart(message: TimelineMessage): TimelineTextPart | null {
+function persistedInjectionPart(
+  message: TimelineMessage,
+  t: Translate,
+): TimelineTextPart | null {
   if (
     (message.entry_type ?? "").trim().toLowerCase() !== "injection" ||
     (message.visibility ?? "public").trim().toLowerCase() === "internal"
@@ -9641,22 +9198,15 @@ function persistedInjectionPart(message: TimelineMessage): TimelineTextPart | nu
     return null;
   }
   const payload = persistedInjectionPayload(message);
-  const summary = runtimeInjectionSummary(payload);
+  const summary = runtimeInjectionSummary(payload, t);
   if (summary.length === 0) {
     return null;
   }
   const status = (message.injection_status ?? message.status ?? "applied")
     .trim()
     .toLowerCase();
-  const label = injectionStatusLabel(normalizedInjectionStatus(status));
+  const label = injectionStatusLabel(normalizedInjectionStatus(status), t);
   return timelineTextPart(`${label}: ${summary}`);
-}
-
-function injectionStatusLabel(status: TimelineInjectionRow["status"]): string {
-  if (status === "failed") {
-    return "Injection failed";
-  }
-  return status === "applied" ? "Injection applied" : "Injection queued";
 }
 
 function persistedInjectionPayload(message: TimelineMessage): Record<string, JsonValue> {

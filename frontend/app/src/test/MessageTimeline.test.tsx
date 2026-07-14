@@ -32,6 +32,7 @@ import {
 } from "../runtime/reducers";
 import { useRuntimeStore } from "../runtime/runtimeStore";
 import { useOptimisticRunStore } from "../runtime/optimisticRunStore";
+import { useUiStore } from "../runtime/uiStore";
 
 vi.mock("../api/client", () => ({
   buildWorkspaceImagePreviewUrl: vi.fn((workspaceId: string, path: string) => {
@@ -48,6 +49,7 @@ const listSessionRoundsMock = vi.mocked(listSessionRounds);
 const listSessionSubagentsMock = vi.mocked(listSessionSubagents);
 
 beforeEach(() => {
+  useUiStore.setState({ language: "en" });
   resetTerminalDomSnapshots();
   window.sessionStorage.removeItem("agentTeams.liveProcessedRuns");
   listSessionMessagesMock.mockReset();
@@ -7157,7 +7159,7 @@ describe("MessageTimeline", () => {
 
     expect(
       await screen.findByText(
-        "Run failed: status failed · code auth_invalid · HTTP 401 · model configured-model · Provider rejected the configured credential Type: authentication_error · root task root-1",
+        "Run failed: status Failed · code auth_invalid · HTTP 401 · model configured-model · Provider rejected the configured credential · type authentication_error · root task root-1",
       ),
     ).toBeVisible();
   });
@@ -13795,7 +13797,7 @@ describe("MessageTimeline", () => {
         root_task_id: "root-react",
         status: "failed",
       },
-      "Run failed: status failed · Provider failed during TS stream. · root task root-react",
+      "Run failed: status Failed · Provider failed during TS stream. · root task root-react",
     ],
     [
       "run_stopped",
@@ -13804,7 +13806,7 @@ describe("MessageTimeline", () => {
         root_task_id: "root-react",
         status: "stopped",
       },
-      "Run stopped: status stopped · Stopped from TS stream. · root task root-react",
+      "Run stopped: status Stopped · Stopped from TS stream. · root task root-react",
     ],
   ] as const)(
     "renders %s terminal lifecycle diagnostics",
@@ -14348,7 +14350,7 @@ describe("MessageTimeline", () => {
       await screen.findByText("State snapshot: workspace context loaded"),
     ).toBeVisible();
     expect(
-      screen.getByText("State delta: active: true · phase: replaying · version: 12"),
+      screen.getByText("State delta: active: true · phase replaying · version: 12"),
     ).toBeVisible();
     expect(screen.queryByText("state snapshot")).not.toBeInTheDocument();
     expect(screen.queryByText("state delta")).not.toBeInTheDocument();
@@ -14819,7 +14821,7 @@ describe("MessageTimeline", () => {
     expect(screen.getByText("Awaiting manual action: root task root-1")).toBeVisible();
     expect(screen.queryByText("Run started: phase: streaming")).not.toBeInTheDocument();
     expect(
-      screen.getByText("Run failed: status failed · Provider failed · root task root-1"),
+      screen.getByText("Run failed: status Failed · Provider failed · root task root-1"),
     ).toBeVisible();
     expect(screen.queryByText("user question requested")).not.toBeInTheDocument();
     expect(screen.queryByText("injection enqueued")).not.toBeInTheDocument();
@@ -14854,10 +14856,66 @@ describe("MessageTimeline", () => {
 
     expect(
       await screen.findByText(
-        "Todo updated: 3 items · 1 completed, 1 in_progress, 1 pending · Current Verify todo stream summary · v3 · by MainAgent",
+        "Todo updated: 3 items · 1 Completed, 1 In progress, 1 Pending · Current Verify todo stream summary · v3 · by MainAgent",
       ),
     ).toBeVisible();
     expect(screen.queryByText("todo updated")).not.toBeInTheDocument();
+  });
+
+  it("localizes live structured event rows in Chinese", async () => {
+    useUiStore.setState({ language: "zh-CN" });
+    setRuntimeEntries([
+      runtimeGenericEntry({
+        id: "run-zh-events:1:0",
+        kind: "todo_updated",
+        text: "todo updated",
+        eventId: 1,
+        payload: {
+          items: [{ content: "检查实时输出", status: "in_progress" }],
+          updated_by_role_id: "MainAgent",
+          version: 2,
+        },
+      }),
+    ]);
+    listSessionMessagesMock.mockResolvedValue([]);
+
+    renderTimeline();
+
+    expect(
+      await screen.findByText(
+        "待办已更新: 1 项 · 1 项进行中 · 当前 检查实时输出 · v2 · 由 MainAgent 更新",
+      ),
+    ).toBeVisible();
+    expect(screen.queryByText(/Todo updated|Injection applied/)).not.toBeInTheDocument();
+  });
+
+  it("localizes persisted injection replay rows in Chinese", async () => {
+    useUiStore.setState({ language: "zh-CN" });
+    listSessionMessagesMock.mockResolvedValue([]);
+    listSessionRoundsMock.mockResolvedValue({
+      has_more: false,
+      items: [{
+        injection_messages: [{
+          content: "回放插入消息",
+          entry_type: "injection",
+          injection_id: "inj-zh-replay",
+          injection_status: "applied",
+          queued_at: "2026-07-14T00:00:00Z",
+          source: "user",
+          visibility: "public",
+        }],
+        run_id: "run-zh-history",
+        run_status: "completed",
+      }],
+      next_cursor: null,
+    });
+
+    renderTimeline();
+
+    expect(
+      await screen.findByText("插入消息已应用: 回放插入消息 · 来源 user"),
+    ).toBeVisible();
+    expect(screen.queryByText(/Injection applied/)).not.toBeInTheDocument();
   });
 
   it("does not render scoped subagent runtime output in the parent session timeline", async () => {

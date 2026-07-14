@@ -289,7 +289,9 @@ export function RecoveryBar({
       void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
     },
     onError: (error) => {
-      void message.error(error instanceof Error ? error.message : "Resume failed.");
+      void message.error(
+        error instanceof Error ? error.message : t("recoveryResumeFailed"),
+      );
     },
   });
 
@@ -325,7 +327,9 @@ export function RecoveryBar({
     },
     onError: (error, request) => {
       const messageText =
-        error instanceof Error ? error.message : "Tool approval failed.";
+        error instanceof Error
+          ? error.message
+          : t("recoveryToolApprovalFailed");
       setApprovalErrors((current) => ({
         ...current,
         [request.toolCallId]: messageText,
@@ -346,7 +350,7 @@ export function RecoveryBar({
         questionSupplements,
       );
       if (answers === null) {
-        throw new Error("Select an answer for each question.");
+        throw new Error(t("recoverySelectAllAnswers"));
       }
       if (shouldResumeBeforeRecoveryAction(activeRun, question.run_id)) {
         await resumeRecoverableRun(question.run_id);
@@ -360,7 +364,9 @@ export function RecoveryBar({
       void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
     } catch (error) {
       const messageText =
-        error instanceof Error ? error.message : "Question answer failed.";
+        error instanceof Error
+          ? error.message
+          : t("recoveryQuestionAnswerFailed");
       if (currentSessionIdRef.current === answerSessionId) {
         setQuestionErrors((current) => ({
           ...current,
@@ -391,7 +397,9 @@ export function RecoveryBar({
     },
     onError: (error, request) => {
       const messageText =
-        error instanceof Error ? error.message : "Background task stop failed.";
+        error instanceof Error
+          ? error.message
+          : t("recoveryBackgroundTaskStopFailed");
       setBackgroundTaskErrors((current) => ({
         ...current,
         [request.backgroundTaskId]: messageText,
@@ -521,6 +529,7 @@ export function SubagentQuestionBar({
   sessionId: string;
 }) {
   const { message } = App.useApp();
+  const t = useTranslations();
   const queryClient = useQueryClient();
   const [busyQuestionIds, setBusyQuestionIds] = useState<Record<string, boolean>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -564,7 +573,9 @@ export function SubagentQuestionBar({
       void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
     } catch (error) {
       const errorMessage =
-        error instanceof Error ? error.message : "Question answer failed.";
+        error instanceof Error
+          ? error.message
+          : t("recoveryQuestionAnswerFailed");
       setErrors((current) => ({ ...current, [questionId]: errorMessage }));
       void message.error(errorMessage);
     } finally {
@@ -638,6 +649,7 @@ function BackgroundTasksPanel({
   onToggle,
   tasks,
 }: BackgroundTasksPanelProps) {
+  const t = useTranslations();
   if (tasks.length === 0) {
     return null;
   }
@@ -645,11 +657,15 @@ function BackgroundTasksPanel({
     <div aria-live="polite" className="at-recovery-panel at-recovery-background">
       <div className="at-recovery-background-header">
         <Space size={8}>
-          <Typography.Text strong>Background tasks</Typography.Text>
-          <Typography.Text type="secondary">{tasks.length} active</Typography.Text>
+          <Typography.Text strong>
+            {t("recoveryBackgroundTasksTitle")}
+          </Typography.Text>
+          <Typography.Text type="secondary">
+            {t("recoveryBackgroundActiveCount", { count: tasks.length })}
+          </Typography.Text>
         </Space>
         <Button onClick={() => onToggle(activeRunId)} size="small">
-          {collapsed ? "Show" : "Hide"}
+          {collapsed ? t("recoveryShow") : t("recoveryHide")}
         </Button>
       </div>
       {collapsed ? null : (
@@ -659,12 +675,16 @@ function BackgroundTasksPanel({
             const taskRunId = task.run_id.trim() || activeRunId;
             const busy = busyTaskId === taskId;
             const error = errors[taskId] ?? "";
-            const statusText = error || (busy ? "Stopping" : backgroundTaskStatusLabel(task));
+            const statusText =
+              error ||
+              (busy
+                ? t("recoveryStopping")
+                : backgroundTaskStatusLabel(task, t));
             return (
               <div
                 className="at-recovery-item at-recovery-background-item"
                 key={taskId}
-                title={backgroundTaskDetails(task, statusText)}
+                title={backgroundTaskDetails(task, statusText, t)}
               >
                 <div className="at-recovery-copy">
                   <Space size={8} wrap>
@@ -693,7 +713,7 @@ function BackgroundTasksPanel({
                   }
                   size="small"
                 >
-                  Stop
+                  {t("recoveryStop")}
                 </Button>
               </div>
             );
@@ -896,7 +916,10 @@ function PendingSubagentQuestionIndicators({
       {questions.map((question) => (
         <div className="at-recovery-item" key={question.question_id}>
           <Typography.Text strong>
-            {question.role_id?.trim() || "Subagent"} needs input
+            {t("recoveryRoleNeedsInput", {
+              role:
+                question.role_id?.trim() || t("recoverySubagentFallback"),
+            })}
           </Typography.Text>
           {onOpen === undefined ? null : (
             <Button onClick={() => onOpen(question)} size="small">
@@ -933,7 +956,9 @@ function PendingQuestions({
           <div className="at-recovery-question" key={question.question_id}>
             <div className="at-recovery-copy">
               <Typography.Text strong>
-                {question.role_id?.trim() || "Agent"} needs input
+                {t("recoveryRoleNeedsInput", {
+                  role: question.role_id?.trim() || t("recoveryAgentFallback"),
+                })}
               </Typography.Text>
               {error ? (
                 <Typography.Text type="danger">{error}</Typography.Text>
@@ -1380,34 +1405,42 @@ function backgroundTaskTitle(task: RecoveryBackgroundTask): string {
 function backgroundTaskDetails(
   task: RecoveryBackgroundTask,
   statusText: string,
+  t: Translate,
 ): string {
   return [
     statusText,
     backgroundTaskTitle(task),
-    task.cwd.trim() ? `cwd: ${task.cwd.trim()}` : "",
-    task.log_path?.trim() ? `log: ${task.log_path.trim()}` : "",
+    task.cwd.trim()
+      ? t("recoveryBackgroundCwd", { path: task.cwd.trim() })
+      : "",
+    task.log_path?.trim()
+      ? t("recoveryBackgroundLog", { path: task.log_path.trim() })
+      : "",
     task.exit_code === null || task.exit_code === undefined
       ? ""
-      : `exit: ${task.exit_code}`,
+      : t("recoveryBackgroundExit", { code: task.exit_code }),
   ]
     .filter(Boolean)
     .join("\n");
 }
 
-function backgroundTaskStatusLabel(task: RecoveryBackgroundTask): string {
+function backgroundTaskStatusLabel(
+  task: RecoveryBackgroundTask,
+  t: Translate,
+): string {
   switch (task.status) {
     case "running":
-      return "Running";
+      return t("recoveryStatusRunning");
     case "blocked":
-      return "Paused";
+      return t("recoveryStatusPaused");
     case "stopped":
-      return "Stopped";
+      return t("recoveryStatusStopped");
     case "completed":
-      return "Completed";
+      return t("recoveryStatusCompleted");
     case "failed":
-      return "Failed";
+      return t("recoveryStatusFailed");
     default:
-      return "Unknown";
+      return t("recoveryStatusUnknown");
   }
 }
 

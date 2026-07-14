@@ -280,6 +280,7 @@ describe("RecoveryBar", () => {
     expect(screen.queryByLabelText("Additional answer")).not.toBeInTheDocument();
     const supplement = screen.getByLabelText("补充回答 - 其他");
     expect(supplement).toHaveAttribute("placeholder", "补充说明");
+    expect(screen.getByText("Explorer 需要输入")).toBeVisible();
     expect(screen.getByRole("button", { name: /回\s*答/ })).toBeVisible();
   });
 
@@ -557,6 +558,7 @@ describe("RecoveryBar", () => {
 
     expect(await screen.findByText("Choose the root path")).toBeVisible();
     expect(screen.queryByText("Choose the child path")).not.toBeInTheDocument();
+    expect(screen.getByText("Explorer needs input")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Open subagent panel" }));
     expect(onOpen).toHaveBeenCalledWith(subagentQuestion);
   });
@@ -604,6 +606,7 @@ describe("RecoveryBar", () => {
 
     expect(await screen.findByText("Explorer decision")).toBeVisible();
     expect(screen.queryByText("Reviewer decision")).not.toBeInTheDocument();
+    expect(screen.getByText("Explorer needs input")).toBeVisible();
     fireEvent.click(screen.getByLabelText("Inspect"));
     fireEvent.click(screen.getByRole("button", { name: "Answer" }));
     await waitFor(() =>
@@ -613,6 +616,48 @@ describe("RecoveryBar", () => {
         { answers: [{ selections: [{ label: "Inspect" }] }] },
       ),
     );
+  });
+
+  it("localizes ask_question inside the selected subagent panel", async () => {
+    useUiStore.setState({ language: "zh-CN" });
+    getRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({
+        pending_user_questions: [
+          {
+            instance_id: "subagent-explorer",
+            question_id: "question-explorer",
+            questions: [
+              {
+                multiple: false,
+                options: [{ label: "检查" }],
+                question: "选择子代理路径",
+              },
+            ],
+            role_id: "Explorer",
+            run_id: "run-explorer",
+          },
+        ],
+      }),
+    );
+    answerUserQuestionMock.mockRejectedValue({ status: "unavailable" });
+
+    render(
+      <TestProviders>
+        <SubagentQuestionBar
+          instanceId="subagent-explorer"
+          runId="run-explorer"
+          sessionId="session-1"
+        />
+      </TestProviders>,
+    );
+
+    expect(await screen.findByText("选择子代理路径")).toBeVisible();
+    expect(screen.getByText("Explorer 需要输入")).toBeVisible();
+    fireEvent.click(screen.getByLabelText("检查"));
+    fireEvent.click(screen.getByRole("button", { name: /回\s*答/u }));
+
+    expect(await screen.findByText("提交回答失败。")).toBeVisible();
+    expect(screen.queryByText("Question answer failed.")).not.toBeInTheDocument();
   });
 
   it("resumes a shared stopped run once for concurrent question answers", async () => {
@@ -1607,6 +1652,43 @@ describe("RecoveryBar", () => {
         "run-1",
         "background-task-1",
       ),
+    );
+  });
+
+  it("localizes background task status, controls, and details in Chinese", async () => {
+    useUiStore.setState({ language: "zh-CN" });
+    getRecoverySnapshotMock.mockResolvedValue(
+      recoverySnapshot({
+        background_tasks: [
+          {
+            background_task_id: "background-task-1",
+            run_id: "run-1",
+            session_id: "session-1",
+            kind: "command",
+            command: "uv run pytest",
+            cwd: "C:/repo",
+            execution_mode: "background",
+            status: "blocked",
+            recent_output: [],
+            log_path: "C:/repo/task.log",
+          },
+        ],
+      }),
+    );
+
+    renderRecoveryBar();
+
+    expect(await screen.findByText("后台任务")).toBeVisible();
+    expect(screen.getByText("1 个运行中")).toBeVisible();
+    expect(screen.getByText("已暂停")).toBeVisible();
+    expect(screen.getByRole("button", { name: /隐\s*藏/u })).toBeVisible();
+    expect(screen.getByRole("button", { name: /停\s*止/u })).toBeVisible();
+    const taskItem = screen.getByText("uv run pytest").closest(
+      ".at-recovery-background-item",
+    );
+    expect(taskItem).toHaveAttribute(
+      "title",
+      "已暂停\nuv run pytest\n工作目录：C:/repo\n日志：C:/repo/task.log",
     );
   });
 

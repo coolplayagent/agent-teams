@@ -224,6 +224,9 @@ describe("Composer", () => {
     await openModelControls();
     expect(screen.getAllByText("Model")).not.toHaveLength(0);
     expect(selectRoot("Model profile")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /^Run settings:/i })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Thinking" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Model profile" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Send" })).toHaveAttribute(
       "title",
       "Enter a prompt or attach a file before sending.",
@@ -255,7 +258,8 @@ describe("Composer", () => {
     expect(screen.getByRole("combobox", { name: "根角色" })).toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "编排预设" })).not.toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "目标角色" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "思考" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /^运行设置:/ })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "思考" })).not.toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Shell 安全策略" })).toBeInTheDocument();
     expect(screen.getByText("Shell")).toBeInTheDocument();
     await openModelControls("模型配置");
@@ -3560,17 +3564,19 @@ async function openAdvancedControls(label = "Mode: normal") {
   if (target !== null) {
     return target;
   }
-  const accessibleName = label.startsWith("模式") ? /^模式:/ : /^Mode:/i;
+  const accessibleName = label.startsWith("模式") ? /^运行设置:/ : /^Run settings:/i;
   fireEvent.click(await screen.findByRole("button", { name: accessibleName }));
   return screen.findByRole("combobox", { name: /Target role|目标角色/ });
 }
 
-async function openModelControls(label = "Model profile") {
+async function openModelControls(_label = "Model profile") {
   const model = screen.queryByRole("combobox", { name: /Model profile|模型配置/ });
   if (model !== null) {
     return model;
   }
-  fireEvent.click(await screen.findByRole("button", { name: label }));
+  await openAdvancedControls(
+    useUiStore.getState().language === "zh-CN" ? "模式: normal" : "Mode: normal",
+  );
   return screen.findByRole("combobox", { name: /Model profile|模型配置/ });
 }
 

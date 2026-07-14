@@ -212,8 +212,7 @@
   flex: 0 0 auto;
 }
 
-.at-composer .at-composer-summary-button,
-.at-composer .at-composer-state-button {
+.at-composer .at-composer-summary-button {
   display: inline-flex;
   align-items: center;
   min-width: 0;
@@ -224,9 +223,7 @@
   border-radius: 8px;
 }
 
-.at-composer .at-composer-summary-button:hover,
-.at-composer .at-composer-state-button:hover,
-.at-composer .at-composer-state-button.is-active {
+.at-composer .at-composer-summary-button:hover {
   color: var(--at-text);
   background: var(--at-surface-elevated);
 }
@@ -242,18 +239,14 @@
   display: none;
 }
 
-.at-composer .at-composer-topology-summary {
+.at-composer .at-composer-run-settings-summary {
   flex: 0 0 auto;
-  max-width: 260px;
+  max-width: min(460px, 58cqw);
 }
 
 .at-composer .at-composer-summary-separator {
   padding-inline: 5px;
   color: var(--at-text-muted);
-}
-
-.at-composer .at-composer-model-summary {
-  max-width: 168px;
 }
 
 .at-composer .at-voice-input-button,
@@ -301,15 +294,25 @@
   width: min(680px, calc(100vw - 50px));
 }
 
-.at-composer-model-panel {
-  width: min(360px, calc(100vw - 50px));
-}
-
 .at-composer-advanced-heading {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-bottom: 10px;
+}
+
+.at-composer-section-label {
+  display: block;
+  margin: 2px 0 7px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.at-composer-execution-section-label {
+  grid-column: 1 / -1;
+  margin-top: 2px;
 }
 
 .at-composer .at-composer-control-set,
@@ -394,26 +397,14 @@
     display: inline;
   }
 
-  .at-composer .at-composer-summary-button {
-    max-width: 168px;
-  }
-
-  .at-composer .at-composer-model-summary {
-    max-width: 124px;
-  }
-
-  .at-composer .at-composer-state-button > span:last-child {
-    display: none;
+  .at-composer .at-composer-run-settings-summary {
+    max-width: 300px;
   }
 }
 
 @container composer (max-width: 460px) {
   .at-composer .at-composer-summary-button {
     max-width: 132px;
-  }
-
-  .at-composer .at-composer-model-summary {
-    display: none;
   }
 
   .at-composer .at-composer-controls {
@@ -423,8 +414,7 @@
 
 @container composer (max-width: 380px) {
   .at-composer .at-composer-summary-copy,
-  .at-composer .at-composer-summary-button > svg:last-child,
-  .at-composer .at-composer-state-button {
+  .at-composer .at-composer-summary-button > svg:last-child {
     display: none;
   }
 

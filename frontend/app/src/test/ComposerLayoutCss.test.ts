@@ -28,7 +28,9 @@ describe("contextual composer layout", () => {
   });
 
   it("moves infrequent configuration into a dense contextual surface", () => {
-    expect(composerSource).toContain('overlayClassName="at-composer-advanced-popover"');
+    expect(composerSource).toContain(
+      'overlayClassName="at-composer-advanced-popover"',
+    );
     expect(composerCss).toMatch(
       /\.at-composer-advanced-panel\s*{[\s\S]*?width:\s*min\(680px, calc\(100vw - 50px\)\);/,
     );
@@ -53,12 +55,19 @@ describe("contextual composer layout", () => {
     expect(composerCss).toContain("@media (prefers-reduced-motion: reduce)");
   });
 
-  it("uses an intrinsic compact topology summary in split-width composers", () => {
+  it("uses one intrinsic run-settings summary in split-width composers", () => {
     expect(composerSource).toContain("composerTopologySummary");
-    expect(composerSource).toContain("abbreviateComposerModeLabel(composerModeLabel)");
-    expect(composerSource).toContain("title={composerTopologySummary}");
+    expect(composerSource).toContain("composerRunSettingsSummary");
+    expect(composerSource).toContain(
+      "abbreviateComposerModeLabel(composerModeLabel)",
+    );
+    expect(composerSource).toContain("title={composerRunSettingsSummary}");
+    expect(composerSource).toContain("composerConversationSettings");
+    expect(composerSource).toContain("composerExecutionSettings");
+    expect(composerSource).not.toContain("at-composer-model-summary");
+    expect(composerSource).not.toContain("at-composer-state-button");
     expect(composerCss).toMatch(
-      /\.at-composer \.at-composer-topology-summary\s*{[\s\S]*?flex:\s*0 0 auto;[\s\S]*?max-width:\s*260px;/,
+      /\.at-composer \.at-composer-run-settings-summary\s*{[\s\S]*?flex:\s*0 0 auto;[\s\S]*?max-width:\s*min\(460px, 58cqw\);/,
     );
     expect(composerCss).toMatch(
       /@container composer \(max-width:\s*680px\)[\s\S]*?\.at-composer \.at-composer-summary-full\s*{[\s\S]*?display:\s*none;[\s\S]*?\.at-composer \.at-composer-summary-compact\s*{[\s\S]*?display:\s*inline;/,

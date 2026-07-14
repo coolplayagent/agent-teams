@@ -11,7 +11,6 @@ import {
 import { Sender } from "@ant-design/x";
 import type { SenderRef } from "@ant-design/x/es/sender";
 import {
-  Brain,
   ChevronDown,
   Mic,
   MicOff,
@@ -944,6 +943,19 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
         (option) => option.value === selectedOrchestrationPresetId,
       )?.label ?? t("composerPreset");
   const composerTopologySummary = `${composerModeLabel} · ${composerTopologyLabel}`;
+  const composerModelLabel = modelProfileOptions.find(
+    (option) => option.value === selectedModelProfile,
+  )?.label ?? t("composerModel");
+  const composerThinkingLabel = thinking.enabled
+    ? thinkingEffortOptions(t).find(
+        (option) => option.value === thinking.effort,
+      )?.label ?? t("composerThinking")
+    : t("composerThinkingDisabled");
+  const composerRunSettingsSummary = [
+    composerTopologySummary,
+    composerModelLabel,
+    composerThinkingLabel,
+  ].join(" · ");
 
   return (
     <form
@@ -1054,15 +1066,18 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
                 ref={quickMenuButtonRef}
               />
             </Tooltip>
-            <Tooltip title={composerTopologySummary}>
+            <Tooltip title={composerRunSettingsSummary}>
               <Popover
                 arrow={false}
                 content={(
-                <div className="at-composer-advanced-panel">
+                <div className="at-composer-advanced-panel at-composer-run-settings-panel">
                   <div className="at-composer-advanced-heading">
                     <Settings2 aria-hidden size={16} />
-                    <Typography.Text strong>{t("composerMode")}</Typography.Text>
+                    <Typography.Text strong>{t("composerRunSettings")}</Typography.Text>
                   </div>
+                  <Typography.Text className="at-composer-section-label" type="secondary">
+                    {t("composerConversationSettings")}
+                  </Typography.Text>
                   <div className="at-composer-control-set">
             <div className="at-composer-field at-composer-mode-field">
               <Typography.Text className="at-composer-field-label">
@@ -1173,6 +1188,44 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
                 value={targetRoleId ?? undefined}
               />
             </div>
+            <div className="at-composer-field at-composer-model-field">
+              <Typography.Text className="at-composer-field-label">
+                {t("composerModel")}
+              </Typography.Text>
+              <Select
+                allowClear
+                aria-label={t("composerModelProfile")}
+                className="at-model-profile-select"
+                disabled={busy || activeRunId !== null || !canChangeModelProfile}
+                loading={
+                  sessionQuery.isLoading ||
+                  modelProfilesQuery.isLoading ||
+                  updateModelProfileMutation.isPending
+                }
+                onChange={(value) => {
+                  const nextProfile = normalizeProfileName(value);
+                  if (
+                    selectedModelProfile !== null &&
+                    nextProfile !== selectedModelProfile
+                  ) {
+                    updateModelProfileMutation.mutate(nextProfile);
+                  }
+                }}
+                optionFilterProp="label"
+                options={modelProfileOptions}
+                placeholder={t("composerModel")}
+                popupMatchSelectWidth={false}
+                showSearch
+                size="small"
+                value={selectedModelProfile ?? undefined}
+              />
+            </div>
+            <Typography.Text
+              className="at-composer-section-label at-composer-execution-section-label"
+              type="secondary"
+            >
+              {t("composerExecutionSettings")}
+            </Typography.Text>
             <div className="at-composer-toggles">
               <Space className="at-thinking-control" size={6}>
                 <ChoiceControl
@@ -1223,14 +1276,14 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
                 trigger="click"
               >
                 <Button
-                  aria-label={`${t("composerMode")}: ${composerTopologySummary}`}
-                  className="at-composer-summary-button at-composer-topology-summary"
+                  aria-label={`${t("composerRunSettings")}: ${composerRunSettingsSummary}`}
+                  className="at-composer-summary-button at-composer-run-settings-summary"
                   icon={<Settings2 size={15} />}
                   size="small"
                   type="text"
                 >
                   <span aria-hidden className="at-composer-summary-copy at-composer-summary-full">
-                    {composerTopologySummary}
+                    {composerRunSettingsSummary}
                   </span>
                   <span aria-hidden className="at-composer-summary-copy at-composer-summary-compact">
                     {abbreviateComposerModeLabel(composerModeLabel)}
@@ -1238,78 +1291,6 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
                   <ChevronDown aria-hidden size={13} />
                 </Button>
               </Popover>
-            </Tooltip>
-            <Popover
-              arrow={false}
-              content={(
-                <div className="at-composer-advanced-panel at-composer-model-panel">
-                  <div className="at-composer-field at-composer-model-field">
-                    <Typography.Text className="at-composer-field-label">
-                      {t("composerModel")}
-                    </Typography.Text>
-                    <Select
-                      allowClear
-                      aria-label={t("composerModelProfile")}
-                      className="at-model-profile-select"
-                      disabled={busy || activeRunId !== null || !canChangeModelProfile}
-                      loading={
-                        sessionQuery.isLoading ||
-                        modelProfilesQuery.isLoading ||
-                        updateModelProfileMutation.isPending
-                      }
-                      onChange={(value) => {
-                        const nextProfile = normalizeProfileName(value);
-                        if (
-                          selectedModelProfile !== null &&
-                          nextProfile !== selectedModelProfile
-                        ) {
-                          updateModelProfileMutation.mutate(nextProfile);
-                        }
-                      }}
-                      optionFilterProp="label"
-                      options={modelProfileOptions}
-                      placeholder={t("composerModel")}
-                      popupMatchSelectWidth={false}
-                      showSearch
-                      size="small"
-                      value={selectedModelProfile ?? undefined}
-                    />
-                  </div>
-                </div>
-              )}
-              overlayClassName="at-composer-advanced-popover"
-              placement="topLeft"
-              trigger="click"
-            >
-              <Button
-                aria-label={t("composerModelProfile")}
-                className="at-composer-summary-button at-composer-model-summary"
-                size="small"
-                type="text"
-              >
-                <span className="at-composer-summary-copy">
-                  {modelProfileOptions.find(
-                    (option) => option.value === selectedModelProfile,
-                  )?.label ?? t("composerModel")}
-                </span>
-                <ChevronDown aria-hidden size={13} />
-              </Button>
-            </Popover>
-            <Tooltip title={t("composerThinking") }>
-              <Button
-                aria-label={t("composerThinking")}
-                className={thinking.enabled ? "at-composer-state-button is-active" : "at-composer-state-button"}
-                icon={<Brain size={15} />}
-                onClick={() => updateThinking({ enabled: !thinking.enabled })}
-                size="small"
-                type="text"
-              >
-                {thinking.enabled
-                  ? thinkingEffortOptions(t).find(
-                      (option) => option.value === thinking.effort,
-                    )?.label ?? t("composerThinking")
-                  : t("composerThinking")}
-              </Button>
             </Tooltip>
           </div>
           <div className="at-composer-actions">

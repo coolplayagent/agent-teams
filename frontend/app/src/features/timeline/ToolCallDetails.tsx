@@ -11,6 +11,7 @@ interface ToolCallDetailsProps {
   callId: string;
   error: boolean;
   input: string;
+  interactive?: boolean;
   output: string;
   raw: string;
   t: Translate;
@@ -21,6 +22,7 @@ export function ToolCallDetails({
   callId,
   error,
   input,
+  interactive = true,
   output,
   raw,
   t,
@@ -32,12 +34,15 @@ export function ToolCallDetails({
         <div className="at-tool-call-id">
           <span>{t("timelineCallId")}</span>
           <code>{callId}</code>
-          <CopyButton label={t("timelineCopyCallId")} t={t} text={callId} />
+          {interactive ? (
+            <CopyButton label={t("timelineCopyCallId")} t={t} text={callId} />
+          ) : null}
         </div>
       ) : null}
       {input.trim() ? (
         <ToolDetailSection
           label={t("timelineToolInput")}
+          interactive={interactive}
           text={input}
           toolName={toolName}
         />
@@ -46,6 +51,7 @@ export function ToolCallDetails({
         <ToolDetailSection
           error={error}
           label={error ? t("timelineToolError") : t("timelineToolOutput")}
+          interactive={interactive}
           text={output}
           toolName={toolName}
         />
@@ -53,9 +59,11 @@ export function ToolCallDetails({
       {raw.trim() && raw.trim() !== input.trim() && raw.trim() !== output.trim() ? (
         <details className="at-tool-raw-details">
           <summary>{t("timelineToolRawDetails")}</summary>
-          <div className="at-tool-raw-actions">
-            <CopyButton label={t("timelineCopyRawDetails")} t={t} text={raw} />
-          </div>
+          {interactive ? (
+            <div className="at-tool-raw-actions">
+              <CopyButton label={t("timelineCopyRawDetails")} t={t} text={raw} />
+            </div>
+          ) : null}
           <pre>{raw}</pre>
         </details>
       ) : null}
@@ -65,11 +73,13 @@ export function ToolCallDetails({
 
 function ToolDetailSection({
   error = false,
+  interactive,
   label,
   text,
   toolName,
 }: {
   error?: boolean;
+  interactive: boolean;
   label: string;
   text: string;
   toolName: string;
@@ -83,8 +93,8 @@ function ToolDetailSection({
       <pre
         aria-label={label}
         className="at-tool-detail-content at-scroll-region"
-        role="region"
-        tabIndex={0}
+        role={interactive ? "region" : undefined}
+        tabIndex={interactive ? 0 : undefined}
       >
         {display}
       </pre>

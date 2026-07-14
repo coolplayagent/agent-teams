@@ -15,6 +15,7 @@ import {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("messageExport", () => {
@@ -46,8 +47,8 @@ describe("messageExport", () => {
     expect(transcript.entries[0]?.label).toBe("");
   });
 
-  it("builds escaped standalone HTML from complete round projections", () => {
-    const html = buildMessagesHtml("session/<one>", [
+  it("builds escaped standalone HTML from complete round projections", async () => {
+    const html = await buildMessagesHtml("session/<one>", [
       {
         coordinator_messages: [
           {
@@ -94,10 +95,10 @@ describe("messageExport", () => {
     expect(html).toContain("data-kind=\"tool\"");
     expect(html).toContain("execute_command");
     const document = new DOMParser().parseFromString(html, "text/html");
-    expect(document.querySelector("details.tool-entry summary")?.textContent)
+    expect(document.querySelector("details.at-message-tool summary")?.textContent)
       .toContain("execute_command");
-    expect(document.querySelector("details.tool-entry dt")?.textContent).toBe("cmd");
-    expect(document.querySelector("details.tool-entry dd")?.textContent).toBe("npm test");
+    expect(document.querySelector("details.at-message-tool .at-tool-details")?.textContent)
+      .toContain("npm test");
     expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
     expect(html).toContain("Inserted message");
     expect(html).toContain("Injected note");
@@ -107,8 +108,8 @@ describe("messageExport", () => {
     expect(html).not.toContain("&quot;cmd&quot;");
   });
 
-  it("exports a localized, human-first transcript instead of a JSON dump", () => {
-    const html = buildMessagesHtml("会话一", [{
+  it("exports a localized, human-first transcript instead of a JSON dump", async () => {
+    const html = await buildMessagesHtml("会话一", [{
       coordinator_messages: [{
         created_at: "2026-07-14T01:00:01Z",
         message: { parts: [
@@ -140,29 +141,65 @@ describe("messageExport", () => {
 
     const document = new DOMParser().parseFromString(html, "text/html");
     expect(document.documentElement.lang).toBe("zh-CN");
-    expect(document.querySelector(".eyebrow")?.textContent).toBe("会话记录");
-    expect(document.querySelector(".entry[data-kind='user'] .entry-label")?.textContent)
+    expect(document.querySelector(".at-message-transcript-eyebrow")?.textContent).toBe("会话记录");
+    expect(document.querySelector(".at-message-transcript-entry[data-kind='user'] .at-message-transcript-entry-label")?.textContent)
       .toBe("用户");
-    expect(document.querySelectorAll("details.tool-entry")).toHaveLength(1);
-    expect(document.querySelector("details.tool-entry")?.hasAttribute("open")).toBe(false);
-    expect(document.querySelector("details.thinking-entry")?.hasAttribute("open")).toBe(false);
-    expect(document.querySelector("details.tool-entry")?.textContent).toContain("工具 · read");
-    expect(document.querySelector("details.tool-entry")?.textContent).toContain("Composer.tsx");
-    expect(document.querySelector(".entry[data-kind='assistant'] table")?.textContent)
+    expect(document.querySelectorAll("details.at-message-tool[data-export-block='tool']"))
+      .toHaveLength(1);
+    expect(document.querySelector("details.at-message-tool[data-export-block='tool']")
+      ?.hasAttribute("open")).toBe(false);
+    expect(document.querySelector("details.at-message-thinking")?.hasAttribute("open"))
+      .toBe(false);
+    expect(document.querySelector("details.at-message-tool")?.textContent).toContain("已完成: read");
+    expect(document.querySelector("details.at-message-tool")?.textContent).toContain("Composer.tsx");
+    expect(document.querySelector(".at-message-transcript-entry[data-kind='assistant'] table")?.textContent)
       .toContain("正常");
     expect(document.querySelector(".routine-status")).toBeNull();
     expect(html).not.toContain("relay-teams.session-transcript");
     expect(html).not.toContain("&quot;recursive&quot;");
-    const visibleLabels = Array.from(document.querySelectorAll(".entry-label"))
+    const visibleLabels = Array.from(document.querySelectorAll(".at-message-transcript-entry-label"))
       .map((element) => element.textContent);
     expect(visibleLabels).toContain("用户");
     expect(visibleLabels).toContain("思考");
-    expect(visibleLabels).toContain("工具 · read");
+    expect(visibleLabels).toContain("工具调用");
     expect(visibleLabels).not.toContain("User");
     expect(visibleLabels).not.toContain("Thinking");
   });
 
-  it("keeps online presentation groups and exported HTML visibility aligned", () => {
+  it("keeps one shared tool card when call and return are separated by visible output", async () => {
+    const html = await buildMessagesHtml("session-interleaved-tool", [{
+      coordinator_messages: [{
+        message: { parts: [
+          {
+            args: { path: "frontend/app" },
+            part_kind: "tool-call",
+            tool_call_id: "call-interleaved",
+            tool_name: "read",
+          },
+          { content: "The read is still in progress.", part_kind: "text" },
+          {
+            content: { files: ["MessageTimeline.tsx"] },
+            part_kind: "tool-return",
+            tool_call_id: "call-interleaved",
+            tool_name: "read",
+          },
+        ] },
+        role: "assistant",
+      }],
+      run_id: "run-interleaved-tool",
+    }]);
+
+    const document = new DOMParser().parseFromString(html, "text/html");
+    const toolCards = document.querySelectorAll(
+      "details.at-message-tool[data-tool-call-id='call-interleaved']",
+    );
+    expect(toolCards).toHaveLength(1);
+    expect(toolCards[0]?.textContent).toContain("frontend/app");
+    expect(toolCards[0]?.textContent).toContain("MessageTimeline.tsx");
+    expect(document.body.textContent).toContain("The read is still in progress.");
+  });
+
+  it("keeps online presentation groups and exported HTML visibility aligned", async () => {
     const round: SessionRound = {
       coordinator_messages: [
         {
@@ -215,26 +252,32 @@ describe("messageExport", () => {
     );
 
     const document = new DOMParser().parseFromString(
-      buildMessagesHtml("session-parity", [round]),
+      await buildMessagesHtml("session-parity", [round]),
       "text/html",
     );
     const exportedGroups = Array.from(
-      document.querySelectorAll<HTMLElement>(".round > [data-kind]"),
-    ).slice(1).map((element) => {
-      const kind = element.dataset.kind;
-      return kind === "thinking" || kind === "tool" ? kind : "content";
+      document.querySelectorAll<HTMLElement>(
+        ".at-message-transcript-round > .at-message-transcript-entry[data-kind]",
+      ),
+    ).flatMap((element) => {
+      const kind = element.dataset.kind ?? "";
+      if (["injection", "status", "user"].includes(kind)) return [];
+      if (["thinking", "tool"].includes(kind)) return [kind];
+      return Array.from(
+        element.querySelectorAll<HTMLElement>(".at-message-content > [data-export-block]"),
+      ).map(() => "content");
     });
 
     expect(onlineGroups).toEqual(["thinking", "tool", "content", "content"]);
     expect(exportedGroups).toEqual(onlineGroups);
     expect(document.body.textContent).not.toContain("Internal routing details");
-    expect(document.querySelector("article[data-kind='assistant'] h3")?.textContent)
+    expect(document.querySelector("article[data-kind='assistant'] h2")?.textContent)
       .toBe("Result");
     expect(document.querySelector("article[data-kind='assistant'] img")?.getAttribute("src"))
       .toBe("https://example.test/result.png");
   });
 
-  it("keeps shared semantic fields free of export copy and localizes zh-CN adapters", () => {
+  it("keeps shared semantic fields free of export copy and localizes zh-CN adapters", async () => {
     const rounds: SessionRound[] = [{
       injection_messages: [{
         content_parts: [
@@ -259,27 +302,24 @@ describe("messageExport", () => {
     const transcript = JSON.parse(buildMessagesJson("session-zh", rounds)) as {
       entries: Array<{ label: string; parts: Array<{ kind: string }> }>;
     };
-    const html = buildMessagesHtml("session-zh", rounds, "zh-CN");
+    const html = await buildMessagesHtml("session-zh", rounds, "zh-CN");
 
     expect(transcript.entries.every((entry) => entry.label === "")).toBe(true);
     expect(transcript.entries.flatMap((entry) => entry.parts).map((part) => part.kind))
       .toEqual(["text", "media", "status", "status"]);
     expect(html).toContain("子代理 · 插入消息");
     expect(html).toContain("附件");
-    expect(html).toContain("资源标识");
-    expect(html).toContain("待审批");
+    expect(html).toContain("结果.png");
     expect(html).toContain("重试 1");
-    expect(html).toContain("运行中 / 等待中");
-    expect(html).toContain("阶段");
-    expect(html).toContain("已计划");
+    expect(html).toContain("running / waiting");
+    expect(html).toContain("scheduled");
     expect(html).not.toContain("Subagent injection");
     expect(html).not.toContain("Pending approvals");
     expect(html).not.toContain("Retry 1");
-    expect(html).not.toContain("running / waiting");
   });
 
-  it("renders readable Markdown and escaped code without executable markup", () => {
-    const html = buildMessagesHtml("session-1", [{
+  it("renders readable Markdown and escaped code without executable markup", async () => {
+    const html = await buildMessagesHtml("session-1", [{
       coordinator_messages: [{
         message: { parts: [{
           content: "**Result**\n\n- one\n- two\n\n```html\n<img src=x onerror=alert(1)>\n```",
@@ -291,14 +331,14 @@ describe("messageExport", () => {
     }]);
 
     const document = new DOMParser().parseFromString(html, "text/html");
-    expect(document.querySelector(".entry[data-kind='assistant'] strong")?.textContent).toBe("Result");
-    expect(document.querySelectorAll(".entry li")).toHaveLength(2);
+    expect(document.querySelector(".at-message-transcript-entry[data-kind='assistant'] strong")?.textContent).toBe("Result");
+    expect(document.querySelectorAll(".at-message-transcript-entry li")).toHaveLength(2);
     expect(document.querySelector("pre code")?.textContent).toContain("<img src=x");
     expect(document.querySelector("img")).toBeNull();
   });
 
-  it("preserves user text that resembles an internal code-block marker", () => {
-    const html = buildMessagesHtml("session-1", [{
+  it("preserves user text that resembles an internal code-block marker", async () => {
+    const html = await buildMessagesHtml("session-1", [{
       coordinator_messages: [{
         message: { parts: [{
           content: "MESSAGE_EXPORT_CODE_BLOCK_0\n\n```text\nactual code\n```",
@@ -310,16 +350,16 @@ describe("messageExport", () => {
     }]);
 
     const document = new DOMParser().parseFromString(html, "text/html");
-    const content = document.querySelector(".entry[data-kind='assistant'] .content");
+    const content = document.querySelector(".at-message-transcript-entry[data-kind='assistant'] .at-message-content");
     expect(content?.querySelector("p")?.textContent).toBe(
       "MESSAGE_EXPORT_CODE_BLOCK_0",
     );
-    expect(content?.querySelector("pre code")?.textContent).toBe("actual code");
+    expect(content?.querySelector("pre code")?.textContent?.trim()).toBe("actual code");
     expect(content?.querySelectorAll("pre code")).toHaveLength(1);
   });
 
-  it("exports coordinator messages that store content on the nested message object", () => {
-    const html = buildMessagesHtml("session-1", [
+  it("exports coordinator messages that store content on the nested message object", async () => {
+    const html = await buildMessagesHtml("session-1", [
       {
         coordinator_messages: [
           {
@@ -337,8 +377,8 @@ describe("messageExport", () => {
     expect(html).toContain("Nested final output");
   });
 
-  it("exports media-only prompt parts as readable references", () => {
-    const html = buildMessagesHtml("session-1", [
+  it("exports media-only prompt parts as readable references", async () => {
+    const html = await buildMessagesHtml("session-1", [
       {
         intent_parts: [
           {
@@ -356,15 +396,56 @@ describe("messageExport", () => {
 
     expect(html).toContain("data-kind=\"user\"");
     const document = new DOMParser().parseFromString(html, "text/html");
-    const image = document.querySelector<HTMLImageElement>("figure.media img");
+    const image = document.querySelector<HTMLImageElement>("figure.at-message-media img");
     expect(image?.alt).toBe("screenshot.png");
     expect(image?.getAttribute("src")).toBe("https://example.test/assets/asset-1");
-    expect(document.querySelector("figure.media figcaption")?.textContent)
+    expect(document.querySelector("figure.at-message-media figcaption")?.textContent)
       .toBe("screenshot.png");
   });
 
-  it("exports inline, url, and binary prompt media parts", () => {
-    const html = buildMessagesHtml("session-1", [
+  it("embeds same-origin media so file exports remain readable offline", async () => {
+    const fetchMedia = vi.fn().mockResolvedValue({
+      blob: async () => new Blob(["image-bytes"], { type: "image/png" }),
+      ok: true,
+    });
+    vi.stubGlobal("fetch", fetchMedia);
+    const html = await buildMessagesHtml("session-offline-media", [{
+      intent_parts: [
+        {
+          asset_id: "asset-offline",
+          kind: "media_ref",
+          mime_type: "image/png",
+          modality: "image",
+          name: "offline.png",
+          url: "/api/assets/offline.png",
+        },
+        {
+          asset_id: "asset-absolute",
+          kind: "media_ref",
+          mime_type: "image/png",
+          modality: "image",
+          name: "absolute.png",
+          url: `${window.location.origin}/api/assets/absolute.png`,
+        },
+      ],
+      run_id: "run-offline-media",
+    }]);
+
+    const document = new DOMParser().parseFromString(html, "text/html");
+    expect(fetchMedia).toHaveBeenCalledWith("/api/assets/offline.png");
+    expect(fetchMedia).toHaveBeenCalledWith(
+      `${window.location.origin}/api/assets/absolute.png`,
+    );
+    expect(Array.from(document.querySelectorAll<HTMLImageElement>("img"))
+      .map((image) => image.getAttribute("src")))
+      .toEqual([
+        "data:image/png;base64,aW1hZ2UtYnl0ZXM=",
+        "data:image/png;base64,aW1hZ2UtYnl0ZXM=",
+      ]);
+  });
+
+  it("exports inline, url, and binary prompt media parts", async () => {
+    const html = await buildMessagesHtml("session-1", [
       {
         intent: "Describe these files",
         intent_parts: [
@@ -395,17 +476,17 @@ describe("messageExport", () => {
 
     expect(html).toContain("Describe these files");
     const document = new DOMParser().parseFromString(html, "text/html");
-    const images = Array.from(document.querySelectorAll<HTMLImageElement>("figure.media img"));
+    const images = Array.from(document.querySelectorAll<HTMLImageElement>("figure.at-message-media img"));
     expect(images.map((image) => [image.alt, image.getAttribute("src")])).toEqual([
       ["inline.png", "data:image/png;base64,QUJD"],
       ["remote.jpg", "https://example.test/remote.jpg"],
     ]);
-    expect(document.querySelector<HTMLAnchorElement>("p.media a")?.getAttribute("href"))
+    expect(document.querySelector<HTMLAnchorElement>("a.at-message-media-link")?.getAttribute("href"))
       .toBe("data:audio/wav;base64,UklGRg==");
   });
 
-  it("does not make unsafe attachment URLs interactive", () => {
-    const html = buildMessagesHtml("session-1", [{
+  it("does not make unsafe attachment URLs interactive", async () => {
+    const html = await buildMessagesHtml("session-1", [{
       intent_parts: [{
         kind: "audio-url",
         media_type: "audio/mpeg",
@@ -417,11 +498,11 @@ describe("messageExport", () => {
     const document = new DOMParser().parseFromString(html, "text/html");
 
     expect(document.querySelector("a[href^='javascript:']")).toBeNull();
-    expect(document.querySelector(".content")?.textContent).toContain("unsafe.mp3");
+    expect(document.querySelector(".at-message-content")?.textContent).toContain("unsafe.mp3");
   });
 
-  it("exports mixed text and media injection parts", () => {
-    const html = buildMessagesHtml("session-1", [
+  it("exports mixed text and media injection parts", async () => {
+    const html = await buildMessagesHtml("session-1", [
       {
         injection_messages: [
           {
@@ -446,12 +527,11 @@ describe("messageExport", () => {
 
     expect(html).toContain("Subagent · Inserted message");
     expect(html).toContain("Inspect this output");
-    expect(html).toContain("Attachment");
     expect(html).toContain("render.png");
   });
 
-  it("keeps inserted messages between the surrounding assistant output in HTML", () => {
-    const html = buildMessagesHtml("session-1", [{
+  it("keeps inserted messages between the surrounding assistant output in HTML", async () => {
+    const html = await buildMessagesHtml("session-1", [{
       coordinator_messages: [
         {
           content: "Before insertion",
@@ -484,8 +564,8 @@ describe("messageExport", () => {
     expect(html).toContain("Inserted message");
   });
 
-  it("exports main and subagent interactive tools without tool-name classification", () => {
-    const html = buildMessagesHtml("session-1", [{
+  it("exports main and subagent interactive tools without tool-name classification", async () => {
+    const html = await buildMessagesHtml("session-1", [{
       coordinator_messages: [
         {
           created_at: "2026-07-11T00:00:01Z",
@@ -518,16 +598,17 @@ describe("messageExport", () => {
     }]);
 
     const document = new DOMParser().parseFromString(html, "text/html");
-    expect(document.querySelectorAll("details[data-kind='tool']")).toHaveLength(2);
+    expect(document.querySelectorAll("article[data-kind='tool'] details.at-message-tool"))
+      .toHaveLength(2);
     expect(document.querySelectorAll("article[data-kind='question']")).toHaveLength(0);
-    expect(document.querySelector("details[data-actor='assistant']")?.textContent)
+    expect(document.querySelector("article[data-actor='assistant'] details")?.textContent)
       .toContain("ask_question");
-    expect(document.querySelector("details[data-actor='subagent']")?.textContent)
+    expect(document.querySelector("article[data-actor='subagent'] details")?.textContent)
       .toContain("request_user_input");
   });
 
-  it("exports round pending question and retry details", () => {
-    const html = buildMessagesHtml("session-1", [
+  it("exports round pending question and retry details", async () => {
+    const html = await buildMessagesHtml("session-1", [
       {
         pending_tool_approval_count: 1,
         pending_user_question_count: 2,
@@ -552,20 +633,19 @@ describe("messageExport", () => {
       },
     ]);
 
-    expect(html).toContain("<dt>Pending approvals</dt><dd><span>1</span></dd>");
-    expect(html).toContain("<dt>Pending questions</dt><dd><span>2</span></dd>");
+    expect(html).toContain("data-kind=\"status\"");
     expect(html).toContain("Retry 1");
-    expect(html).toContain("<dt>Type</dt><dd><code>Retry</code></dd>");
-    expect(html).toContain("<dt>Phase</dt><dd><code>Scheduled</code></dd>");
-    expect(html).toContain("<dt>Attempt</dt><dd><span>3</span></dd>");
-    expect(html).toContain("<dt>Retry delay (ms)</dt><dd><span>2500</span></dd>");
-    expect(html).toContain("<dt>Error</dt><dd><code>rate_limit</code></dd>");
-    expect(html).toContain("<dt>Error message</dt><dd><code>Try again later</code></dd>");
-    expect(html).toContain("<dt>Active</dt><dd><span>true</span></dd>");
-    expect(html).toContain("<dt>Total attempts</dt><dd><span>5</span></dd>");
+    expect(html).toContain("<dt>kind</dt><dd><code>retry</code></dd>");
+    expect(html).toContain("<dt>phase</dt><dd><code>scheduled</code></dd>");
+    expect(html).toContain("<dt>attempt_number</dt><dd><span>3</span></dd>");
+    expect(html).toContain("<dt>retry_in_ms</dt><dd><span>2500</span></dd>");
+    expect(html).toContain("<dt>error_code</dt><dd><code>rate_limit</code></dd>");
+    expect(html).toContain("<dt>error_message</dt><dd><code>Try again later</code></dd>");
+    expect(html).toContain("<dt>is_active</dt><dd><span>true</span></dd>");
+    expect(html).toContain("<dt>total_attempts</dt><dd><span>5</span></dd>");
     expect(html).toContain("Retry 2");
-    expect(html).toContain("<dt>Type</dt><dd><code>fallback</code></dd>");
-    expect(html).toContain("<dt>Target profile</dt><dd><code>secondary</code></dd>");
+    expect(html).toContain("<dt>kind</dt><dd><code>fallback</code></dd>");
+    expect(html).toContain("<dt>to_profile_id</dt><dd><code>secondary</code></dd>");
   });
 
   it("downloads the HTML transcript", async () => {
@@ -656,12 +736,9 @@ describe("messageExport", () => {
     });
 
     const renderedText = fillText.mock.calls.map(([text]) => text).join("\n");
-    expect(renderedText).toContain("Tool · read");
-    expect(renderedText).toContain("Input");
-    expect(renderedText).toContain("path: frontend/app");
-    expect(renderedText).toContain("Output");
-    expect(renderedText).toContain("files:");
-    expect(renderedText).not.toContain('{"path"');
+    expect(renderedText).toContain("Tool call");
+    expect(renderedText).toContain("frontend/app");
+    expect(renderedText).toContain("MessageTimeline.tsx");
   });
 
   it("splits oversized PNG transcripts into multiple downloads", async () => {

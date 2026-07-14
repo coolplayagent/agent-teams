@@ -1,7 +1,7 @@
-import { App, Button, Empty, Image, Skeleton, Tooltip, Typography } from "antd";
+import { App, Button, Empty, Skeleton, Tooltip, Typography } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ArrowDown, Copy, Volume2, Wrench } from "lucide-react";
+import { ArrowDown, Copy, Volume2 } from "lucide-react";
 import {
   startTransition,
   useCallback,
@@ -51,12 +51,17 @@ import {
 } from "../../runtime/optimisticRunStore";
 import { useRuntimeStore } from "../../runtime/runtimeStore";
 import { useTranslations, type Translate } from "../../i18n";
-import { MarkdownMessage } from "./MarkdownMessage";
+import {
+  buildMessageToolPresentationModel,
+  MessagePresentationMedia,
+  MessagePresentationText,
+  MessagePresentationThinking,
+  MessagePresentationTool,
+} from "./MessagePresentationView";
 import { ModelRequestStatus } from "./ModelRequestStatus";
 import { RoundMarker } from "./RoundMarker";
 import { RoundRail } from "./RoundRail";
 import { TimelineDisclosure } from "./TimelineDisclosure";
-import { ToolCallDetails } from "./ToolCallDetails";
 import {
   correlateSessionSubagents,
   type CorrelatedSubagentRecord,
@@ -125,7 +130,6 @@ import {
   runtimeStructuredEventText,
 } from "./runtimeEventPresentation";
 import {
-  approvalActionIsApproved,
   approvalActionIsError,
   normalizedInjectionStatus,
   toolOutcomeIsError,
@@ -191,7 +195,6 @@ const INTERNAL_RUNTIME_STATUS_NOISE_EVENT_KINDS = new Set<string>([
 ]);
 const firstNonEmptyLineCache = new Map<string, string>();
 const parsedJsonObjectCache = new Map<string, Record<string, JsonValue> | null>();
-const toolCallPreviewCache = new Map<string, string>();
 const IMAGE_CODE_SPAN_PATTERN = /`([^`\n]+)`/g;
 const IMAGE_BARE_PATH_PATTERN =
   /((?:\/|\.{1,2}\/|[A-Za-z]:[\\/])[^"'`\s<>]+?\.(?:avif|bmp|gif|jpe?g|png|webp))/gi;
@@ -8817,29 +8820,14 @@ function MessageText({
     }
   }, [part.streaming, runId, terminalEntry]);
   return (
-    <div
-      className={[
-        "at-message-text",
-        visuallyStreaming ? "at-message-streaming-text" : "",
-      ].filter(Boolean).join(" ")}
-      data-streaming={visuallyStreaming ? "true" : undefined}
-      ref={containerRef}
-    >
-      <MarkdownMessage
-        resizeTimelineRow={resizeTimelineRow}
-        streaming={part.streaming}
-        text={text}
-      />
-      {completedOutputTail.length > 0 ? (
-        <span
-          className="at-message-terminal-tail"
-          style={{ whiteSpace: "pre-wrap" }}
-        >
-          {completedOutputTail}
-        </span>
-      ) : null}
-      {cursorVisible ? <StreamingCursor /> : null}
-    </div>
+    <MessagePresentationText
+      cursor={cursorVisible ? <StreamingCursor /> : null}
+      elementRef={containerRef}
+      resizeTimelineRow={resizeTimelineRow}
+      streaming={visuallyStreaming}
+      tail={completedOutputTail}
+      text={text}
+    />
   );
 }
 
@@ -8909,42 +8897,30 @@ function MessageThinkingBlock({
   thinking: TimelineThinkingPart;
   t: Translate;
 }) {
-  const hasText = thinking.text.trim().length > 0;
-  if (!hasText) {
-    return null;
-  }
   return (
-    <TimelineDisclosure
-      className="at-message-thinking"
-      data-part-index={thinking.partIndex}
-      data-streaming={thinking.streaming ? "true" : "false"}
+    <MessagePresentationThinking
       disclosureId={disclosureId}
-      expanded={expanded}
-      forceOpen={thinking.streaming}
-      onExpandedChange={onDisclosureChange}
-      onToggle={onDisclosureToggle}
-    >
-      <summary
-        className="at-message-thinking-summary"
-        data-disclosure-id={disclosureId}
-      >
-        <span className="at-message-thinking-label">
-          {t("timelineThinking")}
-        </span>
-        {thinking.streaming ? (
-          <span className="at-message-thinking-live">{t("timelineLive")}</span>
-        ) : null}
-      </summary>
-      {hasText ? (
-        <div className="at-message-thinking-body">
-          <MarkdownMessage
-            resizeTimelineRow={resizeTimelineRow}
-            streaming={thinking.streaming}
-            text={thinking.text}
-          />
-        </div>
-      ) : null}
-    </TimelineDisclosure>
+      label={t("timelineThinking")}
+      liveLabel={t("timelineLive")}
+      renderDisclosure={(presentation) => (
+        <TimelineDisclosure
+          {...presentation.attributes}
+          className={presentation.className}
+          data-part-index={thinking.partIndex}
+          disclosureId={disclosureId}
+          expanded={expanded}
+          forceOpen={thinking.streaming}
+          onExpandedChange={onDisclosureChange}
+          onToggle={onDisclosureToggle}
+        >
+          {presentation.summary}
+          {presentation.body}
+        </TimelineDisclosure>
+      )}
+      resizeTimelineRow={resizeTimelineRow}
+      streaming={thinking.streaming}
+      text={thinking.text}
+    />
   );
 }
 
@@ -8976,8 +8952,23 @@ function MessageToolBlock({
   tool: TimelineToolPart;
   t: Translate;
 }) {
-  const baseStatus = toolBlockStatus(tool);
-  const isSubagentTool = toolActionCategory(tool) === "subagent";
+  const basePresentation = buildMessageToolPresentationModel({
+    action: tool.action,
+    actionFamily: tool.actionFamily,
+    body: tool.body,
+    callId: tool.callId,
+    error: tool.error,
+    input: tool.inputBody ?? (tool.phase === "call" ? tool.body : ""),
+    output: tool.outputBody ?? "",
+    raw: tool.body,
+    semanticCategory: tool.semanticCategory,
+    stage: tool.phase === "result" ? "return" : tool.phase,
+    subagent: tool.subagent !== null,
+    t,
+    toolName: tool.toolName,
+  });
+  const baseStatus = basePresentation.status;
+  const isSubagentTool = basePresentation.category === "subagent";
   const subagentReference = completeSubagentReference(
     tool.subagent,
     sessionId,
@@ -8998,27 +8989,25 @@ function MessageToolBlock({
   const status = pausedToolSubagent === null ? baseStatus : "paused";
   const isRunning = status === "running";
   const phaseLabel = pausedToolSubagent === null
-    ? toolPhaseLabel(tool, t)
+    ? basePresentation.phaseLabel
     : t("timelineSubagentNeedsFollowup");
-  const displayName = toolDisplayName(tool);
   const subagentName = subagentDisplayName(openSubagentReference);
   const title = isSubagentTool && subagentName.length > 0
     ? subagentName
-    : displayName === null ? phaseLabel : `${phaseLabel}: ${displayName}`;
+    : basePresentation.title;
   const preview = pausedToolSubagent === null
-    ? toolSummaryPreview(tool)
+    ? basePresentation.preview
     : truncatePreview(firstNonEmptyString([
       pausedToolSubagent.description,
       pausedToolSubagent.prompt,
-      toolSummaryPreview(tool),
+      basePresentation.preview,
     ]));
-  const visiblePreview = isSubagentTool &&
-    normalizedTimelineText(preview) === normalizedTimelineText(title)
-    ? ""
-    : preview;
   const canOpenSubagent =
     onSubagentOpen !== undefined &&
     openSubagentReference !== null;
+  const visiblePreview = isSubagentTool
+    ? (canOpenSubagent && isRunning ? preview : "")
+    : preview;
   const hasDetails =
     !isSubagentTool &&
     (
@@ -9039,44 +9028,47 @@ function MessageToolBlock({
     [registerToolCallElement, tool.callId],
   );
   return (
-    <TimelineDisclosure
+    <MessagePresentationTool
+      bodyExtras={tool.mediaParts.map((media, index) => (
+        <MessagePresentationMedia
+          key={`tool-media:${index}:${media.url}`}
+          media={media}
+          t={t}
+        />
+      ))}
+      callId={basePresentation.callId}
       className={[
-        "at-message-tool",
-        tool.error ? "is-error" : "",
         canOpenSubagent ? "is-openable-subagent" : "",
         pausedToolSubagent !== null ? "is-paused-subagent" : "",
         associated ? "is-associated-subagent" : "",
-      ]
-        .filter(Boolean)
-        .join(" ")}
-      data-associated-subagent={associated ? "true" : undefined}
-      data-status={status}
-      data-subagent-instance-id={openSubagentReference?.instanceId ?? undefined}
-      data-subagent-run-id={openSubagentReference?.runId ?? undefined}
-      data-subagent-task-id={openSubagentReference?.taskId ?? undefined}
-      data-tool-call-id={tool.callId || undefined}
-      data-tool-name={tool.toolName}
+      ].filter(Boolean).join(" ")}
+      detailsEnabled={hasDetails}
       disclosureId={disclosureId}
-      elementRef={handleToolElementRef}
-      expanded={expanded}
-      onExpandedChange={onDisclosureChange}
-      onToggle={onDisclosureToggle}
-    >
-      <summary
-        aria-label={canOpenSubagent ? t("timelineOpenSubagentPanel") : undefined}
-        className="at-message-tool-summary"
-        data-disclosure-id={disclosureId}
-        onClick={handleSummaryClick}
-      >
-        <span className="at-message-tool-title">
-          <Wrench aria-hidden="true" size={14} />
-          <span title={title}>{title}</span>
-        </span>
-        {visiblePreview ? (
-          <span className="at-message-tool-preview" title={visiblePreview}>
-            {visiblePreview}
-          </span>
-        ) : null}
+      error={basePresentation.error}
+      input={basePresentation.input}
+      output={basePresentation.output}
+      preview={visiblePreview}
+      raw={basePresentation.raw}
+      renderDisclosure={(presentation) => (
+        <TimelineDisclosure
+          {...presentation.attributes}
+          className={presentation.className}
+          data-associated-subagent={associated ? "true" : undefined}
+          data-subagent-instance-id={openSubagentReference?.instanceId ?? undefined}
+          data-subagent-run-id={openSubagentReference?.runId ?? undefined}
+          data-subagent-task-id={openSubagentReference?.taskId ?? undefined}
+          disclosureId={disclosureId}
+          elementRef={handleToolElementRef}
+          expanded={expanded}
+          onExpandedChange={onDisclosureChange}
+          onToggle={onDisclosureToggle}
+        >
+          {presentation.summary}
+          {presentation.body}
+        </TimelineDisclosure>
+      )}
+      status={status}
+      summaryExtras={<>
         {tool.durationMs !== undefined ? (
           <span className="at-message-tool-duration">
             {formatToolDuration(tool.durationMs)}
@@ -9095,44 +9087,14 @@ function MessageToolBlock({
         {isRunning ? (
           <span className="at-message-tool-spinner" aria-label={t("timelineToolRunningStatus")} />
         ) : null}
-      </summary>
-      {hasDetails ? (
-        <div className="at-message-tool-body">
-          <ToolCallDetails
-            callId={tool.callId}
-            error={tool.error}
-            input={tool.inputBody ?? (tool.phase === "call" ? tool.body : "")}
-            output={tool.outputBody ?? ""}
-            raw={tool.body}
-            t={t}
-            toolName={tool.toolName}
-          />
-          {tool.mediaParts.map((media, index) => (
-            <MessageMediaPreview
-              key={`tool-media:${index}:${media.url}`}
-              media={media}
-              t={t}
-            />
-          ))}
-        </div>
-      ) : null}
-    </TimelineDisclosure>
+      </>}
+      summaryLabel={canOpenSubagent ? t("timelineOpenSubagentPanel") : undefined}
+      summaryOnClick={handleSummaryClick}
+      t={t}
+      title={title}
+      toolName={basePresentation.toolName}
+    />
   );
-}
-
-function toolBlockStatus(
-  tool: TimelineToolPart,
-): "completed" | "error" | "running" | "validation_failed" {
-  if (tool.phase === "call" || tool.phase === "approval-requested") {
-    return "running";
-  }
-  if (tool.phase === "validation") {
-    return "validation_failed";
-  }
-  if (tool.error) {
-    return "error";
-  }
-  return "completed";
 }
 
 function MessageMediaPreview({
@@ -9142,30 +9104,7 @@ function MessageMediaPreview({
   media: TimelineMediaPart;
   t: Translate;
 }) {
-  const label = media.name || media.modality || "media";
-  if (media.modality === "image" || media.mimeType.startsWith("image/")) {
-    return (
-      <figure className="at-message-media">
-        <Image
-          alt={label}
-          className="at-message-media-image"
-          preview={{ mask: t("timelinePreview") }}
-          src={media.url}
-        />
-        <figcaption>{label}</figcaption>
-      </figure>
-    );
-  }
-  return (
-    <a
-      className="at-message-media-link"
-      href={media.url}
-      rel="noreferrer"
-      target="_blank"
-    >
-      {label}
-    </a>
-  );
+  return <MessagePresentationMedia media={media} t={t} />;
 }
 
 function messageParts(
@@ -9874,119 +9813,6 @@ function entryClosesThinking(kind: RunEventType | "message"): boolean {
   );
 }
 
-function toolPhaseLabel(tool: TimelineToolPart, t: Translate): string {
-  if (tool.phase === "approval-requested") {
-    return t("timelineApprovalRequested");
-  }
-  if (tool.phase === "approval-resolved") {
-    if (approvalActionIsError(tool.action)) {
-      return t("timelineApprovalDenied");
-    }
-    if (approvalActionIsApproved(tool.action)) {
-      return t("timelineApprovalApproved");
-    }
-    return t("timelineApprovalResolved");
-  }
-  if (tool.phase === "call") {
-    return toolActionLabel(tool, "running", t);
-  }
-  if (tool.phase === "validation") {
-    return t("timelineToolValidation");
-  }
-  if (tool.error) {
-    return toolActionLabel(tool, "error", t);
-  }
-  return toolActionLabel(tool, "completed", t);
-}
-
-function toolActionLabel(
-  tool: TimelineToolPart,
-  phase: "completed" | "error" | "running",
-  t: Translate,
-): string {
-  const category = toolActionCategory(tool);
-  if (category === "orchestration") {
-    if (phase === "running") {
-      return t("timelineToolRunningOrchestration");
-    }
-    if (phase === "error") {
-      return t("timelineToolErrorOrchestration");
-    }
-    return t("timelineToolCompletedOrchestration");
-  }
-  if (category === "subagent") {
-    if (phase === "running") {
-      return t("timelineToolRunningSubagent");
-    }
-    if (phase === "error") {
-      return t("timelineToolErrorSubagent");
-    }
-    return t("timelineToolCompletedSubagent");
-  }
-  if (category === "run") {
-    if (phase === "running") {
-      return t("timelineToolRunningRun");
-    }
-    if (phase === "error") {
-      return t("timelineToolErrorRun");
-    }
-    return t("timelineToolCompletedRun");
-  }
-  if (category === "read") {
-    if (phase === "running") {
-      return t("timelineToolRunningRead");
-    }
-    if (phase === "error") {
-      return t("timelineToolErrorRead");
-    }
-    return t("timelineToolCompletedRead");
-  }
-  if (category === "edit") {
-    if (phase === "running") {
-      return t("timelineToolRunningEdit");
-    }
-    if (phase === "error") {
-      return t("timelineToolErrorEdit");
-    }
-    return t("timelineToolCompletedEdit");
-  }
-  if (category === "search") {
-    if (phase === "running") {
-      return t("timelineToolRunningSearch");
-    }
-    if (phase === "error") {
-      return t("timelineToolErrorSearch");
-    }
-    return t("timelineToolCompletedSearch");
-  }
-  if (phase === "running") {
-    return t("timelineToolRunningGeneric");
-  }
-  if (phase === "error") {
-    return t("timelineToolErrorGeneric");
-  }
-  return t("timelineToolCompletedGeneric");
-}
-
-function toolActionCategory(
-  tool: TimelineToolPart,
-): "edit" | "generic" | "orchestration" | "read" | "run" | "search" | "subagent" {
-  if (tool.subagent !== null) {
-    return "subagent";
-  }
-  return toolActionFamily({
-    actionFamily: tool.actionFamily,
-    semanticCategory: tool.semanticCategory,
-  });
-}
-
-function toolDisplayName(tool: TimelineToolPart): string | null {
-  if (toolActionCategory(tool) === "subagent") {
-    return null;
-  }
-  return tool.toolName.trim().length > 0 ? tool.toolName : null;
-}
-
 function subagentReferenceFromValues({
   assumeSubagent = false,
   callId,
@@ -10516,30 +10342,6 @@ function jsonStringArrayText(value: JsonValue | undefined): string {
   return strings.length === value.length ? strings.join("\n").trim() : "";
 }
 
-function jsonStringArrayInlineText(value: JsonValue | undefined): string {
-  if (!Array.isArray(value)) {
-    return "";
-  }
-  const strings = value.filter((item): item is string => typeof item === "string");
-  return strings.length === value.length ? strings.join(", ").trim() : "";
-}
-
-function toolSummaryPreview(tool: TimelineToolPart): string {
-  if (tool.subagent !== null) {
-    return truncatePreview(
-      firstNonEmptyString([
-        tool.subagent.title,
-        tool.subagent.description,
-        tool.subagent.roleId,
-      ]),
-    );
-  }
-  if (tool.phase === "call") {
-    return truncatePreview(toolCallPreview(tool.body));
-  }
-  return truncatePreview(firstNonEmptyLine(tool.body));
-}
-
 function firstNonEmptyString(values: Array<string | undefined>): string {
   for (const value of values) {
     const candidate = value?.trim() ?? "";
@@ -10548,44 +10350,6 @@ function firstNonEmptyString(values: Array<string | undefined>): string {
     }
   }
   return "";
-}
-
-function toolCallPreview(body: string): string {
-  return boundedStringCacheValue({
-    cache: toolCallPreviewCache,
-    create: () => {
-      const parsed = parseJsonObjectText(body);
-      if (parsed !== null) {
-        const raw = objectRawString(parsed, "__raw");
-        if (raw.length > 0) {
-          return raw;
-        }
-        const items = jsonStringArrayInlineText(parsed.__items);
-        if (items.length > 0) {
-          return items;
-        }
-        return (
-          objectRawString(parsed, "command") ||
-          objectRawString(parsed, "cmd") ||
-          objectRawString(parsed, "description") ||
-          objectRawString(parsed, "path") ||
-          objectRawString(parsed, "file_path") ||
-          objectRawString(parsed, "filepath") ||
-          objectRawString(parsed, "target_path") ||
-          objectRawString(parsed, "query") ||
-          objectRawString(parsed, "q") ||
-          objectRawString(parsed, "search_query") ||
-          objectRawString(parsed, "pattern") ||
-          objectRawString(parsed, "url") ||
-          objectRawString(parsed, "uri") ||
-          firstNonEmptyLine(jsonValueText(parsed))
-        );
-      }
-      return firstNonEmptyLine(body);
-    },
-    key: body,
-    limit: TOOL_PREVIEW_CACHE_LIMIT,
-  });
 }
 
 function toolArgsBody(value: unknown): string {

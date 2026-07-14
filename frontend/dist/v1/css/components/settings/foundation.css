@@ -1,0 +1,154 @@
+/* Shared settings UI primitives. */
+
+.settings-form-section {
+    padding: 0.95rem 1rem 1rem;
+    border: 1px solid var(--settings-border-soft);
+    border-radius: var(--radius-md);
+    background: var(--settings-surface-bg);
+}
+
+.settings-form-section.proxy-form-section {
+    padding: 0.95rem 1rem 1rem;
+    border: 1px solid var(--settings-border-soft);
+    border-radius: var(--radius-md);
+    background: var(--settings-surface-bg);
+}
+
+.settings-form-section:first-child {
+    padding-top: 0.95rem;
+}
+
+.settings-form-section.proxy-form-section:first-child {
+    padding-top: 0.95rem;
+    border: 1px solid var(--settings-border-soft);
+}
+
+.settings-form-section-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.7rem;
+}
+
+.settings-form-section-title {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: 0.84rem;
+    font-weight: 600;
+    letter-spacing: 0;
+}
+
+.settings-form-section-copy {
+    margin: 0.25rem 0 0;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    line-height: 1.5;
+}
+
+.settings-field-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+}
+
+.settings-field-row {
+    display: grid;
+    grid-template-columns: minmax(8rem, 12rem) minmax(0, 1fr);
+    align-items: center;
+    gap: 0.9rem;
+}
+
+.settings-field-row > label,
+.settings-field-label {
+    min-width: 0;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+.settings-record-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 0 1rem;
+    border: 1px solid var(--settings-border-soft);
+    border-radius: var(--radius-md);
+    background: var(--settings-surface-bg);
+    overflow: hidden;
+}
+
+.settings-record-list.role-records,
+.settings-record-list.profile-records,
+.settings-record-list.plugins-list,
+.settings-record-list.commands-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 0 1rem;
+    border: 1px solid var(--settings-border-soft);
+    border-radius: var(--radius-md);
+    background: var(--settings-surface-bg);
+    overflow: hidden;
+}
+
+.settings-record {
+    min-width: 0;
+    padding: 0.85rem 0;
+    border-bottom: 1px solid var(--settings-divider);
+    background: transparent;
+}
+
+.settings-record:last-child {
+    border-bottom: none;
+}
+
+.settings-record:hover {
+    background: color-mix(in srgb, var(--settings-row-hover-bg) 46%, transparent);
+}
+
+.settings-record.is-active,
+.settings-record.active {
+    background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+.settings-record-title {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+.settings-record-meta {
+    min-width: 0;
+    color: var(--text-secondary);
+    font-size: 0.76rem;
+    line-height: 1.45;
+}
+
+.settings-danger-action {
+    color: color-mix(in srgb, var(--danger) 82%, var(--text-primary));
+    border-color: color-mix(in srgb, var(--danger) 24%, var(--settings-border-default));
+}
+
+.settings-danger-action:hover {
+    color: var(--danger);
+    border-color: color-mix(in srgb, var(--danger) 42%, var(--settings-border-hover));
+}
+
+.settings-status-inline {
+    min-width: 0;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    line-height: 1.45;
+}
+
+@media (max-width: 720px) {
+    .settings-field-row {
+        grid-template-columns: 1fr;
+        align-items: stretch;
+        gap: 0.4rem;
+    }
+}

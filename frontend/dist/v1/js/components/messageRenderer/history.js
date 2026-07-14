@@ -1,0 +1,1393 @@
+/**
+ * components/messageRenderer/history.js
+ * Historical message rendering and approval state hydration.
+ */
+import { isRunPrimaryRoleId } from '../../core/state.js';
+import { syncLastAnswerCopyButton } from './messageActions.js';
+import {
+    flattenTranscriptMessages,
+    formatElapsed,
+    normalizeProcessedTranscript,
+} from './transcriptGrouping.js';
+import {
+    applyToolReturn,
+    appendMessageText,
+    appendStructuredContentPart,
+    appendThinkingText,
+    buildToolBlock,
+    decoratePendingApprovalBlock,
+    findToolBlockInContainer,
+    indexPendingToolBlock,
+    labelFromRole,
+    parseApprovalArgsPreview,
+    renderMessageBlock,
+    renderParts,
+    resolvePendingToolBlock,
+    forceScrollBottom,
+    setToolStatus,
+    setToolValidationFailureState,
+} from './helpers.js';
+
+export { formatElapsed };
+
+export function renderHistoricalMessageList(container, messages, options = {}) {
+    if (container?.dataset) {
+        container.dataset.primaryRoleLabel = String(options.primaryRoleLabel || '').trim();
+    }
+    const pendingToolApprovals = Array.isArray(options.pendingToolApprovals)
+        ? options.pendingToolApprovals
+        : [];
+    const runId = typeof options.runId === 'string' ? options.runId : '';
+    const streamOverlayEntry = options.streamOverlayEntry && typeof options.streamOverlayEntry === 'object'
+        ? options.streamOverlayEntry
+        : null;
+    const pendingToolBlocks = {};
+    const historyMessages = Array.isArray(messages) ? messages.slice() : [];
+    const persistedOverlayIndex = buildPersistedOverlayIndex(historyMessages, runId, options);
+    const timelineHydration = new Map();
+    let lastRenderedMessage = null;
+
+    historyMessages.forEach(msgItem => {
+        if (String(msgItem?.entry_type || '') === 'marker') {
+            renderHistoryMarker(container, msgItem);
+            lastRenderedMessage = null;
+            return;
+        }
+        const role = msgItem.role;
+        const entryType = String(msgItem.entry_type || '').trim();
+        const msgObj = msgItem.message;
+        if (!msgObj) return;
+        if (entryType === 'injection') {
+            renderInjectionMarker(container, msgItem);
+            lastRenderedMessage = null;
+            return;
+        }
+
+        const parts = msgObj.parts || [];
+
+        const isPureToolReturn = role === 'user' && parts.length > 0 &&
+            parts.every(p => {
+                if (p.part_kind !== undefined) return p.part_kind === 'tool-return';
+                return p.tool_name !== undefined && p.content !== undefined && p.args === undefined;
+            });
+
+        if (isPureToolReturn) {
+            parts.forEach(part => {
+                const toolBlock = resolvePendingToolBlock(
+                    pendingToolBlocks,
+                    part.tool_name,
+                    part.tool_call_id,
+                );
+                if (toolBlock) {
+                    applyToolReturn(toolBlock, toolReturnContent(part), {
+                        isError: part.is_error === true,
+                    });
+                }
+            });
+            return;
+        }
+
+        const explicitLabel = String(msgItem.label || '').trim();
+        const label = explicitLabel
+            || (role === 'user' && String(options.userRoleLabel || '').trim()
+            ? String(options.userRoleLabel || '').trim()
+            : labelFromRole(role, msgItem.role_id, msgItem.instance_id));
+        const streamKey = resolveHistoryStreamKey(
+            runId,
+            msgItem.instance_id,
+            msgItem.role_id,
+            options,
+        );
+        collectHydratedParts(timelineHydration, {
+            runId,
+            instanceId: String(msgItem.instance_id || '').trim(),
+            roleId: String(msgItem.role_id || '').trim(),
+            streamKey,
+            view: String(options.timelineView || '').trim(),
+        }, parts);
+        const { wrapper, contentEl } = renderMessageBlock(container, role, label, [], {
+            runId,
+            instanceId: String(msgItem.instance_id || '').trim(),
+            roleId: String(msgItem.role_id || '').trim(),
+            streamKey,
+        });
+        decorateHistoryMessageWrapper(wrapper, {
+            entryType,
+            status: String(msgItem.injection_status || '').trim(),
+        });
+        const msgCreatedAt = String(msgItem.created_at || '').trim();
+        if (msgCreatedAt) wrapper.dataset.createdAt = msgCreatedAt;
+        renderParts(contentEl, parts, pendingToolBlocks, {
+            collapseUserPrompt: role === 'user'
+                && entryType !== 'injection'
+                && options.collapsibleUserPrompts === true,
+            suppressDiagnosticUserMessage: options.suppressDiagnosticUserMessage === true,
+        });
+        if (!hasRenderedMessageContent(contentEl)) {
+            wrapper.remove?.();
+            lastRenderedMessage = null;
+            return;
+        }
+        lastRenderedMessage = {
+            role,
+            label,
+            wrapper,
+            contentEl,
+            runId,
+            roleId: String(msgItem.role_id || '').trim(),
+            instanceId: String(msgItem.instance_id || '').trim(),
+            streamKey,
+        };
+    });
+
+    timelineHydration.forEach((entry) => {
+        applyTimelineAction({
+            type: 'hydrate_parts',
+            scope: entry.scope,
+            parts: entry.parts,
+            status: options.runStatus || '',
+        });
+    });
+
+    // Store raw timestamps, including tool-return messages not rendered as
+    // .message elements, so collapsed groups keep the full processed duration.
+    if (historyMessages.length > 0) {
+        const firstRawTimestamp = firstHistoryTimestamp(historyMessages);
+        if (firstRawTimestamp) {
+            container.dataset.roundFirstMessageAt = firstRawTimestamp;
+        }
+        for (let i = historyMessages.length - 1; i >= 0; i -= 1) {
+            const ts = String(historyMessages[i]?.created_at || '').trim();
+            if (ts) {
+                container.dataset.roundLastMessageAt = ts;
+                break;
+            }
+        }
+    }
+
+    const filteredOverlayEntry = filterPersistedOverlayParts(
+        streamOverlayEntry,
+        persistedOverlayIndex,
+        runId,
+        options,
+    );
+
+    if (
+        filteredOverlayEntry
+        && (
+            (Array.isArray(filteredOverlayEntry.parts) && filteredOverlayEntry.parts.length > 0)
+            || filteredOverlayEntry.textStreaming === true
+            || filteredOverlayEntry.idleCursor === true
+        )
+    ) {
+        renderStreamOverlayEntry(
+            container,
+            filteredOverlayEntry,
+            pendingToolBlocks,
+            lastRenderedMessage,
+            runId,
+            options,
+        );
+    } else if (streamOverlayEntry && runId) {
+        globalThis.__relayTeamsClearStreamOverlayEntry?.(
+            runId,
+            streamOverlayEntry.streamKey || streamOverlayEntry.instanceId,
+            streamOverlayEntry.roleId,
+        );
+    }
+
+    applyPendingApprovalsToHistory(container, pendingToolApprovals, runId);
+    if (shouldFlattenHistoricalTranscript(options)) {
+        flattenTranscriptMessages(container, { requireWorkOrText: true });
+    }
+    if (shouldCollapseIntermediateMessages(filteredOverlayEntry, options)) {
+        normalizeProcessedTranscript(container);
+    }
+    syncLastAnswerCopyButton(container);
+    forceScrollBottom(container);
+}
+
+function hasRenderedMessageContent(contentEl) {
+    if (!contentEl) {
+        return false;
+    }
+    if (contentEl.children === undefined && contentEl.childNodes === undefined) {
+        return true;
+    }
+    if (contentEl.children?.length > 0) {
+        return true;
+    }
+    return String(contentEl.textContent || '').trim() !== '';
+}
+
+function decorateHistoryMessageWrapper(wrapper, { entryType, status }) {
+    if (!wrapper || !entryType) {
+        return;
+    }
+    wrapper.classList.add(`message-${cssClassToken(entryType)}`);
+    if (status) {
+        wrapper.dataset.status = status;
+    }
+    if (entryType !== 'injection') {
+        return;
+    }
+}
+
+function renderInjectionMarker(container, rawMessage, options = {}) {
+    if (!container || !rawMessage || typeof rawMessage !== 'object') {
+        return null;
+    }
+    const content = injectionContentText(rawMessage);
+    if (!content || typeof document === 'undefined') {
+        return null;
+    }
+    const status = String(
+        rawMessage.injection_status
+        || rawMessage.status
+        || rawMessage.payload?.status
+        || 'applied',
+    ).trim();
+    const marker = document.createElement('div');
+    marker.className = options.inline === true
+        ? 'message-inject-marker is-inline'
+        : 'message-inject-marker';
+    marker.dataset.status = status || 'applied';
+    const injectionId = String(rawMessage.injection_id || rawMessage.message_id || '').trim();
+    if (injectionId) {
+        marker.dataset.injectionId = injectionId;
+    }
+    const icon = document.createElement('span');
+    icon.className = 'message-inject-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.innerHTML = status === 'failed'
+        ? '<svg viewBox="0 0 16 16" fill="none"><path d="M8 5v3.25M8 11h.01M2.75 13.25h10.5L8 2.75 2.75 13.25Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+        : '<svg viewBox="0 0 16 16" fill="none"><path d="M4 3.5v3.25a3.75 3.75 0 0 0 3.75 3.75h4.5M10 8.25l2.25 2.25L10 12.75" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    const text = document.createElement('span');
+    text.className = 'message-inject-text';
+    text.textContent = content;
+    marker.append(icon, text);
+    container.appendChild(marker);
+    return marker;
+}
+
+function injectionContentText(rawMessage) {
+    if (!rawMessage || typeof rawMessage !== 'object') {
+        return '';
+    }
+    const direct = String(rawMessage.content || rawMessage.text || '').trim();
+    if (direct) {
+        return direct;
+    }
+    const parts = Array.isArray(rawMessage.content_parts)
+        ? rawMessage.content_parts
+        : Array.isArray(rawMessage.message?.parts)
+            ? rawMessage.message.parts
+            : [];
+    return parts
+        .map(part => String(part?.content || part?.text || '').trim())
+        .filter(Boolean)
+        .join('\n\n')
+        .trim();
+}
+
+function cssClassToken(value) {
+    return String(value || '').replace(/[^a-z0-9_-]/gi, '') || 'unknown';
+}
+
+function renderHistoryMarker(container, marker) {
+    if (!container || !marker) return;
+    const markerEl = document.createElement('div');
+    markerEl.className = 'message-history-divider';
+    markerEl.dataset.markerType = String(marker.marker_type || '').trim();
+    markerEl.innerHTML = `
+        <span class="message-history-divider-line" aria-hidden="true"></span>
+        <span class="message-history-divider-chip">${String(marker.label || 'History marker')}</span>
+        <span class="message-history-divider-line" aria-hidden="true"></span>
+    `;
+    container.appendChild(markerEl);
+}
+
+function applyTimelineAction() {
+    globalThis.__relayTeamsMessageTimelineApplyAction?.(...arguments);
+}
+
+function collectHydratedParts(groups, scope, parts) {
+    const safeRunId = String(scope.runId || '').trim();
+    if (!safeRunId) return;
+    const streamKey = String(scope.streamKey || 'primary').trim();
+    const groupKey = `${safeRunId}::${streamKey}::${scope.view || 'history'}`;
+    let entry = groups.get(groupKey);
+    if (!entry) {
+        entry = {
+            scope: {
+                runId: safeRunId,
+                instanceId: String(scope.instanceId || '').trim(),
+                roleId: String(scope.roleId || '').trim(),
+                streamKey,
+                view: String(scope.view || (safeRunId.startsWith('subagent_run_') ? 'normal-child-session' : 'main')).trim(),
+            },
+            parts: [],
+        };
+        groups.set(groupKey, entry);
+    }
+    (Array.isArray(parts) ? parts : []).forEach((part, index) => {
+        const normalized = normalizeHistoryPart(part, index);
+        if (normalized) {
+            entry.parts.push(normalized);
+        }
+    });
+}
+
+function normalizeHistoryPart(part, index) {
+    if (!part || typeof part !== 'object') return null;
+    const kind = String(part.part_kind || part.kind || '').trim();
+    if (kind === 'text') {
+        return {
+            kind: 'text',
+            content: String(part.content || part.text || ''),
+            streaming: false,
+            part_index: index,
+        };
+    }
+    if (kind === 'thinking') {
+        return {
+            kind: 'thinking',
+            content: String(part.content || ''),
+            part_index: part.part_index ?? index,
+            streaming: false,
+            finished: true,
+        };
+    }
+    if (kind === 'tool-call' || (part.tool_name && part.args !== undefined)) {
+        return {
+            kind: 'tool',
+            tool_name: String(part.tool_name || 'unknown_tool'),
+            tool_call_id: String(part.tool_call_id || ''),
+            args: part.args || {},
+            status: 'pending',
+            part_index: index,
+        };
+    }
+    if (kind === 'tool-return') {
+        const result = toolReturnContent(part);
+        return {
+            kind: 'tool',
+            tool_name: String(part.tool_name || 'unknown_tool'),
+            tool_call_id: String(part.tool_call_id || ''),
+            result,
+            status: isHistoryToolResultError(result, {
+                isError: part.is_error === true,
+            }) ? 'error' : 'completed',
+            part_index: index,
+        };
+    }
+    if (kind === 'media_ref') {
+        return {
+            kind: 'media_ref',
+            modality: String(part.modality || '').trim(),
+            mime_type: String(part.mime_type || part.mimeType || '').trim(),
+            url: String(part.url || '').trim(),
+            name: String(part.name || '').trim(),
+            part_index: index,
+        };
+    }
+    if (kind === 'file') {
+        return null;
+    }
+    return null;
+}
+
+function buildPersistedOverlayIndex(historyMessages, runId, options = {}) {
+    const index = {
+        toolCallIds: new Set(),
+        injectionIds: new Set(),
+        thinkingAllByStream: new Map(),
+        thinkingAllByStreamPart: new Map(),
+        thinkingTailByStream: new Map(),
+        thinkingTailByStreamPart: new Map(),
+        mediaTailByStream: new Map(),
+        textTailByStream: new Map(),
+        textByStream: new Map(),
+    };
+    (Array.isArray(historyMessages) ? historyMessages : []).forEach(msgItem => {
+        if (String(msgItem?.entry_type || '') === 'injection') {
+            const injectionId = String(msgItem?.injection_id || msgItem?.message_id || '').trim();
+            if (injectionId) {
+                index.injectionIds.add(injectionId);
+            }
+        }
+        const parts = Array.isArray(msgItem?.message?.parts)
+            ? msgItem.message.parts
+            : [];
+        const streamKey = resolveHistoryStreamKey(
+            runId,
+            msgItem?.instance_id,
+            msgItem?.role_id,
+            options,
+        );
+        const messageThinkingText = new Set();
+        const messageThinkingTextByPart = new Map();
+        const messageMedia = new Set();
+        const messageText = new Set();
+        const messageTextList = [];
+        parts.forEach(part => {
+            if (!part || typeof part !== 'object') return;
+            const kind = String(part.part_kind || part.kind || '').trim();
+            const toolCallId = String(part.tool_call_id || '').trim();
+            if ((kind === 'tool-call' || kind === 'tool-return' || part.tool_name) && toolCallId) {
+                index.toolCallIds.add(toolCallId);
+            }
+            if (kind === 'thinking') {
+                const text = normalizeOverlayTextSignature(part.content);
+                if (text) {
+                    messageThinkingText.add(text);
+                    const partIndex = normalizeOverlayPartIndex(part.part_index ?? part.part_id ?? '');
+                    if (partIndex) {
+                        let textByPart = messageThinkingTextByPart.get(partIndex);
+                        if (!textByPart) {
+                            textByPart = new Set();
+                            messageThinkingTextByPart.set(partIndex, textByPart);
+                        }
+                        textByPart.add(text);
+                    }
+                }
+            }
+            if (kind === 'text') {
+                const text = normalizeOverlayTextSignature(part.content || part.text);
+                if (text) {
+                    messageText.add(text);
+                    messageTextList.push(text);
+                }
+            }
+            if (kind === 'media_ref') {
+                const mediaSignature = normalizeOverlayMediaSignature(part);
+                if (mediaSignature) messageMedia.add(mediaSignature);
+            }
+        });
+        if (messageThinkingText.size > 0) {
+            mergeOverlayTextSet(index.thinkingAllByStream, streamKey, messageThinkingText);
+            replaceOverlayTextSet(index.thinkingTailByStream, streamKey, messageThinkingText);
+            clearOverlayTextByStreamPart(index.thinkingTailByStreamPart, streamKey);
+            messageThinkingTextByPart.forEach((textSet, partIndex) => {
+                mergeOverlayTextSet(
+                    index.thinkingAllByStreamPart,
+                    overlayStreamPartKey(streamKey, partIndex),
+                    textSet,
+                );
+                replaceOverlayTextSet(
+                    index.thinkingTailByStreamPart,
+                    overlayStreamPartKey(streamKey, partIndex),
+                    textSet,
+                );
+            });
+        }
+        if (messageText.size > 0) {
+            index.textTailByStream.set(streamKey, messageText);
+            mergeOverlayTextList(index.textByStream, streamKey, messageTextList);
+        }
+        index.mediaTailByStream.set(streamKey, new Set(messageMedia));
+    });
+    return index;
+}
+
+function replaceOverlayTextSet(target, key, values) {
+    if (!target || !key || !values || values.size === 0) {
+        return;
+    }
+    target.set(key, new Set(values));
+}
+
+function mergeOverlayTextSet(target, key, values) {
+    if (!target || !key || !values || values.size === 0) {
+        return;
+    }
+    let existing = target.get(key);
+    if (!existing) {
+        existing = new Set();
+        target.set(key, existing);
+    }
+    values.forEach(value => {
+        if (value) {
+            existing.add(value);
+        }
+    });
+}
+
+function mergeOverlayTextList(target, key, values) {
+    if (!target || !key || !Array.isArray(values) || values.length === 0) {
+        return;
+    }
+    const existing = target.get(key);
+    const merged = Array.isArray(existing) ? existing.slice() : [];
+    values.forEach(value => {
+        if (value) {
+            merged.push(value);
+        }
+    });
+    if (merged.length > 0) {
+        target.set(key, merged);
+    }
+}
+
+function clearOverlayTextByStreamPart(target, streamKey) {
+    if (!target || !streamKey) {
+        return;
+    }
+    const prefix = `${String(streamKey).trim()}::`;
+    Array.from(target.keys()).forEach(key => {
+        if (String(key || '').startsWith(prefix)) {
+            target.delete(key);
+        }
+    });
+}
+
+function filterPersistedOverlayParts(streamOverlayEntry, persistedIndex, runId, options = {}) {
+    if (!streamOverlayEntry || typeof streamOverlayEntry !== 'object') {
+        return null;
+    }
+    const parts = Array.isArray(streamOverlayEntry.parts)
+        ? streamOverlayEntry.parts
+        : [];
+    const streamKeys = resolveOverlayStreamKeys(streamOverlayEntry, runId, options);
+    const emptySet = new Set();
+    const persistedThinkingTailText = collectPersistedOverlayText(
+        persistedIndex.thinkingTailByStream,
+        streamKeys,
+    ) || emptySet;
+    const persistedThinkingAllText = collectPersistedOverlayText(
+        persistedIndex.thinkingAllByStream,
+        streamKeys,
+    ) || emptySet;
+    const persistedText = collectPersistedOverlayText(
+        persistedIndex.textTailByStream,
+        streamKeys,
+    ) || emptySet;
+    const persistedTextCursor = createPersistedOverlayTextCursor(
+        persistedIndex.textByStream,
+        streamKeys,
+    );
+    const persistedMedia = collectPersistedOverlayText(
+        persistedIndex.mediaTailByStream,
+        streamKeys,
+    ) || emptySet;
+    const classifiedParts = parts.map(part => classifyOverlayPartPersistence(part, {
+        persistedIndex,
+        persistedThinkingTailText,
+        persistedThinkingTailTextByPart: persistedIndex.thinkingTailByStreamPart,
+        persistedThinkingAllText,
+        persistedThinkingAllTextByPart: persistedIndex.thinkingAllByStreamPart,
+        persistedText,
+        persistedTextCursor,
+        persistedMedia,
+        streamKeys,
+        streamOverlayEntry,
+        options,
+    }));
+    const lastPersistedPartIndex = classifiedParts.reduce((latestIndex, item, index) => (
+        item.persisted === true ? index : latestIndex
+    ), -1);
+    const filteredParts = classifiedParts
+        .filter((item, index) => index > lastPersistedPartIndex && item.keep === true)
+        .map(item => item.part);
+    const isTerminalStatus = isTerminalRenderOptions(options);
+    const allowIdleCursor = streamOverlayEntry.idleCursor === true
+        && (
+            filteredParts.length > 0
+            || parts.length === 0
+        )
+        && !isTerminalStatus;
+    const allowTextStreaming = streamOverlayEntry.textStreaming === true && !isTerminalStatus;
+    const hasRenderableState = filteredParts.length > 0
+        || allowIdleCursor
+        || allowTextStreaming;
+    if (!hasRenderableState) {
+        return null;
+    }
+    return {
+        ...streamOverlayEntry,
+        parts: filteredParts,
+        idleCursor: allowIdleCursor,
+        textStreaming: allowTextStreaming,
+    };
+}
+
+function classifyOverlayPartPersistence(part, context = {}) {
+    if (!part || typeof part !== 'object') {
+        return { part, keep: false, persisted: false };
+    }
+    if (part.kind === 'injection') {
+        const injectionId = String(part.injection_id || part.message_id || '').trim();
+        const persisted = !!(injectionId && context.persistedIndex?.injectionIds?.has?.(injectionId));
+        return { part, keep: !persisted, persisted };
+    }
+    if (part.kind === 'tool') {
+        const toolCallId = String(part.tool_call_id || '').trim();
+        const persisted = !!(toolCallId && context.persistedIndex?.toolCallIds?.has?.(toolCallId));
+        return { part, keep: !persisted, persisted };
+    }
+    if (part.kind === 'thinking') {
+        const text = normalizeOverlayTextSignature(part.content);
+        const isActiveThinking = isOverlayThinkingPartActive(context.streamOverlayEntry, part);
+        if (!text) {
+            return {
+                part,
+                keep: isActiveThinking && !isTerminalRenderOptions(context.options),
+                persisted: false,
+            };
+        }
+        const persisted = isPersistedThinkingOverlayPart(
+            text,
+            part,
+            isActiveThinking,
+            context.persistedThinkingTailText,
+            context.persistedThinkingTailTextByPart,
+            context.persistedThinkingAllText,
+            context.persistedThinkingAllTextByPart,
+            context.streamKeys,
+        );
+        return { part, keep: !persisted, persisted };
+    }
+    if (part.kind === 'text') {
+        const text = normalizeOverlayTextSignature(part.content || part.text);
+        if (!text) {
+            return { part, keep: false, persisted: false };
+        }
+        const persisted = consumePersistedOverlayText(
+            text,
+            context.persistedTextCursor,
+            context.persistedText,
+        );
+        return { part, keep: !persisted, persisted };
+    }
+    if (part.kind === 'media_ref') {
+        const mediaSignature = normalizeOverlayMediaSignature(part);
+        const persisted = !!(mediaSignature && context.persistedMedia?.has?.(mediaSignature));
+        return { part, keep: !persisted, persisted };
+    }
+    return { part, keep: true, persisted: false };
+}
+
+function createPersistedOverlayTextCursor(textByStream, streamKeys) {
+    const values = [];
+    (Array.isArray(streamKeys) ? streamKeys : []).forEach(streamKey => {
+        const streamValues = textByStream?.get?.(streamKey);
+        if (!Array.isArray(streamValues)) {
+            return;
+        }
+        streamValues.forEach(value => {
+            if (value) {
+                values.push(value);
+            }
+        });
+    });
+    return {
+        values,
+        index: 0,
+    };
+}
+
+function consumePersistedOverlayText(text, cursor, fallbackTextSet) {
+    const candidate = normalizeOverlayTextSignature(text);
+    if (!candidate) {
+        return false;
+    }
+    if (cursor && Array.isArray(cursor.values) && cursor.values.length > 0) {
+        for (let index = cursor.index; index < cursor.values.length; index += 1) {
+            const persisted = normalizeOverlayTextSignature(cursor.values[index]);
+            if (!persisted) {
+                continue;
+            }
+            if (persisted === candidate) {
+                cursor.index = index + 1;
+                return true;
+            }
+        }
+        return false;
+    }
+    return !!fallbackTextSet?.has?.(candidate);
+}
+
+function normalizeOverlayTextSignature(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function normalizeOverlayMediaSignature(part) {
+    if (!part || typeof part !== 'object') {
+        return '';
+    }
+    const url = String(part.url || '').trim();
+    const mimeType = String(part.mime_type || part.mimeType || '').trim();
+    const modality = String(part.modality || '').trim();
+    const name = String(part.name || part.filename || '').trim();
+    if (!url) {
+        return '';
+    }
+    return JSON.stringify({ url, mimeType, modality, name });
+}
+
+function normalizeOverlayPartIndex(value) {
+    const safeValue = String(value ?? '').trim();
+    return safeValue;
+}
+
+function isOverlayThinkingPartActive(streamOverlayEntry, part) {
+    if (!streamOverlayEntry || !part || part.kind !== 'thinking') {
+        return false;
+    }
+    const activeByPart = streamOverlayEntry.thinkingActiveByPart;
+    if (activeByPart instanceof Map) {
+        const partIndex = normalizeOverlayPartIndex(part.part_index ?? part.part_id ?? '');
+        const activeKey = activeByPart.get(partIndex);
+        if (!activeKey) {
+            return false;
+        }
+        const partKey = String(part._key || '').trim();
+        return !partKey || partKey === String(activeKey || '').trim();
+    }
+    if (activeByPart && typeof activeByPart === 'object' && !Array.isArray(activeByPart)) {
+        const partIndex = normalizeOverlayPartIndex(part.part_index ?? part.part_id ?? '');
+        const activeKey = activeByPart[partIndex];
+        if (!activeKey) {
+            return false;
+        }
+        const partKey = String(part._key || '').trim();
+        return !partKey || partKey === String(activeKey || '').trim();
+    }
+    return part.finished !== true;
+}
+
+function overlayStreamPartKey(streamKey, partIndex) {
+    return `${String(streamKey || '').trim()}::${normalizeOverlayPartIndex(partIndex)}`;
+}
+
+function isPersistedThinkingOverlayPart(
+    text,
+    part,
+    isActiveThinking,
+    persistedThinkingTailText,
+    persistedThinkingTailTextByPart,
+    persistedThinkingAllText,
+    persistedThinkingAllTextByPart,
+    streamKeys,
+) {
+    if (!text) {
+        return false;
+    }
+    const useTailMatchOnly = isActiveThinking === true && part.finished !== true;
+    const persistedThinkingText = useTailMatchOnly
+        ? persistedThinkingTailText
+        : persistedThinkingAllText;
+    const persistedThinkingTextByPart = useTailMatchOnly
+        ? persistedThinkingTailTextByPart
+        : persistedThinkingAllTextByPart;
+    if (persistedThinkingText?.has?.(text)) {
+        return true;
+    }
+    const partIndex = normalizeOverlayPartIndex(part.part_index ?? part.part_id ?? '');
+    if (partIndex) {
+        const persistedForPart = collectPersistedOverlayTextByPart(
+            persistedThinkingTextByPart,
+            streamKeys,
+            partIndex,
+        );
+        if (
+            useTailMatchOnly
+                ? hasExactPersistedOverlayText(text, persistedForPart)
+                : hasPersistedThinkingOverlap(text, persistedForPart)
+        ) {
+            return true;
+        }
+    }
+    if (!useTailMatchOnly && hasPersistedThinkingOverlap(text, persistedThinkingText)) {
+        return true;
+    }
+    return false;
+}
+
+function collectPersistedOverlayTextByPart(textByStreamPart, streamKeys, partIndex) {
+    const values = new Set();
+    (Array.isArray(streamKeys) ? streamKeys : []).forEach(streamKey => {
+        const textSet = textByStreamPart.get(overlayStreamPartKey(streamKey, partIndex));
+        if (!textSet) return;
+        textSet.forEach(value => {
+            if (value) values.add(value);
+        });
+    });
+    return values.size > 0 ? values : null;
+}
+
+function hasExactPersistedOverlayText(text, persistedText) {
+    const candidate = normalizeOverlayTextSignature(text);
+    if (!candidate || !persistedText) {
+        return false;
+    }
+    for (const persistedValue of persistedText) {
+        if (normalizeOverlayTextSignature(persistedValue) === candidate) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function hasPersistedThinkingOverlap(text, persistedText) {
+    const candidate = normalizeOverlayTextSignature(text);
+    if (!candidate || !persistedText) {
+        return false;
+    }
+    for (const persistedValue of persistedText) {
+        const persisted = normalizeOverlayTextSignature(persistedValue);
+        if (!persisted) continue;
+        if (persisted === candidate) {
+            return true;
+        }
+        const shortestLength = Math.min(persisted.length, candidate.length);
+        if (
+            shortestLength >= 24
+            && (
+                persisted.includes(candidate)
+                || candidate.includes(persisted)
+            )
+        ) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function applyPendingApprovalsToHistory(container, approvals, runId) {
+    if (!approvals || approvals.length === 0) return;
+
+    const missing = [];
+    approvals.forEach(approval => {
+        const toolBlock = findToolBlockInContainer(
+            container,
+            approval?.tool_name,
+            approval?.tool_call_id || null,
+            true,
+        );
+        if (toolBlock) {
+            decoratePendingApprovalBlock(toolBlock, approval);
+        } else {
+            missing.push(approval);
+        }
+    });
+
+    if (missing.length === 0) return;
+    const primaryRoleLabel = String(container?.dataset?.primaryRoleLabel || '').trim()
+        || 'Main Agent';
+    const { contentEl } = renderMessageBlock(container, 'model', primaryRoleLabel, [], {
+        runId,
+        streamKey: 'primary',
+    });
+    missing.forEach(approval => {
+        const toolBlock = buildToolBlock(
+            approval?.tool_name || 'unknown_tool',
+            parseApprovalArgsPreview(approval?.args_preview),
+            approval?.tool_call_id || null,
+        );
+        contentEl.appendChild(toolBlock);
+        decoratePendingApprovalBlock(toolBlock, approval);
+    });
+}
+
+function renderStreamOverlayEntry(
+    container,
+    streamOverlayEntry,
+    pendingToolBlocks,
+    lastRenderedMessage = null,
+    runId = '',
+    options = {},
+) {
+    const isTerminalStatus = isTerminalRenderOptions(options);
+    const label = streamOverlayEntry.label
+        || labelFromRole('assistant', streamOverlayEntry.roleId, streamOverlayEntry.instanceId);
+    let contentEl = null;
+    let forceNewAssistantSegment = false;
+    let combinedText = '';
+    let renderedLiveTextTail = false;
+    const overlayParts = Array.isArray(streamOverlayEntry.parts) ? streamOverlayEntry.parts : [];
+    const overlayRunId = runId || lastRenderedMessage?.runId || '';
+    const overlayStreamKey = resolveHistoryStreamKey(
+        overlayRunId,
+        streamOverlayEntry?.instanceId,
+        streamOverlayEntry?.roleId,
+        options,
+    );
+    const hasLiveTextTail = streamOverlayEntry.textStreaming === true;
+    const hasIdleCursor = streamOverlayEntry.idleCursor === true;
+    const trailingTextPart = [...overlayParts]
+        .reverse()
+        .find(part => part && typeof part === 'object' && part.kind === 'text');
+    const ensureContentEl = () => {
+        if (contentEl && forceNewAssistantSegment !== true) {
+            return contentEl;
+        }
+        if (forceNewAssistantSegment) {
+            contentEl = renderMessageBlock(container, 'assistant', label, [], {
+                runId: overlayRunId,
+                roleId: String(streamOverlayEntry?.roleId || '').trim(),
+                instanceId: String(streamOverlayEntry?.instanceId || '').trim(),
+                streamKey: overlayStreamKey,
+            }).contentEl;
+            forceNewAssistantSegment = false;
+            return contentEl;
+        }
+        contentEl = resolveOverlayContentTarget(
+            container,
+            label,
+            streamOverlayEntry,
+            lastRenderedMessage,
+            runId,
+            options,
+        );
+        return contentEl;
+    };
+    const flushText = (streaming = false) => {
+        const safeText = String(combinedText || '');
+        if (!safeText && !streaming) return;
+        if (!safeText.trim() && !streaming) return;
+        appendMessageText(ensureContentEl(), safeText, {
+            streaming,
+            preserveBoundaryWhitespace: true,
+        });
+        if (streaming) {
+            renderedLiveTextTail = true;
+        }
+        combinedText = '';
+    };
+
+    overlayParts.forEach(part => {
+        if (!part || typeof part !== 'object') return;
+        if (part.kind === 'text') {
+            combinedText += String(part.content || '');
+            if (part.closed === true) {
+                flushText(false);
+            }
+            return;
+        }
+        if (part.kind === 'media_ref') {
+            flushText(false);
+            appendStructuredContentPart(ensureContentEl(), part);
+            return;
+        }
+        if (part.kind === 'injection') {
+            flushText(false);
+            renderInjectionMarker(container, part);
+            contentEl = null;
+            forceNewAssistantSegment = true;
+            return;
+        }
+        if (part.kind === 'thinking') {
+            flushText(false);
+            const isActiveThinking = isOverlayThinkingPartActive(streamOverlayEntry, part);
+            appendThinkingText(ensureContentEl(), String(part.content || ''), {
+                partIndex: part._key ?? part.part_index ?? '',
+                streaming: isActiveThinking && !isTerminalStatus,
+                runId: overlayRunId,
+                instanceId: String(streamOverlayEntry?.instanceId || '').trim(),
+                streamKey: overlayStreamKey,
+            });
+            return;
+        }
+        if (part.kind !== 'tool') return;
+        flushText(false);
+        const toolBlock = buildToolBlock(
+            part.tool_name || 'unknown_tool',
+            part.args || {},
+            part.tool_call_id || null,
+        );
+        ensureContentEl().appendChild(toolBlock);
+        indexPendingToolBlock(
+            pendingToolBlocks,
+            toolBlock,
+            part.tool_name,
+            part.tool_call_id || null,
+        );
+        applyOverlayToolState(toolBlock, part);
+    });
+
+    flushText(hasLiveTextTail && !!trailingTextPart);
+    if ((hasLiveTextTail || hasIdleCursor) && !renderedLiveTextTail) {
+        const liveTail = appendMessageText(ensureContentEl(), '', { streaming: true });
+        if (hasIdleCursor && liveTail) {
+            if (liveTail.dataset) {
+                liveTail.dataset.idleCursor = 'true';
+            }
+            liveTail.__idleCursor = true;
+        }
+    }
+}
+
+function resolveOverlayContentTarget(
+    container,
+    label,
+    streamOverlayEntry,
+    lastRenderedMessage,
+    runId = '',
+    options = {},
+) {
+    const safeLabel = String(label || '').trim();
+    if (
+        options.separateOverlayMessage === true
+        || shouldRenderOverlayInSeparateMessage(streamOverlayEntry, options)
+    ) {
+        return renderMessageBlock(container, 'assistant', label, [], {
+            runId: runId || lastRenderedMessage?.runId || '',
+            roleId: String(streamOverlayEntry?.roleId || '').trim(),
+            instanceId: String(streamOverlayEntry?.instanceId || '').trim(),
+            streamKey: resolveHistoryStreamKey(
+                runId || lastRenderedMessage?.runId || '',
+                streamOverlayEntry?.instanceId,
+                streamOverlayEntry?.roleId,
+                options,
+            ),
+        }).contentEl;
+    }
+    const lastLabel = String(lastRenderedMessage?.label || '').trim();
+    const overlayStreamKey = resolveHistoryStreamKey(
+        runId || lastRenderedMessage?.runId || '',
+        streamOverlayEntry?.instanceId,
+        streamOverlayEntry?.roleId,
+        options,
+    );
+    if (
+        wrapperMatchesOverlay(lastRenderedMessage?.wrapper, {
+            runId: runId || lastRenderedMessage?.runId || '',
+            roleId: streamOverlayEntry?.roleId,
+            instanceId: streamOverlayEntry?.instanceId,
+            streamKey: overlayStreamKey,
+        })
+        && safeLabel
+        && lastRenderedMessage?.contentEl
+        && lastRenderedMessage.role !== 'user'
+        && safeLabel.localeCompare(lastLabel, undefined, { sensitivity: 'accent' }) === 0
+    ) {
+        return lastRenderedMessage.contentEl;
+    }
+    const lastMessageContentEl = findLastCompatibleMessageContent(container, safeLabel, {
+        runId: runId || lastRenderedMessage?.runId || '',
+        roleId: streamOverlayEntry?.roleId,
+        instanceId: streamOverlayEntry?.instanceId,
+        streamKey: overlayStreamKey,
+    });
+    if (lastMessageContentEl) {
+        return lastMessageContentEl;
+    }
+    return renderMessageBlock(container, 'assistant', label, [], {
+        runId: runId || lastRenderedMessage?.runId || '',
+        roleId: String(streamOverlayEntry?.roleId || '').trim(),
+        instanceId: String(streamOverlayEntry?.instanceId || '').trim(),
+        streamKey: overlayStreamKey,
+    }).contentEl;
+}
+
+function shouldRenderOverlayInSeparateMessage(streamOverlayEntry, options = {}) {
+    if (options.bindStreamOverlay === true) {
+        return false;
+    }
+    const parts = Array.isArray(streamOverlayEntry?.parts)
+        ? streamOverlayEntry.parts
+        : [];
+    return parts.some(part => {
+        if (!part || typeof part !== 'object') {
+            return false;
+        }
+        return (
+            part.kind === 'thinking'
+            || part.kind === 'tool'
+            || part.kind === 'media_ref'
+        );
+    });
+}
+
+function findLastCompatibleMessageContent(container, label, options = {}) {
+    if (!container || !label) return null;
+    const messages = Array.from(container.querySelectorAll('.message'));
+    const expectedLabel = String(label || '').trim().toUpperCase();
+    if (!expectedLabel) return null;
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+        const message = messages[index];
+        const roleEl = message.querySelector('.msg-role');
+        const contentEl = message.querySelector('.msg-content');
+        const renderedLabel = String(message.dataset.roleLabel || roleEl?.textContent || '')
+            .trim()
+            .toUpperCase();
+        if (!contentEl || !renderedLabel) continue;
+        if (renderedLabel !== expectedLabel) continue;
+        if (!wrapperMatchesOverlay(message, options)) continue;
+        return contentEl;
+    }
+    return null;
+}
+
+function applyOverlayToolState(toolBlock, part) {
+    const outputEl = toolBlock.querySelector('.tool-output');
+    if (!outputEl) return;
+
+    if (part.validation) {
+        setToolValidationFailureState(toolBlock, part.validation);
+        return;
+    }
+
+    if (part.approvalStatus === 'requested') {
+        decoratePendingApprovalBlock(toolBlock, {
+            tool_call_id: part.tool_call_id,
+            tool_name: part.tool_name,
+            args_preview: JSON.stringify(part.args || {}),
+            status: 'requested',
+        });
+        return;
+    }
+
+    if (part.approvalStatus === 'deny') {
+        setToolStatus(toolBlock, 'warning');
+        outputEl.classList.remove('error-text');
+        outputEl.classList.add('warning-text');
+        outputEl.innerHTML = 'Approval denied. Tool will not execute.';
+        return;
+    }
+
+    if (isApprovedApprovalStatus(part.approvalStatus) && part.result === undefined) {
+        setToolStatus(toolBlock, 'running');
+        outputEl.classList.remove('error-text');
+        outputEl.classList.add('warning-text');
+        outputEl.innerHTML = 'Approval submitted. Waiting for tool result...';
+        return;
+    }
+
+    if (part.result !== undefined) {
+        applyToolReturn(toolBlock, part.result, {
+            isError: String(part.status || '').trim().toLowerCase() === 'error',
+        });
+        return;
+    }
+
+    setToolStatus(toolBlock, 'running');
+    outputEl.classList.remove('error-text');
+    outputEl.classList.remove('warning-text');
+    outputEl.textContent = '';
+}
+
+function resolveOverlayStreamKeys(streamOverlayEntry, runId, options = {}) {
+    const keys = [];
+    const addKey = value => {
+        const key = String(value || '').trim();
+        if (key && !keys.includes(key)) {
+            keys.push(key);
+        }
+    };
+    addKey(streamOverlayEntry?.streamKey);
+    addKey(resolveHistoryStreamKey(
+        runId,
+        streamOverlayEntry?.instanceId,
+        streamOverlayEntry?.roleId,
+        options,
+    ));
+    addKey(resolveHistoryStreamKey(
+        runId,
+        streamOverlayEntry?.instanceId,
+        streamOverlayEntry?.roleId,
+    ));
+    return keys;
+}
+
+function collectPersistedOverlayText(textByStream, streamKeys) {
+    const values = new Set();
+    (Array.isArray(streamKeys) ? streamKeys : []).forEach(streamKey => {
+        const textSet = textByStream.get(streamKey);
+        if (!textSet) return;
+        textSet.forEach(value => {
+            if (value) values.add(value);
+        });
+    });
+    return values.size > 0 ? values : null;
+}
+
+function resolveHistoryStreamKey(runId, instanceId, roleId, options = {}) {
+    const canonicalStreamKey = normalizeCanonicalHistoryStreamKey(options);
+    if (canonicalStreamKey) {
+        return canonicalStreamKey;
+    }
+    const safeRoleId = String(roleId || '').trim();
+    const safeInstanceId = String(instanceId || '').trim();
+    if (!safeRoleId || safeInstanceId === 'primary' || safeInstanceId === 'coordinator') {
+        return 'primary';
+    }
+    if (runId && isRunPrimaryRoleId(safeRoleId, runId)) {
+        return 'primary';
+    }
+    return safeInstanceId || `role:${safeRoleId}`;
+}
+
+function normalizeCanonicalHistoryStreamKey(options = {}) {
+    const streamKey = String(options.canonicalStreamKey || '').trim();
+    if (!streamKey) {
+        return '';
+    }
+    return streamKey === 'coordinator' ? 'primary' : streamKey;
+}
+
+function toolReturnContent(part) {
+    if (!part || typeof part !== 'object') {
+        return undefined;
+    }
+    if (Object.prototype.hasOwnProperty.call(part, 'content')) {
+        return part.content;
+    }
+    if (Object.prototype.hasOwnProperty.call(part, 'result')) {
+        return part.result;
+    }
+    return undefined;
+}
+
+function isHistoryToolResultError(result, options = {}) {
+    if (options?.isError === true) {
+        return true;
+    }
+    if (!result || typeof result !== 'object') {
+        return false;
+    }
+    if (result.ok === false || result.error === true) {
+        return true;
+    }
+    if (hasFailedHistoryToolData(result)) {
+        return true;
+    }
+    if (Object.prototype.hasOwnProperty.call(result, 'data')) {
+        return hasFailedHistoryToolData(result.data);
+    }
+    return false;
+}
+
+function hasFailedHistoryToolData(data) {
+    if (!data || typeof data !== 'object') {
+        return false;
+    }
+    const status = String(data.status || '').trim().toLowerCase();
+    if (status === 'failed' || status === 'error') {
+        return true;
+    }
+    const exitCode = normalizedHistoryExitCode(data.exit_code);
+    return exitCode !== null && exitCode !== 0;
+}
+
+function normalizedHistoryExitCode(value) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return value;
+    }
+    if (typeof value === 'string' && value.trim()) {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed)) {
+            return parsed;
+        }
+    }
+    return null;
+}
+
+function shouldCollapseIntermediateMessages(streamOverlayEntry, options = {}) {
+    const lifecycleStatus = String(options.status || '').trim().toLowerCase();
+    const runStatus = String(options.runStatus || '').trim().toLowerCase();
+    const runPhase = String(options.runPhase || '').trim().toLowerCase();
+    const timelineView = String(options.timelineView || '').trim();
+    const isLatestRound = options.isLatestRound === true;
+    const isTerminalStatus = isTerminalRunStatus(lifecycleStatus)
+        || isTerminalRunStatus(runStatus)
+        || isTerminalRunStatus(runPhase);
+    const hasFinalOutput = options.hasFinalOutput === true;
+    const shouldCollapseTerminalWork = isTerminalStatus
+        && timelineView === 'normal-child-session';
+    if (isLatestRound && !isTerminalStatus) {
+        return false;
+    }
+    if (!hasFinalOutput && !shouldCollapseTerminalWork) {
+        return false;
+    }
+    if (!streamOverlayEntry || typeof streamOverlayEntry !== 'object') {
+        return true;
+    }
+    const parts = Array.isArray(streamOverlayEntry.parts) ? streamOverlayEntry.parts : [];
+    if (streamOverlayEntry.textStreaming === true) {
+        return false;
+    }
+    if (streamOverlayEntry.idleCursor === true && parts.length > 0) {
+        return false;
+    }
+    const hasActiveOverlayPart = parts.some(part => {
+        if (!part || typeof part !== 'object') return false;
+        if (part.kind === 'thinking') {
+            return part.finished !== true;
+        }
+        if (part.kind !== 'tool') {
+            return false;
+        }
+        const status = String(part.status || '').trim().toLowerCase();
+        const approvalStatus = String(part.approvalStatus || '').trim().toLowerCase();
+        return (
+            status === 'pending'
+            || status === 'running'
+            || approvalStatus === 'requested'
+            || isApprovedApprovalStatus(approvalStatus)
+            || (part.result === undefined && part.validation === undefined)
+        );
+    });
+    return !hasActiveOverlayPart;
+}
+
+function shouldFlattenHistoricalTranscript(options = {}) {
+    const timelineView = String(options.timelineView || '').trim();
+    return timelineView === 'normal-child-session';
+}
+
+function isTerminalRenderOptions(options = {}) {
+    return isTerminalRunStatus(options.status)
+        || isTerminalRunStatus(options.runStatus)
+        || isTerminalRunStatus(options.runPhase);
+}
+
+function firstHistoryTimestamp(historyMessages) {
+    for (let i = 0; i < historyMessages.length; i += 1) {
+        const ts = String(historyMessages[i]?.created_at || '').trim();
+        if (ts) {
+            return ts;
+        }
+    }
+    return '';
+}
+
+function isTerminalRunStatus(runStatus) {
+    return [
+        'completed',
+        'stopped',
+        'failed',
+        'cancelled',
+        'canceled',
+        'terminal',
+        'idle',
+    ].includes(String(runStatus || '').trim().toLowerCase());
+}
+
+function isApprovedApprovalStatus(value) {
+    const approvalStatus = String(value || '').trim().toLowerCase();
+    return (
+        approvalStatus === 'approve'
+        || approvalStatus === 'approve_once'
+        || approvalStatus === 'approve_exact'
+        || approvalStatus === 'approve_prefix'
+    );
+}
+function wrapperMatchesOverlay(wrapper, options = {}) {
+    if (!wrapper) return false;
+    const expectedRunId = String(options.runId || '').trim();
+    const expectedRoleId = String(options.roleId || '').trim();
+    const expectedInstanceId = String(options.instanceId || '').trim();
+    const expectedStreamKey = String(options.streamKey || '').trim();
+    const wrapperRunId = String(wrapper.dataset.runId || '').trim();
+    const wrapperRoleId = String(wrapper.dataset.roleId || '').trim();
+    const wrapperInstanceId = String(wrapper.dataset.instanceId || '').trim();
+    const wrapperStreamKey = String(wrapper.dataset.streamKey || '').trim();
+    if (expectedRunId && wrapperRunId && wrapperRunId !== expectedRunId) return false;
+    if (expectedStreamKey && wrapperStreamKey && wrapperStreamKey !== expectedStreamKey) return false;
+    if (expectedRoleId && wrapperRoleId && wrapperRoleId !== expectedRoleId) return false;
+    if (expectedInstanceId && wrapperInstanceId && wrapperInstanceId !== expectedInstanceId) return false;
+    return true;
+}

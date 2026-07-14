@@ -12,6 +12,7 @@ import {
 } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  ArrowLeft,
   PlugZap,
   RefreshCcw,
   Search,
@@ -355,25 +356,43 @@ export function ConnectorsView({
           width={configurationOpen ? 1080 : 760}
         >
           {configurationOpen && selectedConnector !== null ? (
-            <ConnectorConfigurationPanel
-              configuration={
-                connectorPresentationAdapter(selectedConnector)?.configuration
-              }
-              onCancel={() => {
-                setConfigurationOpen(false);
-                setW3ConfigOpen(false);
-              }}
-              onSaved={() => {
-                setConfigurationOpen(false);
-                setW3ConfigOpen(false);
-              }}
-              onW3Save={(request) => w3SaveMutation.mutate(request)}
-              t={t}
-              w3ConfigError={w3Query.error ?? w3SaveMutation.error}
-              w3ConfigLoading={w3Query.isLoading}
-              w3ConfigSaving={w3SaveMutation.isPending}
-              w3Status={w3Query.data}
-            />
+            <section className="at-connector-configuration">
+              <header className="at-connector-configuration-toolbar">
+                <Button
+                  aria-label={`${t("settingsBack")} ${t(
+                    "connectorsDetailLabel",
+                    { connector: selectedConnector.display_name },
+                  )}`}
+                  icon={<ArrowLeft size={15} />}
+                  onClick={() => {
+                    setConfigurationOpen(false);
+                    setW3ConfigOpen(false);
+                  }}
+                  size="small"
+                  type="text"
+                >
+                  {t("settingsBack")}
+                </Button>
+                <Typography.Text type="secondary">
+                  {t("connectorsConfigure")}
+                </Typography.Text>
+              </header>
+              <ConnectorConfigurationPanel
+                configuration={
+                  connectorPresentationAdapter(selectedConnector)?.configuration
+                }
+                onSaved={() => {
+                  setConfigurationOpen(false);
+                  setW3ConfigOpen(false);
+                }}
+                onW3Save={(request) => w3SaveMutation.mutate(request)}
+                t={t}
+                w3ConfigError={w3Query.error ?? w3SaveMutation.error}
+                w3ConfigLoading={w3Query.isLoading}
+                w3ConfigSaving={w3SaveMutation.isPending}
+                w3Status={w3Query.data}
+              />
+            </section>
           ) : (
             <ConnectorDetail
               item={selectedConnector}
@@ -697,7 +716,6 @@ function ConnectorDetail({
 
 function ConnectorConfigurationPanel({
   configuration,
-  onCancel,
   onSaved,
   onW3Save,
   t,
@@ -707,7 +725,6 @@ function ConnectorConfigurationPanel({
   w3Status,
 }: {
   configuration: ConnectorConfiguration | undefined;
-  onCancel: () => void;
   onSaved: () => void;
   onW3Save: (request: W3ConnectorSaveRequest) => void;
   t: ReturnType<typeof useTranslations>;
@@ -722,41 +739,27 @@ function ConnectorConfigurationPanel({
   if (configuration.kind === "gateway") {
     return (
       <GatewayConnectorEditor
-        onCancel={onCancel}
         onSaved={onSaved}
         provider={configuration.provider}
       />
     );
   }
   if (configuration.kind === "github") {
-    return (
-      <section className="at-connector-configuration">
-        <GitHubSettingsSection embedded onSaved={onSaved} />
-        <div className="at-connectors-detail-actions">
-          <Button onClick={onCancel}>{t("connectorsConfigureCancel")}</Button>
-        </div>
-      </section>
-    );
+    return <GitHubSettingsSection embedded onSaved={onSaved} />;
   }
   if (configuration.kind === "trigger") {
     return (
-      <section className="at-connector-configuration">
-        <TriggerSettingsSection
-          embedded
-          onSaved={onSaved}
-          provider={configuration.provider}
-        />
-        <div className="at-connectors-detail-actions">
-          <Button onClick={onCancel}>{t("connectorsConfigureCancel")}</Button>
-        </div>
-      </section>
+      <TriggerSettingsSection
+        embedded
+        onSaved={onSaved}
+        provider={configuration.provider}
+      />
     );
   }
   return (
     <W3ConnectorEditor
       error={w3ConfigError}
       loading={w3ConfigLoading}
-      onCancel={onCancel}
       onSave={onW3Save}
       saving={w3ConfigSaving}
       status={w3Status}
@@ -768,7 +771,6 @@ function ConnectorConfigurationPanel({
 function W3ConnectorEditor({
   error,
   loading,
-  onCancel,
   onSave,
   saving,
   status,
@@ -776,7 +778,6 @@ function W3ConnectorEditor({
 }: {
   error: Error | null;
   loading: boolean;
-  onCancel: () => void;
   onSave: (request: W3ConnectorSaveRequest) => void;
   saving: boolean;
   status: W3ConnectorStatus | undefined;
@@ -818,9 +819,6 @@ function W3ConnectorEditor({
         />
       </label>
       <div className="at-connectors-detail-actions">
-        <Button onClick={onCancel} disabled={saving} size="small">
-          {t("connectorsConfigureCancel")}
-        </Button>
         <Button
           disabled={loading || !username.trim()}
           loading={saving}

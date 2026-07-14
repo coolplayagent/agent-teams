@@ -27,13 +27,11 @@ import {
 export type { GatewayConnectorProvider } from "./gatewayConnectorAdapters";
 
 interface GatewayConnectorEditorProps {
-  onCancel: () => void;
   onSaved?: () => void;
   provider: GatewayConnectorProvider;
 }
 
 export function GatewayConnectorEditor({
-  onCancel,
   onSaved,
   provider,
 }: GatewayConnectorEditorProps) {
@@ -297,9 +295,6 @@ export function GatewayConnectorEditor({
                   </Button>
                 </>
               ) : null}
-              <Button disabled={saveMutation.isPending} onClick={onCancel}>
-                {t("connectorsConfigureCancel")}
-              </Button>
               <Button
                 htmlType="submit"
                 loading={saveMutation.isPending}

@@ -798,9 +798,17 @@ describe("ConnectorsView", () => {
     ).toHaveAttribute("data-embedded", "true");
     expect(onOpenSettings).not.toHaveBeenCalled();
     expect(screen.getAllByRole("button", { name: "Close" })).toHaveLength(1);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Back Feishu details" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("connector-detail-feishu")).toBeVisible(),
+    );
+    expect(onOpenSettings).not.toHaveBeenCalled();
   });
 
-  it("keeps one window close control across every configuration surface", async () => {
+  it("keeps provider configuration contextual with one close control", async () => {
+    const onOpenSettings = vi.fn();
     const connectors = [
       {
         auth_type: "api_token",
@@ -853,9 +861,17 @@ describe("ConnectorsView", () => {
           total: 1,
         },
       });
-      renderView();
+      renderView(onOpenSettings);
       fireEvent.click(
-        await screen.findByTestId(`connector-action-${connector.connector_id}`),
+        await screen.findByRole("button", {
+          name: `Open ${connector.display_name} details`,
+        }),
+      );
+      const detailDialog = await screen.findByRole("dialog", {
+        name: connector.display_name,
+      });
+      fireEvent.click(
+        within(detailDialog).getByRole("button", { name: "Configure" }),
       );
       let editor: HTMLElement;
       if (connector.provider === "github") {
@@ -876,11 +892,15 @@ describe("ConnectorsView", () => {
       expect(
         within(dialog as HTMLElement).getAllByRole("button", { name: "Close" }),
       ).toHaveLength(1);
-      if (connector.provider === "discord") {
-        expect(
-          within(dialog as HTMLElement).getByRole("button", { name: "Cancel" }),
-        ).toBeVisible();
-      }
+      expect(
+        within(dialog as HTMLElement).queryByRole("button", { name: "Cancel" }),
+      ).not.toBeInTheDocument();
+      expect(
+        within(dialog as HTMLElement).getByRole("button", {
+          name: `Back ${connector.display_name} details`,
+        }),
+      ).toBeVisible();
+      expect(onOpenSettings).not.toHaveBeenCalled();
       fireEvent.click(
         within(dialog as HTMLElement).getByRole("button", { name: "Close" }),
       );

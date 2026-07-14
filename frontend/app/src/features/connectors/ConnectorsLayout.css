@@ -218,12 +218,29 @@
 
 .at-connector-configuration {
   display: grid;
-  gap: 16px;
+  gap: 12px;
+  width: 100%;
   min-width: 0;
 }
 
-.at-connector-configuration > .at-connectors-detail-actions {
-  justify-content: flex-end;
+.at-connector-configuration-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--at-border);
+}
+
+.at-connector-configuration-toolbar .ant-btn {
+  margin-left: -7px;
+}
+
+.at-connector-configuration > .at-settings-section,
+.at-connector-configuration > .at-gateway-connector-editor,
+.at-connector-configuration > .at-connectors-w3-editor {
+  width: 100%;
+  max-width: none;
 }
 
 .at-runtime-tools {

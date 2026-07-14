@@ -82,6 +82,13 @@ describe("connectors workbench layout", () => {
     expect(source).toContain('className="at-connectors-modal"');
     expect(source).not.toContain("at-gateway-connector-modal");
     expect(source).toContain("<ConnectorConfigurationPanel");
+    expect(source).toContain('className="at-connector-configuration-toolbar"');
+    expect(css).toMatch(
+      /\.at-connector-configuration\s*{[\s\S]*?width:\s*100%;/,
+    );
+    expect(css).toMatch(
+      /\.at-connector-configuration\s*>\s*\.at-settings-section,[\s\S]*?max-width:\s*none;/,
+    );
     expect(css).toMatch(
       /@media \(max-width: 760px\)[\s\S]*?\.at-connectors-modal\s*{[\s\S]*?width:\s*calc\(100vw - 16px\) !important;/,
     );

@@ -1,6 +1,15 @@
-import { App, Button, Empty, Form, Input, Select, Skeleton, Typography } from "antd";
+import {
+  App,
+  Button,
+  Empty,
+  Form,
+  Input,
+  Select,
+  Skeleton,
+  Typography,
+} from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, X } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { listWorkspaces } from "../../api/client";
@@ -18,12 +27,14 @@ import {
 export type { GatewayConnectorProvider } from "./gatewayConnectorAdapters";
 
 interface GatewayConnectorEditorProps {
-  onClose: () => void;
+  onCancel: () => void;
+  onSaved?: () => void;
   provider: GatewayConnectorProvider;
 }
 
 export function GatewayConnectorEditor({
-  onClose,
+  onCancel,
+  onSaved,
   provider,
 }: GatewayConnectorEditorProps) {
   const { message, modal } = App.useApp();
@@ -65,9 +76,19 @@ export function GatewayConnectorEditor({
       return;
     }
     form.setFieldsValue(
-      gatewayAccountFormValues(adapter, selectedAccount, workspacesQuery.data ?? []),
+      gatewayAccountFormValues(
+        adapter,
+        selectedAccount,
+        workspacesQuery.data ?? [],
+      ),
     );
-  }, [accountsQuery.isLoading, adapter, form, selectedAccount, workspacesQuery.data]);
+  }, [
+    accountsQuery.isLoading,
+    adapter,
+    form,
+    selectedAccount,
+    workspacesQuery.data,
+  ]);
 
   const refreshAccounts = () =>
     queryClient.invalidateQueries({
@@ -77,7 +98,9 @@ export function GatewayConnectorEditor({
     mutationFn: (values: GatewayAccountFormValues) =>
       adapter.save(selectedAccount, values),
     onError: (error) => {
-      void message.error(error instanceof Error ? error.message : t("connectorsSaveFailed"));
+      void message.error(
+        error instanceof Error ? error.message : t("connectorsSaveFailed"),
+      );
     },
     onSuccess: (account) => {
       setCreatingNew(false);
@@ -85,14 +108,16 @@ export function GatewayConnectorEditor({
       void refreshAccounts();
       void queryClient.invalidateQueries({ queryKey: ["connectors"] });
       void message.success(t("connectorsGatewaySaved"));
+      onSaved?.();
     },
   });
   const toggleMutation = useMutation({
-    mutationFn: (account: GatewayAccountRecord) =>
-      adapter.toggle(account),
+    mutationFn: (account: GatewayAccountRecord) => adapter.toggle(account),
     onError: (error) => {
       void message.error(
-        error instanceof Error ? error.message : t("connectorsGatewayActionFailed"),
+        error instanceof Error
+          ? error.message
+          : t("connectorsGatewayActionFailed"),
       );
     },
     onSuccess: () => {
@@ -104,7 +129,9 @@ export function GatewayConnectorEditor({
     mutationFn: adapter.remove,
     onError: (error) => {
       void message.error(
-        error instanceof Error ? error.message : t("connectorsGatewayActionFailed"),
+        error instanceof Error
+          ? error.message
+          : t("connectorsGatewayActionFailed"),
       );
     },
     onSuccess: () => {
@@ -117,7 +144,9 @@ export function GatewayConnectorEditor({
 
   const requestDelete = (account: GatewayAccountRecord) => {
     modal.confirm({
-      content: t("connectorsGatewayDeleteConfirm", { name: account.display_name }),
+      content: t("connectorsGatewayDeleteConfirm", {
+        name: account.display_name,
+      }),
       okText: t("settingsDelete"),
       okButtonProps: { danger: true },
       onOk: () => deleteMutation.mutateAsync(account.account_id),
@@ -126,27 +155,30 @@ export function GatewayConnectorEditor({
   };
 
   return (
-    <section className="at-gateway-connector-editor" data-testid={`gateway-editor-${provider}`}>
+    <section
+      className="at-gateway-connector-editor"
+      data-testid={`gateway-editor-${provider}`}
+    >
       <header className="at-gateway-connector-head">
-        <div>
-          <Typography.Title level={4}>
-            {t("connectorsGatewayAccounts", {
-              provider: adapter.defaultDisplayName,
-            })}
-          </Typography.Title>
-          <Typography.Text type="secondary">
-            {t("connectorsGatewayAccountsHelp")}
-          </Typography.Text>
-        </div>
-        <Button aria-label={t("connectorsGatewayClose")} icon={<X size={16} />} onClick={onClose} />
+        <Typography.Text type="secondary">
+          {t("connectorsGatewayAccountsHelp")}
+        </Typography.Text>
       </header>
-      {accountsQuery.isLoading ? <Skeleton active paragraph={{ rows: 5 }} /> : null}
+      {accountsQuery.isLoading ? (
+        <Skeleton active paragraph={{ rows: 5 }} />
+      ) : null}
       {!accountsQuery.isLoading && accountsQuery.isError ? (
-        <Empty description={t("connectorsGatewayLoadFailed")} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        <Empty
+          description={t("connectorsGatewayLoadFailed")}
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+        />
       ) : null}
       {!accountsQuery.isLoading && !accountsQuery.isError ? (
         <div className="at-gateway-connector-body">
-          <aside className="at-gateway-account-list" aria-label={t("connectorsGatewayAccountList")}>
+          <aside
+            className="at-gateway-account-list"
+            aria-label={t("connectorsGatewayAccountList")}
+          >
             <Button
               icon={<Plus size={14} />}
               onClick={() => {
@@ -160,7 +192,9 @@ export function GatewayConnectorEditor({
             {accounts.map((account) => (
               <button
                 aria-pressed={account.account_id === editingAccountId}
-                className={account.account_id === editingAccountId ? "is-selected" : ""}
+                className={
+                  account.account_id === editingAccountId ? "is-selected" : ""
+                }
                 key={account.account_id}
                 onClick={() => {
                   setCreatingNew(false);
@@ -169,7 +203,11 @@ export function GatewayConnectorEditor({
                 type="button"
               >
                 <strong>{account.display_name}</strong>
-                <span>{account.status === "enabled" ? t("settingsEnabled") : t("settingsDisabled")}</span>
+                <span>
+                  {account.status === "enabled"
+                    ? t("settingsEnabled")
+                    : t("settingsDisabled")}
+                </span>
               </button>
             ))}
           </aside>
@@ -187,7 +225,11 @@ export function GatewayConnectorEditor({
               <Input />
             </Form.Item>
             <Form.Item
-              extra={selectedAccount === null ? undefined : t("connectorsGatewayTokenPreserved")}
+              extra={
+                selectedAccount === null
+                  ? undefined
+                  : t("connectorsGatewayTokenPreserved")
+              }
               label={t("connectorsGatewayToken")}
               name="token"
               rules={[{ required: selectedAccount === null }]}
@@ -196,10 +238,16 @@ export function GatewayConnectorEditor({
             </Form.Item>
             {adapter.fields === "discord" ? (
               <>
-                <Form.Item label={t("connectorsGatewayApplicationId")} name="applicationId">
+                <Form.Item
+                  label={t("connectorsGatewayApplicationId")}
+                  name="applicationId"
+                >
                   <Input />
                 </Form.Item>
-                <Form.Item label={t("connectorsGatewayAllowedChannels")} name="allowedChannelIds">
+                <Form.Item
+                  label={t("connectorsGatewayAllowedChannels")}
+                  name="allowedChannelIds"
+                >
                   <Input placeholder="123, 456" />
                 </Form.Item>
                 <Form.Item name="allowChannelMessages" valuePropName="checked">
@@ -213,7 +261,11 @@ export function GatewayConnectorEditor({
                 <Input />
               </Form.Item>
             )}
-            <Form.Item label={t("settingsTriggersWorkspace")} name="workspaceId" rules={[{ required: true }]}>
+            <Form.Item
+              label={t("settingsTriggersWorkspace")}
+              name="workspaceId"
+              rules={[{ required: true }]}
+            >
               <Select
                 options={(workspacesQuery.data ?? []).map((workspace) => ({
                   label: workspace.display_name || workspace.workspace_id,
@@ -227,8 +279,13 @@ export function GatewayConnectorEditor({
             <div className="at-gateway-account-actions">
               {selectedAccount !== null ? (
                 <>
-                  <Button loading={toggleMutation.isPending} onClick={() => toggleMutation.mutate(selectedAccount)}>
-                    {selectedAccount.status === "enabled" ? t("settingsTriggersDisableAccount") : t("settingsTriggersEnableAccount")}
+                  <Button
+                    loading={toggleMutation.isPending}
+                    onClick={() => toggleMutation.mutate(selectedAccount)}
+                  >
+                    {selectedAccount.status === "enabled"
+                      ? t("settingsTriggersDisableAccount")
+                      : t("settingsTriggersEnableAccount")}
                   </Button>
                   <Button
                     danger
@@ -240,7 +297,14 @@ export function GatewayConnectorEditor({
                   </Button>
                 </>
               ) : null}
-              <Button htmlType="submit" loading={saveMutation.isPending} type="primary">
+              <Button disabled={saveMutation.isPending} onClick={onCancel}>
+                {t("connectorsConfigureCancel")}
+              </Button>
+              <Button
+                htmlType="submit"
+                loading={saveMutation.isPending}
+                type="primary"
+              >
                 {t("connectorsConfigureSave")}
               </Button>
             </div>

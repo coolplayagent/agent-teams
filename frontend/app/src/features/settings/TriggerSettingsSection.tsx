@@ -1,12 +1,4 @@
-import {
-  Alert,
-  App,
-  Button,
-  Form,
-  Input,
-  Select,
-  Typography,
-} from "antd";
+import { Alert, App, Button, Form, Input, Select, Typography } from "antd";
 import type { FormInstance } from "antd";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Plus, Power, RefreshCw, Save, Trash2 } from "lucide-react";
@@ -116,18 +108,31 @@ const DEFAULT_TRIGGER_RULE: FeishuTriggerRule = "mention_only";
 const DEFAULT_SESSION_MODE: SessionMode = "normal";
 const DEFAULT_THINKING_EFFORT: ThinkingEffort = "medium";
 
-export function TriggerSettingsSection() {
+export type TriggerSettingsProvider = "feishu" | "wechat";
+
+export function TriggerSettingsSection({
+  embedded = false,
+  onSaved,
+  provider,
+}: {
+  embedded?: boolean;
+  onSaved?: () => void;
+  provider?: TriggerSettingsProvider;
+}) {
   const { message, modal } = App.useApp();
   const queryClient = useQueryClient();
   const t = useTranslations();
   const [form] = Form.useForm<FeishuTriggerFormValues>();
   const [wechatForm] = Form.useForm<WeChatGatewayFormValues>();
   const [editor, setEditor] = useState<FeishuEditorState | null>(null);
-  const [wechatEditor, setWeChatEditor] = useState<WeChatEditorState | null>(null);
+  const [wechatEditor, setWeChatEditor] = useState<WeChatEditorState | null>(
+    null,
+  );
   const [wechatLoginSession, setWeChatLoginSession] =
     useState<WeChatLoginStartResponse | null>(null);
   const [wechatNotice, setWeChatNotice] = useState<Notice | null>(null);
-  const sessionMode = Form.useWatch("session_mode", form) ?? DEFAULT_SESSION_MODE;
+  const sessionMode =
+    Form.useWatch("session_mode", form) ?? DEFAULT_SESSION_MODE;
   const thinkingEnabled = Form.useWatch("thinking_enabled", form) ?? false;
   const wechatSessionMode =
     Form.useWatch("session_mode", wechatForm) ?? DEFAULT_SESSION_MODE;
@@ -135,10 +140,12 @@ export function TriggerSettingsSection() {
     Form.useWatch("thinking_enabled", wechatForm) ?? false;
 
   const accountsQuery = useQuery({
+    enabled: provider !== "wechat",
     queryKey: ["settings", "triggers", "feishu", "accounts"],
     queryFn: listFeishuGatewayAccounts,
   });
   const wechatAccountsQuery = useQuery({
+    enabled: provider !== "feishu",
     queryKey: ["settings", "triggers", "wechat", "accounts"],
     queryFn: listWeChatGatewayAccounts,
   });
@@ -164,14 +171,14 @@ export function TriggerSettingsSection() {
     [wechatAccountsQuery.data],
   );
   const loading =
-    accountsQuery.isLoading ||
-    wechatAccountsQuery.isLoading ||
+    (provider !== "wechat" && accountsQuery.isLoading) ||
+    (provider !== "feishu" && wechatAccountsQuery.isLoading) ||
     workspacesQuery.isLoading ||
     rolesQuery.isLoading ||
     orchestrationQuery.isLoading;
   const error =
-    accountsQuery.error ??
-    wechatAccountsQuery.error ??
+    (provider !== "wechat" ? accountsQuery.error : null) ??
+    (provider !== "feishu" ? wechatAccountsQuery.error : null) ??
     workspacesQuery.error ??
     rolesQuery.error ??
     orchestrationQuery.error;
@@ -188,7 +195,13 @@ export function TriggerSettingsSection() {
         orchestrationQuery.data,
       ),
     );
-  }, [editor, form, orchestrationQuery.data, rolesQuery.data, workspacesQuery.data]);
+  }, [
+    editor,
+    form,
+    orchestrationQuery.data,
+    rolesQuery.data,
+    workspacesQuery.data,
+  ]);
 
   useEffect(() => {
     if (wechatEditor === null) {
@@ -241,6 +254,7 @@ export function TriggerSettingsSection() {
       );
       setEditor(null);
       invalidateFeishuQueries();
+      onSaved?.();
     },
     onError: (mutationError) => {
       void message.error(
@@ -321,6 +335,7 @@ export function TriggerSettingsSection() {
         message: t("settingsTriggersWeChatSaved"),
       });
       invalidateWeChatQueries();
+      onSaved?.();
     },
     onError: (mutationError) => {
       const fallback = t("settingsSaveFailed");
@@ -400,7 +415,9 @@ export function TriggerSettingsSection() {
           kind: "success",
           message: result.message || t("settingsTriggersWeChatConnected"),
         });
-        void message.success(result.message || t("settingsTriggersWeChatConnected"));
+        void message.success(
+          result.message || t("settingsTriggersWeChatConnected"),
+        );
         invalidateWeChatQueries();
         return;
       }
@@ -501,7 +518,10 @@ export function TriggerSettingsSection() {
     const secret = normalizeOptionalString(values.app_secret);
     if (editor.mode === "create" && secret === null) {
       form.setFields([
-        { errors: [t("settingsTriggersAppSecretRequired")], name: "app_secret" },
+        {
+          errors: [t("settingsTriggersAppSecretRequired")],
+          name: "app_secret",
+        },
       ]);
       return;
     }
@@ -535,7 +555,10 @@ export function TriggerSettingsSection() {
     const workspaceId = normalizeOptionalString(values.workspace_id);
     if (workspaceId === null) {
       wechatForm.setFields([
-        { errors: [t("settingsTriggersWorkspaceRequired")], name: "workspace_id" },
+        {
+          errors: [t("settingsTriggersWorkspaceRequired")],
+          name: "workspace_id",
+        },
       ]);
       return;
     }
@@ -552,28 +575,35 @@ export function TriggerSettingsSection() {
     wechatSaveMutation.mutate({ editor: wechatEditor, values });
   }
 
-  const enabledCount = accounts.filter((account) => account.status === "enabled").length;
+  const enabledCount = accounts.filter(
+    (account) => account.status === "enabled",
+  ).length;
   const credentialsReadyCount = accounts.filter(hasAppSecret).length;
   const wechatEnabledCount = wechatAccounts.filter(
     (account) => account.status === "enabled",
   ).length;
-  const wechatRunningCount = wechatAccounts.filter((account) => account.running).length;
+  const wechatRunningCount = wechatAccounts.filter(
+    (account) => account.running,
+  ).length;
 
   if (wechatEditor !== null) {
     const account = wechatEditor.account;
     return (
-      <SettingsSection title={t("settingsTriggers")}>
+      <SettingsSection embedded={embedded} title={t("settingsTriggersWeChat")}>
         <div className="at-settings-detail-page">
           <div className="at-settings-detail-header">
             <div className="at-settings-list-main">
               <span>{account.display_name || account.account_id}</span>
-              <Typography.Text>{t("settingsTriggersWeChatDetail")}</Typography.Text>
+              <Typography.Text>
+                {t("settingsTriggersWeChatDetail")}
+              </Typography.Text>
             </div>
             <div className="at-settings-detail-actions">
               <Button
                 icon={<Power size={15} />}
                 loading={
-                  wechatEnableMutation.isPending || wechatDisableMutation.isPending
+                  wechatEnableMutation.isPending ||
+                  wechatDisableMutation.isPending
                 }
                 onClick={() => toggleWeChatAccount(account)}
               >
@@ -598,15 +628,25 @@ export function TriggerSettingsSection() {
               >
                 {t("settingsSave")}
               </Button>
-              <Button onClick={() => setWeChatEditor(null)}>{t("settingsBack")}</Button>
+              <Button onClick={() => setWeChatEditor(null)}>
+                {t("settingsBack")}
+              </Button>
             </div>
           </div>
           <dl className="at-settings-facts">
-            <Fact label={t("settingsTriggersAccountId")} value={account.account_id} />
-            <Fact label={t("settingsTriggersStatus")} value={wechatStatusLabel(account, t)} />
+            <Fact
+              label={t("settingsTriggersAccountId")}
+              value={account.account_id}
+            />
+            <Fact
+              label={t("settingsTriggersStatus")}
+              value={wechatStatusLabel(account, t)}
+            />
             <Fact
               label={t("settingsTriggersRunning")}
-              value={account.running ? t("settingsEnabled") : t("settingsDisabled")}
+              value={
+                account.running ? t("settingsEnabled") : t("settingsDisabled")
+              }
             />
             <Fact
               label={t("settingsTriggersRemoteUser")}
@@ -641,7 +681,7 @@ export function TriggerSettingsSection() {
 
   if (editor !== null) {
     return (
-      <SettingsSection title={t("settingsTriggers")}>
+      <SettingsSection embedded={embedded} title={t("settingsTriggersFeishu")}>
         <div className="at-settings-detail-page">
           <div className="at-settings-detail-header">
             <div className="at-settings-list-main">
@@ -661,8 +701,14 @@ export function TriggerSettingsSection() {
                 <>
                   <Button
                     icon={<Power size={15} />}
-                    loading={enableMutation.isPending || disableMutation.isPending}
-                    onClick={() => toggleAccount(editor.account as FeishuGatewayAccountRecord)}
+                    loading={
+                      enableMutation.isPending || disableMutation.isPending
+                    }
+                    onClick={() =>
+                      toggleAccount(
+                        editor.account as FeishuGatewayAccountRecord,
+                      )
+                    }
                   >
                     {editor.account.status === "enabled"
                       ? t("settingsTriggersDisableAccount")
@@ -672,7 +718,11 @@ export function TriggerSettingsSection() {
                     danger
                     icon={<Trash2 size={15} />}
                     loading={deleteMutation.isPending}
-                    onClick={() => confirmDelete(editor.account as FeishuGatewayAccountRecord)}
+                    onClick={() =>
+                      confirmDelete(
+                        editor.account as FeishuGatewayAccountRecord,
+                      )
+                    }
                   >
                     {t("settingsTriggersDelete")}
                   </Button>
@@ -687,12 +737,17 @@ export function TriggerSettingsSection() {
               >
                 {t("settingsSave")}
               </Button>
-              <Button onClick={() => setEditor(null)}>{t("settingsBack")}</Button>
+              <Button onClick={() => setEditor(null)}>
+                {t("settingsBack")}
+              </Button>
             </div>
           </div>
           {editor.mode === "edit" && editor.account !== null ? (
             <dl className="at-settings-facts">
-              <Fact label={t("settingsTriggersAccountId")} value={editor.account.account_id} />
+              <Fact
+                label={t("settingsTriggersAccountId")}
+                value={editor.account.account_id}
+              />
               <Fact
                 label={t("settingsTriggersStatus")}
                 value={statusLabel(editor.account, t)}
@@ -727,233 +782,292 @@ export function TriggerSettingsSection() {
   }
 
   return (
-    <SettingsSection title={t("settingsTriggers")}>
+    <SettingsSection
+      embedded={embedded}
+      title={
+        provider === "feishu"
+          ? t("settingsTriggersFeishu")
+          : provider === "wechat"
+            ? t("settingsTriggersWeChat")
+            : t("settingsTriggers")
+      }
+    >
       <SettingsQueryState error={error} loading={loading} />
       {!loading &&
-      accountsQuery.data !== undefined &&
-      wechatAccountsQuery.data !== undefined ? (
+      (provider === "wechat" || accountsQuery.data !== undefined) &&
+      (provider === "feishu" || wechatAccountsQuery.data !== undefined) ? (
         <div className="at-trigger-provider-grid">
-          <section className="at-trigger-provider-section">
-            <div className="at-trigger-provider-head">
-              <div className="at-settings-list-main">
-                <span>{t("settingsTriggersFeishu")}</span>
-                <Typography.Text>{t("settingsTriggersFeishuDetail")}</Typography.Text>
-              </div>
-              <div className="at-trigger-provider-actions">
-                <Button icon={<Plus size={15} />} onClick={openCreateEditor} type="primary">
-                  {t("settingsTriggersAddFeishu")}
-                </Button>
-                <Button
-                  icon={<RefreshCw size={15} />}
-                  loading={reloadMutation.isPending}
-                  onClick={() => reloadMutation.mutate()}
-                >
-                  {t("settingsTriggersReloadFeishu")}
-                </Button>
-              </div>
-            </div>
-            <dl className="at-settings-facts">
-              <Fact
-                label={t("settingsTriggersFeishuAccounts")}
-                value={String(accounts.length)}
-              />
-              <Fact label={t("settingsTriggersEnabledCount")} value={String(enabledCount)} />
-              <Fact
-                label={t("settingsTriggersCredentialsReady")}
-                value={`${credentialsReadyCount}/${accounts.length}`}
-              />
-            </dl>
-            {accounts.length === 0 ? (
-              <div className="at-settings-empty">{t("settingsTriggersNoFeishuAccounts")}</div>
-            ) : (
-              <div className="at-settings-list" aria-label={t("settingsTriggersFeishuAccounts")}>
-                {accounts.map((account) => (
-                  <div className="at-settings-list-row at-trigger-row" key={account.account_id}>
-                    <button
-                      className="at-trigger-row-main"
-                      onClick={() => openEditEditor(account)}
-                      type="button"
-                    >
-                      <div className="at-settings-list-main">
-                        <span>{account.display_name || account.name}</span>
-                        <Typography.Text ellipsis title={accountDetail(account)}>
-                          {accountDetail(account)}
-                        </Typography.Text>
-                      </div>
-                    </button>
-                    <div className="at-trigger-row-actions">
-                      <Typography.Text className="at-settings-list-meta" ellipsis>
-                        {statusLabel(account, t)}
-                      </Typography.Text>
-                      <Button
-                        icon={<Power size={14} />}
-                        loading={enableMutation.isPending || disableMutation.isPending}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          toggleAccount(account);
-                        }}
-                        size="small"
-                      >
-                        {account.status === "enabled"
-                          ? t("settingsTriggersDisableAccount")
-                          : t("settingsTriggersEnableAccount")}
-                      </Button>
-                      <Button
-                        icon={<Pencil size={14} />}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          openEditEditor(account);
-                        }}
-                        size="small"
-                      >
-                        {t("settingsTriggersEditAccount")}
-                      </Button>
-                      <Button
-                        danger
-                        icon={<Trash2 size={14} />}
-                        loading={deleteMutation.isPending}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          confirmDelete(account);
-                        }}
-                        size="small"
-                      >
-                        {t("settingsTriggersDelete")}
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section className="at-trigger-provider-section">
-            <div className="at-trigger-provider-head">
-              <div className="at-settings-list-main">
-                <span>{t("settingsTriggersWeChat")}</span>
-                <Typography.Text>{t("settingsTriggersWeChatListDetail")}</Typography.Text>
-              </div>
-              <div className="at-trigger-provider-actions">
-                <Button
-                  icon={<Plus size={15} />}
-                  loading={
-                    wechatStartLoginMutation.isPending ||
-                    wechatWaitLoginMutation.isPending
-                  }
-                  onClick={() => wechatStartLoginMutation.mutate()}
-                >
-                  {t("settingsTriggersConnectWeChat")}
-                </Button>
-                <Button
-                  icon={<RefreshCw size={15} />}
-                  loading={wechatReloadMutation.isPending}
-                  onClick={() => wechatReloadMutation.mutate()}
-                >
-                  {t("settingsTriggersReloadWeChat")}
-                </Button>
-              </div>
-            </div>
-            <dl className="at-settings-facts">
-              <Fact
-                label={t("settingsTriggersWeChatAccounts")}
-                value={String(wechatAccounts.length)}
-              />
-              <Fact
-                label={t("settingsTriggersEnabledCount")}
-                value={String(wechatEnabledCount)}
-              />
-              <Fact
-                label={t("settingsTriggersRunning")}
-                value={String(wechatRunningCount)}
-              />
-            </dl>
-            {wechatNotice !== null ? (
-              <Alert
-                className="at-trigger-notice"
-                message={wechatNotice.message}
-                showIcon
-                type={wechatNotice.kind}
-              />
-            ) : null}
-            {wechatLoginSession?.qr_code_url ? (
-              <div className="at-trigger-login-panel">
-                <img
-                  alt={t("settingsTriggersWeChatQrTitle")}
-                  className="at-trigger-login-qr"
-                  src={wechatLoginSession.qr_code_url}
-                />
+          {provider !== "wechat" ? (
+            <section className="at-trigger-provider-section">
+              <div className="at-trigger-provider-head">
                 <div className="at-settings-list-main">
-                  <span>{t("settingsTriggersWeChatQrTitle")}</span>
-                  <Typography.Text>{t("settingsTriggersWeChatQrCopy")}</Typography.Text>
+                  <span>{t("settingsTriggersFeishu")}</span>
+                  <Typography.Text>
+                    {t("settingsTriggersFeishuDetail")}
+                  </Typography.Text>
+                </div>
+                <div className="at-trigger-provider-actions">
+                  <Button
+                    icon={<Plus size={15} />}
+                    onClick={openCreateEditor}
+                    type="primary"
+                  >
+                    {t("settingsTriggersAddFeishu")}
+                  </Button>
+                  <Button
+                    icon={<RefreshCw size={15} />}
+                    loading={reloadMutation.isPending}
+                    onClick={() => reloadMutation.mutate()}
+                  >
+                    {t("settingsTriggersReloadFeishu")}
+                  </Button>
                 </div>
               </div>
-            ) : null}
-            {wechatAccounts.length === 0 ? (
-              <div className="at-settings-empty">{t("settingsTriggersWeChatNoAccounts")}</div>
-            ) : (
-              <div className="at-settings-list" aria-label={t("settingsTriggersWeChatAccounts")}>
-                {wechatAccounts.map((account) => (
-                  <div className="at-settings-list-row at-trigger-row" key={account.account_id}>
-                    <button
-                      className="at-trigger-row-main"
-                      onClick={() => openEditWeChatEditor(account)}
-                      type="button"
+              <dl className="at-settings-facts">
+                <Fact
+                  label={t("settingsTriggersFeishuAccounts")}
+                  value={String(accounts.length)}
+                />
+                <Fact
+                  label={t("settingsTriggersEnabledCount")}
+                  value={String(enabledCount)}
+                />
+                <Fact
+                  label={t("settingsTriggersCredentialsReady")}
+                  value={`${credentialsReadyCount}/${accounts.length}`}
+                />
+              </dl>
+              {accounts.length === 0 ? (
+                <div className="at-settings-empty">
+                  {t("settingsTriggersNoFeishuAccounts")}
+                </div>
+              ) : (
+                <div
+                  className="at-settings-list"
+                  aria-label={t("settingsTriggersFeishuAccounts")}
+                >
+                  {accounts.map((account) => (
+                    <div
+                      className="at-settings-list-row at-trigger-row"
+                      key={account.account_id}
                     >
-                      <div className="at-settings-list-main">
-                        <span>{account.display_name || account.account_id}</span>
-                        <Typography.Text ellipsis title={wechatAccountDetail(account, t)}>
-                          {wechatAccountDetail(account, t)}
+                      <button
+                        className="at-trigger-row-main"
+                        onClick={() => openEditEditor(account)}
+                        type="button"
+                      >
+                        <div className="at-settings-list-main">
+                          <span>{account.display_name || account.name}</span>
+                          <Typography.Text
+                            ellipsis
+                            title={accountDetail(account)}
+                          >
+                            {accountDetail(account)}
+                          </Typography.Text>
+                        </div>
+                      </button>
+                      <div className="at-trigger-row-actions">
+                        <Typography.Text
+                          className="at-settings-list-meta"
+                          ellipsis
+                        >
+                          {statusLabel(account, t)}
                         </Typography.Text>
+                        <Button
+                          icon={<Power size={14} />}
+                          loading={
+                            enableMutation.isPending ||
+                            disableMutation.isPending
+                          }
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            toggleAccount(account);
+                          }}
+                          size="small"
+                        >
+                          {account.status === "enabled"
+                            ? t("settingsTriggersDisableAccount")
+                            : t("settingsTriggersEnableAccount")}
+                        </Button>
+                        <Button
+                          icon={<Pencil size={14} />}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openEditEditor(account);
+                          }}
+                          size="small"
+                        >
+                          {t("settingsTriggersEditAccount")}
+                        </Button>
+                        <Button
+                          danger
+                          icon={<Trash2 size={14} />}
+                          loading={deleteMutation.isPending}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            confirmDelete(account);
+                          }}
+                          size="small"
+                        >
+                          {t("settingsTriggersDelete")}
+                        </Button>
                       </div>
-                    </button>
-                    <div className="at-trigger-row-actions">
-                      <Typography.Text className="at-settings-list-meta" ellipsis>
-                        {wechatStatusLabel(account, t)}
-                      </Typography.Text>
-                      <Button
-                        icon={<Power size={14} />}
-                        loading={
-                          wechatEnableMutation.isPending ||
-                          wechatDisableMutation.isPending
-                        }
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          toggleWeChatAccount(account);
-                        }}
-                        size="small"
-                      >
-                        {account.status === "enabled"
-                          ? t("settingsTriggersDisableAccount")
-                          : t("settingsTriggersEnableAccount")}
-                      </Button>
-                      <Button
-                        icon={<Pencil size={14} />}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          openEditWeChatEditor(account);
-                        }}
-                        size="small"
-                      >
-                        {t("settingsTriggersEditAccount")}
-                      </Button>
-                      <Button
-                        danger
-                        icon={<Trash2 size={14} />}
-                        loading={wechatDeleteMutation.isPending}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          confirmDeleteWeChat(account);
-                        }}
-                        size="small"
-                      >
-                        {t("settingsTriggersDelete")}
-                      </Button>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
+              )}
+            </section>
+          ) : null}
+
+          {provider !== "feishu" ? (
+            <section className="at-trigger-provider-section">
+              <div className="at-trigger-provider-head">
+                <div className="at-settings-list-main">
+                  <span>{t("settingsTriggersWeChat")}</span>
+                  <Typography.Text>
+                    {t("settingsTriggersWeChatListDetail")}
+                  </Typography.Text>
+                </div>
+                <div className="at-trigger-provider-actions">
+                  <Button
+                    icon={<Plus size={15} />}
+                    loading={
+                      wechatStartLoginMutation.isPending ||
+                      wechatWaitLoginMutation.isPending
+                    }
+                    onClick={() => wechatStartLoginMutation.mutate()}
+                  >
+                    {t("settingsTriggersConnectWeChat")}
+                  </Button>
+                  <Button
+                    icon={<RefreshCw size={15} />}
+                    loading={wechatReloadMutation.isPending}
+                    onClick={() => wechatReloadMutation.mutate()}
+                  >
+                    {t("settingsTriggersReloadWeChat")}
+                  </Button>
+                </div>
               </div>
-            )}
-          </section>
+              <dl className="at-settings-facts">
+                <Fact
+                  label={t("settingsTriggersWeChatAccounts")}
+                  value={String(wechatAccounts.length)}
+                />
+                <Fact
+                  label={t("settingsTriggersEnabledCount")}
+                  value={String(wechatEnabledCount)}
+                />
+                <Fact
+                  label={t("settingsTriggersRunning")}
+                  value={String(wechatRunningCount)}
+                />
+              </dl>
+              {wechatNotice !== null ? (
+                <Alert
+                  className="at-trigger-notice"
+                  message={wechatNotice.message}
+                  showIcon
+                  type={wechatNotice.kind}
+                />
+              ) : null}
+              {wechatLoginSession?.qr_code_url ? (
+                <div className="at-trigger-login-panel">
+                  <img
+                    alt={t("settingsTriggersWeChatQrTitle")}
+                    className="at-trigger-login-qr"
+                    src={wechatLoginSession.qr_code_url}
+                  />
+                  <div className="at-settings-list-main">
+                    <span>{t("settingsTriggersWeChatQrTitle")}</span>
+                    <Typography.Text>
+                      {t("settingsTriggersWeChatQrCopy")}
+                    </Typography.Text>
+                  </div>
+                </div>
+              ) : null}
+              {wechatAccounts.length === 0 ? (
+                <div className="at-settings-empty">
+                  {t("settingsTriggersWeChatNoAccounts")}
+                </div>
+              ) : (
+                <div
+                  className="at-settings-list"
+                  aria-label={t("settingsTriggersWeChatAccounts")}
+                >
+                  {wechatAccounts.map((account) => (
+                    <div
+                      className="at-settings-list-row at-trigger-row"
+                      key={account.account_id}
+                    >
+                      <button
+                        className="at-trigger-row-main"
+                        onClick={() => openEditWeChatEditor(account)}
+                        type="button"
+                      >
+                        <div className="at-settings-list-main">
+                          <span>
+                            {account.display_name || account.account_id}
+                          </span>
+                          <Typography.Text
+                            ellipsis
+                            title={wechatAccountDetail(account, t)}
+                          >
+                            {wechatAccountDetail(account, t)}
+                          </Typography.Text>
+                        </div>
+                      </button>
+                      <div className="at-trigger-row-actions">
+                        <Typography.Text
+                          className="at-settings-list-meta"
+                          ellipsis
+                        >
+                          {wechatStatusLabel(account, t)}
+                        </Typography.Text>
+                        <Button
+                          icon={<Power size={14} />}
+                          loading={
+                            wechatEnableMutation.isPending ||
+                            wechatDisableMutation.isPending
+                          }
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            toggleWeChatAccount(account);
+                          }}
+                          size="small"
+                        >
+                          {account.status === "enabled"
+                            ? t("settingsTriggersDisableAccount")
+                            : t("settingsTriggersEnableAccount")}
+                        </Button>
+                        <Button
+                          icon={<Pencil size={14} />}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openEditWeChatEditor(account);
+                          }}
+                          size="small"
+                        >
+                          {t("settingsTriggersEditAccount")}
+                        </Button>
+                        <Button
+                          danger
+                          icon={<Trash2 size={14} />}
+                          loading={wechatDeleteMutation.isPending}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            confirmDeleteWeChat(account);
+                          }}
+                          size="small"
+                        >
+                          {t("settingsTriggersDelete")}
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          ) : null}
         </div>
       ) : null}
     </SettingsSection>
@@ -991,34 +1105,47 @@ function FeishuTriggerForm({
     >
       <div className="at-settings-form-layout">
         <div className="at-settings-form-card-layout">
-          <Typography.Text strong>{t("settingsTriggersAppConfig")}</Typography.Text>
+          <Typography.Text strong>
+            {t("settingsTriggersAppConfig")}
+          </Typography.Text>
           <Form.Item
             label={t("settingsTriggersName")}
             name="name"
-            rules={[{ required: true, message: t("settingsTriggersNameRequired") }]}
+            rules={[
+              { required: true, message: t("settingsTriggersNameRequired") },
+            ]}
           >
             <Input autoComplete="off" />
           </Form.Item>
-          <Form.Item label={t("settingsTriggersDisplayName")} name="display_name">
+          <Form.Item
+            label={t("settingsTriggersDisplayName")}
+            name="display_name"
+          >
             <Input autoComplete="off" />
           </Form.Item>
           <Form.Item
             label={t("settingsTriggersAppId")}
             name="app_id"
-            rules={[{ required: true, message: t("settingsTriggersAppIdRequired") }]}
+            rules={[
+              { required: true, message: t("settingsTriggersAppIdRequired") },
+            ]}
           >
             <Input autoComplete="off" />
           </Form.Item>
           <Form.Item
             label={t("settingsTriggersAppName")}
             name="app_name"
-            rules={[{ required: true, message: t("settingsTriggersAppNameRequired") }]}
+            rules={[
+              { required: true, message: t("settingsTriggersAppNameRequired") },
+            ]}
           >
             <Input autoComplete="off" />
           </Form.Item>
         </div>
         <div className="at-settings-form-card-layout">
-          <Typography.Text strong>{t("settingsTriggersCredentials")}</Typography.Text>
+          <Typography.Text strong>
+            {t("settingsTriggersCredentials")}
+          </Typography.Text>
           <Form.Item
             extra={
               mode === "edit" ? t("settingsTriggersSecretPreserved") : undefined
@@ -1029,14 +1156,18 @@ function FeishuTriggerForm({
             <Input.Password autoComplete="off" />
           </Form.Item>
           <Form.Item
-            extra={mode === "edit" ? t("settingsTriggersSecretPreserved") : undefined}
+            extra={
+              mode === "edit" ? t("settingsTriggersSecretPreserved") : undefined
+            }
             label={t("settingsTriggersVerificationToken")}
             name="verification_token"
           >
             <Input.Password autoComplete="off" />
           </Form.Item>
           <Form.Item
-            extra={mode === "edit" ? t("settingsTriggersSecretPreserved") : undefined}
+            extra={
+              mode === "edit" ? t("settingsTriggersSecretPreserved") : undefined
+            }
             label={t("settingsTriggersEncryptKey")}
             name="encrypt_key"
           >
@@ -1044,11 +1175,18 @@ function FeishuTriggerForm({
           </Form.Item>
         </div>
         <div className="at-settings-form-card-layout">
-          <Typography.Text strong>{t("settingsTriggersSessionConfig")}</Typography.Text>
+          <Typography.Text strong>
+            {t("settingsTriggersSessionConfig")}
+          </Typography.Text>
           <Form.Item
             label={t("settingsTriggersWorkspace")}
             name="workspace_id"
-            rules={[{ required: true, message: t("settingsTriggersWorkspaceRequired") }]}
+            rules={[
+              {
+                required: true,
+                message: t("settingsTriggersWorkspaceRequired"),
+              },
+            ]}
           >
             <Select options={workspaceOptions(workspaces)} />
           </Form.Item>
@@ -1093,32 +1231,29 @@ function FeishuTriggerForm({
               <Select options={orchestrationPresetOptions(orchestration)} />
             </Form.Item>
           ) : null}
-          <Form.Item
-            name="yolo"
-            valuePropName="checked"
-          >
-            <FormChoiceControl kind="switch" label={t("settingsTriggersYolo")} />
+          <Form.Item name="yolo" valuePropName="checked">
+            <FormChoiceControl
+              kind="switch"
+              label={t("settingsTriggersYolo")}
+            />
           </Form.Item>
-          <Form.Item
-            name="shell_safety_policy_enabled"
-            valuePropName="checked"
-          >
+          <Form.Item name="shell_safety_policy_enabled" valuePropName="checked">
             <FormChoiceControl
               kind="switch"
               label={t("settingsTriggersShellSafetyPolicy")}
             />
           </Form.Item>
-          <Form.Item
-            name="thinking_enabled"
-            valuePropName="checked"
-          >
+          <Form.Item name="thinking_enabled" valuePropName="checked">
             <FormChoiceControl
               kind="switch"
               label={t("settingsTriggersThinking")}
             />
           </Form.Item>
           {thinkingEnabled ? (
-            <Form.Item label={t("settingsTriggersThinkingEffort")} name="thinking_effort">
+            <Form.Item
+              label={t("settingsTriggersThinkingEffort")}
+              name="thinking_effort"
+            >
               <Select
                 options={[
                   { label: "minimal", value: "minimal" },
@@ -1164,7 +1299,9 @@ function WeChatGatewayForm({
     >
       <div className="at-settings-form-layout">
         <div className="at-settings-form-card-layout">
-          <Typography.Text strong>{t("settingsTriggersAccount")}</Typography.Text>
+          <Typography.Text strong>
+            {t("settingsTriggersAccount")}
+          </Typography.Text>
           <Form.Item
             label={t("settingsTriggersDisplayName")}
             name="display_name"
@@ -1180,7 +1317,10 @@ function WeChatGatewayForm({
           <Form.Item label={t("settingsTriggersBaseUrl")} name="base_url">
             <Input autoComplete="off" />
           </Form.Item>
-          <Form.Item label={t("settingsTriggersCdnBaseUrl")} name="cdn_base_url">
+          <Form.Item
+            label={t("settingsTriggersCdnBaseUrl")}
+            name="cdn_base_url"
+          >
             <Input autoComplete="off" />
           </Form.Item>
           <Form.Item label={t("settingsTriggersRouteTag")} name="route_tag">
@@ -1188,11 +1328,18 @@ function WeChatGatewayForm({
           </Form.Item>
         </div>
         <div className="at-settings-form-card-layout">
-          <Typography.Text strong>{t("settingsTriggersSessionConfig")}</Typography.Text>
+          <Typography.Text strong>
+            {t("settingsTriggersSessionConfig")}
+          </Typography.Text>
           <Form.Item
             label={t("settingsTriggersWorkspace")}
             name="workspace_id"
-            rules={[{ required: true, message: t("settingsTriggersWorkspaceRequired") }]}
+            rules={[
+              {
+                required: true,
+                message: t("settingsTriggersWorkspaceRequired"),
+              },
+            ]}
           >
             <Select options={workspaceOptions(workspaces)} />
           </Form.Item>
@@ -1223,23 +1370,23 @@ function WeChatGatewayForm({
               <Select options={orchestrationPresetOptions(orchestration)} />
             </Form.Item>
           ) : null}
-          <Form.Item
-            name="yolo"
-            valuePropName="checked"
-          >
-            <FormChoiceControl kind="switch" label={t("settingsTriggersYolo")} />
+          <Form.Item name="yolo" valuePropName="checked">
+            <FormChoiceControl
+              kind="switch"
+              label={t("settingsTriggersYolo")}
+            />
           </Form.Item>
-          <Form.Item
-            name="thinking_enabled"
-            valuePropName="checked"
-          >
+          <Form.Item name="thinking_enabled" valuePropName="checked">
             <FormChoiceControl
               kind="switch"
               label={t("settingsTriggersThinking")}
             />
           </Form.Item>
           {thinkingEnabled ? (
-            <Form.Item label={t("settingsTriggersThinkingEffort")} name="thinking_effort">
+            <Form.Item
+              label={t("settingsTriggersThinkingEffort")}
+              name="thinking_effort"
+            >
               <Select
                 options={[
                   { label: "minimal", value: "minimal" },
@@ -1269,7 +1416,9 @@ function sortAccounts(
   accounts: FeishuGatewayAccountRecord[],
 ): FeishuGatewayAccountRecord[] {
   return [...accounts].sort((left, right) =>
-    (left.display_name || left.name).localeCompare(right.display_name || right.name),
+    (left.display_name || left.name).localeCompare(
+      right.display_name || right.name,
+    ),
   );
 }
 
@@ -1279,7 +1428,9 @@ function accountPayloadFromValues(
   const sessionMode = values.session_mode || DEFAULT_SESSION_MODE;
   const targetConfig: FeishuTriggerTargetConfig = {
     normal_root_role_id:
-      sessionMode === "normal" ? normalizeOptionalString(values.normal_root_role_id) : null,
+      sessionMode === "normal"
+        ? normalizeOptionalString(values.normal_root_role_id)
+        : null,
     orchestration_preset_id:
       sessionMode === "orchestration"
         ? normalizeOptionalString(values.orchestration_preset_id)
@@ -1408,7 +1559,9 @@ function wechatPayloadFromValues(
     cdn_base_url: normalizeOptionalString(values.cdn_base_url),
     display_name: values.display_name.trim(),
     normal_root_role_id:
-      sessionMode === "normal" ? normalizeOptionalString(values.normal_root_role_id) : null,
+      sessionMode === "normal"
+        ? normalizeOptionalString(values.normal_root_role_id)
+        : null,
     orchestration_preset_id:
       sessionMode === "orchestration"
         ? normalizeOptionalString(values.orchestration_preset_id)
@@ -1438,9 +1591,11 @@ function wechatFormValuesFromEditor(
     base_url: account.base_url,
     cdn_base_url: account.cdn_base_url,
     display_name: account.display_name,
-    normal_root_role_id: account.normal_root_role_id ?? defaultNormalRoleId(roles),
+    normal_root_role_id:
+      account.normal_root_role_id ?? defaultNormalRoleId(roles),
     orchestration_preset_id:
-      account.orchestration_preset_id ?? defaultOrchestrationPresetId(orchestration),
+      account.orchestration_preset_id ??
+      defaultOrchestrationPresetId(orchestration),
     route_tag: account.route_tag ?? "",
     session_mode: account.session_mode ?? DEFAULT_SESSION_MODE,
     thinking_effort: account.thinking.effort ?? DEFAULT_THINKING_EFFORT,
@@ -1481,16 +1636,22 @@ function workspaceOptions(workspaces: WorkspaceRecord[]) {
 }
 
 function normalRoleOptions(roles: RoleConfigOptions | undefined) {
-  const roleOptions = uniqueRoles(roles?.normal_mode_roles ?? []).map((role) => ({
-    label: roleLabel(role),
-    value: role.role_id,
-  }));
+  const roleOptions = uniqueRoles(roles?.normal_mode_roles ?? []).map(
+    (role) => ({
+      label: roleLabel(role),
+      value: role.role_id,
+    }),
+  );
   return [{ label: "-", value: "" }, ...roleOptions];
 }
 
-function orchestrationPresetOptions(orchestration: OrchestrationConfig | undefined) {
+function orchestrationPresetOptions(
+  orchestration: OrchestrationConfig | undefined,
+) {
   return (orchestration?.presets ?? []).map((preset) => ({
-    label: preset.name ? `${preset.name} (${preset.preset_id})` : preset.preset_id,
+    label: preset.name
+      ? `${preset.name} (${preset.preset_id})`
+      : preset.preset_id,
     value: preset.preset_id,
   }));
 }
@@ -1507,7 +1668,8 @@ function uniqueRoles(roles: RoleOption[]): RoleOption[] {
 }
 
 function workspaceLabel(workspace: WorkspaceRecord): string {
-  const name = workspace.display_name ?? workspace.name ?? workspace.workspace_id;
+  const name =
+    workspace.display_name ?? workspace.name ?? workspace.workspace_id;
   if (workspace.root_path.trim()) {
     return `${name} · ${workspace.root_path}`;
   }
@@ -1531,15 +1693,25 @@ function wechatAccountDetail(
   const workspaceId = account.workspace_id || "-";
   const routeTag = account.route_tag ? ` · ${account.route_tag}` : "";
   return `${workspaceId}${routeTag} · ${
-    account.running ? t("settingsTriggersRunning") : t("settingsTriggersStopped")
+    account.running
+      ? t("settingsTriggersRunning")
+      : t("settingsTriggersStopped")
   }`;
 }
 
-function statusLabel(account: FeishuGatewayAccountRecord, t: Translate): string {
-  return account.status === "enabled" ? t("settingsEnabled") : t("settingsDisabled");
+function statusLabel(
+  account: FeishuGatewayAccountRecord,
+  t: Translate,
+): string {
+  return account.status === "enabled"
+    ? t("settingsEnabled")
+    : t("settingsDisabled");
 }
 
-function wechatStatusLabel(account: WeChatGatewayAccountRecord, t: Translate): string {
+function wechatStatusLabel(
+  account: WeChatGatewayAccountRecord,
+  t: Translate,
+): string {
   if (account.status !== "enabled") {
     return t("settingsDisabled");
   }
@@ -1563,7 +1735,9 @@ function hasAppSecret(account: FeishuGatewayAccountRecord): boolean {
   return account.secret_status?.app_secret_configured === true;
 }
 
-function normalizeOptionalString(value: string | null | undefined): string | null {
+function normalizeOptionalString(
+  value: string | null | undefined,
+): string | null {
   const trimmed = value?.trim() ?? "";
   return trimmed.length > 0 ? trimmed : null;
 }

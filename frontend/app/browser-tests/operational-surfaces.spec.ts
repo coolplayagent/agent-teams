@@ -25,11 +25,15 @@ test("verifies Connectors from the operational fixture", async ({ page }) => {
   await runOperationalSurface(page, assertV2Connectors);
 });
 
-test("verifies Observability from the operational fixture", async ({ page }) => {
+test("verifies Observability from the operational fixture", async ({
+  page,
+}) => {
   await runOperationalSurface(page, assertV2Observability);
 });
 
-test("opens Automation secondary destinations through their real controls", async ({ page }) => {
+test("opens Automation secondary destinations through their real controls", async ({
+  page,
+}) => {
   const appServer = await serveFrontendDist();
   const unhandledApiRoutes: string[] = [];
   try {
@@ -46,18 +50,30 @@ test("opens Automation secondary destinations through their real controls", asyn
     const view = page.locator(".at-automation-view");
     await expect(view).toBeVisible();
 
-    await view.getByRole("button", { name: /Operational automation run/ }).click();
+    await view
+      .getByRole("button", { name: /Operational automation run/ })
+      .click();
     await expect(view).toBeHidden();
-    await expect(page.getByText("No messages yet", { exact: true })).toBeVisible();
-    await expect(page.getByRole("status", { name: "session-automation" })).toBeVisible();
+    await expect(
+      page.getByText("No messages yet", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("status", { name: "session-automation" }),
+    ).toBeVisible();
 
     await nav.getByRole("button", { name: "Automation" }).click();
     await view.getByRole("tab", { name: "GitHub" }).click();
     const settings = page.getByRole("dialog", { name: "Settings" });
     await expect(settings).toBeVisible();
-    await expect(settings.getByRole("heading", { name: "GitHub" })).toBeVisible();
-    await expect(settings.getByText("GitHub CLI", { exact: true })).toBeVisible();
-    await expect(settings.getByText("Webhook", { exact: true }).last()).toBeVisible();
+    await expect(
+      settings.getByRole("heading", { name: "GitHub" }),
+    ).toBeVisible();
+    await expect(
+      settings.getByText("GitHub CLI", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      settings.getByText("Webhook", { exact: true }).last(),
+    ).toBeVisible();
 
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
   } finally {
@@ -65,7 +81,9 @@ test("opens Automation secondary destinations through their real controls", asyn
   }
 });
 
-test("keeps Automation loading and error states framed at 720px", async ({ page }) => {
+test("keeps Automation loading and error states framed at 720px", async ({
+  page,
+}) => {
   const appServer = await serveFrontendDist();
   const unhandledApiRoutes: string[] = [];
   let failProjects = false;
@@ -78,10 +96,16 @@ test("keeps Automation loading and error states framed at 720px", async ({ page 
     await installShellState(page);
     await mockShellApi(page, appServer.url, unhandledApiRoutes, {
       handleRequest: async (context) => {
-        if (context.method === "GET" && context.path === "/automation/projects") {
+        if (
+          context.method === "GET" &&
+          context.path === "/automation/projects"
+        ) {
           await projectsPending;
           if (failProjects) {
-            await context.fulfillJson({ detail: "automation unavailable" }, 500);
+            await context.fulfillJson(
+              { detail: "automation unavailable" },
+              500,
+            );
           } else {
             await context.fulfillJson(automationProjects());
           }
@@ -104,20 +128,27 @@ test("keeps Automation loading and error states framed at 720px", async ({ page 
     await expect(view.locator(".ant-skeleton")).toBeVisible();
     await captureStableViewportScreenshot(
       page,
-      screenshotPath("operational-v2-automation-loading-narrow.png", SCREENSHOT_FOLDER),
+      screenshotPath(
+        "operational-v2-automation-loading-narrow.png",
+        SCREENSHOT_FOLDER,
+      ),
     );
 
     failProjects = true;
     releaseProjects();
-    await expect(view.getByText("Could not load automation projects."))
-      .toBeVisible();
+    await expect(
+      view.getByText("Could not load automation projects."),
+    ).toBeVisible();
     await expectNoDocumentScroll(
       page,
       "Automation loading and error states should stay inside the 720px shell",
     );
     await captureStableViewportScreenshot(
       page,
-      screenshotPath("operational-v2-automation-error-narrow.png", SCREENSHOT_FOLDER),
+      screenshotPath(
+        "operational-v2-automation-error-narrow.png",
+        SCREENSHOT_FOLDER,
+      ),
     );
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
   } finally {
@@ -135,7 +166,10 @@ test("keeps gateway connector editors usable at 720px", async ({ page }) => {
     await installShellState(page);
     await mockShellApi(page, appServer.url, unhandledApiRoutes, {
       handleRequest: async (context) => {
-        if (context.method === "POST" && context.path === "/gateway/discord/accounts") {
+        if (
+          context.method === "POST" &&
+          context.path === "/gateway/discord/accounts"
+        ) {
           discordCreatePayloads.push(
             context.route.request().postDataJSON() as Record<string, unknown>,
           );
@@ -184,22 +218,28 @@ test("keeps gateway connector editors usable at 720px", async ({ page }) => {
     await editor.getByLabel("Token").fill("narrow-token");
     const save = editor.getByRole("button", { name: "Save" });
     await save.scrollIntoViewIfNeeded();
-    await save.click();
-    await expect.poll(() => discordCreatePayloads).toContainEqual(
-      expect.objectContaining({
-        bot_token: "narrow-token",
-        display_name: "Discord narrow",
-        workspace_id: WORKSPACE_ID,
-      }),
+    await captureStableViewportScreenshot(
+      page,
+      screenshotPath(
+        "operational-v2-connectors-discord-editor-narrow.png",
+        SCREENSHOT_FOLDER,
+      ),
     );
-    await editor.scrollIntoViewIfNeeded();
+    await save.click();
+    await expect
+      .poll(() => discordCreatePayloads)
+      .toContainEqual(
+        expect.objectContaining({
+          bot_token: "narrow-token",
+          display_name: "Discord narrow",
+          workspace_id: WORKSPACE_ID,
+        }),
+      );
+    await expect(editor).toBeHidden();
+    await expect(view.getByTestId("connector-detail-discord")).toBeVisible();
     await expectNoDocumentScroll(
       page,
       "gateway connector editors should stay inside the 720px shell",
-    );
-    await captureStableViewportScreenshot(
-      page,
-      screenshotPath("operational-v2-connectors-discord-editor-narrow.png", SCREENSHOT_FOLDER),
     );
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
   } finally {
@@ -237,29 +277,46 @@ async function runOperationalSurface(
 }
 
 async function assertV1Automation(page: Page): Promise<void> {
-  await page.locator('.home-feature-item[data-feature-id="automation"]').click();
+  await page
+    .locator('.home-feature-item[data-feature-id="automation"]')
+    .click();
   const projectView = page.locator("#project-view");
   await expect(projectView).toBeVisible();
   await expect(page.locator("#project-view-title")).toHaveText("Automation");
   await expect(projectView.getByText("Running", { exact: true })).toBeVisible();
   await expect(projectView.getByText("Paused", { exact: true })).toBeVisible();
   await expect(projectView.getByText("Current", { exact: true })).toBeVisible();
-  for (const title of ["Live incident watch", "Paused review", "Daily triage"]) {
-    await expect(projectView.getByRole("button", { name: title })).toBeVisible();
+  for (const title of [
+    "Live incident watch",
+    "Paused review",
+    "Daily triage",
+  ]) {
+    await expect(
+      projectView.getByRole("button", { name: title }),
+    ).toBeVisible();
   }
-  await expect(projectView.locator('[data-automation-section="github"]'))
-    .toBeVisible();
-  await expect(projectView.locator('[data-automation-section="schedules"]'))
-    .toBeVisible();
+  await expect(
+    projectView.locator('[data-automation-section="github"]'),
+  ).toBeVisible();
+  await expect(
+    projectView.locator('[data-automation-section="schedules"]'),
+  ).toBeVisible();
   await captureStableViewportScreenshot(
     page,
     screenshotPath("operational-pair-v1-automation.png", SCREENSHOT_FOLDER),
   );
-  await expect(projectView.getByText("Monitor", { exact: true })).toHaveCount(0);
-  await expect(projectView.getByText("Follow-up", { exact: true })).toHaveCount(0);
-  await projectView.getByRole("button", { name: "Live incident watch" }).click();
-  await expect(projectView.locator('[data-automation-session-id="session-automation"]'))
-    .toBeVisible();
+  await expect(projectView.getByText("Monitor", { exact: true })).toHaveCount(
+    0,
+  );
+  await expect(projectView.getByText("Follow-up", { exact: true })).toHaveCount(
+    0,
+  );
+  await projectView
+    .getByRole("button", { name: "Live incident watch" })
+    .click();
+  await expect(
+    projectView.locator('[data-automation-session-id="session-automation"]'),
+  ).toBeVisible();
 }
 
 async function assertV1Connectors(page: Page): Promise<void> {
@@ -269,16 +326,28 @@ async function assertV1Connectors(page: Page): Promise<void> {
     .click();
   const projectView = page.locator("#project-view");
   await expect(projectView).toBeVisible();
-  await expect(projectView.getByRole("heading", { exact: true, name: "Connectors" }))
-    .toBeVisible();
+  await expect(
+    projectView.getByRole("heading", { exact: true, name: "Connectors" }),
+  ).toBeVisible();
   await expect(projectView.locator("[data-connectors-search]")).toBeVisible();
-  await expect(projectView.getByText("Connected", { exact: true }).first())
-    .toBeVisible();
-  for (const provider of ["GitHub", "W3", "Discord", "Feishu", "WeChat", "Xiaoluban"]) {
-    await expect(projectView.getByText(provider, { exact: true }).first())
-      .toBeVisible();
+  await expect(
+    projectView.getByText("Connected", { exact: true }).first(),
+  ).toBeVisible();
+  for (const provider of [
+    "GitHub",
+    "W3",
+    "Discord",
+    "Feishu",
+    "WeChat",
+    "Xiaoluban",
+  ]) {
+    await expect(
+      projectView.getByText(provider, { exact: true }).first(),
+    ).toBeVisible();
   }
-  await expect(projectView.getByText("CLI tools", { exact: true })).toBeVisible();
+  await expect(
+    projectView.getByText("CLI tools", { exact: true }),
+  ).toBeVisible();
   await captureStableViewportScreenshot(
     page,
     screenshotPath("operational-pair-v1-connectors.png", SCREENSHOT_FOLDER),
@@ -300,8 +369,9 @@ async function assertV1Observability(page: Page): Promise<void> {
   await page.locator("#observability-btn").click();
   const observability = page.locator("#observability-view");
   await expect(observability).toBeVisible();
-  await expect(observability.getByText("Observability", { exact: true }))
-    .toBeVisible();
+  await expect(
+    observability.getByText("Observability", { exact: true }),
+  ).toBeVisible();
   for (const selector of [
     "#observability-metric-cached-input-chart",
     "#observability-metric-uncached-input-chart",
@@ -314,16 +384,30 @@ async function assertV1Observability(page: Page): Promise<void> {
   ]) {
     await expect(observability.locator(selector)).toBeVisible();
   }
-  await expect(observability.locator('[data-observability-metric="gateway_calls"]'))
-    .toBeVisible();
-  await expect(observability.getByRole("heading", { name: "Cached Input Tokens", exact: true }))
-    .toBeVisible();
-  await expect(observability.getByRole("heading", { name: "Retrieval Searches", exact: true }))
-    .toBeVisible();
-  await expect(observability.getByRole("heading", { name: "Skill Calls / MCP Calls", exact: true }))
-    .toBeVisible();
-  await expect(observability.getByRole("heading", { name: "Events", exact: true }))
-    .toHaveCount(0);
+  await expect(
+    observability.locator('[data-observability-metric="gateway_calls"]'),
+  ).toBeVisible();
+  await expect(
+    observability.getByRole("heading", {
+      name: "Cached Input Tokens",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    observability.getByRole("heading", {
+      name: "Retrieval Searches",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    observability.getByRole("heading", {
+      name: "Skill Calls / MCP Calls",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    observability.getByRole("heading", { name: "Events", exact: true }),
+  ).toHaveCount(0);
   await captureStableViewportScreenshot(
     page,
     screenshotPath("operational-pair-v1-observability.png", SCREENSHOT_FOLDER),
@@ -338,7 +422,11 @@ async function assertV2Automation(page: Page): Promise<void> {
   for (const group of ["Running", "Paused", "Current"]) {
     await expect(view.getByText(group, { exact: true })).toBeVisible();
   }
-  for (const title of ["Live incident watch", "Paused review", "Daily triage"]) {
+  for (const title of [
+    "Live incident watch",
+    "Paused review",
+    "Daily triage",
+  ]) {
     await expect(view.getByRole("button", { name: title })).toBeVisible();
   }
   await expect(view.getByRole("tab", { name: "Schedules" })).toHaveAttribute(
@@ -346,9 +434,12 @@ async function assertV2Automation(page: Page): Promise<void> {
     "true",
   );
   await expect(view.getByRole("tab", { name: "GitHub" })).toBeEnabled();
-  await expect(view.getByRole("button", { name: "New automation" })).toBeVisible();
-  await expect(view.getByRole("button", { name: /Operational automation run/ }))
-    .toBeVisible();
+  await expect(
+    view.getByRole("button", { name: "New automation" }),
+  ).toBeVisible();
+  await expect(
+    view.getByRole("button", { name: /Operational automation run/ }),
+  ).toBeVisible();
   await captureStableViewportScreenshot(
     page,
     screenshotPath("operational-pair-v2-automation.png", SCREENSHOT_FOLDER),
@@ -360,33 +451,81 @@ async function assertV2Connectors(page: Page): Promise<void> {
   await nav.getByRole("button", { name: "Connectors" }).click();
   const view = page.getByTestId("connectors-view");
   await expect(view).toBeVisible();
-  await expect(view.getByRole("searchbox", { name: "Search connectors" }))
-    .toBeVisible();
-  for (const provider of ["GitHub", "W3", "Discord", "Feishu", "WeChat", "Xiaoluban"]) {
-    await expect(view.getByText(provider, { exact: true }).first()).toBeVisible();
+  await expect(
+    view.getByRole("searchbox", { name: "Search connectors" }),
+  ).toBeVisible();
+  for (const provider of [
+    "GitHub",
+    "W3",
+    "Discord",
+    "Feishu",
+    "WeChat",
+    "Xiaoluban",
+  ]) {
+    await expect(
+      view.getByText(provider, { exact: true }).first(),
+    ).toBeVisible();
   }
   await expect(view.getByText("CLI tools", { exact: true })).toBeVisible();
-  await expect(view.getByTestId("connector-action-github")).toHaveText("Configure");
+  await expect(view.getByTestId("connector-action-github")).toHaveText(
+    "Configure",
+  );
   await expect(view.getByTestId("connector-action-w3")).toHaveText("Configure");
-  await expect(view.getByTestId("connector-action-feishu")).toHaveText("Configure");
-  await expect(view.getByTestId("connector-action-wechat")).toHaveText("Configure");
-  await expect(view.getByTestId("connector-action-discord")).toHaveText("Configure");
-  await expect(view.getByTestId("connector-action-xiaoluban")).toHaveText("Configure");
+  await expect(view.getByTestId("connector-action-feishu")).toHaveText(
+    "Configure",
+  );
+  await expect(view.getByTestId("connector-action-wechat")).toHaveText(
+    "Configure",
+  );
+  await expect(view.getByTestId("connector-action-discord")).toHaveText(
+    "Configure",
+  );
+  await expect(view.getByTestId("connector-action-xiaoluban")).toHaveText(
+    "Configure",
+  );
   await captureStableViewportScreenshot(
     page,
     screenshotPath("operational-pair-v2-connectors.png", SCREENSHOT_FOLDER),
   );
-  for (const provider of ["discord", "xiaoluban"] as const) {
+  for (const provider of [
+    "github",
+    "w3",
+    "discord",
+    "feishu",
+    "wechat",
+    "xiaoluban",
+  ] as const) {
     await view.getByTestId(`connector-action-${provider}`).click();
-    const editor = view.getByTestId(`gateway-editor-${provider}`);
-    await expect(editor).toBeVisible();
-    await expect(editor.getByRole("button", { name: "New account" })).toBeVisible();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Close" })).toHaveCount(1);
+    if (provider === "github") {
+      await expect(dialog.locator(".at-settings-github-section")).toBeVisible();
+    } else if (provider === "w3") {
+      await expect(dialog.getByLabel("Username")).toBeVisible();
+    } else if (provider === "discord" || provider === "xiaoluban") {
+      const editor = dialog.getByTestId(`gateway-editor-${provider}`);
+      await expect(editor).toBeVisible();
+      await expect(
+        editor.getByRole("button", { name: "New account" }),
+      ).toBeVisible();
+      await expect(
+        editor.getByRole("button", { name: "Cancel" }),
+      ).toBeVisible();
+    } else {
+      await expect(dialog.locator(".at-trigger-provider-section")).toHaveCount(
+        1,
+      );
+    }
     await captureStableViewportScreenshot(
       page,
-      screenshotPath(`operational-pair-v2-connectors-${provider}-editor.png`, SCREENSHOT_FOLDER),
+      screenshotPath(
+        `operational-pair-v2-connectors-${provider}-editor.png`,
+        SCREENSHOT_FOLDER,
+      ),
     );
-    await editor.getByRole("button", { name: "Close connector settings" }).click();
-    await expect(editor).toBeHidden();
+    await dialog.getByRole("button", { name: "Close" }).click();
+    await expect(dialog).toBeHidden();
   }
 }
 
@@ -409,8 +548,9 @@ async function assertV2Observability(page: Page): Promise<void> {
     "mcp_calls",
     "gateway_calls",
   ]) {
-    await expect(view.locator(`[data-observability-metric="${metric}"]`))
-      .toBeVisible();
+    await expect(
+      view.locator(`[data-observability-metric="${metric}"]`),
+    ).toBeVisible();
   }
   await expect(view.getByText("Agent loop", { exact: true })).toBeVisible();
   await captureStableViewportScreenshot(
@@ -438,7 +578,10 @@ async function handleOperationalApi(
     return false;
   }
   if (context.path === "/system/configs/github") {
-    await context.fulfillJson({ token_configured: true, webhook_base_url: null });
+    await context.fulfillJson({
+      token_configured: true,
+      webhook_base_url: null,
+    });
     return true;
   }
   if (context.path === "/system/configs") {
@@ -457,7 +600,9 @@ async function handleOperationalApi(
     await context.fulfillJson([]);
     return true;
   }
-  const automationMatch = context.path.match(/^\/automation\/projects\/([^/]+)$/);
+  const automationMatch = context.path.match(
+    /^\/automation\/projects\/([^/]+)$/,
+  );
   if (automationMatch) {
     const project = automationProjects().find(
       (item) => item.automation_project_id === automationMatch[1],
@@ -484,17 +629,23 @@ async function handleOperationalApi(
     });
     return true;
   }
-  if ([
-    "/sessions/session-automation/messages",
-    "/sessions/session-automation/subagents",
-    "/sessions/session-automation/agents",
-    "/sessions/session-automation/tasks",
-  ].includes(context.path)) {
+  if (
+    [
+      "/sessions/session-automation/messages",
+      "/sessions/session-automation/subagents",
+      "/sessions/session-automation/agents",
+      "/sessions/session-automation/tasks",
+    ].includes(context.path)
+  ) {
     await context.fulfillJson([]);
     return true;
   }
   if (context.path === "/sessions/session-automation/rounds") {
-    await context.fulfillJson({ has_more: false, items: [], next_cursor: null });
+    await context.fulfillJson({
+      has_more: false,
+      items: [],
+      next_cursor: null,
+    });
     return true;
   }
   if (context.path === "/sessions/session-automation/recovery") {
@@ -509,7 +660,11 @@ async function handleOperationalApi(
     return true;
   }
   if (context.path === "/sessions/session-automation/token-usage") {
-    await context.fulfillJson({ by_role: {}, input_tokens: 0, output_tokens: 0 });
+    await context.fulfillJson({
+      by_role: {},
+      input_tokens: 0,
+      output_tokens: 0,
+    });
     return true;
   }
   if (context.path === "/connectors") {
@@ -530,12 +685,14 @@ async function handleOperationalApi(
     });
     return true;
   }
-  if ([
-    "/gateway/feishu/accounts",
-    "/gateway/xiaoluban/accounts",
-    "/gateway/wechat/accounts",
-    "/gateway/discord/accounts",
-  ].includes(context.path)) {
+  if (
+    [
+      "/gateway/feishu/accounts",
+      "/gateway/xiaoluban/accounts",
+      "/gateway/wechat/accounts",
+      "/gateway/discord/accounts",
+    ].includes(context.path)
+  ) {
     await context.fulfillJson([]);
     return true;
   }
@@ -560,7 +717,12 @@ async function handleOperationalApi(
 
 function automationProjects(): Array<Record<string, unknown>> {
   return [
-    automationProject("aut-running", "Live incident watch", "running", "running"),
+    automationProject(
+      "aut-running",
+      "Live incident watch",
+      "running",
+      "running",
+    ),
     automationProject("aut-paused", "Paused review", "disabled", null),
     automationProject("aut-current", "Daily triage", "enabled", "completed"),
   ];
@@ -618,12 +780,21 @@ function automationSession(): Record<string, unknown> {
 
 function connectorsResponse(): Record<string, unknown> {
   const items = [
-    connector("github", "GitHub", "connected", 1, "api_token", ["repositories", "pull_requests"]),
+    connector("github", "GitHub", "connected", 1, "api_token", [
+      "repositories",
+      "pull_requests",
+    ]),
     connector("w3", "W3", "connected", 1, "username_password", ["w3_auth"]),
-    connector("discord", "Discord", "needs_config", 0, "api_token", ["messages"]),
+    connector("discord", "Discord", "needs_config", 0, "api_token", [
+      "messages",
+    ]),
     connector("feishu", "Feishu", "needs_config", 0, "api_key", ["bot_events"]),
-    connector("wechat", "WeChat", "needs_config", 0, "qr_login", ["direct_messages"]),
-    connector("xiaoluban", "Xiaoluban", "needs_config", 0, "api_token", ["im_forwarding"]),
+    connector("wechat", "WeChat", "needs_config", 0, "qr_login", [
+      "direct_messages",
+    ]),
+    connector("xiaoluban", "Xiaoluban", "needs_config", 0, "api_token", [
+      "im_forwarding",
+    ]),
   ];
   return {
     items,
@@ -643,7 +814,8 @@ function connector(
     account_count: accountCount,
     auth_type: authType,
     capabilities,
-    category: provider === "github" ? "development" : provider === "w3" ? "auth" : "im",
+    category:
+      provider === "github" ? "development" : provider === "w3" ? "auth" : "im",
     connector_id: provider,
     description: `${displayName} operational connector.`,
     display_name: displayName,
@@ -681,7 +853,9 @@ function runtimeToolsResponse(): Record<string, unknown> {
   };
 }
 
-function observabilityOverview(searchParams: URLSearchParams): Record<string, unknown> {
+function observabilityOverview(
+  searchParams: URLSearchParams,
+): Record<string, unknown> {
   const scope = searchParams.get("scope") ?? "global";
   return {
     kpis: {

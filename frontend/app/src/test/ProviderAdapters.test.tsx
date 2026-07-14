@@ -23,7 +23,9 @@ describe("provider adapter registries", () => {
   it("looks up connector behavior independently of display names", () => {
     const connector = connectorItem("github");
     connector.display_name = "代码托管";
-    expect(connectorPresentationAdapter(connector)?.settingsPage).toBe("github");
+    expect(connectorPresentationAdapter(connector)?.configuration).toEqual({
+      kind: "github",
+    });
   });
 });
 

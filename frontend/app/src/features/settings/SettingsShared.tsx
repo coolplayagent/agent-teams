@@ -26,7 +26,9 @@ export function SettingsFormCard({
   className?: string;
 }) {
   return (
-    <section className={settingsClassName("at-settings-form-card-layout", className)}>
+    <section
+      className={settingsClassName("at-settings-form-card-layout", className)}
+    >
       {children}
     </section>
   );
@@ -40,7 +42,9 @@ export function SettingsFormGrid({
   className?: string;
 }) {
   return (
-    <div className={settingsClassName("at-settings-form-grid-layout", className)}>
+    <div
+      className={settingsClassName("at-settings-form-grid-layout", className)}
+    >
       {children}
     </div>
   );
@@ -54,7 +58,12 @@ export function SettingsFormActions({
   className?: string;
 }) {
   return (
-    <div className={settingsClassName("at-settings-form-actions-layout", className)}>
+    <div
+      className={settingsClassName(
+        "at-settings-form-actions-layout",
+        className,
+      )}
+    >
       {children}
     </div>
   );
@@ -62,16 +71,27 @@ export function SettingsFormActions({
 
 export function SettingsSection({
   children,
+  className,
+  embedded = false,
   title,
 }: {
   children: ReactNode;
+  className?: string;
+  embedded?: boolean;
   title: string;
 }) {
   return (
-    <div className="at-settings-section">
-      <div className="at-settings-section-header">
-        <Typography.Title level={3}>{title}</Typography.Title>
-      </div>
+    <div
+      className={settingsClassName(
+        embedded ? "at-settings-section is-embedded" : "at-settings-section",
+        className,
+      )}
+    >
+      {!embedded ? (
+        <div className="at-settings-section-header">
+          <Typography.Title level={3}>{title}</Typography.Title>
+        </div>
+      ) : null}
       <div className="at-settings-section-body">{children}</div>
     </div>
   );

@@ -191,7 +191,8 @@
 }
 
 .at-connectors-modal .at-connectors-detail,
-.at-connectors-modal .at-gateway-connector-editor {
+.at-connectors-modal .at-gateway-connector-editor,
+.at-connectors-modal .at-settings-section {
   min-height: 0;
   max-height: none;
   overflow: visible;
@@ -202,9 +203,27 @@
 .at-connectors-modal .at-gateway-connector-body,
 .at-connectors-modal .at-gateway-account-list,
 .at-connectors-modal .at-gateway-account-form,
-.at-connectors-modal .at-connectors-detail-section {
+.at-connectors-modal .at-connectors-detail-section,
+.at-connectors-modal .at-settings-section-body {
   max-height: none;
   overflow: visible;
+}
+
+.at-connectors-modal .at-settings-github-section,
+.at-connectors-modal .at-settings-wide-form,
+.at-connectors-modal .at-settings-form-layout {
+  width: 100%;
+  max-width: none;
+}
+
+.at-connector-configuration {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.at-connector-configuration > .at-connectors-detail-actions {
+  justify-content: flex-end;
 }
 
 .at-runtime-tools {

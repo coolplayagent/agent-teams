@@ -56,6 +56,33 @@
   padding-top: 2px;
 }
 
+.at-settings-section.is-embedded {
+  height: auto;
+}
+
+.at-settings-section.is-embedded > .at-settings-section-body {
+  overflow: visible;
+  padding: 0;
+}
+
+.at-settings-github-section > .at-settings-section-body > .at-settings-facts,
+.at-settings-github-section
+  > .at-settings-section-body
+  > .at-settings-wide-form {
+  width: min(100%, 1040px);
+  margin-inline: auto;
+}
+
+.at-settings-github-section .at-settings-wide-form,
+.at-settings-github-section .at-settings-form-layout {
+  width: 100%;
+  max-width: none;
+}
+
+.at-settings-github-section .at-settings-form-layout {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .at-settings-detail-page.at-orchestration-preset-detail,
 .at-orchestration-preset-detail .at-orchestration-preset-form,
 .at-orchestration-preset-form > .at-settings-form-layout {
@@ -71,6 +98,10 @@
   .at-settings-form-layout {
     gap: 12px;
     max-width: none;
+  }
+
+  .at-settings-github-section .at-settings-form-layout {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .at-settings-form-card-layout {

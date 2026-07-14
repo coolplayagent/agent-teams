@@ -9,61 +9,60 @@ import {
 import type { ReactNode } from "react";
 
 import type { ConnectorItem } from "../../api/contracts";
-import type { SystemSettingsPage } from "../settings/settingsNavigation";
 import type { GatewayConnectorProvider } from "./GatewayConnectorEditor";
 
 export type ConnectorAction = "configure" | "open";
-export type ConnectorEditorKind = "gateway" | "settings" | "w3";
+export type TriggerConnectorProvider = "feishu" | "wechat";
+export type ConnectorConfiguration =
+  | { kind: "gateway"; provider: GatewayConnectorProvider }
+  | { kind: "github" }
+  | { kind: "trigger"; provider: TriggerConnectorProvider }
+  | { kind: "w3" };
 
 export interface ConnectorPresentationAdapter {
   action: ConnectorAction;
   actionLabel: "appSettings" | "connectorsConfigure";
-  editorKind: ConnectorEditorKind;
-  gatewayProvider?: GatewayConnectorProvider;
+  configuration: ConnectorConfiguration;
   icon: ReactNode;
-  settingsPage?: SystemSettingsPage;
 }
 
-const CONNECTOR_PRESENTATION_ADAPTERS: Readonly<Record<string, ConnectorPresentationAdapter>> = {
+const CONNECTOR_PRESENTATION_ADAPTERS: Readonly<
+  Record<string, ConnectorPresentationAdapter>
+> = {
   discord: {
     action: "configure",
-    actionLabel: "appSettings",
-    editorKind: "gateway",
-    gatewayProvider: "discord",
+    actionLabel: "connectorsConfigure",
+    configuration: { kind: "gateway", provider: "discord" },
     icon: <MessageCircle size={17} />,
   },
   feishu: {
     action: "configure",
-    actionLabel: "appSettings",
-    editorKind: "settings",
+    actionLabel: "connectorsConfigure",
+    configuration: { kind: "trigger", provider: "feishu" },
     icon: <MessagesSquare size={17} />,
-    settingsPage: "triggers",
   },
   github: {
     action: "configure",
-    actionLabel: "appSettings",
-    editorKind: "settings",
+    actionLabel: "connectorsConfigure",
+    configuration: { kind: "github" },
     icon: <Github size={17} />,
-    settingsPage: "github",
   },
   w3: {
     action: "configure",
     actionLabel: "connectorsConfigure",
-    editorKind: "w3",
+    configuration: { kind: "w3" },
     icon: <KeyRound size={17} />,
   },
   wechat: {
     action: "configure",
-    actionLabel: "appSettings",
-    editorKind: "settings",
+    actionLabel: "connectorsConfigure",
+    configuration: { kind: "trigger", provider: "wechat" },
     icon: <MessagesSquare size={17} />,
-    settingsPage: "triggers",
   },
   xiaoluban: {
     action: "configure",
-    actionLabel: "appSettings",
-    editorKind: "gateway",
-    gatewayProvider: "xiaoluban",
+    actionLabel: "connectorsConfigure",
+    configuration: { kind: "gateway", provider: "xiaoluban" },
     icon: <MessageCircle size={17} />,
   },
 };

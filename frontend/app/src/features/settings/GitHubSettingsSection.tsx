@@ -43,7 +43,13 @@ const GITHUB_TUNNEL_QUERY_KEY = [
   "tunnel",
 ] as const;
 
-export function GitHubSettingsSection() {
+export function GitHubSettingsSection({
+  embedded = false,
+  onSaved,
+}: {
+  embedded?: boolean;
+  onSaved?: () => void;
+}) {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const t = useTranslations();
@@ -97,9 +103,13 @@ export function GitHubSettingsSection() {
       form.setFields([{ name: "token", touched: false, value: "" }]);
       setTokenDirty(false);
       tokenFocusedRef.current = false;
-      setTokenNotice({ kind: "success", message: t("settingsGitHubTokenSaved") });
+      setTokenNotice({
+        kind: "success",
+        message: t("settingsGitHubTokenSaved"),
+      });
       void message.success(t("settingsGitHubSaved"));
       invalidateGitHubQueries();
+      onSaved?.();
     },
     onError: (error) => {
       const fallback = t("settingsSaveFailed");
@@ -130,7 +140,9 @@ export function GitHubSettingsSection() {
       setTokenNotice({
         kind: "error",
         message:
-          error instanceof Error ? error.message : t("settingsGitHubRevealFailed"),
+          error instanceof Error
+            ? error.message
+            : t("settingsGitHubRevealFailed"),
       });
     },
   });
@@ -145,7 +157,9 @@ export function GitHubSettingsSection() {
       setTokenNotice({
         kind: "error",
         message:
-          error instanceof Error ? error.message : t("settingsGitHubProbeFailed"),
+          error instanceof Error
+            ? error.message
+            : t("settingsGitHubProbeFailed"),
       });
     },
   });
@@ -159,6 +173,7 @@ export function GitHubSettingsSection() {
       });
       void message.success(t("settingsGitHubSaved"));
       invalidateGitHubQueries();
+      onSaved?.();
     },
     onError: (error) => {
       const fallback = t("settingsSaveFailed");
@@ -205,7 +220,9 @@ export function GitHubSettingsSection() {
       setWebhookNotice({
         kind: "error",
         message:
-          error instanceof Error ? error.message : t("settingsGitHubTunnelFailed"),
+          error instanceof Error
+            ? error.message
+            : t("settingsGitHubTunnelFailed"),
       });
     },
   });
@@ -230,7 +247,9 @@ export function GitHubSettingsSection() {
       setWebhookNotice({
         kind: "error",
         message:
-          error instanceof Error ? error.message : t("settingsGitHubTunnelFailed"),
+          error instanceof Error
+            ? error.message
+            : t("settingsGitHubTunnelFailed"),
       });
     },
   });
@@ -261,9 +280,15 @@ export function GitHubSettingsSection() {
   const error = configQuery.error ?? tunnelQuery.error;
 
   return (
-    <SettingsSection title={t("settingsGitHub")}>
+    <SettingsSection
+      className="at-settings-github-section"
+      embedded={embedded}
+      title={t("settingsGitHub")}
+    >
       <SettingsQueryState error={error} loading={loading} />
-      {!loading && configQuery.data !== undefined && tunnelQuery.data !== undefined ? (
+      {!loading &&
+      configQuery.data !== undefined &&
+      tunnelQuery.data !== undefined ? (
         <>
           <div className="at-settings-facts">
             <Fact
@@ -289,14 +314,20 @@ export function GitHubSettingsSection() {
             layout="vertical"
           >
             <div className="at-settings-form-layout">
-            <div className="at-settings-form-card-layout">
-                <Typography.Text strong>{t("settingsGitHubCli")}</Typography.Text>
+              <div className="at-settings-form-card-layout">
+                <Typography.Text strong>
+                  {t("settingsGitHubCli")}
+                </Typography.Text>
                 <Form.Item label={t("settingsGitHubToken")} name="token">
                   <Input.Password
                     allowClear
                     autoComplete="new-password"
                     onChange={() => {
-                      if (!tokenFocusedRef.current && hasSavedToken && !tokenDirty) {
+                      if (
+                        !tokenFocusedRef.current &&
+                        hasSavedToken &&
+                        !tokenDirty
+                      ) {
                         queueMicrotask(() => form.setFieldValue("token", ""));
                         setTokenNotice(null);
                         return;
@@ -361,8 +392,10 @@ export function GitHubSettingsSection() {
                   </Button>
                 </div>
               </div>
-            <div className="at-settings-form-card-layout">
-                <Typography.Text strong>{t("settingsGitHubWebhook")}</Typography.Text>
+              <div className="at-settings-form-card-layout">
+                <Typography.Text strong>
+                  {t("settingsGitHubWebhook")}
+                </Typography.Text>
                 <Form.Item
                   label={t("settingsGitHubWebhookBaseUrl")}
                   name="webhook_base_url"
@@ -500,7 +533,9 @@ function Fact({ label, value }: { label: string; value: string }) {
 function PropertyRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="at-settings-list-row">
-      <Typography.Text className="at-settings-list-meta">{label}</Typography.Text>
+      <Typography.Text className="at-settings-list-meta">
+        {label}
+      </Typography.Text>
       <Typography.Text ellipsis title={value}>
         {value}
       </Typography.Text>
@@ -508,7 +543,9 @@ function PropertyRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function normalizeOptionalString(value: string | null | undefined): string | null {
+function normalizeOptionalString(
+  value: string | null | undefined,
+): string | null {
   const normalized = value?.trim() ?? "";
   return normalized || null;
 }
@@ -595,7 +632,9 @@ function tunnelNotice(status: LocalhostRunTunnelStatus, t: Translate): string {
 }
 
 function tunnelStatusLabel(status: LocalhostRunTunnelStatus): string {
-  return status.public_url ? `${status.status} · ${status.public_url}` : status.status;
+  return status.public_url
+    ? `${status.status} · ${status.public_url}`
+    : status.status;
 }
 
 function formatLatency(value: number): string {

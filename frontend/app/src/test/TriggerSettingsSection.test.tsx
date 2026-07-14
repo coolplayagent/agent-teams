@@ -209,6 +209,15 @@ describe("TriggerSettingsSection", () => {
     expect(screen.getByRole("button", { name: "Back" })).toBeVisible();
   });
 
+  it("loads only the provider requested by an embedded connector editor", async () => {
+    renderSection({ embedded: true, provider: "feishu" });
+
+    expect(await screen.findByText("Feishu Main")).toBeVisible();
+    expect(screen.queryByText("WeChat Main")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Feishu" })).not.toBeInTheDocument();
+    expect(listWeChatGatewayAccountsMock).not.toHaveBeenCalled();
+  });
+
   it("creates Feishu gateway accounts with embedded bot and session config", async () => {
     renderSection();
 
@@ -356,7 +365,9 @@ async function chooseSelectOption(label: string, optionText: RegExp | string) {
   fireEvent.click(matches[matches.length - 1] as HTMLElement);
 }
 
-function renderSection() {
+function renderSection(
+  props: Parameters<typeof TriggerSettingsSection>[0] = {},
+) {
   const queryClient = new QueryClient({
     defaultOptions: {
       mutations: {
@@ -371,7 +382,7 @@ function renderSection() {
   render(
     <QueryClientProvider client={queryClient}>
       <ConfigProvider>
-        <TriggerSettingsSection />
+        <TriggerSettingsSection {...props} />
       </ConfigProvider>
     </QueryClientProvider>,
   );

@@ -40,32 +40,47 @@ test("filters connector statuses and probes the selected connector", async ({
     await expect(page.getByTestId("connector-card-github")).toBeVisible();
     await expect(page.getByTestId("connector-card-w3")).toBeVisible();
     await expect(page.getByTestId("connector-card-slack")).toBeVisible();
-    await expect(page.getByTestId("connector-card-relay-knowledge")).toHaveCount(0);
+    await expect(
+      page.getByTestId("connector-card-relay-knowledge"),
+    ).toHaveCount(0);
     await page
       .getByTestId("connector-card-github")
       .getByRole("button", { name: "Open GitHub details" })
       .click();
     await expect(page.getByTestId("connector-detail-github")).toBeVisible();
-    await expect(page.getByTestId("connector-detail-github"))
-      .toContainText("repositories");
-    await expect(page.getByTestId("connector-detail-github"))
-      .toContainText("pull requests");
-    await page.getByRole("dialog").getByRole("button", { name: "Close" }).click();
+    await expect(page.getByTestId("connector-detail-github")).toContainText(
+      "repositories",
+    );
+    await expect(page.getByTestId("connector-detail-github")).toContainText(
+      "pull requests",
+    );
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Close" })
+      .click();
     await page.getByText("CLI tools", { exact: true }).click();
     await expect(page.getByTestId("runtime-tools-section")).toBeVisible();
-    await expect(page.getByTestId("runtime-tool-card-rg")).toContainText("Ready");
-    await expect(page.getByTestId("runtime-tool-card-gh")).toContainText("Missing");
+    await expect(page.getByTestId("runtime-tool-card-rg")).toContainText(
+      "Ready",
+    );
+    await expect(page.getByTestId("runtime-tool-card-gh")).toContainText(
+      "Missing",
+    );
     await page.getByText("Connectors", { exact: true }).click();
 
     const summary = connectorsView.locator(".at-connectors-summary");
-    await expect(summary.locator(".at-connectors-summary-cell").nth(0))
-      .toContainText("3");
-    await expect(summary.locator(".at-connectors-summary-cell").nth(1))
-      .toContainText("1");
-    await expect(summary.locator(".at-connectors-summary-cell").nth(2))
-      .toContainText("1");
-    await expect(summary.locator(".at-connectors-summary-cell").nth(4))
-      .toContainText("1");
+    await expect(
+      summary.locator(".at-connectors-summary-cell").nth(0),
+    ).toContainText("3");
+    await expect(
+      summary.locator(".at-connectors-summary-cell").nth(1),
+    ).toContainText("1");
+    await expect(
+      summary.locator(".at-connectors-summary-cell").nth(2),
+    ).toContainText("1");
+    await expect(
+      summary.locator(".at-connectors-summary-cell").nth(4),
+    ).toContainText("1");
 
     await connectorsView
       .getByRole("searchbox", { name: "Search connectors" })
@@ -73,45 +88,48 @@ test("filters connector statuses and probes the selected connector", async ({
     await expect(page.getByTestId("connector-card-w3")).toBeVisible();
     await expect(page.getByTestId("connector-card-github")).toHaveCount(0);
     await page.getByTestId("connector-action-w3").click();
-    const w3Detail = page.getByTestId("connector-detail-w3");
-    await expect(w3Detail).toContainText("Missing credentials");
-    await expect(w3Detail.getByLabel("Username")).toHaveValue("w3-user");
-    await w3Detail.getByLabel("Username").fill("w3-next");
-    await w3Detail.getByLabel("Password").fill("secret-next");
-    await w3Detail.getByRole("button", { name: "Save" }).click();
-    await expect.poll(() => state.w3SaveRequests).toEqual([
-      { password: "secret-next", username: "w3-next" },
-    ]);
+    const w3Dialog = page.getByRole("dialog");
+    await expect(w3Dialog.getByLabel("Username")).toHaveValue("w3-user");
+    await w3Dialog.getByLabel("Username").fill("w3-next");
+    await w3Dialog.getByLabel("Password").fill("secret-next");
+    await w3Dialog.getByRole("button", { name: "Save" }).click();
+    await expect
+      .poll(() => state.w3SaveRequests)
+      .toEqual([{ password: "secret-next", username: "w3-next" }]);
     await page.screenshot({
       path: screenshotPath("v2-connectors-search-w3.png", SCREENSHOT_FOLDER),
     });
-    await page.getByRole("dialog").getByRole("button", { name: "Close" }).click();
+    await expect(w3Dialog).toBeHidden();
 
     await connectorsView
       .getByRole("searchbox", { name: "Search connectors" })
       .fill("");
-    await connectorsView.locator(".at-connectors-controls").getByText(
-      "Error",
-      { exact: true },
-    ).click();
+    await connectorsView
+      .locator(".at-connectors-controls")
+      .getByText("Error", { exact: true })
+      .click();
     await expect(page.getByTestId("connector-card-slack")).toBeVisible();
     await page
       .getByTestId("connector-card-slack")
       .getByRole("button", { name: "Open Slack details" })
       .click();
     await expect(page.getByTestId("connector-detail-slack")).toBeVisible();
-    await expect(page.getByTestId("connector-detail-slack"))
-      .toContainText("Webhook expired");
+    await expect(page.getByTestId("connector-detail-slack")).toContainText(
+      "Webhook expired",
+    );
     await expect(page.getByTestId("connector-card-github")).toHaveCount(0);
     await page.screenshot({
       path: screenshotPath("v2-connectors-error-filter.png", SCREENSHOT_FOLDER),
     });
-    await page.getByRole("dialog").getByRole("button", { name: "Close" }).click();
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Close" })
+      .click();
 
-    await connectorsView.locator(".at-connectors-controls").getByText(
-      "All",
-      { exact: true },
-    ).click();
+    await connectorsView
+      .locator(".at-connectors-controls")
+      .getByText("All", { exact: true })
+      .click();
     await page
       .getByTestId("connector-card-github")
       .getByRole("button", { name: "Open GitHub details" })
@@ -160,7 +178,10 @@ test("keeps connector loading and retryable error states framed at 720px", async
             initialLoadPending = false;
           }
           if (failConnectors) {
-            await context.fulfillJson({ detail: "connectors unavailable" }, 500);
+            await context.fulfillJson(
+              { detail: "connectors unavailable" },
+              500,
+            );
           } else {
             await context.fulfillJson(connectorsResponse());
           }
@@ -182,7 +203,10 @@ test("keeps connector loading and retryable error states framed at 720px", async
     const connectorsView = page.getByTestId("connectors-view");
     await expect(connectorsView.locator(".ant-skeleton")).toBeVisible();
     await page.screenshot({
-      path: screenshotPath("v2-connectors-loading-narrow.png", SCREENSHOT_FOLDER),
+      path: screenshotPath(
+        "v2-connectors-loading-narrow.png",
+        SCREENSHOT_FOLDER,
+      ),
     });
 
     releaseInitialLoad();
@@ -191,7 +215,9 @@ test("keeps connector loading and retryable error states framed at 720px", async
     await connectorsView
       .getByRole("button", { name: "Refresh connectors" })
       .click();
-    await expect(connectorsView.getByText("Could not load connectors.")).toBeVisible();
+    await expect(
+      connectorsView.getByText("Could not load connectors."),
+    ).toBeVisible();
     await expectNoDocumentScroll(
       page,
       "connector loading and error states should stay inside the 720px shell",
@@ -239,8 +265,12 @@ test("uses a dense responsive connector grid without a vacant detail column", as
     await expect(page.getByTestId("connector-card-wechat")).toBeVisible();
     await expectGridColumns(grid, 3);
     const wideLayout = await connectorsView.evaluate((view) => {
-      const workbench = view.querySelector<HTMLElement>(".at-connectors-workbench");
-      const cardList = view.querySelector<HTMLElement>(".at-connectors-card-list");
+      const workbench = view.querySelector<HTMLElement>(
+        ".at-connectors-workbench",
+      );
+      const cardList = view.querySelector<HTMLElement>(
+        ".at-connectors-card-list",
+      );
       if (workbench === null || cardList === null) {
         throw new Error("Connector workbench did not render");
       }
@@ -250,13 +280,19 @@ test("uses a dense responsive connector grid without a vacant detail column", as
       };
     });
     expect(wideLayout.workbenchWidth).toBeGreaterThan(1000);
-    expect(wideLayout.cardListWidth / wideLayout.workbenchWidth).toBeGreaterThan(0.97);
-    const wideCards = await grid.locator(".at-connectors-card").evaluateAll(
-      (cards) => cards.map((card) => card.getBoundingClientRect()),
-    );
+    expect(
+      wideLayout.cardListWidth / wideLayout.workbenchWidth,
+    ).toBeGreaterThan(0.97);
+    const wideCards = await grid
+      .locator(".at-connectors-card")
+      .evaluateAll((cards) =>
+        cards.map((card) => card.getBoundingClientRect()),
+      );
     expect(new Set(wideCards.map((card) => Math.round(card.x))).size).toBe(3);
     expect(new Set(wideCards.map((card) => Math.round(card.y))).size).toBe(2);
-    expect(Math.max(...wideCards.map((card) => card.height))).toBeLessThanOrEqual(130);
+    expect(
+      Math.max(...wideCards.map((card) => card.height)),
+    ).toBeLessThanOrEqual(130);
     await page.screenshot({
       path: screenshotPath("v2-connectors-dense-wide.png", SCREENSHOT_FOLDER),
     });
@@ -285,8 +321,10 @@ async function expectGridColumns(
 ): Promise<void> {
   await expect
     .poll(async () =>
-      grid.evaluate((element) =>
-        window.getComputedStyle(element).gridTemplateColumns.split(" ").length,
+      grid.evaluate(
+        (element) =>
+          window.getComputedStyle(element).gridTemplateColumns.split(" ")
+            .length,
       ),
     )
     .toBe(expected);
@@ -347,10 +385,7 @@ async function handleConnectorsApi(
     });
     return true;
   }
-  if (
-    context.method === "POST"
-    && context.path === "/connectors/github:test"
-  ) {
+  if (context.method === "POST" && context.path === "/connectors/github:test") {
     state.connectorTestRequests.push("github");
     await context.fulfillJson({
       account_count: 2,
@@ -444,9 +479,9 @@ function connectorsResponse(): Record<string, unknown> {
 
 function denseConnectorsResponse(): Record<string, unknown> {
   const items = [
-    ...((connectorsResponse().items as Array<Record<string, unknown>>).filter(
+    ...(connectorsResponse().items as Array<Record<string, unknown>>).filter(
       (item) => item.connector_id !== "relay-knowledge",
-    )),
+    ),
     {
       account_count: 0,
       auth_type: "api_token",

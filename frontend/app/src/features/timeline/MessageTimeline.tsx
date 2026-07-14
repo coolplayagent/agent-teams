@@ -33,7 +33,6 @@ import {
   type JsonValue,
   type SessionRound,
   type SessionRoundMessage,
-  type SessionRoundMessagePart,
   type SessionRoundsPage,
   type TimelineMessage,
 } from "../../api/contracts";
@@ -73,6 +72,16 @@ import {
 } from "./toolPresentation";
 import { fileReadResultText } from "./toolResultPresentation";
 import { roundPromptText, roundTitle } from "./roundMetadata";
+import {
+  contentPartPresentation,
+  messagePresentationGroups,
+  messageIsPresentationVisible,
+  presentationRoundMessages,
+  sessionRoundMessageToTimelineMessage,
+  timelineMessagePresentationParts,
+  type MessagePresentationPart,
+  type MessagePresentationToolPart,
+} from "./messagePresentation";
 import {
   boundedTimelineMeasurementCache,
   type TimelineMeasurementCacheItem,
@@ -5887,7 +5896,7 @@ function timelineRoundLooksDetachedSubagent(
   const coordinatorMessages = round.coordinator_messages ?? [];
   return coordinatorMessages.length > 0 && coordinatorMessages.every((message) =>
     timelineMessageLooksDetachedSubagent(
-      roundMessageToTimelineMessage(message, round.run_id),
+      sessionRoundMessageToTimelineMessage(message, round.run_id),
       roundPrimaryRoleId,
       roundPrimaryInstanceId(round),
       round.primary_task_id?.trim() ?? "",
@@ -7359,10 +7368,10 @@ function createMessageRoundLookup(rounds: SessionRound[]): MessageRoundLookup {
 }
 
 function roundMessages(round: SessionRound): SessionRoundMessage[] {
-  return [
-    ...roundCoordinatorMessagesForConversation(round),
-    ...(round.injection_messages ?? []),
-  ];
+  return presentationRoundMessages({
+    ...round,
+    coordinator_messages: roundCoordinatorMessagesForConversation(round),
+  }).map(({ message }) => message);
 }
 
 function roundCoordinatorMessagesForConversation(
@@ -7372,7 +7381,7 @@ function roundCoordinatorMessagesForConversation(
   const primaryInstanceId = roundPrimaryInstanceId(round);
   const primaryTaskId = round.primary_task_id?.trim() ?? "";
   const messages = (round.coordinator_messages ?? []).filter((message) => {
-    const projected = roundMessageToTimelineMessage(message, round.run_id);
+    const projected = sessionRoundMessageToTimelineMessage(message, round.run_id);
     return !timelineMessageLooksDetachedSubagent(
       projected,
       primaryRole,
@@ -7386,7 +7395,7 @@ function roundCoordinatorMessagesForConversation(
     return messages;
   }
   return messages.filter((message) => {
-    const projected = roundMessageToTimelineMessage(message, round.run_id);
+    const projected = sessionRoundMessageToTimelineMessage(message, round.run_id);
     return !timelineMessageIsVerificationFailurePresentation(projected);
   });
 }
@@ -7465,7 +7474,7 @@ function timelineMessagesNeedSubagentCorrelation(
 }
 
 function timelineMessageIsInternal(message: TimelineMessage): boolean {
-  return (message.visibility ?? "public").trim().toLowerCase() === "internal";
+  return !messageIsPresentationVisible(message);
 }
 
 function explicitTimelineMessageRunId(message: TimelineMessage): string {
@@ -7666,7 +7675,7 @@ function mergeTimelineMessages(
   let nextIndex = messages.length;
   for (const round of rounds) {
     for (const roundMessage of roundMessages(round)) {
-      const message = roundMessageToTimelineMessage(roundMessage, round.run_id);
+      const message = sessionRoundMessageToTimelineMessage(roundMessage, round.run_id);
       removeSupersededTimelineMessages(merged, mergedByKey, message);
       const keys = timelineMessageDedupeKeys(
         message,
@@ -7930,118 +7939,6 @@ function compareTimelineMessageItems(
     return diff === 0 ? left.index - right.index : diff;
   }
   return left.index - right.index;
-}
-
-function roundMessageToTimelineMessage(
-  message: SessionRoundMessage,
-  runId: string,
-): TimelineMessage {
-  const contentParts = message.content_parts ?? [];
-  const bodyParts = roundMessageParts(message.message?.parts ?? []);
-  const bodyContent = jsonValueText(message.message?.content ?? null);
-  return {
-    agent_role_id: message.agent_role_id,
-    client_message_id: message.client_message_id,
-    conversation_id: message.conversation_id,
-    content: message.content,
-    created_at: message.queued_at ?? message.created_at ?? message.occurred_at,
-    entry_type: message.entry_type,
-    injection_id: message.injection_id,
-    injection_status: message.injection_status,
-    recipient_instance_id: message.recipient_instance_id,
-    instance_id: message.instance_id,
-    message: {
-      ...(bodyContent.trim().length > 0 ? { content: bodyContent } : {}),
-      ...(message.message?.metadata === undefined
-        ? {}
-        : { metadata: message.message.metadata }),
-      ...(bodyParts.length > 0 ? { parts: bodyParts } : {}),
-    },
-    message_id: message.message_id,
-    presentation_kind: message.presentation_kind,
-    parts: contentParts.length > 0 ? contentParts : undefined,
-    role: message.role,
-    role_id: message.role_id,
-    run_id: runId,
-    source: message.source,
-    status: message.status,
-    task_id: message.task_id,
-    superseded_client_message_ids: message.superseded_client_message_ids,
-    superseded_injection_ids: message.superseded_injection_ids,
-    visibility: message.visibility,
-  };
-}
-
-function roundMessageParts(parts: SessionRoundMessagePart[]): ContentPart[] {
-  return parts.flatMap((part) => {
-    const contentPart = roundMessagePart(part);
-    return contentPart === null ? [] : [contentPart];
-  });
-}
-
-function roundMessagePart(part: SessionRoundMessagePart): ContentPart | null {
-  const kind = part.part_kind ?? part.kind ?? "";
-  const text = roundMessagePartText(part);
-  if (kind === "text" && text.length > 0) {
-    return { part_kind: "text", content: text };
-  }
-  if (kind === "user-prompt") {
-    return { part_kind: "user-prompt", content: text };
-  }
-  if (kind === "thinking") {
-    return {
-      part_kind: "thinking",
-      content: text,
-    };
-  }
-  if (kind === "media_ref") {
-    return {
-      part_kind: "media_ref",
-      media_type: part.mime_type,
-      name: part.name,
-      url: part.url,
-    };
-  }
-  if (kind === "tool-call") {
-    return {
-      action_family: part.action_family,
-      part_kind: "tool-call",
-      args: part.args,
-      semantic_category: part.semantic_category,
-      tool_call_id: part.tool_call_id,
-      tool_name: part.tool_name,
-    };
-  }
-  if (kind === "tool-return") {
-    return {
-      action_family: part.action_family,
-      part_kind: "tool-return",
-      content: part.content,
-      is_error: part.is_error,
-      outcome: part.outcome,
-      semantic_category: part.semantic_category,
-      tool_call_id: part.tool_call_id,
-      tool_name: part.tool_name,
-    };
-  }
-  if (kind === "retry-prompt") {
-    return {
-      action_family: part.action_family,
-      part_kind: "retry-prompt",
-      content: part.content,
-      semantic_category: part.semantic_category,
-      tool_call_id: part.tool_call_id,
-      tool_name: part.tool_name,
-    };
-  }
-  return null;
-}
-
-function roundMessagePartText(part: SessionRoundMessagePart): string {
-  if (typeof part.text === "string") {
-    return part.text;
-  }
-  return jsonValueText(part.content ?? null);
 }
 
 interface TimelineMessageMergeItem {
@@ -9729,19 +9626,11 @@ function messageParts(
   if (timelineMessageIsInjection(message)) {
     return [];
   }
-  if (typeof message.content === "string" && message.content.trim()) {
-    return textRenderParts(timelineDisplayText(message.content), workspaceId);
-  }
-  const parts = messageContentParts(message).flatMap((part) =>
-    contentPartToRenderParts(part, workspaceId),
+  return messagePresentationGroups(timelineMessagePresentationParts(message)).flatMap(
+    (group) => group.parts.flatMap((part) =>
+      presentationPartToTimelineRenderParts(part, workspaceId),
+    ),
   );
-  if (parts.length > 0) {
-    return parts;
-  }
-  if (typeof message.message?.content === "string" && message.message.content.trim()) {
-    return textRenderParts(timelineDisplayText(message.message.content), workspaceId);
-  }
-  return [];
 }
 
 function persistedInjectionPart(message: TimelineMessage): TimelineTextPart | null {
@@ -9895,71 +9784,58 @@ function contentPartToRenderParts(
   part: ContentPart,
   workspaceId: string | null,
 ): TimelineRenderPart[] {
-  const text = contentPartDisplayText(part);
-  if (text !== null && text.trim().length > 0) {
-    return textRenderParts(text, workspaceId);
-  }
-  const media = contentPartMedia(part);
-  if (media !== null) {
-    return [media];
-  }
-  const thinking = contentPartThinking(part);
-  if (thinking !== null) {
-    return [thinking];
-  }
-  const tool = contentPartTool(part);
-  if (tool !== null) {
-    return [tool];
-  }
-  return [];
-}
-
-function contentPartDisplayText(part: ContentPart): string | null {
-  const text = contentPartText(part);
-  if (text !== null) {
-    return timelineDisplayText(text);
-  }
-  if (contentPartKind(part) === "user-prompt" && "content" in part) {
-    const content = part.content;
-    return typeof content === "string" ? userPromptDisplayText(content) : null;
-  }
-  return null;
-}
-
-function userPromptDisplayText(text: string): string {
-  return text.trim();
+  const presentation = contentPartPresentation(part);
+  return presentation === null
+    ? []
+    : presentationPartToTimelineRenderParts(presentation, workspaceId);
 }
 
 function timelineDisplayText(text: string): string {
   return text;
 }
 
-function contentPartThinking(part: ContentPart): TimelineThinkingPart | null {
-  if (contentPartKind(part) !== "thinking") {
-    return null;
+function presentationPartToTimelineRenderParts(
+  part: MessagePresentationPart,
+  workspaceId: string | null,
+): TimelineRenderPart[] {
+  if (part.kind === "text") {
+    return textRenderParts(timelineDisplayText(part.text), workspaceId);
   }
-  const text = thinkingContentText(part);
-  if (text.trim().length === 0) {
-    return null;
+  if (part.kind === "thinking") {
+    return [{
+      kind: "thinking",
+      partIndex: part.partIndex,
+      streaming: part.streaming,
+      text: part.text,
+    }];
   }
-  return {
-    kind: "thinking",
-    partIndex: contentPartIndex(part),
-    streaming: contentPartStreaming(part) && !contentPartFinished(part),
-    text,
-  };
+  if (part.kind === "media") {
+    const media = mediaPartFromFields(part);
+    return media === null ? [] : [media];
+  }
+  if (part.kind === "status") {
+    return [];
+  }
+  return [presentationToolPartToTimelineToolPart(part)];
 }
 
-function contentPartTool(part: ContentPart): TimelineToolPart | null {
-  const kind = contentPartKind(part);
-  if (kind === "tool-call" || contentPartHasToolCallShape(part)) {
-    const inputBody = toolArgsBody("args" in part ? part.args ?? null : null);
-    const semantics = contentPartToolSemantics(part);
+function presentationToolPartToTimelineToolPart(
+  part: MessagePresentationToolPart,
+): TimelineToolPart {
+  const semantics = {
+    actionFamily: toolActionFamily({
+      actionFamily: part.actionFamily,
+      semanticCategory: part.semanticCategory,
+    }),
+    semanticCategory: toolSemanticCategory({ semanticCategory: part.semanticCategory }),
+  };
+  if (part.stage === "call") {
+    const inputBody = toolArgsBody(part.value);
     return {
       action: "",
       ...semantics,
       body: inputBody,
-      callId: "tool_call_id" in part ? part.tool_call_id ?? "" : "",
+      callId: part.callId,
       error: false,
       kind: "tool",
       inputBody,
@@ -9967,68 +9843,36 @@ function contentPartTool(part: ContentPart): TimelineToolPart | null {
       phase: "call",
       subagent: subagentReferenceFromValues({
         assumeSubagent: semantics.actionFamily === "subagent",
-        callId: "tool_call_id" in part ? part.tool_call_id ?? "" : "",
-        payload: "args" in part ? jsonCompatibleValue(part.args ?? null) : null,
+        callId: part.callId,
+        payload: part.value,
       }),
-      toolName: "tool_name" in part ? part.tool_name ?? "" : "",
+      toolName: part.toolName,
     };
   }
-  if (kind === "tool-return") {
-    const content = "content" in part ? part.content ?? null : null;
-    const error = toolReturnIsError(part, content);
-    const toolName = "tool_name" in part ? part.tool_name ?? "" : "";
-    const semantics = contentPartToolSemantics(part);
-    const outputBody = toolReturnBody(content, error, semantics.semanticCategory);
-    return {
-      action: "",
-      ...semantics,
-      body: outputBody,
-      callId: "tool_call_id" in part ? part.tool_call_id ?? "" : "",
-      durationMs: toolDurationMs(jsonValueText(content)) ?? undefined,
-      error,
-      kind: "tool",
-      mediaParts: toolReturnMediaParts(content),
-      outputBody,
-      phase: "result",
-      subagent: subagentReferenceFromValues({
-        assumeSubagent: semantics.actionFamily === "subagent",
-        callId: "tool_call_id" in part ? part.tool_call_id ?? "" : "",
-        payload: jsonCompatibleValue(content),
-      }),
-      toolName,
-    };
-  }
-  if (kind === "retry-prompt") {
-    const outputBody = jsonValueText("content" in part ? part.content ?? null : null);
-    const semantics = contentPartToolSemantics(part);
-    return {
-      action: "",
-      ...semantics,
-      body: outputBody,
-      callId: "tool_call_id" in part ? part.tool_call_id ?? "" : "",
-      error: true,
-      kind: "tool",
-      mediaParts: [],
-      outputBody,
-      phase: "validation",
-      subagent: null,
-      toolName: "tool_name" in part ? part.tool_name ?? "" : "",
-    };
-  }
-  return null;
-}
-
-function contentPartToolSemantics(part: ContentPart): Pick<
-  TimelineToolPart,
-  "actionFamily" | "semanticCategory"
-> {
-  const actionFamily = "action_family" in part ? part.action_family : undefined;
-  const semanticCategory = "semantic_category" in part
-    ? part.semantic_category
-    : undefined;
+  const outputBody = part.stage === "validation"
+    ? jsonValueText(part.value)
+    : toolReturnBody(part.value, part.error, semantics.semanticCategory);
   return {
-    actionFamily: toolActionFamily({ actionFamily, semanticCategory }),
-    semanticCategory: toolSemanticCategory({ semanticCategory }),
+    action: "",
+    ...semantics,
+    body: outputBody,
+    callId: part.callId,
+    ...(part.stage === "return"
+      ? { durationMs: toolDurationMs(jsonValueText(part.value)) ?? undefined }
+      : {}),
+    error: part.error,
+    kind: "tool",
+    mediaParts: part.stage === "return" ? toolReturnMediaParts(part.value) : [],
+    outputBody,
+    phase: part.stage === "validation" ? "validation" : "result",
+    subagent: part.stage === "return"
+      ? subagentReferenceFromValues({
+          assumeSubagent: semantics.actionFamily === "subagent",
+          callId: part.callId,
+          payload: part.value,
+        })
+      : null,
+    toolName: part.toolName,
   };
 }
 
@@ -10293,71 +10137,6 @@ function runtimeToolSemantics(
     actionFamily: toolActionFamily({ actionFamily, semanticCategory }),
     semanticCategory: toolSemanticCategory({ semanticCategory }),
   };
-}
-
-function contentPartKind(part: ContentPart): string {
-  if ("part_kind" in part) {
-    return part.part_kind;
-  }
-  if ("kind" in part) {
-    return part.kind;
-  }
-  return "";
-}
-
-function contentPartHasToolCallShape(part: ContentPart): boolean {
-  return "tool_name" in part && "args" in part && part.tool_name !== undefined;
-}
-
-function thinkingContentText(part: ContentPart): string {
-  if ("content" in part && typeof part.content === "string") {
-    return part.content;
-  }
-  if ("text" in part && typeof part.text === "string") {
-    return part.text;
-  }
-  return "";
-}
-
-function contentPartIndex(part: ContentPart): string {
-  if ("part_index" in part) {
-    const value = part.part_index;
-    if (typeof value === "number" && Number.isFinite(value)) {
-      return String(value);
-    }
-    if (typeof value === "string" && value.trim()) {
-      return value.trim();
-    }
-  }
-  return "0";
-}
-
-function contentPartStreaming(part: ContentPart): boolean {
-  return "streaming" in part && part.streaming === true;
-}
-
-function contentPartFinished(part: ContentPart): boolean {
-  return "finished" in part && part.finished === true;
-}
-
-function contentPartMedia(part: ContentPart): TimelineMediaPart | null {
-  if ("kind" in part && part.kind === "media_ref") {
-    return mediaPartFromFields({
-      mimeType: part.mime_type,
-      modality: part.modality,
-      name: part.name,
-      url: part.url,
-    });
-  }
-  if ("part_kind" in part && part.part_kind === "media_ref") {
-    return mediaPartFromFields({
-      mimeType: part.media_type,
-      modality: mediaTypeModality(part.media_type),
-      name: part.name,
-      url: part.url,
-    });
-  }
-  return null;
 }
 
 function toolReturnMediaParts(value: unknown): TimelineMediaPart[] {
@@ -11348,19 +11127,6 @@ function jsonScalarText(value: JsonValue | undefined): string {
     return String(value);
   }
   return "";
-}
-
-function toolReturnIsError(
-  part: ContentPart,
-  content: unknown,
-): boolean {
-  if ("is_error" in part && part.is_error === true) {
-    return true;
-  }
-  if ("outcome" in part && toolOutcomeIsError(part.outcome)) {
-    return true;
-  }
-  return toolResultIndicatesError(content);
 }
 
 function toolResultIndicatesError(value: unknown): boolean {

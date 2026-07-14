@@ -1,23 +1,17 @@
 import {
-  type BinaryMediaPart,
-  contentPartText,
-  type ContentMediaRefPart,
-  type ContentPart,
-  type InlineMediaPart,
   type JsonValue,
-  type LegacyContentMediaRefPart,
   type SessionRound,
-  type SessionRoundMessage,
-  type SessionRoundMessagePart,
-  type UrlMediaPart,
 } from "../../api/contracts";
 import {
   buildMessageTranscript,
+  messagePresentationPartText,
   type MessageTranscript,
+  type MessagePresentationPart,
+  type MessagePresentationStatusPart,
   serializeMessageTranscript,
   type TranscriptEntry,
   type TranscriptEntryKind,
-} from "./messageTranscript";
+} from "../timeline/messagePresentation";
 
 export type MessageExportFormat = "html" | "json" | "png";
 
@@ -41,23 +35,42 @@ interface PngBlock {
 }
 
 interface HtmlExportCopy {
+  active: string;
   assistant: string;
+  asset: string;
+  attempt: string;
+  attachment: string;
   completed: string;
   conversation: string;
+  diagnostic: string;
   empty: string;
   entries: string;
+  error: string;
+  errorMessage: string;
   exportedAt: string;
   failed: string;
   input: string;
   insertedMessage: string;
+  mediaType: string;
   output: string;
+  phase: string;
+  pendingApprovals: string;
+  pendingQuestions: string;
+  reason: string;
+  retry: string;
+  retryDelay: string;
   round: string;
   rounds: string;
   status: string;
+  stateLabels: Readonly<Record<string, string>>;
   subagent: string;
+  targetProfile: string;
   thinking: string;
   tool: string;
   tools: string;
+  totalAttempts: string;
+  type: string;
+  url: string;
   user: string;
 }
 
@@ -98,19 +111,92 @@ export async function exportSessionMessages({
     return 1;
   }
 
+  const copy = htmlExportCopy(activeExportLocale());
   const blobs = await buildMessagesPngBlobs(
     sessionId,
-    transcript.entries.map((entry) => ({
-      kind: entry.kind,
-      label: entry.label,
-      text: entry.text,
-    })),
+    transcriptPngBlocks(transcript.entries, copy),
   );
   blobs.forEach((blob, index) => {
     const suffix = blobs.length > 1 ? `-${String(index + 1).padStart(2, "0")}` : "";
     downloadBlob(`${messageExportFilenameBase(sessionId)}${suffix}.png`, blob);
   });
   return blobs.length;
+}
+
+function transcriptPngBlocks(
+  entries: TranscriptEntry[],
+  copy: HtmlExportCopy,
+): ExportBlock[] {
+  return entries.flatMap<ExportBlock>((entry): ExportBlock[] => {
+    if (entry.kind === "status" && isRoutineStatusEntry(entry)) {
+      return [];
+    }
+    if (entry.kind === "status") {
+      return [{
+        kind: entry.kind,
+        label: statusEntryLabel(entry, copy),
+        text: structuredValueText(statusEntryValue(entry, copy)),
+      }];
+    }
+    if (entry.kind === "tool") {
+      const tool = entry.metadata.tool;
+      const sections = [
+        tool?.args === undefined ? "" : `${copy.input}\n${structuredValueText(tool.args)}`,
+        tool?.result === undefined ? "" : `${copy.output}\n${structuredValueText(tool.result)}`,
+      ].filter(Boolean);
+      return [{
+        kind: entry.kind,
+        label: `${copy.tool} · ${tool?.name || entry.label}`,
+        text: sections.join("\n\n") || plainExportText(entry.text),
+      }];
+    }
+    return [{
+      kind: entry.kind,
+      label: entry.kind === "thinking" ? copy.thinking : readableEntryLabel(entry, copy),
+      text: entry.parts.map(messagePresentationPartText)
+        .map(plainExportText)
+        .filter(Boolean)
+        .join("\n\n") || plainExportText(entry.text),
+    }];
+  });
+}
+
+function structuredValueText(value: JsonValue, indent = 0): string {
+  if (value === null) {
+    return "—";
+  }
+  if (typeof value === "string") {
+    const parsed = parseJsonValue(value);
+    return parsed !== null && parsed !== value
+      ? structuredValueText(parsed, indent)
+      : value;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  const prefix = " ".repeat(indent);
+  if (Array.isArray(value)) {
+    return value.map((item) => {
+      const rendered = structuredValueText(item, indent + 2);
+      return `${prefix}- ${rendered.replace(/\n/g, `\n${prefix}  `)}`;
+    }).join("\n");
+  }
+  return Object.entries(value).map(([key, fieldValue]) => {
+    const rendered = structuredValueText(fieldValue, indent + 2);
+    return rendered.includes("\n")
+      ? `${prefix}${key}:\n${rendered}`
+      : `${prefix}${key}: ${rendered}`;
+  }).join("\n");
+}
+
+function plainExportText(value: string): string {
+  return value
+    .replace(/^```[^\n]*\n?|```$/gm, "")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^\s*[-*+]\s+/gm, "- ")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .trim();
 }
 
 export function buildMessagesJson(
@@ -131,9 +217,7 @@ export function buildMessagesHtml(
   const transcript = buildMessageTranscript(sessionId, rounds);
   const copy = htmlExportCopy(locale);
   const rows = transcript.rounds.map((round) => transcriptRoundHtml(round, copy)).join("");
-  const toolCount = transcript.entries.filter(
-    (entry) => entry.metadata.tool?.stage === "call",
-  ).length;
+  const toolCount = transcript.entries.filter((entry) => entry.kind === "tool").length;
   const conversationEntryCount = transcript.entries.filter(
     (entry) => entry.kind === "user"
       || entry.kind === "assistant"
@@ -185,6 +269,10 @@ export function buildMessagesHtml(
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
     th, td { padding: 8px 10px; border: 1px solid var(--line); text-align: left; vertical-align: top; }
     th { background: var(--surface); font-weight: 700; }
+    figure.media { margin: 10px 0; }
+    figure.media img { display: block; width: auto; max-width: min(100%, 720px); max-height: 520px; border: 1px solid var(--line); border-radius: 9px; object-fit: contain; }
+    figure.media figcaption { margin-top: 5px; color: var(--muted); font-size: 12px; }
+    p.media a { color: var(--accent); overflow-wrap: anywhere; }
     details.technical { margin-top: 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); }
     details.technical > summary { display: flex; align-items: center; gap: 9px; padding: 9px 12px; cursor: pointer; list-style: none; color: var(--muted); font-size: 13px; }
     details.technical > summary::-webkit-details-marker { display: none; }
@@ -251,7 +339,13 @@ function transcriptRoundHtml(
   round: MessageTranscript["rounds"][number],
   copy: HtmlExportCopy,
 ): string {
-  const meta = [round.createdAt ? formatExportTime(round.createdAt) : "", round.status ?? ""]
+  const meta = [
+    round.createdAt ? formatExportTime(round.createdAt) : "",
+    [round.status, round.phase]
+      .filter((value): value is string => Boolean(value))
+      .map((value) => localizedStateValue(value, copy))
+      .join(" / "),
+  ]
     .filter(Boolean)
     .join(" · ");
   return `<section class="round" id="round-${round.index + 1}" data-run-id="${escapeHtml(round.runId)}">
@@ -297,17 +391,17 @@ function transcriptEntryHtml(entry: TranscriptEntry, copy: HtmlExportCopy): stri
     </details>`;
   }
   if (entry.kind === "status") {
-    if (isRoutineStatus(entry.text)) {
-      return `<span class="routine-status" aria-hidden="true">${escapeHtml(entry.text)}</span>`;
+    if (isRoutineStatusEntry(entry)) {
+      return "";
     }
     return `<details class="technical status-entry" data-actor="unknown" data-kind="status" data-sequence="${entry.sequence}">
-      <summary><span class="entry-label">${escapeHtml(entry.label || copy.status)}</span><time>${escapeHtml(time)}</time></summary>
-      <div class="technical-body">${structuredTextHtml(entry.text)}</div>
+      <summary><span class="entry-label">${escapeHtml(statusEntryLabel(entry, copy))}</span><time>${escapeHtml(time)}</time></summary>
+      <div class="technical-body">${structuredValueHtml(statusEntryValue(entry, copy))}</div>
     </details>`;
   }
   const content = entry.kind === "question"
     ? structuredTextHtml(entry.text)
-    : renderSafeMarkdown(entry.text);
+    : presentationPartsHtml(entry.parts, entry.text, copy);
   return `<article class="entry" data-actor="${escapeHtml(entry.metadata.actor)}" data-kind="${entry.kind}" data-sequence="${entry.sequence}">
     <header class="entry-head">
       <span class="entry-label">${escapeHtml(readableEntryLabel(entry, copy))}</span>
@@ -317,19 +411,79 @@ function transcriptEntryHtml(entry: TranscriptEntry, copy: HtmlExportCopy): stri
   </article>`;
 }
 
+function presentationPartsHtml(
+  parts: MessagePresentationPart[],
+  fallbackText: string,
+  copy: HtmlExportCopy,
+): string {
+  const rendered = parts.flatMap((part) => {
+    if (part.kind === "text") {
+      return [part.markdown ? renderSafeMarkdown(part.text) : structuredTextHtml(part.text)];
+    }
+    if (part.kind === "media") {
+      return [mediaPartHtml(part, copy)];
+    }
+    if (part.kind === "thinking") {
+      return [renderSafeMarkdown(part.text)];
+    }
+    return [];
+  }).join("");
+  return rendered || renderSafeMarkdown(fallbackText);
+}
+
+function mediaPartHtml(
+  part: Extract<MessagePresentationPart, { kind: "media" }>,
+  copy: HtmlExportCopy,
+): string {
+  const label = part.name || part.modality || copy.attachment;
+  const description = messagePresentationPartText(part);
+  const safeUrl = safeMediaUrl(part.url, part.mimeType);
+  if (safeUrl && (part.modality === "image" || part.mimeType.startsWith("image/"))) {
+    return `<figure class="media"><img alt="${escapeHtml(label)}" loading="lazy" src="${escapeHtml(safeUrl)}" /><figcaption>${escapeHtml(label)}</figcaption></figure>`;
+  }
+  if (safeUrl) {
+    return `<p class="media"><a href="${escapeHtml(safeUrl)}" rel="noreferrer">${escapeHtml(label)}</a></p>`;
+  }
+  return structuredValueHtml({
+    [copy.attachment]: description,
+    ...(part.mimeType ? { [copy.mediaType]: part.mimeType } : {}),
+    ...(part.assetId ? { [copy.asset]: part.assetId } : {}),
+    ...(part.url ? { [copy.url]: part.url } : {}),
+  });
+}
+
+function safeMediaUrl(url: string, mimeType: string): string {
+  const trimmed = url.trim();
+  if (/^(?:https?:|blob:|file:)/i.test(trimmed)) {
+    return trimmed;
+  }
+  const dataMatch = /^data:([^;,]+)(?:;base64)?,/i.exec(trimmed);
+  if (dataMatch === null) {
+    return "";
+  }
+  const embeddedMimeType = dataMatch[1]?.toLowerCase() ?? "";
+  const declaredMimeType = mimeType.trim().toLowerCase();
+  return embeddedMimeType.startsWith("image/")
+    || embeddedMimeType.startsWith("audio/")
+    || embeddedMimeType.startsWith("video/")
+    || (declaredMimeType.length > 0 && embeddedMimeType === declaredMimeType)
+    ? trimmed
+    : "";
+}
+
 function toolEntryHtml(
   entry: TranscriptEntry,
   resultEntry: TranscriptEntry | undefined,
   copy: HtmlExportCopy,
 ): string {
   const call = entry.metadata.tool?.stage === "call" ? entry : undefined;
-  const result = resultEntry ?? (entry.metadata.tool?.stage === "return" ? entry : undefined);
+  const result = resultEntry ?? (entry.metadata.tool?.stage !== "call" ? entry : undefined);
   const metadata = call?.metadata.tool ?? result?.metadata.tool;
   const isError = result?.metadata.tool?.isError === true;
   const time = call?.createdAt ?? result?.createdAt;
   const formattedTime = time ? formatExportTime(time) : "";
-  const input = call?.metadata.tool?.args;
-  const output = result?.metadata.tool?.result;
+  const input = metadata?.args;
+  const output = metadata?.result;
   return `<details class="technical tool-entry" data-actor="${escapeHtml(entry.metadata.actor)}" data-kind="tool" data-sequence="${entry.sequence}">
     <summary>
       <span class="entry-label">${copy.tool} · ${escapeHtml(metadata?.name || entry.label)}</span>
@@ -523,9 +677,96 @@ function isJsonValue(value: unknown): value is JsonValue {
   return Object.values(value).every(isJsonValue);
 }
 
-function isRoutineStatus(text: string): boolean {
-  const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
-  return lines.length === 1 && lines[0]?.startsWith("Status:") === true;
+function statusPart(entry: TranscriptEntry): MessagePresentationStatusPart | null {
+  return entry.parts.find(
+    (part): part is MessagePresentationStatusPart => part.kind === "status",
+  ) ?? null;
+}
+
+function isRoutineStatusEntry(entry: TranscriptEntry): boolean {
+  const part = statusPart(entry);
+  return part !== null
+    && part.retryEvent === undefined
+    && part.diagnostic === undefined
+    && part.errorCode === undefined
+    && part.pendingApprovals === undefined
+    && part.pendingQuestions === undefined
+    && (part.status !== undefined || part.phase !== undefined);
+}
+
+function statusEntryLabel(entry: TranscriptEntry, copy: HtmlExportCopy): string {
+  const retryIndex = statusPart(entry)?.retryIndex;
+  return retryIndex === undefined
+    ? entry.label || copy.status
+    : `${copy.retry} ${retryIndex + 1}`;
+}
+
+function statusEntryValue(entry: TranscriptEntry, copy: HtmlExportCopy): JsonValue {
+  const part = statusPart(entry);
+  if (part === null) {
+    return entry.text;
+  }
+  if (part.retryEvent !== undefined) {
+    return localizedStatusEvent(part.retryEvent, copy);
+  }
+  const value: Record<string, JsonValue> = {};
+  const status = [part.status, part.phase]
+    .filter((item): item is string => Boolean(item))
+    .map((item) => localizedStateValue(item, copy))
+    .join(" / ");
+  if (status.length > 0) {
+    value[copy.status] = status;
+  }
+  if (part.errorCode !== undefined) {
+    value[copy.error] = part.errorCode;
+  }
+  if (part.diagnostic !== undefined) {
+    value[copy.diagnostic] = part.diagnostic;
+  }
+  if (part.pendingApprovals !== undefined) {
+    value[copy.pendingApprovals] = part.pendingApprovals;
+  }
+  if (part.pendingQuestions !== undefined) {
+    value[copy.pendingQuestions] = part.pendingQuestions;
+  }
+  return value;
+}
+
+function localizedStatusEvent(
+  value: JsonValue,
+  copy: HtmlExportCopy,
+): JsonValue {
+  if (Array.isArray(value)) {
+    return value.map((item) => localizedStatusEvent(item, copy));
+  }
+  if (typeof value !== "object" || value === null) {
+    return typeof value === "string" ? localizedStateValue(value, copy) : value;
+  }
+  const fieldLabels: Readonly<Record<string, string>> = {
+    attempt_number: copy.attempt,
+    diagnostic: copy.diagnostic,
+    error_code: copy.error,
+    error_message: copy.errorMessage,
+    is_active: copy.active,
+    kind: copy.type,
+    pending_approvals: copy.pendingApprovals,
+    pending_questions: copy.pendingQuestions,
+    phase: copy.phase,
+    reason: copy.reason,
+    retry_in_ms: copy.retryDelay,
+    status: copy.status,
+    to_profile_id: copy.targetProfile,
+    total_attempts: copy.totalAttempts,
+  };
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [
+    fieldLabels[key] ?? key,
+    localizedStatusEvent(item, copy),
+  ]));
+}
+
+function localizedStateValue(value: string, copy: HtmlExportCopy): string {
+  const normalized = value.trim().toLowerCase();
+  return copy.stateLabels[normalized] ?? value;
 }
 
 function readableEntryLabel(entry: TranscriptEntry, copy: HtmlExportCopy): string {
@@ -533,15 +774,20 @@ function readableEntryLabel(entry: TranscriptEntry, copy: HtmlExportCopy): strin
     return copy.user;
   }
   if (entry.kind === "subagent") {
-    return entry.label === "Subagent" ? copy.subagent : entry.label;
+    return entry.label || copy.subagent;
   }
   if (entry.kind === "injection") {
-    return entry.label === "Inserted message" ? copy.insertedMessage : entry.label;
+    if (entry.label) {
+      return entry.label;
+    }
+    return entry.metadata.actor === "subagent"
+      ? `${copy.subagent} · ${copy.insertedMessage}`
+      : copy.insertedMessage;
   }
   if (entry.kind === "assistant") {
-    return entry.label === "Assistant" ? copy.assistant : entry.label;
+    return entry.label || copy.assistant;
   }
-  return entry.label;
+  return entry.label || copy.status;
 }
 
 function activeExportLocale(): string {
@@ -551,44 +797,106 @@ function activeExportLocale(): string {
 function htmlExportCopy(locale: string): HtmlExportCopy {
   if (locale.toLowerCase().startsWith("zh")) {
     return {
+      active: "生效中",
       assistant: "助手",
+      asset: "资源标识",
+      attempt: "当前次数",
+      attachment: "附件",
       completed: "已完成",
       conversation: "会话记录",
+      diagnostic: "诊断信息",
       empty: "此会话没有可导出的消息。",
       entries: "条会话消息",
+      error: "错误",
+      errorMessage: "错误信息",
       exportedAt: "导出于",
       failed: "失败",
       input: "输入",
       insertedMessage: "插入消息",
+      mediaType: "媒体类型",
       output: "输出",
+      phase: "阶段",
+      pendingApprovals: "待审批",
+      pendingQuestions: "待回答问题",
+      reason: "原因",
+      retry: "重试",
+      retryDelay: "重试延迟（毫秒）",
       round: "轮次",
       rounds: "轮",
       status: "状态",
+      stateLabels: {
+        completed: "已完成",
+        connecting: "连接中",
+        failed: "失败",
+        paused: "已暂停",
+        queued: "排队中",
+        retry: "重试",
+        running: "运行中",
+        scheduled: "已计划",
+        stopped: "已停止",
+        stopping: "停止中",
+        waiting: "等待中",
+      },
       subagent: "子代理",
+      targetProfile: "目标配置",
       thinking: "思考",
       tool: "工具",
       tools: "次工具调用",
+      totalAttempts: "总次数",
+      type: "类型",
+      url: "地址",
       user: "用户",
     };
   }
   return {
+    active: "Active",
     assistant: "Assistant",
+    asset: "Asset",
+    attempt: "Attempt",
+    attachment: "Attachment",
     completed: "Completed",
     conversation: "Conversation transcript",
+    diagnostic: "Diagnostic",
     empty: "This session has no messages to export.",
     entries: "conversation messages",
+    error: "Error",
+    errorMessage: "Error message",
     exportedAt: "Exported",
     failed: "Failed",
     input: "Input",
     insertedMessage: "Inserted message",
+    mediaType: "Media type",
     output: "Output",
+    phase: "Phase",
+    pendingApprovals: "Pending approvals",
+    pendingQuestions: "Pending questions",
+    reason: "Reason",
+    retry: "Retry",
+    retryDelay: "Retry delay (ms)",
     round: "Round",
     rounds: "rounds",
     status: "Status",
+    stateLabels: {
+      completed: "Completed",
+      connecting: "Connecting",
+      failed: "Failed",
+      paused: "Paused",
+      queued: "Queued",
+      retry: "Retry",
+      running: "Running",
+      scheduled: "Scheduled",
+      stopped: "Stopped",
+      stopping: "Stopping",
+      waiting: "Waiting",
+    },
     subagent: "Subagent",
+    targetProfile: "Target profile",
     thinking: "Thinking",
     tool: "Tool",
     tools: "tool calls",
+    totalAttempts: "Total attempts",
+    type: "Type",
+    url: "URL",
     user: "User",
   };
 }
@@ -636,401 +944,6 @@ export async function buildMessagesPngBlobs(
     blobs.push(await canvasToPngBlob(canvas));
   }
   return blobs;
-}
-
-function roundExportBlocks(rounds: SessionRound[]): ExportBlock[] {
-  const blocks: ExportBlock[] = [];
-  rounds.forEach((round, index) => {
-    blocks.push(roundSummaryBlock(round, index));
-    const promptText = promptPartsText(round.intent_parts) ?? normalizedText(round.intent);
-    if (promptText) {
-      blocks.push({
-        label: `Round ${index + 1} prompt`,
-        text: promptText,
-      });
-    }
-    for (const message of roundTimelineMessages(round)) {
-      blocks.push({
-        label: messageLabel(message),
-        text: roundMessageText(message),
-      });
-    }
-    if (round.pending_tool_approval_count !== undefined && round.pending_tool_approval_count > 0) {
-      blocks.push({
-        label: `Round ${index + 1} pending approvals`,
-        text: `${round.pending_tool_approval_count} pending tool approval(s).`,
-      });
-    }
-    if (round.pending_user_question_count !== undefined && round.pending_user_question_count > 0) {
-      blocks.push({
-        label: `Round ${index + 1} pending user questions`,
-        text: `${round.pending_user_question_count} pending user question(s).`,
-      });
-    }
-    blocks.push(...roundRetryEventBlocks(round, index));
-    if (normalizedText(round.run_diagnostic_message)) {
-      blocks.push({
-        label: `Round ${index + 1} diagnostic`,
-        text: normalizedText(round.run_diagnostic_message),
-      });
-    }
-  });
-  return blocks;
-}
-
-function roundHtml(round: SessionRound, index: number): string {
-  const promptText = promptPartsText(round.intent_parts) ?? normalizedText(round.intent);
-  const prompt = promptText
-    ? exportMessageHtml("message-export-user", `Round ${index + 1} prompt`, promptText)
-    : "";
-  const messages = roundTimelineMessages(round)
-    .map((message) =>
-      exportMessageHtml(messageExportClass(message), messageLabel(message), roundMessageText(message)),
-    )
-    .join("");
-  const statuses = roundStatusBlocks(round, index)
-    .map((block) => exportMessageHtml("message-export-status", block.label, block.text))
-    .join("");
-  return `
-    <section class="message-export-turn" data-run-id="${escapeHtml(round.run_id)}">
-      <header class="message-export-turn-header">
-        <h2 class="message-export-turn-title">Round ${index + 1}</h2>
-        <div class="message-export-turn-meta">${escapeHtml(roundMetaText(round))}</div>
-      </header>
-      ${prompt}
-      ${messages}
-      ${statuses}
-    </section>`;
-}
-
-function roundStatusBlocks(round: SessionRound, index: number): ExportBlock[] {
-  const blocks: ExportBlock[] = [];
-  if (round.pending_tool_approval_count !== undefined && round.pending_tool_approval_count > 0) {
-    blocks.push({
-      label: `Round ${index + 1} pending approvals`,
-      text: `${round.pending_tool_approval_count} pending tool approval(s).`,
-    });
-  }
-  if (round.pending_user_question_count !== undefined && round.pending_user_question_count > 0) {
-    blocks.push({
-      label: `Round ${index + 1} pending user questions`,
-      text: `${round.pending_user_question_count} pending user question(s).`,
-    });
-  }
-  blocks.push(...roundRetryEventBlocks(round, index));
-  if (normalizedText(round.run_diagnostic_message)) {
-    blocks.push({
-      label: `Round ${index + 1} diagnostic`,
-      text: normalizedText(round.run_diagnostic_message),
-    });
-  }
-  return blocks;
-}
-
-function exportMessageHtml(className: string, label: string, text: string): string {
-  return `
-      <article class="${className}">
-        <div class="role">${escapeHtml(label)}</div>
-        <pre>${escapeHtml(text)}</pre>
-      </article>`;
-}
-
-function messageExportClass(message: SessionRoundMessage): string {
-  const role = normalizedText(message.role).toLowerCase();
-  const entryType = normalizedText(message.entry_type).toLowerCase();
-  if (role === "user" || entryType === "injection") {
-    return "message-export-user";
-  }
-  return "message-export-agent";
-}
-
-function roundMetaText(round: SessionRound): string {
-  const status = [round.run_status, round.run_phase]
-    .map((value) => normalizedText(value))
-    .filter(Boolean)
-    .join(" / ");
-  return [
-    round.run_id ? `Run: ${round.run_id}` : "",
-    round.created_at ? `Created: ${round.created_at}` : "",
-    status ? `Status: ${status}` : "",
-    round.has_final_output === true ? "Final output: yes" : "",
-  ].filter(Boolean).join(" · ");
-}
-
-function roundRetryEventBlocks(round: SessionRound, roundIndex: number): ExportBlock[] {
-  return (round.retry_events ?? []).flatMap((event, eventIndex) => {
-    const text = roundRetryEventText(event);
-    if (text.length === 0) {
-      return [];
-    }
-    return [
-      {
-        label: `Round ${roundIndex + 1} retry ${eventIndex + 1}`,
-        text,
-      },
-    ];
-  });
-}
-
-function roundRetryEventText(event: JsonValue): string {
-  const object = jsonObject(event);
-  if (object === null) {
-    return jsonValueText(event).trim();
-  }
-  const lines = [
-    objectString(object, "kind") ? `Kind: ${objectString(object, "kind")}` : "",
-    objectString(object, "phase") ? `Phase: ${objectString(object, "phase")}` : "",
-    retryAttemptText(object),
-    objectPositiveNumber(object, "retry_in_ms") > 0
-      ? `Retry delay: ${objectPositiveNumber(object, "retry_in_ms")}ms`
-      : "",
-    objectString(object, "to_profile_id")
-      ? `Target profile: ${objectString(object, "to_profile_id")}`
-      : "",
-    objectString(object, "error_code") ? `Error code: ${objectString(object, "error_code")}` : "",
-    objectString(object, "error_message")
-      ? `Error: ${objectString(object, "error_message")}`
-      : "",
-    jsonScalarText(object.is_active) ? `Active: ${jsonScalarText(object.is_active)}` : "",
-  ].filter(Boolean);
-  return lines.length > 0 ? lines.join("\n") : jsonValueText(event).trim();
-}
-
-function retryAttemptText(object: Record<string, JsonValue>): string {
-  const attempt = objectPositiveNumber(object, "attempt_number");
-  const total = objectPositiveNumber(object, "total_attempts");
-  if (attempt > 0 && total > 0) {
-    return `Attempt: ${attempt}/${total}`;
-  }
-  if (attempt > 0) {
-    return `Attempt: ${attempt}`;
-  }
-  return "";
-}
-
-function roundSummaryBlock(round: SessionRound, index: number): ExportBlock {
-  const status = [round.run_status, round.run_phase]
-    .map((value) => normalizedText(value))
-    .filter(Boolean)
-    .join(" / ");
-  const lines = [
-    `Run: ${round.run_id}`,
-    round.created_at ? `Created: ${round.created_at}` : "",
-    status ? `Status: ${status}` : "",
-    round.has_final_output === true ? "Final output: yes" : "",
-  ].filter(Boolean);
-  return {
-    label: `Round ${index + 1}`,
-    text: lines.join("\n"),
-  };
-}
-
-function roundTimelineMessages(round: SessionRound): SessionRoundMessage[] {
-  const coordinatorMessages = (round.coordinator_messages ?? []).map(
-    (message, index) => timelineSortableMessage(message, index),
-  );
-  const injectionMessages = (round.injection_messages ?? []).map(
-    (message, index) => timelineSortableMessage(injectionToMessage(message), 100000 + index),
-  );
-  return [...coordinatorMessages, ...injectionMessages]
-    .sort(compareTimelineMessages)
-    .map(({ message }) => message);
-}
-
-function timelineSortableMessage(message: SessionRoundMessage, index: number) {
-  return {
-    index,
-    message,
-    sortAt: message.created_at ?? "",
-  };
-}
-
-function injectionToMessage(message: SessionRoundMessage): SessionRoundMessage {
-  const content =
-    normalizedText(message.content)
-    || promptPartsText(message.content_parts)
-    || "injection";
-  return {
-    ...message,
-    content,
-    entry_type: "injection",
-    label: "Inserted message",
-    message: {
-      parts: [
-        {
-          content,
-          part_kind: "text",
-        },
-      ],
-    },
-    role: "user",
-  };
-}
-
-function compareTimelineMessages(
-  left: ReturnType<typeof timelineSortableMessage>,
-  right: ReturnType<typeof timelineSortableMessage>,
-): number {
-  const leftAt = Date.parse(left.sortAt);
-  const rightAt = Date.parse(right.sortAt);
-  if (Number.isFinite(leftAt) && Number.isFinite(rightAt) && leftAt !== rightAt) {
-    return leftAt - rightAt;
-  }
-  if (Number.isFinite(leftAt) && !Number.isFinite(rightAt)) {
-    return 1;
-  }
-  if (!Number.isFinite(leftAt) && Number.isFinite(rightAt)) {
-    return -1;
-  }
-  return left.index - right.index;
-}
-
-function messageLabel(message: SessionRoundMessage): string {
-  const explicitLabel = normalizedText(message.label);
-  if (explicitLabel) {
-    return explicitLabel;
-  }
-  if (message.role_id?.trim()) {
-    return message.role_id;
-  }
-  if (message.role?.trim()) {
-    return message.role;
-  }
-  return message.entry_type ?? "message";
-}
-
-function roundMessageText(message: SessionRoundMessage): string {
-  const parts = message.message?.parts ?? [];
-  const partTexts = parts.map(partText).filter(isPresentText);
-  if (partTexts.length > 0) {
-    return partTexts.join("\n\n");
-  }
-  const nestedContent = normalizedText(message.message?.content);
-  if (nestedContent) {
-    return nestedContent;
-  }
-  const content = normalizedText(message.content);
-  if (content) {
-    return content;
-  }
-  const contentPartsText = promptPartsText(message.content_parts);
-  if (contentPartsText) {
-    return contentPartsText;
-  }
-  return message.entry_type ?? "message";
-}
-
-function partText(part: SessionRoundMessagePart): string | null {
-  const kind = normalizedText(part.part_kind ?? part.kind);
-  if (kind === "text" || kind === "user-prompt") {
-    return normalizedText(part.content) || normalizedText(part.text) || null;
-  }
-  if (kind === "thinking") {
-    const content = normalizedText(part.content);
-    return content ? `Thinking:\n${content}` : null;
-  }
-  if (kind === "tool-call" || (part.tool_name !== undefined && part.args !== undefined)) {
-    return [
-      `Tool call: ${part.tool_name ?? "unknown_tool"}`,
-      `Call id: ${part.tool_call_id ?? ""}`,
-      `Args: ${jsonValueText(part.args ?? null)}`,
-    ].join("\n");
-  }
-  if (kind === "tool-return") {
-    const resultLabel = part.is_error === true ? "Tool error" : "Tool result";
-    return [
-      `${resultLabel}: ${part.tool_name ?? "unknown_tool"}`,
-      `Call id: ${part.tool_call_id ?? ""}`,
-      jsonValueText(part.content ?? null),
-    ].join("\n");
-  }
-  if (kind === "media_ref") {
-    return mediaReferenceText({
-      mimeType: part.mime_type,
-      modality: part.modality,
-      name: part.name,
-      url: part.url,
-    });
-  }
-  return null;
-}
-
-function promptPartsText(parts: ContentPart[] | undefined): string | null {
-  const partTexts = (parts ?? [])
-    .map((part) => contentPartExportText(part))
-    .filter(isPresentText);
-  return partTexts.length > 0 ? partTexts.join("\n\n") : null;
-}
-
-function contentPartExportText(part: ContentPart): string | null {
-  const text = contentPartText(part);
-  if (isPresentText(text)) {
-    return text;
-  }
-  if (isContentMediaRefPart(part)) {
-    return mediaReferenceText({
-      assetId: part.asset_id,
-      mimeType: part.mime_type,
-      modality: part.modality,
-      name: part.name,
-      url: part.url,
-    });
-  }
-  if (isLegacyContentMediaRefPart(part)) {
-    return mediaReferenceText({
-      modality: part.media_type,
-      name: part.name,
-      url: part.url,
-    });
-  }
-  if (isInlineMediaPart(part)) {
-    return mediaReferenceText({
-      mimeType: part.mime_type,
-      modality: part.modality || mediaTypeModality(part.mime_type),
-      name: part.name,
-      url: mediaDataUrl(part.mime_type, part.base64_data),
-    });
-  }
-  if (isBinaryMediaPart(part)) {
-    return mediaReferenceText({
-      mimeType: part.media_type,
-      modality: mediaTypeModality(part.media_type),
-      name: part.name,
-      url: mediaDataUrl(part.media_type, part.data),
-    });
-  }
-  if (isUrlMediaPart(part)) {
-    return mediaReferenceText({
-      mimeType: part.media_type,
-      modality: part.kind.replace("-url", ""),
-      name: part.name,
-      url: part.url,
-    });
-  }
-  return null;
-}
-
-function isContentMediaRefPart(part: ContentPart): part is ContentMediaRefPart {
-  return "kind" in part && part.kind === "media_ref";
-}
-
-function isLegacyContentMediaRefPart(
-  part: ContentPart,
-): part is LegacyContentMediaRefPart {
-  return "part_kind" in part && part.part_kind === "media_ref";
-}
-
-function isInlineMediaPart(part: ContentPart): part is InlineMediaPart {
-  return "kind" in part && part.kind === "inline_media";
-}
-
-function isBinaryMediaPart(part: ContentPart): part is BinaryMediaPart {
-  return "kind" in part && part.kind === "binary";
-}
-
-function isUrlMediaPart(part: ContentPart): part is UrlMediaPart {
-  return "kind" in part
-    && (part.kind === "image-url" || part.kind === "audio-url" || part.kind === "video-url");
 }
 
 function layoutPngBlocks(
@@ -1274,110 +1187,6 @@ function canvasToPngBlob(canvas: HTMLCanvasElement): Promise<Blob> {
       reject(new Error("PNG export failed."));
     }, "image/png");
   });
-}
-
-function normalizedText(value: JsonValue | string | null | undefined): string {
-  if (typeof value === "string") {
-    return value.trim();
-  }
-  return "";
-}
-
-function mediaReferenceText({
-  assetId,
-  mimeType,
-  modality,
-  name,
-  url,
-}: {
-  assetId?: string;
-  mimeType?: string;
-  modality?: string;
-  name?: string;
-  url?: string;
-}): string {
-  const mediaType = normalizedText(modality) || "media";
-  const label = normalizedText(name) || normalizedText(assetId) || normalizedText(url) || "reference";
-  return [
-    `[${mediaType}: ${label}]`,
-    mimeType ? `Type: ${mimeType}` : "",
-    url ? `URL: ${url}` : "",
-  ].filter(Boolean).join("\n");
-}
-
-function mediaDataUrl(
-  mediaType: string | undefined,
-  data: string | undefined,
-): string | undefined {
-  const safeMediaType = normalizedText(mediaType);
-  const safeData = normalizedText(data);
-  if (!safeMediaType || !safeData) {
-    return undefined;
-  }
-  return `data:${safeMediaType};base64,${safeData}`;
-}
-
-function mediaTypeModality(mediaType: string | undefined): string {
-  const normalized = normalizedText(mediaType).toLowerCase();
-  if (normalized.startsWith("audio/")) {
-    return "audio";
-  }
-  if (normalized.startsWith("video/")) {
-    return "video";
-  }
-  if (normalized.startsWith("image/")) {
-    return "image";
-  }
-  return "media";
-}
-
-function jsonValueText(value: JsonValue): string {
-  if (typeof value === "string") {
-    return value;
-  }
-  if (value === null) {
-    return "";
-  }
-  return JSON.stringify(value, null, 2);
-}
-
-function jsonObject(value: JsonValue): Record<string, JsonValue> | null {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return null;
-  }
-  return value;
-}
-
-function objectString(
-  object: Record<string, JsonValue>,
-  key: string,
-): string {
-  const value = object[key];
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function objectPositiveNumber(
-  object: Record<string, JsonValue>,
-  key: string,
-): number {
-  const value = object[key];
-  return typeof value === "number" && Number.isFinite(value) && value > 0
-    ? value
-    : 0;
-}
-
-function jsonScalarText(value: JsonValue | undefined): string {
-  if (typeof value === "string") {
-    return value.trim();
-  }
-  if (typeof value === "number" || typeof value === "boolean") {
-    return String(value);
-  }
-  return "";
-}
-
-function isPresentText(value: string | null): value is string {
-  return value !== null && value.trim() !== "";
 }
 
 function messageExportFilenameBase(sessionId: string): string {

@@ -209,7 +209,8 @@
 }
 
 .at-composer .at-composer-run-controls .at-session-mode-control {
-  width: 134px;
+  flex: 0 0 240px;
+  width: 240px;
 }
 
 .at-composer
@@ -294,6 +295,7 @@
   .at-composer .at-composer-preset-select,
   .at-composer .at-composer-target-select,
   .at-composer .at-composer-model-select {
+    flex-basis: auto;
     width: 100%;
   }
 

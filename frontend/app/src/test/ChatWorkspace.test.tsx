@@ -70,17 +70,21 @@ vi.mock("../features/shell/SessionTokenUsage", () => ({
 
 vi.mock("../features/timeline/MessageTimeline", () => ({
   MessageTimeline: ({
+    associatedToolCallId,
     onSubagentOpen,
     pausedSubagent,
     primaryRoleId,
     sessionId,
+    toolCallLocateRequest,
     visible,
     workspaceId,
   }: {
+    associatedToolCallId?: string | null;
     onSubagentOpen?: (subagent: Record<string, unknown>) => void;
     pausedSubagent?: Record<string, unknown> | null;
     primaryRoleId?: string | null;
     sessionId: string | null;
+    toolCallLocateRequest?: { requestId: number; toolCallId: string } | null;
     visible?: boolean;
     workspaceId?: string | null;
   }) => {
@@ -89,10 +93,21 @@ vi.mock("../features/timeline/MessageTimeline", () => ({
       <div
         data-primary-role-id={primaryRoleId ?? ""}
         data-testid="timeline"
+        data-associated-tool-call-id={associatedToolCallId ?? ""}
+        data-locate-request-id={toolCallLocateRequest?.requestId ?? ""}
         data-visible={visible === false ? "false" : "true"}
         data-workspace-id={workspaceId ?? ""}
       >
         {sessionId}
+        <details
+          className={
+            associatedToolCallId === "call-subagent"
+              ? "at-message-tool is-associated-subagent"
+              : "at-message-tool"
+          }
+          data-testid="subagent-tool-row"
+          data-tool-call-id="call-subagent"
+        />
         {pausedSubagent === null || pausedSubagent === undefined ||
             onSubagentOpen === undefined ? null : (
           <button onClick={() => onSubagentOpen(pausedSubagent)} type="button">
@@ -125,10 +140,57 @@ describe("ChatWorkspace", () => {
     expect(timelineRenderMock).toHaveBeenCalledTimes(initialTimelineRenders);
   });
 
+  it("passes contextual association and one-shot locate requests to the timeline", async () => {
+    const props = {
+      associatedSubagentToolCallId: "call-subagent",
+      primaryRoleId: "MainAgent",
+      runStreamController: createRunStreamController(),
+      sessionId: "session-1",
+    };
+    const view = render(<ChatWorkspace {...props} />);
+    const toolRow = screen.getByTestId("subagent-tool-row");
+
+    await waitFor(() => expect(toolRow).toHaveClass("is-associated-subagent"));
+    expect(screen.getByTestId("timeline")).toHaveAttribute(
+      "data-associated-tool-call-id",
+      "call-subagent",
+    );
+
+    view.rerender(
+      <ChatWorkspace
+        {...props}
+        subagentToolLocateRequest={{
+          requestId: 1,
+          toolCallId: "call-subagent",
+        }}
+      />,
+    );
+    await waitFor(() => expect(screen.getByTestId("timeline")).toHaveAttribute(
+      "data-locate-request-id",
+      "1",
+    ));
+
+    view.rerender(
+      <ChatWorkspace
+        {...props}
+        subagentToolLocateRequest={{
+          requestId: 1,
+          toolCallId: "call-subagent",
+        }}
+      />,
+    );
+    expect(screen.getByTestId("timeline")).toHaveAttribute(
+      "data-locate-request-id",
+      "1",
+    );
+  });
+
   it("routes a paused recovery subagent through the shared panel reference", () => {
     const onSubagentOpen = vi.fn();
+    const onSubagentContextChange = vi.fn();
     render(
       <ChatWorkspace
+        onSubagentContextChange={onSubagentContextChange}
         onSubagentOpen={onSubagentOpen}
         primaryRoleId="MainAgent"
         runStreamController={createRunStreamController()}
@@ -139,6 +201,19 @@ describe("ChatWorkspace", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Publish paused recovery fixture" }),
     );
+    expect(onSubagentContextChange).toHaveBeenCalledWith({
+      description: "Waiting for reviewer input",
+      instanceId: "paused-instance",
+      prompt: "Waiting for reviewer input",
+      roleId: "reviewer",
+      runPhase: "awaiting_subagent_followup",
+      runStatus: "paused",
+      sessionId: "session-1",
+      sourceRunId: "parent-run",
+      status: "paused",
+      taskId: "paused-task",
+      title: "reviewer",
+    });
     fireEvent.click(screen.getByRole("button", { name: "Continue paused subagent" }));
 
     expect(onSubagentOpen).toHaveBeenCalledWith({

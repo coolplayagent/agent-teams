@@ -22,7 +22,10 @@ import {
   type RunStreamHandle,
 } from "../../runtime/streamClient";
 import { useTranslations, type Translate } from "../../i18n";
-import { MessageTimeline } from "../timeline/MessageTimeline";
+import {
+  MessageTimeline,
+  type MessageTimelineUiState,
+} from "../timeline/MessageTimeline";
 import { mergeRuntimeTimelineEntries } from "../timeline/runtimeScopeProjection";
 import { SubagentQuestionBar } from "../recovery/RecoveryBar";
 import {
@@ -32,37 +35,58 @@ import {
 
 const SUBAGENT_STREAM_RECONNECT_DELAY_MS = 750;
 const SUBAGENT_STREAM_RECONNECT_MAX_ATTEMPTS = 3;
+const SUBAGENT_TERMINAL_HISTORY_GRACE_MS = 150;
 
 interface SubagentSessionViewProps {
   subagent: ActiveSubagentSession;
   onBack: () => void;
+  onTimelineUiStateChange?: (state: MessageTimelineUiState) => void;
+  showBackAction?: boolean;
+  timelineUiState?: MessageTimelineUiState | null;
   visible?: boolean;
 }
 
 export const SubagentSessionView = memo(function SubagentSessionView({
   onBack,
+  onTimelineUiStateChange,
+  showBackAction = true,
   subagent,
+  timelineUiState = null,
   visible = true,
 }: SubagentSessionViewProps) {
   if (!visible) {
     return null;
   }
-  return <ActiveSubagentSessionView onBack={onBack} subagent={subagent} />;
+  return (
+    <ActiveSubagentSessionView
+      onBack={onBack}
+      onTimelineUiStateChange={onTimelineUiStateChange}
+      showBackAction={showBackAction}
+      subagent={subagent}
+      timelineUiState={timelineUiState}
+    />
+  );
 });
 
 function ActiveSubagentSessionView({
   onBack,
+  onTimelineUiStateChange,
+  showBackAction,
   subagent,
+  timelineUiState,
 }: Omit<SubagentSessionViewProps, "visible">) {
   const queryClient = useQueryClient();
   const t = useTranslations();
   const setRuntimeState = useRuntimeStore((state) => state.setRuntimeState);
   const latestStreamTargetRef = useRef<SubagentStreamTarget | null>(null);
+  const refreshedSharedTerminalRef = useRef<string | null>(null);
   const subagentReconnectAttemptRef = useRef(0);
   const subagentReconnectTimerRef = useRef<number | null>(null);
   const subagentStreamRef = useRef<RunStreamHandle | null>(null);
   const streamedRunIdRef = useRef<string | null>(null);
   const [streamReconnectGeneration, setStreamReconnectGeneration] = useState(0);
+  const [terminalHistoryCatchupReadyKey, setTerminalHistoryCatchupReadyKey] =
+    useState("");
   const subagentRecordsQuery = useQuery({
     queryKey: ["sessions", subagent.sessionId, "subagents"],
     queryFn: () => listSessionSubagents(subagent.sessionId, true),
@@ -99,12 +123,19 @@ function ActiveSubagentSessionView({
     ),
     [recordAwareSubagent, runtimeTerminalEventType],
   );
+  const streamLifecycleSubagent = useMemo(
+    () => subagentWithRuntimeTerminalStatus(
+      subagent,
+      runtimeTerminalEventType,
+    ),
+    [runtimeTerminalEventType, subagent],
+  );
   const subagentWaitingForOutput = subagentHasStreamingStatus(displayedSubagent);
   const subagentPromptText = displayedSubagent.promptText.trim();
   const streamStatusKey = [
-    displayedSubagent.status,
-    displayedSubagent.runStatus,
-    displayedSubagent.runPhase,
+    streamLifecycleSubagent.status,
+    streamLifecycleSubagent.runStatus,
+    streamLifecycleSubagent.runPhase,
   ].join("|");
   const hasMessageHistoryTarget = instanceId.length > 0;
   const messageTaskId = recordAwareSubagent.subagentKind === "orchestration"
@@ -122,8 +153,38 @@ function ActiveSubagentSessionView({
         ? instanceId
         : `pending:${runId || title}`,
       messageTaskId,
+      subagentPromptText,
     ),
-    [hasMessageHistoryTarget, instanceId, messageTaskId, runId, sessionId, title],
+    [
+      hasMessageHistoryTarget,
+      instanceId,
+      messageTaskId,
+      runId,
+      sessionId,
+      subagentPromptText,
+      title,
+    ],
+  );
+  const placeholderMessages = useMemo(
+    () => subagentTaskMessages({
+      messages: [],
+      promptIdentity: {
+        instanceId,
+        sessionId,
+        taskId: displayedSubagent.taskId ?? "",
+        traceId: timelineRunId,
+      },
+      promptText: subagentPromptText,
+      scopeToTask: recordAwareSubagent.subagentKind === "orchestration",
+    }),
+    [
+      displayedSubagent.taskId,
+      instanceId,
+      recordAwareSubagent.subagentKind,
+      sessionId,
+      subagentPromptText,
+      timelineRunId,
+    ],
   );
   const loadSubagentMessages = useCallback(
     async () => {
@@ -168,6 +229,39 @@ function ActiveSubagentSessionView({
       recordAwareSubagent.subagentKind,
     ],
   );
+  const subagentMessagesQuery = useQuery({
+    queryKey: messageQueryKey,
+    queryFn: loadSubagentMessages,
+    enabled: canRenderTimeline,
+    placeholderData: placeholderMessages,
+  });
+  const terminalHistoryCatchupCandidate =
+    subagentMessagesQuery.isPlaceholderData &&
+    [
+      recordAwareSubagent.status,
+      recordAwareSubagent.runStatus,
+      recordAwareSubagent.runPhase,
+    ].some(isTerminalHistoryCatchupStatus);
+  const terminalHistoryCatchupKey = [
+    sessionId,
+    runId,
+    instanceId,
+    messageTaskId,
+    subagentPromptText,
+  ].join("|");
+  const needsTerminalHistoryCatchup =
+    terminalHistoryCatchupCandidate &&
+    terminalHistoryCatchupReadyKey === terminalHistoryCatchupKey;
+
+  useEffect(() => {
+    if (!terminalHistoryCatchupCandidate) {
+      return;
+    }
+    const timeoutId = window.setTimeout(() => {
+      setTerminalHistoryCatchupReadyKey(terminalHistoryCatchupKey);
+    }, SUBAGENT_TERMINAL_HISTORY_GRACE_MS);
+    return () => window.clearTimeout(timeoutId);
+  }, [terminalHistoryCatchupCandidate, terminalHistoryCatchupKey]);
 
   useEffect(() => {
     latestStreamTargetRef.current = {
@@ -178,6 +272,35 @@ function ActiveSubagentSessionView({
       taskId: messageTaskId,
     };
   }, [instanceId, messageQueryKey, messageTaskId, queryClient, sessionId]);
+
+  useEffect(() => {
+    if (
+      !usesSharedTimelineRun ||
+      runtimeTerminalEventType === null ||
+      terminalStatusForEvent(runtimeTerminalEventType) === null ||
+      timelineRunId.length === 0
+    ) {
+      return;
+    }
+    const terminalKey = `${timelineRunId}:${runtimeTerminalEventType}`;
+    if (refreshedSharedTerminalRef.current === terminalKey) {
+      return;
+    }
+    refreshedSharedTerminalRef.current = terminalKey;
+    const latestTarget = latestStreamTargetRef.current;
+    if (latestTarget === null) {
+      return;
+    }
+    void refreshSubagentTerminalHistoryFromRuntime({
+      instanceId: latestTarget.instanceId,
+      messageQueryKey: latestTarget.messageQueryKey,
+      queryClient: latestTarget.queryClient,
+      runId: timelineRunId,
+      runtimeState: useRuntimeStore.getState().runtimeState,
+      sessionId: latestTarget.sessionId,
+      taskId: latestTarget.taskId,
+    });
+  }, [runtimeTerminalEventType, timelineRunId, usesSharedTimelineRun]);
 
   const clearSubagentReconnectTimer = useCallback(() => {
     if (subagentReconnectTimerRef.current !== null) {
@@ -207,7 +330,18 @@ function ActiveSubagentSessionView({
   }, []);
 
   useEffect(() => {
-    if (!shouldStreamSubagentRun(dedicatedRunId, streamStatusKey)) {
+    if (
+      !shouldStreamSubagentRun(
+        dedicatedRunId,
+        streamStatusKey,
+        needsTerminalHistoryCatchup,
+      )
+    ) {
+      if (streamedRunIdRef.current === dedicatedRunId) {
+        subagentStreamRef.current?.close();
+        subagentStreamRef.current = null;
+        streamedRunIdRef.current = null;
+      }
       return;
     }
     if (streamedRunIdRef.current === dedicatedRunId) {
@@ -303,6 +437,7 @@ function ActiveSubagentSessionView({
     setRuntimeState,
     streamReconnectGeneration,
     streamStatusKey,
+    needsTerminalHistoryCatchup,
   ]);
 
   useEffect(() => {
@@ -326,12 +461,14 @@ function ActiveSubagentSessionView({
   }, [resetSubagentReconnect]);
 
   return (
-    <div className="at-subagent-session-view">
+    <div className="at-subagent-session-view" data-visible="true">
       <header className="at-subagent-session-header">
         <div className="at-subagent-session-title-row">
-          <Button icon={<ArrowLeft size={15} />} onClick={onBack} size="small">
-            {t("subagentSessionBack")}
-          </Button>
+          {showBackAction ? (
+            <Button icon={<ArrowLeft size={15} />} onClick={onBack} size="small">
+              {t("subagentSessionBack")}
+            </Button>
+          ) : null}
           <Typography.Title className="at-subagent-session-title" level={2}>
             {title}
           </Typography.Title>
@@ -374,6 +511,8 @@ function ActiveSubagentSessionView({
             loadErrorDescription={t("subagentSessionLoadError")}
             loadMessages={loadSubagentMessages}
             messageQueryKey={messageQueryKey}
+            onUiStateChange={onTimelineUiStateChange}
+            placeholderMessages={placeholderMessages}
             roundsEnabled={false}
             runtimeRunId={timelineRunId}
             sessionId={sessionId}
@@ -390,6 +529,7 @@ function ActiveSubagentSessionView({
                 ? displayedSubagent.taskId ?? null
                 : null
             }
+            uiState={timelineUiState}
             variant="subagent-panel"
             visible
           />
@@ -942,9 +1082,18 @@ function subagentMessagesQueryKey(
   sessionId: string,
   instanceId: string,
   taskId: string,
+  promptText: string,
 ): readonly unknown[] {
   if (taskId.length === 0) {
-    return ["sessions", sessionId, "agents", instanceId, "messages"] as const;
+    return [
+      "sessions",
+      sessionId,
+      "agents",
+      instanceId,
+      "messages",
+      "prompt",
+      promptText,
+    ] as const;
   }
   return [
     "sessions",
@@ -954,6 +1103,8 @@ function subagentMessagesQueryKey(
     "tasks",
     taskId,
     "messages",
+    "prompt",
+    promptText,
   ] as const;
 }
 
@@ -968,13 +1119,17 @@ function listScopedAgentMessages(
   return listAgentMessages(sessionId, instanceId, { taskId });
 }
 
-function shouldStreamSubagentRun(runId: string, streamStatusKey: string): boolean {
+function shouldStreamSubagentRun(
+  runId: string,
+  streamStatusKey: string,
+  needsTerminalHistoryCatchup = false,
+): boolean {
   if (runId.length === 0) {
     return false;
   }
   const statuses = streamStatusKey.split("|");
   if (statuses.some(isTerminalRunStatus)) {
-    return false;
+    return needsTerminalHistoryCatchup;
   }
   return statuses.some(isStreamingRunStatus);
 }
@@ -997,6 +1152,19 @@ function isTerminalRunStatus(status: string | undefined): boolean {
     case "completed":
     case "failed":
     case "paused":
+    case "stopped":
+      return true;
+    default:
+      return false;
+  }
+}
+
+function isTerminalHistoryCatchupStatus(status: string | undefined): boolean {
+  switch (status?.trim().toLowerCase()) {
+    case "cancelled":
+    case "canceled":
+    case "completed":
+    case "failed":
     case "stopped":
       return true;
     default:

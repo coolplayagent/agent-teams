@@ -22,6 +22,9 @@ import {
 
 const SUBAGENT_INSTANCE_ID = "22cd6473-7579-438e-90df-d8177cc31e93";
 const SUBAGENT_RUN_ID = "87f9f69e-8622-4d46-958f-aa0d7d283095";
+const SECOND_SUBAGENT_INSTANCE_ID = "4fb675b3-68d8-4f86-8eb5-a69205c10c58";
+const SECOND_SUBAGENT_RUN_ID = "6d49f507-f5e6-4025-9e1d-f142f438ed76";
+const ORCHESTRATION_LIVE_PARENT_RUN_ID = "run-orchestration-live-parent";
 const CONTROL_SESSION_ID = "session-v2-subagent-control";
 const PRESSURE_NEW_SESSION_ID = "session-v2-pressure-new";
 const PRESSURE_RUN_ID = "run-v2-pressure-send";
@@ -47,6 +50,9 @@ interface SubagentSessionMockState {
   messageRequestCount: number;
   parentNormalRootRoleId?: string | null;
   parentRunCreateRequests?: Array<Record<string, unknown>>;
+  parentMessages?: Array<Record<string, unknown>>;
+  subagentRecords?: Array<Record<string, unknown>>;
+  subagentMessagesByInstance?: Record<string, Array<Record<string, unknown>>>;
 }
 
 interface SubagentRaceMockState {
@@ -65,6 +71,8 @@ interface SubagentPressureMockState {
 test("opens a genuinely paused recovery subagent without starting a false stream", async ({
   page,
 }) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
   const appServer = await serveFrontendDist();
   const state: SubagentSessionMockState = {
     completed: false,
@@ -86,15 +94,14 @@ test("opens a genuinely paused recovery subagent without starting a false stream
     await page.goto(`${appServer.url}/`);
     await waitForAppShell(page);
 
-    const recovery = page.locator(".at-recovery");
-    await expect(recovery.getByText("Paused subagent: explorer")).toBeVisible();
-    await recovery.getByRole("button", { name: "Open subagent panel" }).click();
+    await openSubagentPanelFromToolCard(page, "Explorer review");
 
     const panel = page.locator(".at-subagent-session-view");
     await expect(panel.getByRole("heading", { name: "Explorer review" })).toBeVisible();
-    await expect(panel.locator(".at-subagent-session-prompt")).toContainText(
+    await expect(panel.getByText(
       "Waiting for a follow-up inside the child session",
-    );
+      { exact: true },
+    )).toBeVisible();
     await expect(panel.locator(".at-subagent-session-badge")).toHaveText("Paused");
     await expect(panel.getByText("Persisted subagent checkpoint")).toBeVisible();
     await expect.poll(() => eventSourceUrls(page)).not.toEqual(
@@ -108,6 +115,7 @@ test("opens a genuinely paused recovery subagent without starting a false stream
       "paused subagent recovery should remain in the fixed split workspace",
     );
     await expectComposerControlsDoNotOverlap(page);
+    expect(pageErrors).toEqual([]);
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
     await page.screenshot({
       path: screenshotPath(
@@ -184,7 +192,7 @@ test("opens a nested subagent session and refreshes history after terminal strea
         `/api/sessions/${SESSION_ID}/subagents/events\\?after_event_id=0$`,
       ),
     );
-    await waitForEventSourceOpenCount(page, 1);
+    await waitForEventSourceOpenCount(page, 2);
 
     await dispatchSubagentRunEvent(page, {
       eventId: 42,
@@ -211,7 +219,7 @@ test("opens a nested subagent session and refreshes history after terminal strea
       relayEventType: "run_completed",
       type: "run.completed",
     });
-    await waitForEventSourceOpenCount(page, 0);
+    await waitForEventSourceOpenCount(page, 1);
     await expect.poll(() => state.messageRequestCount).toBeGreaterThanOrEqual(2);
     await expect(page.getByText("Live browser subagent output.")).toBeVisible();
     await expect(page.getByText("No subagent activity")).toHaveCount(0);
@@ -253,7 +261,7 @@ test("opens a nested subagent session and refreshes history after terminal strea
       ),
     });
 
-    await page.getByRole("button", { name: "Main session" }).click();
+    await closeActiveSubagentTab(page);
     await expect(page.getByText("Parent session output")).toBeVisible();
     await expect(
       page.locator(".at-chat-view").getByText("Live browser subagent output."),
@@ -267,6 +275,178 @@ test("opens a nested subagent session and refreshes history after terminal strea
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
   } finally {
     releaseFinalSubagentMessages(state);
+    await appServer.close();
+  }
+});
+
+test("keeps multiple subagent tabs lightweight with independent scroll and close behavior", async ({
+  page,
+}, testInfo) => {
+  const appServer = await serveFrontendDist();
+  const explorerTitle = "Explorer long review";
+  const crafterTitle = "Crafter long review";
+  const state: SubagentSessionMockState = {
+    completed: true,
+    delayFinalMessages: false,
+    messageRequestCount: 0,
+    releaseFinalMessages: [],
+    parentMessages: [
+      ...parentSessionMessages().slice(0, 1),
+      subagentToolMessage({
+        createdAt: "2026-06-26T09:00:02Z",
+        instanceId: SUBAGENT_INSTANCE_ID,
+        messageId: "parent-explorer-tool",
+        roleId: "explorer",
+        runId: SUBAGENT_RUN_ID,
+        title: explorerTitle,
+      }),
+      subagentToolMessage({
+        createdAt: "2026-06-26T09:00:03Z",
+        instanceId: SECOND_SUBAGENT_INSTANCE_ID,
+        messageId: "parent-crafter-tool",
+        roleId: "crafter",
+        runId: SECOND_SUBAGENT_RUN_ID,
+        title: crafterTitle,
+      }),
+    ],
+    subagentMessagesByInstance: {
+      [SUBAGENT_INSTANCE_ID]: longSubagentMessages("EXPLORER_TAB", 90),
+      [SECOND_SUBAGENT_INSTANCE_ID]: longSubagentMessages("CRAFTER_TAB", 70),
+    },
+    subagentRecords: [
+      completedSubagentRecord({
+        instanceId: SUBAGENT_INSTANCE_ID,
+        roleId: "explorer",
+        runId: SUBAGENT_RUN_ID,
+        title: explorerTitle,
+      }),
+      completedSubagentRecord({
+        instanceId: SECOND_SUBAGENT_INSTANCE_ID,
+        roleId: "crafter",
+        runId: SECOND_SUBAGENT_RUN_ID,
+        title: crafterTitle,
+      }),
+    ],
+  };
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await installMockEventSource(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleSubagentSessionApi(context, state),
+      sessionTitle: "TS parent session",
+    });
+
+    await page.goto(`${appServer.url}/`);
+    await waitForAppShell(page);
+    await openSubagentPanelFromToolCard(page, explorerTitle);
+    const explorerTab = page.getByRole("tab", { name: explorerTitle });
+    await expect(explorerTab).toHaveAttribute("aria-selected", "true");
+    const explorerScroller = activeSubagentScroller(page);
+    await expect.poll(() => explorerScroller.evaluate((element) =>
+      element.scrollHeight - element.clientHeight,
+    )).toBeGreaterThan(0);
+    await explorerScroller.evaluate((element) => {
+      element.scrollTop = Math.floor((element.scrollHeight - element.clientHeight) / 2);
+      element.dispatchEvent(new Event("scroll", { bubbles: true }));
+    });
+    const retainedExplorerScroll = await explorerScroller.evaluate(
+      (element) => element.scrollTop,
+    );
+    expect(retainedExplorerScroll).toBeGreaterThan(100);
+    const retainedExplorerAnchor = await visibleSubagentTimelineAnchor(page);
+
+    await openSubagentPanelFromToolCard(page, crafterTitle);
+    const crafterTab = page.getByRole("tab", { name: crafterTitle });
+    await expect(crafterTab).toHaveAttribute("aria-selected", "true");
+    await expect(explorerTab).toHaveAttribute("aria-selected", "false");
+    await expect(page.getByRole("tab")).toHaveCount(2);
+    await expect(page.locator(".at-subagent-session-view")).toHaveCount(1);
+    await expect(page.locator('.at-subagent-side-panel [role="tabpanel"]'))
+      .toHaveCount(1);
+
+    const mainScroller = page.locator(
+      '.at-chat-view .at-timeline[data-scroll-owner="session"]',
+    );
+    const roundTripMetrics: SubagentTabRoundTripMetric[] = [];
+    let explorerAnchorBefore = retainedExplorerAnchor;
+    let explorerScrollBefore = retainedExplorerScroll;
+    for (let round = 1; round <= 3; round += 1) {
+      if (round > 1) {
+        await crafterTab.click();
+        await expect(crafterTab).toHaveAttribute("aria-selected", "true");
+      }
+      const mainScrollBeforeSwitch = await mainScroller.evaluate(
+        (element) => element.scrollTop,
+      );
+      await explorerTab.click();
+      await expect(explorerTab).toHaveAttribute("aria-selected", "true");
+      await expect(page.locator(
+        '.at-message-tool[data-tool-call-id="call-parent-explorer-tool"]',
+      )).toHaveClass(/is-associated-subagent/);
+      await expect.poll(() => mainScroller.evaluate(
+        (element) => element.scrollTop,
+      )).toBe(mainScrollBeforeSwitch);
+      let restoredAnchor = await subagentTimelineAnchorByKey(
+        page,
+        explorerAnchorBefore.rowKey,
+      );
+      await expect.poll(async () => {
+        restoredAnchor = await subagentTimelineAnchorByKey(
+          page,
+          explorerAnchorBefore.rowKey,
+        );
+        return Math.abs(
+          restoredAnchor.viewportTop - explorerAnchorBefore.viewportTop,
+        );
+      }).toBeLessThanOrEqual(1);
+      const restoredScrollTop = await activeSubagentScroller(page).evaluate(
+        (element) => element.scrollTop,
+      );
+      const heavySurfaceCount = await page
+        .locator(".at-subagent-heavy-surface")
+        .count();
+      roundTripMetrics.push({
+        afterScrollTop: restoredScrollTop,
+        afterViewportTop: restoredAnchor.viewportTop,
+        beforeScrollTop: explorerScrollBefore,
+        beforeViewportTop: explorerAnchorBefore.viewportTop,
+        heavySurfaceCount,
+        round,
+        rowKey: restoredAnchor.rowKey,
+      });
+      expect(heavySurfaceCount).toBe(1);
+      explorerAnchorBefore = restoredAnchor;
+      explorerScrollBefore = restoredScrollTop;
+    }
+    await testInfo.attach("subagent-tab-round-trip-metrics", {
+      body: JSON.stringify(roundTripMetrics, null, 2),
+      contentType: "application/json",
+    });
+    await ensureScreenshotDir(SCREENSHOT_FOLDER);
+    await page.screenshot({
+      path: screenshotPath(
+        "v2-subagent-workbench-tabs.png",
+        SCREENSHOT_FOLDER,
+      ),
+    });
+    await explorerTab.dblclick();
+    await expect(page.locator(
+      '.at-message-tool[data-tool-call-id="call-parent-explorer-tool"]',
+    )).toHaveClass(/is-subagent-locate-pulse/);
+
+    await page.getByRole("button", { name: `Close ${explorerTitle}` }).click();
+    await expect(explorerTab).toHaveCount(0);
+    await expect(crafterTab).toHaveAttribute("aria-selected", "true");
+    await page.getByRole("button", { name: `Close ${crafterTitle}` }).click();
+    await expect(page.locator(".at-subagent-side-panel")).toHaveCount(0);
+
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+    await expectNoDocumentScroll(
+      page,
+      "multi-tab subagent workbench should keep scrolling inside its active panel",
+    );
+  } finally {
     await appServer.close();
   }
 });
@@ -301,7 +481,7 @@ test("keeps subagent-marked parent-run stream rows out of the main timeline", as
       .filter({ hasText: "Explorer review" });
     await expect(subagentCard).toHaveCount(1);
 
-    await page.getByRole("textbox", { name: "Prompt" }).fill(PARENT_MARKER_PROMPT);
+    await page.getByRole("combobox", { name: "Prompt" }).fill(PARENT_MARKER_PROMPT);
     await page.getByRole("button", { name: "Send" }).click();
     await expect.poll(() => state.parentRunCreateRequests?.length ?? 0).toBe(1);
     expect(state.parentRunCreateRequests?.[0]).toMatchObject({
@@ -314,7 +494,7 @@ test("keeps subagent-marked parent-run stream rows out of the main timeline", as
         `/api/ag-ui/runs/${PARENT_MARKER_RUN_ID}/events\\?after_event_id=0$`,
       ),
     );
-    await waitForEventSourceOpenCount(page, 1);
+    await waitForEventSourceOpenCount(page, 2);
 
     await dispatchParentMarkerRunEvent(page, {
       eventId: 1,
@@ -411,7 +591,7 @@ test("keeps subagent-marked parent-run stream rows out of the main timeline", as
       roleId: "MainAgent",
       type: "run.completed",
     });
-    await waitForEventSourceOpenCount(page, 0);
+    await waitForEventSourceOpenCount(page, 1);
     await expect(mainTimeline.getByText(PARENT_MARKER_VISIBLE_TEXT)).toBeVisible();
     await expect(mainTimeline.locator(".streaming-cursor")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Stop" })).toBeHidden();
@@ -479,19 +659,19 @@ test("streams subagent deltas incrementally before terminal history refill", asy
 
     await openSubagentPanelFromToolCard(page, "Explorer review");
     const panel = page.locator(".at-subagent-session-view");
-    await expect(panel.locator(".at-subagent-session-prompt")).toContainText(
+    await expect(panel.getByText(SUBAGENT_PROMPT, { exact: true })).toBeVisible();
+    await expectSubagentMessageOrder(
+      page,
       SUBAGENT_PROMPT,
+      "Persisted subagent checkpoint",
     );
-    await expect.poll(() => subagentPromptLayout(page)).toMatchObject({
-      promptBeforeTimeline: true,
-    });
     await waitForEventSourceUrl(
       page,
       new RegExp(
         `/api/sessions/${SESSION_ID}/subagents/events\\?after_event_id=0$`,
       ),
     );
-    await waitForEventSourceOpenCount(page, 1);
+    await waitForEventSourceOpenCount(page, 2);
 
     const firstStreamText = Array.from(
       { length: 18 },
@@ -504,7 +684,9 @@ test("streams subagent deltas incrementally before terminal history refill", asy
       type: "message.text.delta",
     });
     const liveRow = panel
-      .locator(`.at-timeline-row.is-streaming[data-run-id="${SUBAGENT_RUN_ID}"]`);
+      .locator(
+        `.at-timeline-row.is-streaming[data-run-id="${SUBAGENT_RUN_ID}"]`,
+      );
     const liveStreamText = liveRow.locator(".at-message-streaming-text");
     await expect(liveRow).toHaveCount(1);
     await expect(liveStreamText).toBeVisible();
@@ -544,7 +726,7 @@ test("streams subagent deltas incrementally before terminal history refill", asy
       relayEventType: "run_completed",
       type: "run.completed",
     });
-    await waitForEventSourceOpenCount(page, 0);
+    await waitForEventSourceOpenCount(page, 1);
     await expect.poll(() => state.messageRequestCount).toBeGreaterThanOrEqual(2);
     const terminalRuntimeRow = panel
       .locator(`.at-timeline-row[data-run-id="${SUBAGENT_RUN_ID}"]`)
@@ -610,7 +792,7 @@ test("settles terminal subagent output immediately before history refill", async
         `/api/sessions/${SESSION_ID}/subagents/events\\?after_event_id=0$`,
       ),
     );
-    await waitForEventSourceOpenCount(page, 1);
+    await waitForEventSourceOpenCount(page, 2);
 
     const terminalText = Array.from(
       { length: 40 },
@@ -637,7 +819,7 @@ test("settles terminal subagent output immediately before history refill", async
       relayEventType: "run_completed",
       type: "run.completed",
     });
-    await waitForEventSourceOpenCount(page, 0);
+    await waitForEventSourceOpenCount(page, 1);
     await expect.poll(() => state.messageRequestCount).toBeGreaterThanOrEqual(2);
     await expect(terminalDisplay).toHaveCount(0);
     await expect(terminalRow).toContainText(terminalText);
@@ -704,7 +886,7 @@ test("does not replay an already complete subagent stream during terminal hydrat
         `/api/sessions/${SESSION_ID}/subagents/events\\?after_event_id=0$`,
       ),
     );
-    await waitForEventSourceOpenCount(page, 1);
+    await waitForEventSourceOpenCount(page, 2);
 
     await dispatchSubagentRunEvent(page, {
       eventId: 42,
@@ -752,7 +934,7 @@ test("does not replay an already complete subagent stream during terminal hydrat
       relayEventType: "run_completed",
       type: "run.completed",
     });
-    await waitForEventSourceOpenCount(page, 0);
+    await waitForEventSourceOpenCount(page, 1);
     await expect.poll(() => state.messageRequestCount).toBeGreaterThanOrEqual(2);
 
     const settledRow = panel
@@ -828,7 +1010,7 @@ test("recovers a settled subagent stream after refresh before history refill", a
         `/api/sessions/${SESSION_ID}/subagents/events\\?after_event_id=0$`,
       ),
     );
-    await waitForEventSourceOpenCount(page, 1);
+    await waitForEventSourceOpenCount(page, 2);
 
     await dispatchSubagentRunEvent(page, {
       eventId: 42,
@@ -849,26 +1031,29 @@ test("recovers a settled subagent stream after refresh before history refill", a
       relayEventType: "run_completed",
       type: "run.completed",
     });
-    await waitForEventSourceOpenCount(page, 0);
+    await waitForEventSourceOpenCount(page, 1);
     await expect.poll(() => state.messageRequestCount).toBeGreaterThanOrEqual(2);
     await expect(initialPanel.locator(".at-message-streaming-text"))
       .toHaveCount(0);
     await expect(initialPanel).toContainText(terminalText);
+    await expect.poll(() => page.evaluate(() =>
+      window.localStorage.getItem("agentTeams.activeSubagentPanel") ?? "",
+    )).toContain(SUBAGENT_PROMPT);
 
     await page.reload();
     await waitForAppShell(page);
     const restoredPanel = page.locator(".at-subagent-session-view");
     await expect(page.getByRole("heading", { name: "Explorer review" }))
       .toBeVisible();
-    await expect(restoredPanel.locator(".at-subagent-session-prompt"))
-      .toContainText(SUBAGENT_PROMPT);
+    await expect(restoredPanel.getByText(SUBAGENT_PROMPT, { exact: true }))
+      .toBeVisible();
     await waitForEventSourceUrl(
       page,
       new RegExp(
         `/api/sessions/${SESSION_ID}/subagents/events\\?after_event_id=0$`,
       ),
     );
-    await waitForEventSourceOpenCount(page, 1);
+    await waitForEventSourceOpenCount(page, 2);
 
     await dispatchSubagentRunEvent(page, {
       eventId: 42,
@@ -897,7 +1082,7 @@ test("recovers a settled subagent stream after refresh before history refill", a
       relayEventType: "run_completed",
       type: "run.completed",
     });
-    await waitForEventSourceOpenCount(page, 0);
+    await waitForEventSourceOpenCount(page, 1);
     await expect(restoredDisplay).toHaveCount(0);
     await expect(restoredRow).toContainText(terminalText);
     await expect(restoredPanel.locator(".streaming-cursor")).toHaveCount(0);
@@ -961,7 +1146,7 @@ test("streams top-level subagent output deltas inside the right panel", async ({
         `/api/sessions/${SESSION_ID}/subagents/events\\?after_event_id=0$`,
       ),
     );
-    await waitForEventSourceOpenCount(page, 1);
+    await waitForEventSourceOpenCount(page, 2);
 
     await dispatchSubagentRunEvent(page, {
       eventId: 42,
@@ -987,7 +1172,9 @@ test("streams top-level subagent output deltas inside the right panel", async ({
     await expect(liveRow).toContainText("SUB_STDOUT_1");
     await expect(liveRow).toContainText("SUB_STDOUT_2");
     await expect(
-      panel.locator(`.at-timeline-row[data-run-id="${SUBAGENT_RUN_ID}"]`)
+      panel.locator(
+        `.at-timeline-row[data-run-id="${SUBAGENT_RUN_ID}"]`,
+      )
         .filter({ hasText: "SUB_STDOUT_" }),
     ).toHaveCount(1);
     await expect(
@@ -1023,6 +1210,7 @@ test("restores an open subagent panel after hard refresh without replay leakage"
   const unhandledApiRoutes: string[] = [];
   try {
     await installShellState(page);
+    await installMockEventSource(page);
     await mockShellApi(page, appServer.url, unhandledApiRoutes, {
       handleRequest: (context) => handleSubagentSessionApi(context, state),
       sessionTitle: "TS parent session",
@@ -1093,6 +1281,7 @@ test("replays an orchestration subagent panel without parent leakage after refre
   const unhandledApiRoutes: string[] = [];
   try {
     await installShellState(page);
+    await installMockEventSource(page);
     await mockShellApi(page, appServer.url, unhandledApiRoutes, {
       handleRequest: handleOrchestrationSubagentReplayApi,
       sessionTitle: "TS orchestration parent",
@@ -1113,12 +1302,15 @@ test("replays an orchestration subagent panel without parent leakage after refre
     await expect(panel.locator(".at-subagent-session-badge")).toHaveText("Completed");
     await expect(panel.locator(".at-subagent-session-badge"))
       .toHaveAttribute("data-status", "completed");
-    await expect(panel.locator(".at-subagent-session-prompt")).toContainText(
-      "Review the orchestration replay transcript and summarize only the child work.",
+    const orchestrationReplayPrompt =
+      "Review the orchestration replay transcript and summarize only the child work.";
+    await expect(panel.getByText(orchestrationReplayPrompt, { exact: true }))
+      .toBeVisible();
+    await expectSubagentMessageOrder(
+      page,
+      orchestrationReplayPrompt,
+      "Crafter checked the orchestration inputs.",
     );
-    await expect.poll(() => subagentPromptLayout(page)).toMatchObject({
-      promptBeforeTimeline: true,
-    });
     await expect(panel.getByText("Crafter checked the orchestration inputs."))
       .toBeVisible();
     await expect(panel.getByText("Crafter completed the right-panel replay task."))
@@ -1204,15 +1396,15 @@ test("streams a live orchestration subagent with right-panel delta cadence", asy
     await expect(panel.locator(".at-subagent-session-badge")).toHaveText("Running");
     await expect(panel.locator(".at-subagent-session-badge"))
       .toHaveAttribute("data-status", "running");
-    await expect(panel.locator(".at-subagent-session-prompt"))
-      .toContainText(ORCHESTRATION_LIVE_PROMPT);
+    await expect(panel.getByText(ORCHESTRATION_LIVE_PROMPT, { exact: true }))
+      .toBeVisible();
     await waitForEventSourceUrl(
       page,
       new RegExp(
-        `/api/sessions/${SESSION_ID}/subagents/events\\?after_event_id=0$`,
+        `/api/ag-ui/runs/${ORCHESTRATION_LIVE_PARENT_RUN_ID}/events\\?after_event_id=0$`,
       ),
     );
-    await waitForEventSourceOpenCount(page, 1);
+    await waitForEventSourceOpenCount(page, 2);
 
     const firstStreamChunks = [
       Array.from({ length: 9 }, (_, index) => `ORCH_LIVE_${index}`).join(" "),
@@ -1220,7 +1412,7 @@ test("streams a live orchestration subagent with right-panel delta cadence", asy
       Array.from({ length: 9 }, (_, index) => `ORCH_LIVE_${index + 19}`).join(" "),
     ];
     const firstStreamText = firstStreamChunks.join(" ");
-    await dispatchSubagentRunEvent(page, {
+    await dispatchOrchestrationLiveRunEvent(page, {
       eventId: 42,
       payload: { text: firstStreamChunks[0] },
       relayEventType: "text_delta",
@@ -1228,7 +1420,9 @@ test("streams a live orchestration subagent with right-panel delta cadence", asy
       type: "message.text.delta",
     });
     const liveRow = panel
-      .locator(`.at-timeline-row.is-streaming[data-run-id="${SUBAGENT_RUN_ID}"]`);
+      .locator(
+        `.at-timeline-row.is-streaming[data-run-id="${ORCHESTRATION_LIVE_PARENT_RUN_ID}"]`,
+      );
     const liveText = liveRow.locator(".at-message-streaming-text");
     await expect(liveRow).toHaveCount(1);
     await expect(liveText).toBeVisible();
@@ -1243,7 +1437,7 @@ test("streams a live orchestration subagent with right-panel delta cadence", asy
       new Set([firstStreamChunks[0]?.length ?? 0]),
     );
 
-    await dispatchSubagentRunEvent(page, {
+    await dispatchOrchestrationLiveRunEvent(page, {
       eventId: 43,
       payload: { delta: ` ${firstStreamChunks[1]}` },
       relayEventType: "output_delta",
@@ -1252,7 +1446,7 @@ test("streams a live orchestration subagent with right-panel delta cadence", asy
     });
     await expect(liveText).toHaveText(firstStreamChunks.slice(0, 2).join(" "));
 
-    await dispatchSubagentRunEvent(page, {
+    await dispatchOrchestrationLiveRunEvent(page, {
       eventId: 44,
       payload: { delta: ` ${firstStreamChunks[2]}` },
       relayEventType: "output_delta",
@@ -1264,7 +1458,7 @@ test("streams a live orchestration subagent with right-panel delta cadence", asy
       page.locator(".at-chat-view").getByText("ORCH_LIVE_"),
     ).toHaveCount(0);
 
-    await dispatchSubagentRunEvent(page, {
+    await dispatchOrchestrationLiveRunEvent(page, {
       eventId: 45,
       payload: { delta: " ORCH_LIVE_TAIL" },
       relayEventType: "output_delta",
@@ -1275,7 +1469,9 @@ test("streams a live orchestration subagent with right-panel delta cadence", asy
       timeout: 20_000,
     });
     await expect(
-      panel.locator(`.at-timeline-row[data-run-id="${SUBAGENT_RUN_ID}"]`)
+      panel.locator(
+        `.at-timeline-row[data-run-id="${ORCHESTRATION_LIVE_PARENT_RUN_ID}"]`,
+      )
         .filter({ hasText: "ORCH_LIVE_" }),
     ).toHaveCount(1);
     await page.screenshot({
@@ -1287,17 +1483,19 @@ test("streams a live orchestration subagent with right-panel delta cadence", asy
 
     state.completed = true;
     state.delayFinalMessages = true;
-    await dispatchSubagentRunEvent(page, {
+    await dispatchOrchestrationLiveRunEvent(page, {
       eventId: 46,
       payload: { status: "completed" },
       relayEventType: "run_completed",
       roleId: "Crafter",
       type: "run.completed",
     });
-    await waitForEventSourceOpenCount(page, 0);
+    await waitForEventSourceOpenCount(page, 1);
     await expect.poll(() => state.messageRequestCount).toBeGreaterThanOrEqual(2);
     const terminalRow = panel
-      .locator(`.at-timeline-row[data-run-id="${SUBAGENT_RUN_ID}"]`)
+      .locator(
+        `.at-timeline-row[data-run-id="${ORCHESTRATION_LIVE_PARENT_RUN_ID}"]`,
+      )
       .filter({ hasText: "ORCH_LIVE_" });
     await expect(terminalRow).toHaveCount(1);
     await expect(terminalRow).toContainText(`${firstStreamText} ORCH_LIVE_TAIL`);
@@ -1378,7 +1576,7 @@ test("keeps send, session switch, and subagent view responsive under sidebar loa
       .getByRole("complementary")
       .getByRole("button", { exact: true, name: "New session" })
       .click();
-    await expect(page.getByRole("textbox", { name: "Initial task (optional)" }))
+    await expect(page.getByRole("combobox", { name: "Initial task (optional)" }))
       .toBeVisible();
     await page
       .getByLabel("New session", { exact: true })
@@ -1388,7 +1586,7 @@ test("keeps send, session switch, and subagent view responsive under sidebar loa
       .toBeVisible();
     await expect(page.getByText("No messages yet")).toBeVisible();
 
-    const prompt = page.getByRole("textbox", { name: "Prompt" });
+    const prompt = page.getByRole("combobox", { name: "Prompt" });
     await prompt.fill("你好");
     const sendStarted = Date.now();
     await page.getByRole("button", { name: "Send" }).click();
@@ -1403,7 +1601,7 @@ test("keeps send, session switch, and subagent view responsive under sidebar loa
         `/api/ag-ui/runs/${PRESSURE_RUN_ID}/events\\?after_event_id=0$`,
       ),
     );
-    await waitForEventSourceOpenCount(page, 1);
+    await waitForEventSourceOpenCount(page, 2);
     await expect(page.getByRole("button", { name: "Stop" })).toBeVisible({
       timeout: 2500,
     });
@@ -1437,7 +1635,7 @@ test("keeps send, session switch, and subagent view responsive under sidebar loa
     await expect(page.getByText("Pressure subagent checkpoint")).toBeVisible();
 
     const parentStarted = Date.now();
-    await page.getByRole("button", { name: "Main session" }).click();
+    await closeActiveSubagentTab(page);
     await expect(page.getByText("Pressure parent output")).toBeVisible({
       timeout: 1000,
     });
@@ -1448,7 +1646,7 @@ test("keeps send, session switch, and subagent view responsive under sidebar loa
     await openSubagentPanelFromToolCard(page, "Pressure review");
     await expect(page.getByRole("heading", { name: "Pressure review" }))
       .toBeVisible();
-    await page.getByRole("button", { name: "Main session" }).click();
+    await closeActiveSubagentTab(page);
     await expect(page.getByText("Pressure parent output")).toBeVisible();
 
     await page.getByRole("button", { name: "Automation" }).click();
@@ -1485,6 +1683,7 @@ test("keeps a subagent session selected while parent hydration races", async ({
   const unhandledApiRoutes: string[] = [];
   try {
     await installShellState(page);
+    await installMockEventSource(page);
     await page.addInitScript((controlSessionId) => {
       window.localStorage.setItem("agentTeams.selectedSessionId", controlSessionId);
     }, CONTROL_SESSION_ID);
@@ -1585,11 +1784,11 @@ async function handleSubagentSessionApi(
     return true;
   }
   if (context.path === `/sessions/${SESSION_ID}/messages`) {
-    await context.fulfillJson(parentSessionMessages());
+    await context.fulfillJson(state.parentMessages ?? parentSessionMessages());
     return true;
   }
   if (context.path === `/sessions/${SESSION_ID}/subagents`) {
-    await context.fulfillJson([subagentRecord(state)]);
+    await context.fulfillJson(state.subagentRecords ?? [subagentRecord(state)]);
     return true;
   }
   if (
@@ -1628,17 +1827,20 @@ async function handleSubagentSessionApi(
     ));
     return true;
   }
-  if (
-    context.path ===
-    `/sessions/${SESSION_ID}/agents/${SUBAGENT_INSTANCE_ID}/messages`
-  ) {
+  const configuredSubagentMessageMatch = new RegExp(
+    `^/sessions/${SESSION_ID}/agents/([^/]+)/messages$`,
+  ).exec(context.path);
+  if (configuredSubagentMessageMatch !== null) {
     state.messageRequestCount += 1;
     if (state.completed && state.delayFinalMessages) {
       await new Promise<void>((resolve) => {
         state.releaseFinalMessages.push(resolve);
       });
     }
-    await context.fulfillJson(subagentMessages(state));
+    const instanceId = configuredSubagentMessageMatch[1] ?? "";
+    await context.fulfillJson(
+      state.subagentMessagesByInstance?.[instanceId] ?? subagentMessages(state),
+    );
     return true;
   }
   return false;
@@ -1711,14 +1913,22 @@ async function handleOrchestrationSubagentLiveApi(
     await context.fulfillJson(orchestrationLiveParentMessages());
     return true;
   }
+  if (context.path === `/sessions/${SESSION_ID}/recovery`) {
+    await context.fulfillJson(
+      state.completed
+        ? emptyRecoverySnapshot()
+        : activeRecoverySnapshot(ORCHESTRATION_LIVE_PARENT_RUN_ID, SESSION_ID),
+    );
+    return true;
+  }
   if (context.path === `/sessions/${SESSION_ID}/subagents`) {
     await context.fulfillJson([orchestrationLiveSubagentRecord(state)]);
     return true;
   }
-  if (
-    context.path ===
-    `/sessions/${SESSION_ID}/agents/${SUBAGENT_INSTANCE_ID}/messages`
-  ) {
+  const configuredSubagentMessageMatch = new RegExp(
+    `^/sessions/${SESSION_ID}/agents/([^/]+)/messages$`,
+  ).exec(context.path);
+  if (configuredSubagentMessageMatch !== null) {
     state.messageRequestCount += 1;
     if (state.completed && state.delayFinalMessages) {
       await new Promise<void>((resolve) => {
@@ -1741,6 +1951,80 @@ async function openSubagentPanelFromToolCard(
     .first();
   await expect(card).toBeVisible();
   await card.locator(".at-message-tool-summary").click();
+}
+
+async function closeActiveSubagentTab(page: Page): Promise<void> {
+  const activeTab = page.locator('[role="tab"][aria-selected="true"]');
+  await expect(activeTab).toBeVisible();
+  const title = (await activeTab.textContent())?.trim() ?? "";
+  await page.getByRole("button", { name: `Close ${title}` }).click();
+}
+
+function activeSubagentScroller(page: Page): Locator {
+  return page.locator(
+    '.at-subagent-side-panel [role="tabpanel"] .at-timeline[data-scroll-owner="subagent-panel"]',
+  );
+}
+
+async function visibleSubagentTimelineAnchor(
+  page: Page,
+): Promise<SubagentTimelineViewportAnchor> {
+  return activeSubagentScroller(page).evaluate((timeline) => {
+    const timelineRect = timeline.getBoundingClientRect();
+    const row = Array.from(
+      timeline.querySelectorAll<HTMLElement>(
+        ".at-timeline-row[data-row-key]",
+      ),
+    ).find((candidate) => {
+      const rect = candidate.getBoundingClientRect();
+      return (
+        rect.top >= timelineRect.top + 12 &&
+        rect.bottom <= timelineRect.bottom - 12
+      );
+    });
+    if (row === undefined || row.dataset.rowKey === undefined) {
+      throw new Error("No fully visible subagent timeline anchor was available.");
+    }
+    return {
+      rowKey: row.dataset.rowKey,
+      viewportTop: row.getBoundingClientRect().top,
+    };
+  });
+}
+
+async function subagentTimelineAnchorByKey(
+  page: Page,
+  rowKey: string,
+): Promise<SubagentTimelineViewportAnchor> {
+  return activeSubagentScroller(page).evaluate((timeline, key) => {
+    const row = Array.from(
+      timeline.querySelectorAll<HTMLElement>(
+        ".at-timeline-row[data-row-key]",
+      ),
+    ).find((candidate) => candidate.dataset.rowKey === key);
+    if (row === undefined) {
+      throw new Error(`Subagent timeline anchor ${key} was not restored.`);
+    }
+    return {
+      rowKey: key,
+      viewportTop: row.getBoundingClientRect().top,
+    };
+  }, rowKey);
+}
+
+interface SubagentTimelineViewportAnchor {
+  rowKey: string;
+  viewportTop: number;
+}
+
+interface SubagentTabRoundTripMetric {
+  afterScrollTop: number;
+  afterViewportTop: number;
+  beforeScrollTop: number;
+  beforeViewportTop: number;
+  heavySurfaceCount: number;
+  round: number;
+  rowKey: string;
 }
 
 async function dragSubagentPanelResizer(
@@ -2104,9 +2388,9 @@ function orchestrationParentSidebarRecord(): Record<string, unknown> {
     active_run_status: null,
     created_at: "2026-06-26T12:30:00Z",
     message_count: 2,
+    metadata: { title: "TS orchestration parent" },
     session_id: SESSION_ID,
     subagent_count: 1,
-    title: "TS orchestration parent",
     updated_at: "2026-06-26T12:42:00Z",
     workspace_id: WORKSPACE_ID,
   };
@@ -2130,7 +2414,7 @@ function orchestrationParentSessionRecord(): Record<string, unknown> {
 function pressureSidebarRecords(
   state: SubagentPressureMockState,
 ): Array<Record<string, unknown>> {
-  const records = [pressureParentRecord(), ...pressureSeedRecords()];
+  const records = [pressureParentRecord(), ...pressureSeedRecords().reverse()];
   if (state.createdSessionAdded) {
     return [pressureNewSessionRecord(state.runCreateRequests.length > 0), ...records];
   }
@@ -2142,9 +2426,9 @@ function pressureParentRecord(): Record<string, unknown> {
     active_run_status: null,
     created_at: "2026-06-26T11:00:00Z",
     message_count: 1,
+    metadata: { title: "TS pressure parent" },
     session_id: SESSION_ID,
     subagent_count: 1,
-    title: "TS pressure parent",
     updated_at: "2026-06-26T11:59:00Z",
     workspace_id: WORKSPACE_ID,
   };
@@ -2155,8 +2439,8 @@ function pressureSeedRecords(): Array<Record<string, unknown>> {
     active_run_status: null,
     created_at: "2026-06-26T10:00:00Z",
     message_count: 1,
+    metadata: { title: pressureSeedTitle(index) },
     session_id: pressureSeedSessionId(index),
-    title: pressureSeedTitle(index),
     updated_at: `2026-06-26T11:${String(index).padStart(2, "0")}:00Z`,
     workspace_id: WORKSPACE_ID,
   }));
@@ -2169,8 +2453,8 @@ function pressureNewSessionRecord(runActive: boolean): Record<string, unknown> {
     active_run_status: runActive ? "running" : null,
     created_at: "2026-06-26T12:00:00Z",
     message_count: 0,
+    metadata: { title: "New pressure session" },
     session_id: PRESSURE_NEW_SESSION_ID,
-    title: "New pressure session",
     updated_at: "2026-06-26T12:00:00Z",
     workspace_id: WORKSPACE_ID,
   };
@@ -2205,7 +2489,7 @@ function pressureSessionDetail(session: Record<string, unknown>): Record<string,
     orchestration_preset_id: null,
     session_id: session.session_id,
     session_mode: "normal",
-    title: session.title,
+    title: pressureSessionTitle(session),
     updated_at: session.updated_at,
     workspace_id: session.workspace_id,
   };
@@ -2217,7 +2501,7 @@ function pressureSessionMessages(
   if (session.session_id === PRESSURE_NEW_SESSION_ID) {
     return [];
   }
-  const title = String(session.title ?? session.session_id);
+  const title = pressureSessionTitle(session);
   const content =
     session.session_id === SESSION_ID
       ? "Pressure parent output"
@@ -2241,6 +2525,21 @@ function pressureSessionMessages(
       ]
       : []),
   ];
+}
+
+function pressureSessionTitle(session: Record<string, unknown>): string {
+  const metadata = session.metadata;
+  if (
+    typeof metadata === "object" &&
+    metadata !== null &&
+    !Array.isArray(metadata)
+  ) {
+    const title = (metadata as Record<string, unknown>).title;
+    if (typeof title === "string" && title.trim().length > 0) {
+      return title.trim();
+    }
+  }
+  return String(session.session_id ?? "");
 }
 
 function parentSessionMessages(): Record<string, unknown>[] {
@@ -2332,15 +2631,19 @@ function orchestrationLiveParentMessages(): Record<string, unknown>[] {
 
 function subagentToolMessage({
   createdAt,
+  instanceId = SUBAGENT_INSTANCE_ID,
   messageId,
   prompt = SUBAGENT_PROMPT,
   roleId,
+  runId = SUBAGENT_RUN_ID,
   title,
 }: {
   createdAt: string;
+  instanceId?: string;
   messageId: string;
   prompt?: string;
   roleId: string;
+  runId?: string;
   title: string;
 }): Record<string, unknown> {
   return {
@@ -2349,9 +2652,9 @@ function subagentToolMessage({
       parts: [
         {
           content: {
-            subagent_instance_id: SUBAGENT_INSTANCE_ID,
+            subagent_instance_id: instanceId,
             subagent_role_id: roleId,
-            subagent_run_id: SUBAGENT_RUN_ID,
+            subagent_run_id: runId,
             prompt,
             title,
           },
@@ -2390,6 +2693,48 @@ function subagentRecord(state: SubagentSessionMockState): Record<string, unknown
       ? "2026-06-26T09:08:00Z"
       : "2026-06-26T09:06:00Z",
   };
+}
+
+function completedSubagentRecord({
+  instanceId,
+  roleId,
+  runId,
+  title,
+}: {
+  instanceId: string;
+  roleId: string;
+  runId: string;
+  title: string;
+}): Record<string, unknown> {
+  return {
+    created_at: "2026-06-26T09:05:00Z",
+    instance_id: instanceId,
+    last_event_id: 90,
+    role_id: roleId,
+    run_id: runId,
+    run_phase: "completed",
+    run_status: "completed",
+    session_id: SESSION_ID,
+    status: "completed",
+    subagent_kind: "normal",
+    title,
+    updated_at: "2026-06-26T09:08:00Z",
+  };
+}
+
+function longSubagentMessages(
+  prefix: string,
+  count: number,
+): Array<Record<string, unknown>> {
+  return Array.from({ length: count }, (_, index) => ({
+    content: `${prefix}_${String(index + 1).padStart(3, "0")} ${"content ".repeat(8)}`,
+    created_at: new Date(Date.UTC(2026, 5, 26, 9, 8, index)).toISOString(),
+    message_id: `${prefix.toLowerCase()}-${index + 1}`,
+    role_id: prefix.startsWith("EXPLORER") ? "explorer" : "crafter",
+    run_id: prefix.startsWith("EXPLORER")
+      ? SUBAGENT_RUN_ID
+      : SECOND_SUBAGENT_RUN_ID,
+  }));
 }
 
 function raceSubagentRecord(): Record<string, unknown> {
@@ -2451,7 +2796,7 @@ function orchestrationLiveSubagentRecord(
     instance_id: SUBAGENT_INSTANCE_ID,
     last_event_id: state.completed ? 44 : 41,
     role_id: "Crafter",
-    run_id: SUBAGENT_RUN_ID,
+    run_id: ORCHESTRATION_LIVE_PARENT_RUN_ID,
     run_phase: state.completed ? "completed" : "running",
     run_status: state.completed ? "completed" : "running",
     session_id: SESSION_ID,
@@ -2672,7 +3017,7 @@ async function dispatchSubagentRunEvent(
   page: Page,
   event: BrowserSubagentRunEvent,
 ): Promise<void> {
-  await dispatchEventSourceMessage(page, {
+  await dispatchRunEventToMatchingSources(page, {
     data: {
       event_id: event.eventId,
       instance_id: SUBAGENT_INSTANCE_ID,
@@ -2686,8 +3031,60 @@ async function dispatchSubagentRunEvent(
       type: event.type,
     },
     lastEventId: String(event.eventId),
+    urlPattern: new RegExp(
+      `/api/sessions/${SESSION_ID}/subagents/events(?:\\?|$)`,
+    ),
     type: event.type,
   });
+}
+
+async function dispatchOrchestrationLiveRunEvent(
+  page: Page,
+  event: BrowserSubagentRunEvent,
+): Promise<void> {
+  await dispatchRunEventToMatchingSources(page, {
+    data: {
+      event_id: event.eventId,
+      instance_id: SUBAGENT_INSTANCE_ID,
+      occurred_at: `2026-06-26T12:33:${String(event.eventId).padStart(2, "0")}Z`,
+      payload: event.payload,
+      relay_event_type: event.relayEventType,
+      role_id: event.roleId ?? "Crafter",
+      run_id: ORCHESTRATION_LIVE_PARENT_RUN_ID,
+      session_id: SESSION_ID,
+      trace_id: "trace-ts-orchestration-live-parent",
+      type: event.type,
+    },
+    lastEventId: String(event.eventId),
+    urlPattern: new RegExp(
+      `/api/ag-ui/runs/${ORCHESTRATION_LIVE_PARENT_RUN_ID}/events(?:\\?|$)`,
+    ),
+    type: event.type,
+  });
+}
+
+async function dispatchRunEventToMatchingSources(
+  page: Page,
+  dispatch: {
+    data: Record<string, unknown>;
+    lastEventId: string;
+    type: string;
+    urlPattern: RegExp;
+  },
+): Promise<void> {
+  const urls = await eventSourceUrls(page);
+  const sourceIndexes = urls.flatMap((url, index) =>
+    dispatch.urlPattern.test(url) ? [index] : []
+  );
+  expect(sourceIndexes.length).toBeGreaterThan(0);
+  for (const sourceIndex of sourceIndexes) {
+    await dispatchEventSourceMessage(page, {
+      data: dispatch.data,
+      lastEventId: dispatch.lastEventId,
+      sourceIndex,
+      type: dispatch.type,
+    });
+  }
 }
 
 async function panelVisibleTextOccurrences(
@@ -2723,29 +3120,21 @@ async function sampleLocatorTextLengths(
   return lengths;
 }
 
-interface SubagentPromptLayout {
-  promptBeforeTimeline: boolean;
-  promptTop: number;
-  timelineTop: number;
-}
-
-async function subagentPromptLayout(page: Page): Promise<SubagentPromptLayout> {
-  return page.locator(".at-subagent-session-view").evaluate((root) => {
-    const prompt = root.querySelector(".at-subagent-session-prompt");
-    const timeline = root.querySelector(".at-timeline");
-    if (!(prompt instanceof HTMLElement) || !(timeline instanceof HTMLElement)) {
-      return {
-        promptBeforeTimeline: false,
-        promptTop: 0,
-        timelineTop: 0,
-      };
-    }
-    const promptRect = prompt.getBoundingClientRect();
-    const timelineRect = timeline.getBoundingClientRect();
-    return {
-      promptBeforeTimeline: promptRect.top < timelineRect.top,
-      promptTop: promptRect.top,
-      timelineTop: timelineRect.top,
-    };
-  });
+async function expectSubagentMessageOrder(
+  page: Page,
+  firstMessage: string,
+  secondMessage: string,
+): Promise<void> {
+  const rows = page.locator(
+    '.at-subagent-session-view .at-timeline-row[data-row-key]',
+  );
+  const firstRow = rows.filter({ hasText: firstMessage }).first();
+  const secondRow = rows.filter({ hasText: secondMessage }).first();
+  await expect(firstRow).toBeVisible();
+  await expect(secondRow).toBeVisible();
+  const [firstTop, secondTop] = await Promise.all([
+    firstRow.evaluate((element) => element.getBoundingClientRect().top),
+    secondRow.evaluate((element) => element.getBoundingClientRect().top),
+  ]);
+  expect(firstTop).toBeLessThan(secondTop);
 }

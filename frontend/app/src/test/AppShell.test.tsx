@@ -1543,7 +1543,7 @@ describe("AppShell", () => {
     );
     expect(subagentSurface).toHaveAttribute("data-run-id", "subagent-run-1");
     expect(subagentSurface).toHaveAttribute("data-run-status", "running");
-    expect(screen.getByText("Subagent Explorer")).toBeVisible();
+    expect(screen.getByRole("tab", { name: "Subagent Explorer" })).toBeVisible();
     expect(screen.getByTestId("timeline")).toBeVisible();
     expect(screen.getByTestId("composer")).toBeVisible();
     expect(document.querySelector(".at-subagent-side-panel")).not.toBeNull();
@@ -1567,7 +1567,73 @@ describe("AppShell", () => {
       expect(screen.getByTestId("session-search-view")).toBeVisible(),
     );
     expect(screen.getByTestId("subagent-session-view")).toBeVisible();
-    expect(screen.getByText("Subagent Explorer")).toBeVisible();
+    expect(screen.getByRole("tab", { name: "Subagent Explorer" })).toBeVisible();
+  });
+
+  it("keeps multiple subagents in closable tabs and activates a neighboring tab", async () => {
+    renderShell();
+
+    expect(await screen.findByTestId("timeline")).toBeVisible();
+    fireEvent.click(screen.getByTestId("open-subagent-from-timeline"));
+    expect(await screen.findByTestId("subagent-session-view")).toHaveAttribute(
+      "data-run-id",
+      "subagent-run-1",
+    );
+
+    fireEvent.click(screen.getByTestId("open-pending-subagent-from-timeline"));
+    await waitFor(() =>
+      expect(activeSubagentSurface()).toHaveAttribute(
+        "data-run-id",
+        "subagent-run-pending",
+      ),
+    );
+    const tabs = screen.getByRole("tablist", { name: "Open subagents" });
+    expect(within(tabs).getAllByRole("tab")).toHaveLength(2);
+    const pendingTab = within(tabs).getByRole("tab", {
+      name: "Explore skills implementation",
+    });
+    const explorerTab = within(tabs).getByRole("tab", {
+      name: "Subagent Explorer",
+    });
+    expect(pendingTab).toHaveAttribute("aria-selected", "true");
+    expect(pendingTab).toHaveAttribute("tabindex", "0");
+    expect(explorerTab).toHaveAttribute("tabindex", "-1");
+
+    fireEvent.keyDown(pendingTab, { key: "ArrowLeft" });
+    await waitFor(() =>
+      expect(activeSubagentSurface()).toHaveAttribute(
+        "data-run-id",
+        "subagent-run-1",
+      ),
+    );
+    expect(explorerTab).toHaveAttribute("aria-selected", "true");
+
+    fireEvent.click(explorerTab);
+    await waitFor(() =>
+      expect(activeSubagentSurface()).toHaveAttribute(
+        "data-run-id",
+        "subagent-run-1",
+      ),
+    );
+
+    fireEvent.click(
+      within(tabs).getByRole("button", { name: "Close Subagent Explorer" }),
+    );
+    await waitFor(() =>
+      expect(activeSubagentSurface()).toHaveAttribute(
+        "data-run-id",
+        "subagent-run-pending",
+      ),
+    );
+    expect(within(tabs).getAllByRole("tab")).toHaveLength(1);
+
+    fireEvent.click(
+      within(tabs).getByRole("button", {
+        name: "Close Explore skills implementation",
+      }),
+    );
+    expect(screen.queryByTestId("subagent-session-view")).not.toBeInTheDocument();
+    expect(document.querySelector(".at-subagent-side-panel")).toBeNull();
   });
 
   it("clamps subagent panel resizing to the available workspace width", async () => {
@@ -1589,6 +1655,8 @@ describe("AppShell", () => {
         expect(panelResizer).toHaveAttribute("aria-valuemax", "508"),
       );
 
+      expect(panelResizer).toHaveAttribute("aria-valuenow", "494");
+      fireEvent.keyDown(panelResizer, { key: "ArrowLeft" });
       expect(panelResizer).toHaveAttribute("aria-valuenow", "508");
       fireEvent.keyDown(panelResizer, { key: "ArrowRight" });
       expect(panelResizer).toHaveAttribute("aria-valuenow", "484");
@@ -1622,7 +1690,9 @@ describe("AppShell", () => {
       const panelResizer = screen.getByRole("separator", {
         name: "Resize subagent panel",
       });
-      expect(panelResizer).toHaveAttribute("aria-valuenow", "560");
+      await waitFor(() =>
+        expect(panelResizer).toHaveAttribute("aria-valuenow", "596"),
+      );
 
       fireEvent.pointerDown(panelResizer, { button: 0, clientX: 540 });
       fireEvent.pointerMove(window, { clientX: 460 });
@@ -1656,7 +1726,9 @@ describe("AppShell", () => {
     expect(subagentSurface).toHaveAttribute("data-instance-id", "");
     expect(subagentSurface).toHaveAttribute("data-run-id", "subagent-run-pending");
     expect(subagentSurface).toHaveAttribute("data-run-status", "running");
-    expect(screen.getByText("Explore skills implementation")).toBeVisible();
+    expect(
+      screen.getByRole("tab", { name: "Explore skills implementation" }),
+    ).toBeVisible();
 
     await waitFor(() =>
       expect(listSessionSubagentsMock).toHaveBeenCalledWith("session-1", true),
@@ -1850,7 +1922,7 @@ describe("AppShell", () => {
     });
 
     expect(await screen.findByTestId("subagent-session-view")).toBeVisible();
-    expect(screen.getByText("Subagent Explorer")).toBeVisible();
+    expect(screen.getByRole("tab", { name: "Subagent Explorer" })).toBeVisible();
     expect(screen.getByTestId("timeline")).toBeVisible();
   });
 
@@ -1904,7 +1976,7 @@ describe("AppShell", () => {
     fireEvent.click(screen.getByTestId("open-subagent-from-timeline"));
 
     expect(await screen.findByTestId("subagent-session-view")).toBeVisible();
-    expect(screen.getByText("Subagent Research")).toBeVisible();
+    expect(screen.getByRole("tab", { name: "Subagent Research" })).toBeVisible();
     expect(screen.getByTestId("timeline")).toBeVisible();
     await waitFor(() => expect(getSessionMock).toHaveBeenCalledWith("session-2"));
 
@@ -1921,7 +1993,7 @@ describe("AppShell", () => {
     });
 
     expect(await screen.findByTestId("subagent-session-view")).toBeVisible();
-    expect(screen.getByText("Subagent Research")).toBeVisible();
+    expect(screen.getByRole("tab", { name: "Subagent Research" })).toBeVisible();
     expect(screen.getByTestId("timeline")).toBeVisible();
     expect(useUiStore.getState().selectedSessionId).toBe("session-2");
     expect(useUiStore.getState().selectedWorkspaceId).toBe("workspace-2");
@@ -2059,13 +2131,15 @@ describe("AppShell", () => {
 
       expect(await screen.findByTestId("timeline")).toBeVisible();
       fireEvent.click(screen.getByTestId("open-subagent-from-timeline"));
-      expect(screen.getByText("Starting subagent...")).toBeVisible();
+      expect(
+        screen.getByRole("tab", { name: "Subagent Explorer" }),
+      ).toBeVisible();
       await act(async () => {
         animationFrame.flushAll();
         await Promise.resolve();
       });
       expect(await screen.findByTestId("subagent-session-view")).toBeVisible();
-      expect(screen.getByText("Subagent Explorer")).toBeVisible();
+      expect(screen.getByRole("tab", { name: "Subagent Explorer" })).toBeVisible();
 
       fireEvent.click(screen.getByTestId("select-session-from-sidebar"));
       expect(await screen.findByTestId("timeline")).toBeVisible();
@@ -2087,7 +2161,7 @@ describe("AppShell", () => {
       });
 
       expect(await screen.findByTestId("subagent-session-view")).toBeVisible();
-      expect(screen.getByText("Subagent Explorer")).toBeVisible();
+      expect(screen.getByRole("tab", { name: "Subagent Explorer" })).toBeVisible();
       expect(screen.getByTestId("timeline")).toBeVisible();
       expect(screen.getByTestId("composer")).toBeVisible();
       expect(animationFrame.pendingCount()).toBeGreaterThanOrEqual(1);
@@ -2238,6 +2312,16 @@ function testDomRect(
       };
     },
   };
+}
+
+function activeSubagentSurface(): HTMLElement {
+  const surface = document.querySelector<HTMLElement>(
+    '[data-testid="subagent-session-view"][data-visible="true"]',
+  );
+  if (surface === null) {
+    throw new Error("Expected one active subagent surface.");
+  }
+  return surface;
 }
 
 interface CapturedAnimationFrames {

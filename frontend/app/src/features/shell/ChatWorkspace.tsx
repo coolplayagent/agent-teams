@@ -19,9 +19,14 @@ import type { RunStreamController } from "../../runtime/useRunStreamController";
 import { SessionTokenUsage } from "./SessionTokenUsage";
 
 interface ChatWorkspaceProps {
+  associatedSubagentToolCallId?: string | null;
   latestTerminalRunId?: string | null;
   latestTerminalRunStatus?: string | null;
+  onSubagentContextChange?: (
+    subagent: TimelineSubagentReference | null,
+  ) => void;
   onSubagentOpen?: (subagent: TimelineSubagentReference) => void;
+  subagentToolLocateRequest?: SubagentToolLocateRequest | null;
   primaryRoleId: string | null;
   runStreamController: RunStreamController;
   sessionId: string | null;
@@ -29,13 +34,21 @@ interface ChatWorkspaceProps {
   workspaceId?: string | null;
 }
 
+export interface SubagentToolLocateRequest {
+  requestId: number;
+  toolCallId: string;
+}
+
 export const ChatWorkspace = memo(function ChatWorkspace({
+  associatedSubagentToolCallId = null,
   latestTerminalRunId = null,
   latestTerminalRunStatus = null,
+  onSubagentContextChange,
   onSubagentOpen,
   primaryRoleId,
   runStreamController,
   sessionId,
+  subagentToolLocateRequest = null,
   visible = true,
   workspaceId,
 }: ChatWorkspaceProps) {
@@ -60,6 +73,10 @@ export const ChatWorkspace = memo(function ChatWorkspace({
     );
   }, [sessionId]);
 
+  useEffect(() => {
+    onSubagentContextChange?.(pausedSubagentReference);
+  }, [onSubagentContextChange, pausedSubagentReference]);
+
   useLayoutEffect(() => {
     runStreamController.setForegroundSessionId(sessionId);
   }, [runStreamController, sessionId]);
@@ -67,6 +84,7 @@ export const ChatWorkspace = memo(function ChatWorkspace({
   return (
     <div className="at-chat-view">
       <MessageTimeline
+        associatedToolCallId={associatedSubagentToolCallId}
         fallbackRunId={runStreamController.activeRunId}
         latestTerminalRunId={latestTerminalRunId}
         latestTerminalRunStatus={latestTerminalRunStatus}
@@ -74,6 +92,7 @@ export const ChatWorkspace = memo(function ChatWorkspace({
         pausedSubagent={pausedSubagentReference}
         primaryRoleId={primaryRoleId}
         sessionId={sessionId}
+        toolCallLocateRequest={subagentToolLocateRequest}
         visible={visible}
         workspaceId={workspaceId ?? null}
       />

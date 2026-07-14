@@ -844,7 +844,9 @@ async function verifyRunningSubagent(
   );
   await withExpectedEventAbortWindow(failures, () =>
     recordInteraction(page, () =>
-      page.getByRole("button", { name: /主会话|Main session/ }).click(),
+      page.locator(
+        ".at-subagent-workbench-tab.is-active .at-subagent-workbench-tab-close",
+      ).click(),
     ),
   );
   await expect(panel).toBeHidden();
@@ -860,7 +862,9 @@ async function verifyRunningSubagent(
     .toBeGreaterThanOrEqual(tokenIndexAtOverflow);
   await withExpectedEventAbortWindow(failures, () =>
     recordInteraction(page, () =>
-      page.getByRole("button", { name: /主会话|Main session/ }).click(),
+      page.locator(
+        ".at-subagent-workbench-tab.is-active .at-subagent-workbench-tab-close",
+      ).click(),
     ),
   );
   return { concurrencyOverlap, firstIncrementObservedAtMs, scrollGrowth };

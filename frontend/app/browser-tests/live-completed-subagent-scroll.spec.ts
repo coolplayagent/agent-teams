@@ -438,7 +438,9 @@ async function exerciseRepeatedNavigation(
 }
 
 async function closeSubagentPanel(panel: Locator): Promise<void> {
-  const back = panel.getByRole("button", { name: /主会话|Main session/ });
+  const back = panel.locator(
+    ".at-subagent-workbench-tab.is-active .at-subagent-workbench-tab-close",
+  );
   await expect(back).toBeVisible();
   await back.click();
   await expect(panel).toBeHidden();

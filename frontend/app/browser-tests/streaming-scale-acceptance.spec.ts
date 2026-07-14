@@ -252,7 +252,7 @@ test("keeps large multi-session and multi-subagent streaming interactive", async
       ),
     });
 
-    await page.getByRole("button", { name: "Main session" }).click();
+    await closeActiveSubagentTab(page);
     await expect(page.getByRole("heading", { name: childTitle })).toHaveCount(0);
     await waitForEventSourceOpenCount(page, 1);
     await expect.poll(() => timelineScrollTop(mainTimeline))
@@ -265,7 +265,7 @@ test("keeps large multi-session and multi-subagent streaming interactive", async
     await waitForEventSourceOpenCount(page, 2);
     await updateMaxOpenEventSources(page, state);
     expect(state.maxOpenEventSources).toBe(2);
-    await page.getByRole("button", { name: "Main session" }).click();
+    await closeActiveSubagentTab(page);
     await waitForEventSourceOpenCount(page, 1);
 
     const finalMainStats = await timelineStats(mainTimeline);
@@ -565,6 +565,12 @@ async function openSubagentPanel(page: Page, title: string): Promise<void> {
     .filter({ hasText: title });
   await expect(card).toBeVisible();
   await card.locator(".at-message-tool-summary").click();
+}
+
+async function closeActiveSubagentTab(page: Page): Promise<void> {
+  await page.locator(
+    ".at-subagent-workbench-tab.is-active .at-subagent-workbench-tab-close",
+  ).click();
 }
 
 async function revealAllScaleSessions(page: Page): Promise<void> {

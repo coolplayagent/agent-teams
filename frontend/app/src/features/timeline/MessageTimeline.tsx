@@ -193,6 +193,7 @@ interface MessageTimelineProps {
   loadMessages?: (sessionId: string) => Promise<TimelineMessage[]>;
   messageQueryKey?: readonly unknown[];
   onSubagentOpen?: (subagent: TimelineSubagentReference) => void;
+  placeholderMessages?: TimelineMessage[];
   pausedSubagent?: TimelineSubagentReference | null;
   primaryRoleId?: string | null;
   roundsEnabled?: boolean;
@@ -266,6 +267,7 @@ export function MessageTimeline({
   messageQueryKey,
   onSubagentOpen,
   onUiStateChange,
+  placeholderMessages,
   pausedSubagent = null,
   primaryRoleId = null,
   roundsEnabled = true,
@@ -395,6 +397,7 @@ export function MessageTimeline({
     queryKey: messageQueryKey ?? ["sessions", sessionId, "messages"],
     queryFn: () => loadMessages(sessionId ?? ""),
     enabled: visible && sessionId !== null,
+    placeholderData: placeholderMessages,
   });
   const roundsQuery = useQuery({
     queryKey: ["sessions", sessionId, "rounds", "rail"],
@@ -405,6 +408,8 @@ export function MessageTimeline({
       sessionId !== null,
     staleTime: 0,
   });
+  const subagentCorrelationRequired =
+    timelineMessagesNeedSubagentCorrelation(messagesQuery.data ?? []);
   const subagentsQuery = useQuery({
     queryKey: ["sessions", sessionId, "subagents", "timeline"],
     queryFn: () => listSessionSubagents(sessionId ?? "", false),
@@ -412,8 +417,17 @@ export function MessageTimeline({
       visible &&
       variant === "session" &&
       sessionId !== null &&
-      onSubagentOpen !== undefined,
+      onSubagentOpen !== undefined &&
+      subagentCorrelationRequired,
   });
+  const detachedSubagentInstanceIds = useMemo(
+    () => new Set(
+      (subagentsQuery.data ?? [])
+        .map((subagent) => subagent.instance_id?.trim() ?? "")
+        .filter((instanceId) => instanceId.length > 0),
+    ),
+    [subagentsQuery.data],
+  );
   const rounds = useMemo(
     () => roundsQuery.data ?? [],
     [roundsQuery.data],
@@ -460,6 +474,7 @@ export function MessageTimeline({
         sessionId,
       ),
       {
+        detachedSubagentInstanceIds,
         primaryInstancesByRunId,
         primaryRoleId,
         runtimeRunId,
@@ -472,6 +487,7 @@ export function MessageTimeline({
       runtimeRowSelectionCacheRef.current,
     ),
     [
+      detachedSubagentInstanceIds,
       primaryInstancesByRunId,
       primaryRoleId,
       runtimeRunId,
@@ -684,12 +700,21 @@ export function MessageTimeline({
     [roundStreamedPersistedRows, runtimeRunsForRows],
   );
   const correlatedPersistedRows = useMemo(
-    () => persistedRowsWithCorrelatedSubagents(
+    () => subagentCorrelationRequired && subagentsQuery.isFetching
+      ? []
+      : persistedRowsWithCorrelatedSubagents(
+          anchoredPersistedRows,
+          correlateSessionSubagents(messages, subagentsQuery.data ?? []),
+          sessionId,
+        ),
+    [
       anchoredPersistedRows,
-      correlateSessionSubagents(messages, subagentsQuery.data ?? []),
+      messages,
       sessionId,
-    ),
-    [anchoredPersistedRows, messages, sessionId, subagentsQuery.data],
+      subagentCorrelationRequired,
+      subagentsQuery.data,
+      subagentsQuery.isFetching,
+    ],
   );
   const hydratedOutputTextByRunId = useMemo(
     () => timelineOutputTextByRunId(correlatedPersistedRows),
@@ -6655,6 +6680,7 @@ function runtimePendingCursorEntry(
 }
 
 interface RuntimeTimelineScope {
+  detachedSubagentInstanceIds?: ReadonlySet<string>;
   primaryInstancesByRunId?: ReadonlyMap<string, string>;
   primaryRoleId: string | null;
   runtimeRunId: string | null;
@@ -6674,6 +6700,7 @@ function selectRuntimeRowsForTimeline(
     scope.sessionId ?? "",
     scope.runtimeRunId ?? "",
     scope.primaryRoleId ?? "",
+    Array.from(scope.detachedSubagentInstanceIds ?? []).sort().join(","),
     Array.from(scope.primaryInstancesByRunId ?? [])
       .map(([runId, instanceId]) => `${runId}:${instanceId}`)
       .join(","),
@@ -6864,6 +6891,12 @@ function runtimeEntryMatchesScope(
       runtimeEntryMatchesSubagentScope(entry, scope);
   }
   if (variant === "subagent-panel") {
+    return false;
+  }
+  if (
+    entry.kind !== "subagent_session_status_changed" &&
+    scope.detachedSubagentInstanceIds?.has(entry.instanceId?.trim() ?? "") === true
+  ) {
     return false;
   }
   return runtimeEntryBelongsToMainTimeline(
@@ -7385,6 +7418,49 @@ function messagesVisibleInTimelineScope(
         round?.primary_task_id?.trim() ?? "",
       );
     },
+  );
+}
+
+function timelineMessagesNeedSubagentCorrelation(
+  messages: TimelineMessage[],
+): boolean {
+  return messages.some((message) =>
+    [
+      ...(message.message?.parts ?? []),
+      ...(message.parts ?? []),
+    ].some((part) => {
+      if (
+        "action_family" in part &&
+        part.action_family === "subagent"
+      ) {
+        return true;
+      }
+      const args =
+        "args" in part && part.args !== undefined
+          ? jsonObject(part.args)
+          : null;
+      if (args !== null) {
+        const hasTaskReference = objectString(args, "task_id").length > 0;
+        const hasLegacyDelegationShape =
+          objectString(args, "prompt").length > 0 &&
+          objectString(args, "role_id").length > 0;
+        if (
+          hasLegacyDelegationShape ||
+          (
+            hasTaskReference &&
+            "action_family" in part &&
+            part.action_family === "orchestration"
+          )
+        ) {
+          return true;
+        }
+      }
+      if (!("content" in part) || part.content === undefined) {
+        return false;
+      }
+      const content = jsonObject(part.content);
+      return content !== null && jsonObjectHasDetachedSubagentMarker(content);
+    })
   );
 }
 

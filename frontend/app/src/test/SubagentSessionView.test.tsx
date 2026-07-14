@@ -61,7 +61,25 @@ afterEach(() => {
 });
 
 describe("SubagentSessionView", () => {
-  it("releases runtime and query work while the retained panel is hidden", async () => {
+  it("lets the workbench tabs own closing without a duplicate back action", async () => {
+    renderSubagentSessionView({ showBackAction: false });
+
+    expect(await screen.findByText("Explorer review")).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Main session" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not retain inactive workbench timeline DOM", () => {
+    renderSubagentSessionView({
+      visible: false,
+    });
+
+    expect(document.querySelector(".at-subagent-session-view")).toBeNull();
+    expect(listAgentMessagesMock).not.toHaveBeenCalled();
+  });
+
+  it("releases runtime and query work while the panel is hidden", async () => {
     renderSubagentSessionView({
       subagent: createSubagent({
         runId: "subagent_run_hidden",
@@ -90,7 +108,7 @@ describe("SubagentSessionView", () => {
     expect(openSessionSubagentRunStreamMock).not.toHaveBeenCalled();
   });
 
-  it("does not poll or stream a hidden completed retained panel", async () => {
+  it("does not poll or stream a hidden completed panel", async () => {
     renderSubagentSessionView({
       subagent: createSubagent({
         runStatus: "completed",
@@ -495,6 +513,8 @@ describe("SubagentSessionView", () => {
           "agents",
           "subagent-instance-1",
           "messages",
+          "prompt",
+          prompt,
         ]),
       ).toHaveLength(2),
     );
@@ -526,7 +546,7 @@ describe("SubagentSessionView", () => {
       }),
     });
 
-    expect(await screen.findAllByText(prompt)).toHaveLength(2);
+    await waitFor(() => expect(screen.getAllByText(prompt)).toHaveLength(2));
     expect(
       queryClient.getQueryData<TimelineMessage[]>([
         "sessions",
@@ -534,6 +554,8 @@ describe("SubagentSessionView", () => {
         "agents",
         "subagent-instance-1",
         "messages",
+        "prompt",
+        prompt,
       ])?.[0],
     ).toMatchObject({
       message_id:
@@ -1511,10 +1533,12 @@ describe("SubagentSessionView", () => {
 });
 
 function renderSubagentSessionView({
+  showBackAction = true,
   subagent = createSubagent(),
   visible = true,
 }: {
   controller?: RunStreamController;
+  showBackAction?: boolean;
   subagent?: ActiveSubagentSession;
   visible?: boolean;
 } = {}) {
@@ -1532,6 +1556,7 @@ function renderSubagentSessionView({
         <AntApp>
           <SubagentSessionView
             onBack={vi.fn()}
+            showBackAction={showBackAction}
             subagent={subagent}
             visible={visible}
           />

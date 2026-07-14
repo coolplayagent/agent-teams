@@ -13,10 +13,12 @@ import {
 } from "react";
 import type {
   MouseEvent,
+  KeyboardEvent,
   PointerEvent,
   ReactNode,
   SyntheticEvent,
   UIEvent,
+  WheelEvent,
 } from "react";
 
 import {
@@ -72,6 +74,29 @@ import {
 import { fileReadResultText } from "./toolResultPresentation";
 import { roundPromptText, roundTitle } from "./roundMetadata";
 import {
+  boundedTimelineMeasurementCache,
+  type TimelineMeasurementCacheItem,
+} from "./timelineMeasurementCache";
+import {
+  captureTimelineScrollSnapshot,
+  captureTimelineViewportAnchor,
+  consumePendingProgrammaticTimelineScroll,
+  findTimelineAnchorRow,
+  isTimelineNearBottom,
+  type PendingInteractionAnchor,
+  type PendingProgrammaticScroll,
+  requiredTimelineInteractionSpacer,
+  restorePendingInteractionAnchor,
+  scrollMetric,
+  shouldAdjustTimelineScrollForItemSizeChange,
+  syncTimelineScrollPosition,
+  TIMELINE_DISCLOSURE_CONTROL_SELECTOR,
+  timelineAnchorScrollTop,
+  timelineMaxScrollTop,
+  type TimelineScrollSnapshot,
+  timelineScrollTopForSnapshot,
+} from "./timelineScrollAnchoring";
+import {
   boundedStringCacheValue,
   timelineDerivedValue,
   timelineFallbackVirtualItems,
@@ -101,7 +126,6 @@ import {
 } from "./TimelineVirtualRow";
 import "./ToolCallDetails.css";
 
-const TIMELINE_BOTTOM_FOLLOW_THRESHOLD_PX = 96;
 const TIMELINE_SCROLL_SCOPE_CACHE_LIMIT = 100;
 const TIMELINE_SCROLL_TOLERANCE = 2;
 const TIMELINE_DERIVED_ROWS_CACHE_LIMIT = 8;
@@ -159,6 +183,7 @@ const IMAGE_BARE_PATH_PATTERN =
   /((?:\/|\.{1,2}\/|[A-Za-z]:[\\/])[^"'`\s<>]+?\.(?:avif|bmp|gif|jpe?g|png|webp))/gi;
 const TRAILING_PATH_PUNCTUATION_PATTERN = /[),.:;!?\\\]}>，。！？；：）】》]+$/u;
 interface MessageTimelineProps {
+  associatedToolCallId?: string | null;
   emptyDescription?: string;
   emptyFallback?: ReactNode;
   fallbackRunId?: string | null;
@@ -176,6 +201,9 @@ interface MessageTimelineProps {
   subagentScopeInstanceId?: string | null;
   subagentScopeRoleId?: string | null;
   subagentScopeTaskId?: string | null;
+  toolCallLocateRequest?: TimelineToolCallLocateRequest | null;
+  uiState?: MessageTimelineUiState | null;
+  onUiStateChange?: (state: MessageTimelineUiState) => void;
   variant?: "session" | "subagent-panel";
   visible?: boolean;
   workspaceId?: string | null;
@@ -202,6 +230,18 @@ export interface TimelineSubagentReference {
   updatedAt?: string;
 }
 
+export interface MessageTimelineUiState {
+  expandedDisclosureIds: string[];
+  expandedHistorySegmentIds: string[];
+  measurementCache: TimelineMeasurementCacheItem[];
+  scrollSnapshot: TimelineScrollSnapshot | null;
+}
+
+export interface TimelineToolCallLocateRequest {
+  requestId: number;
+  toolCallId: string;
+}
+
 function latestModelRequestPhase(
   runs: readonly RuntimeRunState[],
 ): RuntimeRunState["modelRequestPhase"] {
@@ -215,6 +255,7 @@ function latestModelRequestPhase(
 }
 
 export function MessageTimeline({
+  associatedToolCallId = null,
   emptyDescription,
   emptyFallback,
   fallbackRunId = null,
@@ -224,6 +265,7 @@ export function MessageTimeline({
   loadMessages = listSessionMessages,
   messageQueryKey,
   onSubagentOpen,
+  onUiStateChange,
   pausedSubagent = null,
   primaryRoleId = null,
   roundsEnabled = true,
@@ -232,6 +274,8 @@ export function MessageTimeline({
   subagentScopeInstanceId = null,
   subagentScopeRoleId = null,
   subagentScopeTaskId = null,
+  toolCallLocateRequest = null,
+  uiState = null,
   variant = "session",
   visible = true,
   workspaceId = null,
@@ -246,6 +290,13 @@ export function MessageTimeline({
   const pendingInteractionAnchorRef = useRef<PendingInteractionAnchor | null>(
     null,
   );
+  const pendingToolCallLocateRef = useRef<TimelineToolCallLocateRequest | null>(
+    null,
+  );
+  const handledToolCallLocateRequestIdRef = useRef<number | null>(null);
+  const toolCallElementsRef = useRef(new Map<string, HTMLDetailsElement>());
+  const locatedToolCallElementRef = useRef<HTMLDetailsElement | null>(null);
+  const locatePulseTimeoutRef = useRef<number | null>(null);
   const interactionResizePendingRef = useRef(false);
   const interactionSettleFrameRef = useRef<number | null>(null);
   const [interactionBottomSpacer, setInteractionBottomSpacer] = useState(0);
@@ -258,7 +309,11 @@ export function MessageTimeline({
   );
   const scrollScopeKeyRef = useRef(scrollScopeKey);
   const pendingScrollScopeRestoreRef = useRef<string | null>(null);
-  const scrollSnapshotRef = useRef<TimelineScrollSnapshot | null>(null);
+  const scrollSnapshotRef = useRef<TimelineScrollSnapshot | null>(
+    uiState?.scrollSnapshot ?? null,
+  );
+  const pendingExternalUiStateRestoreRef =
+    useRef<TimelineScrollSnapshot | null>(uiState?.scrollSnapshot ?? null);
   const scrollSnapshotsByScopeRef = useRef(
     new Map<string, TimelineScrollSnapshot>(),
   );
@@ -269,12 +324,60 @@ export function MessageTimeline({
     new Map<string, TimelineDerivationCacheEntry<TimelineRow[]>>(),
   );
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
-  const [expandedHistorySegmentIds, setExpandedHistorySegmentIds] = useState<ReadonlySet<string>>(
-    () => new Set(),
+  const [expandedHistorySegmentIds, setExpandedHistorySegmentIds] = useState<
+    ReadonlySet<string>
+  >(() => new Set(uiState?.expandedHistorySegmentIds ?? []));
+  const [expandedDisclosureIds, setExpandedDisclosureIds] = useState<
+    ReadonlySet<string>
+  >(() => new Set(uiState?.expandedDisclosureIds ?? []));
+  const expandedHistorySegmentIdsRef = useRef(expandedHistorySegmentIds);
+  const expandedDisclosureIdsRef = useRef(expandedDisclosureIds);
+  const uiStateSessionIdRef = useRef(sessionId);
+  const uiStateEmitFrameRef = useRef<number | null>(null);
+  const externalRestoreSettleFrameRef = useRef<number | null>(null);
+  const lastEmittedUiStateRef = useRef<MessageTimelineUiState | null>(uiState);
+  const onUiStateChangeRef = useRef(onUiStateChange);
+  const measurementCacheRef = useRef<TimelineMeasurementCacheItem[]>(
+    uiState?.measurementCache ?? [],
   );
-  const [expandedDisclosureIds, setExpandedDisclosureIds] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
+  const takeMeasurementSnapshotRef = useRef<
+    () => TimelineMeasurementCacheItem[]
+  >(() => uiState?.measurementCache ?? []);
+  onUiStateChangeRef.current = onUiStateChange;
+  expandedHistorySegmentIdsRef.current = expandedHistorySegmentIds;
+  expandedDisclosureIdsRef.current = expandedDisclosureIds;
+  const flushUiState = useCallback((refreshMeasurements = false) => {
+    if (uiStateEmitFrameRef.current !== null) {
+      window.cancelAnimationFrame(uiStateEmitFrameRef.current);
+      uiStateEmitFrameRef.current = null;
+    }
+    if (refreshMeasurements) {
+      measurementCacheRef.current = takeMeasurementSnapshotRef.current();
+    }
+    const nextState: MessageTimelineUiState = {
+      expandedDisclosureIds: [...expandedDisclosureIdsRef.current],
+      expandedHistorySegmentIds: [...expandedHistorySegmentIdsRef.current],
+      measurementCache: measurementCacheRef.current,
+      scrollSnapshot: scrollSnapshotRef.current,
+    };
+    if (timelineUiStateEquals(lastEmittedUiStateRef.current, nextState)) {
+      return;
+    }
+    lastEmittedUiStateRef.current = nextState;
+    onUiStateChangeRef.current?.(nextState);
+  }, []);
+  const scheduleUiStateEmit = useCallback(() => {
+    if (
+      onUiStateChangeRef.current === undefined ||
+      uiStateEmitFrameRef.current !== null
+    ) {
+      return;
+    }
+    uiStateEmitFrameRef.current = window.requestAnimationFrame(() => {
+      uiStateEmitFrameRef.current = null;
+      flushUiState();
+    });
+  }, [flushUiState]);
   const [newContentAvailable, setNewContentAvailable] = useState(false);
   const hydrationFrameRef = useRef<number | null>(null);
   const hydratedOverscanRowsRef = useRef({
@@ -872,38 +975,108 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
         );
       });
     });
-  }, []);
-  useEffect(() => () => {
-    if (interactionSettleFrameRef.current !== null) {
-      window.cancelAnimationFrame(interactionSettleFrameRef.current);
-    }
-  }, []);
+    },
+    [],
+  );
+  useEffect(
+    () => () => {
+      if (interactionSettleFrameRef.current !== null) {
+        window.cancelAnimationFrame(interactionSettleFrameRef.current);
+      }
+      if (locatePulseTimeoutRef.current !== null) {
+        window.clearTimeout(locatePulseTimeoutRef.current);
+      }
+      if (externalRestoreSettleFrameRef.current !== null) {
+        window.cancelAnimationFrame(externalRestoreSettleFrameRef.current);
+      }
+      locatedToolCallElementRef.current?.classList.remove(
+        "is-subagent-locate-pulse",
+      );
+    },
+    [],
+  );
+  const rowKeys = useMemo(() => rows.map((row) => row.key), [rows]);
+  const initialMeasurementsCache = useMemo(
+    () =>
+      boundedTimelineMeasurementCache(
+        uiState?.measurementCache ?? [],
+        rowKeys,
+        uiState?.scrollSnapshot?.anchor?.rowKey ?? null,
+      ),
+    [rowKeys, uiState],
+  );
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
     getItemKey: (index) => rows[index]?.key ?? index,
+    initialMeasurementsCache,
     estimateSize: (index) => estimateRowSize(rows[index]),
     overscan: 8,
   });
-  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) => {
+  takeMeasurementSnapshotRef.current = () =>
+    boundedTimelineMeasurementCache(
+      virtualizer.takeSnapshot(),
+      rowKeys,
+      scrollSnapshotRef.current?.anchor?.rowKey ?? null,
+    );
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (
+    item,
+    _delta,
+    instance,
+  ) => {
+    const externalRestorePending =
+      pendingExternalUiStateRestoreRef.current !== null &&
+      uiStateSessionIdRef.current === sessionId;
+    if (externalRestorePending) {
+      return shouldAdjustTimelineScrollForItemSizeChange(
+        externalRestorePending,
+        item.start,
+        instance.scrollOffset ?? 0,
+      );
+    }
     const pendingInteractionAnchor = pendingInteractionAnchorRef.current;
     if (
       pendingInteractionAnchor !== null &&
       pendingInteractionAnchor.scopeKey === scrollScopeKey &&
       item.key === pendingInteractionAnchor.rowKey
     ) {
+      const container = parentRef.current;
+      if (container !== null) {
+        const restoredScrollTop = restorePendingInteractionAnchor(
+          container,
+          pendingInteractionAnchorRef,
+          scrollScopeKey,
+        );
+        if (restoredScrollTop !== null) {
+          pendingProgrammaticScrollRef.current = {
+            scopeKey: scrollScopeKey,
+            scrollTop: restoredScrollTop,
+          };
+        }
+      }
       scheduleInteractionAnchorRelease(pendingInteractionAnchor);
       return false;
     }
-    return item.start < (instance.scrollOffset ?? 0);
+    return shouldAdjustTimelineScrollForItemSizeChange(
+      false,
+      item.start,
+      instance.scrollOffset ?? 0,
+    );
   };
   const virtualItems = virtualizer.getVirtualItems();
-  const renderedVirtualItems = virtualItems.length > 0
-    ? virtualItems
-    : fallbackVirtualItems(rows);
-  const timelineHeight = virtualItems.length > 0
-    ? virtualizer.getTotalSize()
-    : fallbackTotalSize(rows);
+  const renderedVirtualItems =
+    virtualItems.length > 0 ? virtualItems : fallbackVirtualItems(rows);
+  const pendingExternalAnchorRowKey =
+    pendingExternalUiStateRestoreRef.current?.anchor?.rowKey ?? null;
+  const pendingExternalAnchorVirtualReady =
+    pendingExternalAnchorRowKey === null ||
+    renderedVirtualItems.some(
+      (item) => rows[item.index]?.key === pendingExternalAnchorRowKey,
+    );
+  const timelineHeight =
+    virtualItems.length > 0
+      ? virtualizer.getTotalSize()
+      : fallbackTotalSize(rows);
   const resizeTimelineRow = virtualizer.resizeItem;
   const immediateHydrationRowKeys = immediateTimelineHydrationRowKeys({
     alwaysHydrate: (row) => row.roundMarker !== null,
@@ -923,169 +1096,420 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
       !hydratedOverscanRowsRef.current.rowKeys.has(rowKey)
     );
   const deferredHydrationSignature = deferredHydrationRowKeys.join("|");
-  const captureCurrentTimelineScrollSnapshot = useCallback((
-    container: HTMLElement,
-    forceAnchor = false,
-    preferAnchor = false,
-  ) => captureTimelineScrollSnapshot(
-    container,
-    forceAnchor,
-    preferAnchor,
-    timelineScrollAnchorFromVirtualItems(
-      scrollMetric(container.scrollTop),
-      renderedVirtualItems,
-      rows,
-    ),
-  ), [renderedVirtualItems, rows]);
-  const hydrateCurrentViewportRows = useCallback((container: HTMLElement) => {
-    const rowKeys = immediateTimelineHydrationRowKeys({
-      alwaysHydrate: (row: TimelineRow) => row.roundMarker !== null,
-      anchorRowKey: scrollSnapshotRef.current?.anchor?.rowKey ?? null,
-      container,
-      estimatedSize: estimateRowSize,
-      lastAnswerKey,
-      rowKey: (row: TimelineRow) => row.key,
-      rows,
-      virtualItems: renderedVirtualItems,
-    });
-    let changed = false;
-    for (const rowKey of rowKeys) {
-      if (!hydratedOverscanRowsRef.current.rowKeys.has(rowKey)) {
-        rememberHydratedTimelineRow(
-          hydratedOverscanRowsRef.current.rowKeys,
-          rowKey,
-          TIMELINE_HYDRATED_OVERSCAN_CACHE_LIMIT,
-        );
-        changed = true;
-      }
-    }
-    if (changed) {
-      setHydrationRevision((revision) => revision + 1);
-    }
-  }, [lastAnswerKey, renderedVirtualItems, rows]);
-  const handleTimelineScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
-    const container = event.currentTarget;
-    if (!visible || timelineContainerIsHidden(container)) {
-      return;
-    }
-    if (event.nativeEvent.isTrusted) {
-      if (
-        consumePendingProgrammaticTimelineScroll(
-          pendingProgrammaticScrollRef,
-          container,
-          scrollScopeKey,
-        )
-      ) {
+  const captureCurrentTimelineScrollSnapshot = useCallback(
+    (container: HTMLElement, forceAnchor = false, preferAnchor = false) => {
+      return captureTimelineScrollSnapshot(
+        container,
+        forceAnchor,
+        preferAnchor,
+        captureTimelineViewportAnchor(container),
+      );
+    },
+    [],
+  );
+  const locateToolCallElement = useCallback(
+    (element: HTMLElement) => {
+      const container = parentRef.current;
+      if (container === null || element.closest(".at-timeline") !== container) {
         return;
       }
-      if (!interactionResizePendingRef.current) {
-        pendingInteractionAnchorRef.current = null;
-      }
-    } else {
-      pendingProgrammaticScrollRef.current = null;
-    }
-    if (container === parentRef.current) {
-      const pendingRoundNavigation = pendingRoundNavigationRef.current;
-      let snapshot = pendingRoundNavigation === null
-        ? captureCurrentTimelineScrollSnapshot(container)
-        : roundNavigationScrollSnapshot(rows, pendingRoundNavigation.rowKey);
+      const containerRect = container.getBoundingClientRect();
+      const elementRect = element.getBoundingClientRect();
+      const nextScrollTop = syncTimelineScrollPosition(
+        container,
+        container.scrollTop +
+          elementRect.top -
+          containerRect.top -
+          Math.max(24, (container.clientHeight - elementRect.height) / 2),
+      );
+      pendingProgrammaticScrollRef.current = {
+        scopeKey: scrollScopeKey,
+        scrollTop: nextScrollTop,
+      };
+      const snapshot = captureCurrentTimelineScrollSnapshot(
+        container,
+        true,
+        true,
+      );
       scrollSnapshotRef.current = snapshot;
       rememberTimelineScopeValue(
         scrollSnapshotsByScopeRef.current,
         scrollScopeKey,
         snapshot,
       );
-      if (snapshot.shouldFollow) {
-        setNewContentAvailable(false);
+      if (locatePulseTimeoutRef.current !== null) {
+        window.clearTimeout(locatePulseTimeoutRef.current);
       }
-      if (
-        syncActiveRunIdFromViewport(
-          container,
-          pendingRoundNavigationRef,
-          setActiveRunId,
-        )
-      ) {
-        snapshot = captureCurrentTimelineScrollSnapshot(container);
+      locatedToolCallElementRef.current?.classList.remove(
+        "is-subagent-locate-pulse",
+      );
+      element.classList.add("is-subagent-locate-pulse");
+      locatedToolCallElementRef.current = element as HTMLDetailsElement;
+      locatePulseTimeoutRef.current = window.setTimeout(() => {
+        element.classList.remove("is-subagent-locate-pulse");
+        if (locatedToolCallElementRef.current === element) {
+          locatedToolCallElementRef.current = null;
+        }
+        locatePulseTimeoutRef.current = null;
+      }, 1_200);
+      scheduleUiStateEmit();
+    },
+    [captureCurrentTimelineScrollSnapshot, scheduleUiStateEmit, scrollScopeKey],
+  );
+  const registerToolCallElement = useCallback(
+    (toolCallId: string, element: HTMLDetailsElement | null) => {
+      const normalizedToolCallId = toolCallId.trim();
+      if (normalizedToolCallId.length === 0) {
+        return;
+      }
+      if (element === null) {
+        toolCallElementsRef.current.delete(normalizedToolCallId);
+        return;
+      }
+      toolCallElementsRef.current.set(normalizedToolCallId, element);
+      const pendingLocate = pendingToolCallLocateRef.current;
+      if (pendingLocate?.toolCallId.trim() !== normalizedToolCallId) {
+        return;
+      }
+      pendingToolCallLocateRef.current = null;
+      window.requestAnimationFrame(() => locateToolCallElement(element));
+    },
+    [locateToolCallElement],
+  );
+  useLayoutEffect(() => {
+    if (
+      toolCallLocateRequest === null ||
+      handledToolCallLocateRequestIdRef.current ===
+        toolCallLocateRequest.requestId
+    ) {
+      return;
+    }
+    handledToolCallLocateRequestIdRef.current = toolCallLocateRequest.requestId;
+    const toolCallId = toolCallLocateRequest.toolCallId.trim();
+    if (toolCallId.length === 0) {
+      pendingToolCallLocateRef.current = null;
+      return;
+    }
+    const mountedElement = toolCallElementsRef.current.get(toolCallId);
+    if (mountedElement !== undefined) {
+      pendingToolCallLocateRef.current = null;
+      locateToolCallElement(mountedElement);
+      return;
+    }
+    const rowIndex = rows.findIndex((row) =>
+      row.parts.some(
+        (part) => part.kind === "tool" && part.callId.trim() === toolCallId,
+      ),
+    );
+    if (rowIndex < 0) {
+      pendingToolCallLocateRef.current = null;
+      return;
+    }
+    pendingToolCallLocateRef.current = toolCallLocateRequest;
+    virtualizer.scrollToIndex(rowIndex, { align: "center" });
+  }, [locateToolCallElement, rows, toolCallLocateRequest, virtualizer]);
+  const hydrateCurrentViewportRows = useCallback(
+    (container: HTMLElement) => {
+      const rowKeys = immediateTimelineHydrationRowKeys({
+        alwaysHydrate: (row: TimelineRow) => row.roundMarker !== null,
+        anchorRowKey: scrollSnapshotRef.current?.anchor?.rowKey ?? null,
+        container,
+        estimatedSize: estimateRowSize,
+        lastAnswerKey,
+        rowKey: (row: TimelineRow) => row.key,
+        rows,
+        virtualItems: renderedVirtualItems,
+      });
+      let changed = false;
+      for (const rowKey of rowKeys) {
+        if (!hydratedOverscanRowsRef.current.rowKeys.has(rowKey)) {
+          rememberHydratedTimelineRow(
+            hydratedOverscanRowsRef.current.rowKeys,
+            rowKey,
+            TIMELINE_HYDRATED_OVERSCAN_CACHE_LIMIT,
+          );
+          changed = true;
+        }
+      }
+      if (changed) {
+        setHydrationRevision((revision) => revision + 1);
+      }
+    },
+    [lastAnswerKey, renderedVirtualItems, rows],
+  );
+  const handleTimelineScroll = useCallback(
+    (event: UIEvent<HTMLDivElement>) => {
+      const container = event.currentTarget;
+      if (!visible || timelineContainerIsHidden(container)) {
+        return;
+      }
+      if (event.nativeEvent.isTrusted) {
+        if (
+          consumePendingProgrammaticTimelineScroll(
+            pendingProgrammaticScrollRef,
+            container,
+            scrollScopeKey,
+          )
+        ) {
+          return;
+        }
+        if (!interactionResizePendingRef.current) {
+          pendingInteractionAnchorRef.current = null;
+        }
+      } else {
+        pendingProgrammaticScrollRef.current = null;
+      }
+      if (container === parentRef.current) {
+        const pendingRoundNavigation = pendingRoundNavigationRef.current;
+        let snapshot = pendingRoundNavigation === null
+          ? captureCurrentTimelineScrollSnapshot(container)
+          : roundNavigationScrollSnapshot(rows, pendingRoundNavigation.rowKey);
         scrollSnapshotRef.current = snapshot;
         rememberTimelineScopeValue(
           scrollSnapshotsByScopeRef.current,
           scrollScopeKey,
           snapshot,
         );
+        if (snapshot.shouldFollow) {
+          setNewContentAvailable(false);
+        }
+        if (
+          syncActiveRunIdFromViewport(
+            container,
+            pendingRoundNavigationRef,
+            setActiveRunId,
+          )
+        ) {
+          snapshot = captureCurrentTimelineScrollSnapshot(container);
+          scrollSnapshotRef.current = snapshot;
+          rememberTimelineScopeValue(
+            scrollSnapshotsByScopeRef.current,
+            scrollScopeKey,
+            snapshot,
+          );
+        }
+        hydrateCurrentViewportRows(container);
+        if (
+          !interactionResizePendingRef.current &&
+          interactionBottomSpacer > 0
+        ) {
+          setInteractionBottomSpacer(
+            requiredTimelineInteractionSpacer(
+              container,
+              interactionBottomSpacer,
+            ),
+          );
+        }
+        scheduleUiStateEmit();
       }
-      hydrateCurrentViewportRows(container);
-      if (!interactionResizePendingRef.current && interactionBottomSpacer > 0) {
-        setInteractionBottomSpacer(
-          requiredTimelineInteractionSpacer(container, interactionBottomSpacer),
-        );
+    },
+    [
+      captureCurrentTimelineScrollSnapshot,
+      scheduleUiStateEmit,
+      hydrateCurrentViewportRows,
+      interactionBottomSpacer,
+      rows,
+      scrollScopeKey,
+      visible,
+    ],
+  );
+  const scheduleExternalRestoreRelease = useCallback(
+    (snapshot: TimelineScrollSnapshot, scopeKey: string) => {
+      if (externalRestoreSettleFrameRef.current !== null) {
+        window.cancelAnimationFrame(externalRestoreSettleFrameRef.current);
       }
+      externalRestoreSettleFrameRef.current = window.requestAnimationFrame(
+        () => {
+          externalRestoreSettleFrameRef.current = window.requestAnimationFrame(
+            () => {
+              externalRestoreSettleFrameRef.current = null;
+              if (
+                scrollScopeKeyRef.current !== scopeKey ||
+                pendingExternalUiStateRestoreRef.current !== snapshot
+              ) {
+                return;
+              }
+              const container = parentRef.current;
+              if (container === null || snapshot.anchor === null) {
+                pendingExternalUiStateRestoreRef.current = null;
+                return;
+              }
+              const row = findTimelineAnchorRow(
+                container,
+                snapshot.anchor.rowKey,
+              );
+              if (row === null) {
+                return;
+              }
+              const nextScrollTop = syncTimelineScrollPosition(
+                container,
+                timelineAnchorScrollTop(container, snapshot),
+              );
+              pendingProgrammaticScrollRef.current = {
+                scopeKey,
+                scrollTop: nextScrollTop,
+              };
+              scrollSnapshotRef.current = {
+                ...snapshot,
+                scrollTop: nextScrollTop,
+              };
+              pendingExternalUiStateRestoreRef.current = null;
+            },
+          );
+        },
+      );
+    },
+    [],
+  );
+  const cancelPendingExternalRestore = useCallback(() => {
+    pendingExternalUiStateRestoreRef.current = null;
+    if (externalRestoreSettleFrameRef.current !== null) {
+      window.cancelAnimationFrame(externalRestoreSettleFrameRef.current);
+      externalRestoreSettleFrameRef.current = null;
     }
-  }, [
-    captureCurrentTimelineScrollSnapshot,
-    hydrateCurrentViewportRows,
-    interactionBottomSpacer,
-    rows,
-    scrollScopeKey,
-    visible,
-  ]);
-  const handleTimelinePointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    const target = event.target;
-    if (!(target instanceof Element)) {
-      return;
-    }
-    const disclosureControl = target.closest<HTMLElement>(
-      ".at-message-thinking-summary, .at-message-tool-summary, .at-processed-group-summary, .at-round-prompt-toggle",
-    );
-    if (disclosureControl === null) {
-      pendingInteractionAnchorRef.current = null;
-      interactionResizePendingRef.current = false;
-      return;
-    }
-    const container = parentRef.current;
-    if (container !== null) {
+  }, []);
+  const disengageTimelineFollow = useCallback(
+    (container: HTMLElement) => {
+      if (!visible || timelineContainerIsHidden(container)) {
+        return;
+      }
+      cancelPendingExternalRestore();
+      pendingProgrammaticScrollRef.current = null;
+      const snapshot = captureCurrentTimelineScrollSnapshot(
+        container,
+        true,
+        true,
+      );
+      scrollSnapshotRef.current = snapshot;
+      rememberTimelineScopeValue(
+        scrollSnapshotsByScopeRef.current,
+        scrollScopeKey,
+        snapshot,
+      );
+      scheduleUiStateEmit();
+    },
+    [
+      cancelPendingExternalRestore,
+      captureCurrentTimelineScrollSnapshot,
+      scheduleUiStateEmit,
+      scrollScopeKey,
+      visible,
+    ],
+  );
+  const handleTimelineWheel = useCallback(
+    (event: WheelEvent<HTMLDivElement>) => {
+      cancelPendingExternalRestore();
+      if (event.deltaY < 0) {
+        disengageTimelineFollow(event.currentTarget);
+      }
+    },
+    [cancelPendingExternalRestore, disengageTimelineFollow],
+  );
+  const captureDisclosureInteractionAnchor = useCallback(
+    (disclosureControl: HTMLElement, container: HTMLElement) => {
       const row = disclosureControl.closest<HTMLElement>(
         ".at-timeline-row[data-row-key]",
       );
       const rowKey = row?.dataset.rowKey;
-      if (row !== null && rowKey !== undefined) {
-        if (interactionSettleFrameRef.current !== null) {
-          window.cancelAnimationFrame(interactionSettleFrameRef.current);
-          interactionSettleFrameRef.current = null;
-        }
-        const initialScrollTop = container.scrollTop;
-        const nextBottomSpacer = Math.max(
-          interactionBottomSpacer,
-          container.clientHeight,
-        );
-        interactionResizePendingRef.current = true;
-        const interactionAnchor: PendingInteractionAnchor = {
-          control: disclosureControl,
-          controlViewportTop: disclosureControl.getBoundingClientRect().top,
-          rowKey,
-          scopeKey: scrollScopeKey,
-        };
-        pendingInteractionAnchorRef.current = interactionAnchor;
-        const virtualContent = container.querySelector<HTMLElement>(
-          ".at-timeline-virtual",
-        );
-        if (virtualContent !== null) {
-          virtualContent.style.height = `${timelineHeight + nextBottomSpacer}px`;
-          syncTimelineScrollPosition(container, initialScrollTop);
-        }
-        setInteractionBottomSpacer(nextBottomSpacer);
+      if (row === null || rowKey === undefined) {
+        return;
       }
+      const controlIndex = Array.from(
+        row.querySelectorAll<HTMLElement>(TIMELINE_DISCLOSURE_CONTROL_SELECTOR),
+      ).indexOf(disclosureControl);
+      if (controlIndex < 0) {
+        return;
+      }
+      if (interactionSettleFrameRef.current !== null) {
+        window.cancelAnimationFrame(interactionSettleFrameRef.current);
+        interactionSettleFrameRef.current = null;
+      }
+      const initialScrollTop = container.scrollTop;
+      const nextBottomSpacer = Math.max(
+        interactionBottomSpacer,
+        container.clientHeight,
+      );
+      interactionResizePendingRef.current = true;
+      pendingInteractionAnchorRef.current = {
+        control: disclosureControl,
+        controlIndex,
+        controlViewportTop: disclosureControl.getBoundingClientRect().top,
+        disclosureId: disclosureControl.dataset.disclosureId ?? null,
+        rowKey,
+        scopeKey: scrollScopeKey,
+      };
+      const virtualContent = container.querySelector<HTMLElement>(
+        ".at-timeline-virtual",
+      );
+      if (virtualContent !== null) {
+        virtualContent.style.height = `${timelineHeight + nextBottomSpacer}px`;
+        syncTimelineScrollPosition(container, initialScrollTop);
+      }
+      setInteractionBottomSpacer(nextBottomSpacer);
       scrollSnapshotRef.current = captureCurrentTimelineScrollSnapshot(
         container,
         true,
         true,
       );
-    }
-  }, [
-    captureCurrentTimelineScrollSnapshot,
-    interactionBottomSpacer,
-    scrollScopeKey,
-    timelineHeight,
-  ]);
+    },
+    [
+      captureCurrentTimelineScrollSnapshot,
+      interactionBottomSpacer,
+      scrollScopeKey,
+      timelineHeight,
+    ],
+  );
+  const handleTimelinePointerDown = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+      const disclosureControl = target.closest<HTMLElement>(
+        TIMELINE_DISCLOSURE_CONTROL_SELECTOR,
+      );
+      if (disclosureControl === null) {
+        pendingInteractionAnchorRef.current = null;
+        interactionResizePendingRef.current = false;
+        const container = event.currentTarget;
+        const containerRect = container.getBoundingClientRect();
+        if (
+          event.pointerType === "touch" ||
+          (event.target === container &&
+            event.clientX >= containerRect.right - 24)
+        ) {
+          disengageTimelineFollow(container);
+        }
+        return;
+      }
+      captureDisclosureInteractionAnchor(
+        disclosureControl,
+        event.currentTarget,
+      );
+    },
+    [captureDisclosureInteractionAnchor, disengageTimelineFollow],
+  );
+  const handleTimelineKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLDivElement>) => {
+      if (event.key !== "Enter" && event.key !== " ") {
+        return;
+      }
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+      const disclosureControl = target.closest<HTMLElement>(
+        TIMELINE_DISCLOSURE_CONTROL_SELECTOR,
+      );
+      if (disclosureControl !== null) {
+        captureDisclosureInteractionAnchor(
+          disclosureControl,
+          event.currentTarget,
+        );
+      }
+    },
+    [captureDisclosureInteractionAnchor],
+  );
   const handleRoundSelect = useCallback((runId: string) => {
     const rowIndex = rows.findIndex((row) => row.runId === runId);
     const row = rows[rowIndex];
@@ -1123,8 +1547,13 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
       scrollScopeKey,
       snapshot,
     );
+    scheduleUiStateEmit();
     setNewContentAvailable(false);
-  }, [captureCurrentTimelineScrollSnapshot, scrollScopeKey]);
+  }, [
+    captureCurrentTimelineScrollSnapshot,
+    scheduleUiStateEmit,
+    scrollScopeKey,
+  ]);
   const handleToggleHistorySegment = useCallback((segmentId: string) => {
     setExpandedHistorySegmentIds((current) => {
       const next = new Set(current);
@@ -1161,32 +1590,36 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
     virtualizer.measureElement(row);
   }, [virtualizer]);
   const renderVirtualRow = useCallback<TimelineVirtualRowRenderer<TimelineRow>>(
-    (row, index, start, measureElement, contentReady) => timelineRowElement(
-      row,
-      index,
-      start,
-      measureElement,
-      t,
-      lastAnswerKey,
-      streamOpenForSession,
-      canReadAnswerAloud,
-      handleCopyAnswer,
-      handleReadAnswerAloud,
-      handleToggleHistorySegment,
-      expandedDisclosureIds,
-      autoCollapsePreviousRunId,
-      handleDisclosureChange,
-      handleDisclosureToggle,
-      onSubagentOpen,
-      pausedSubagent,
-      resizeTimelineRow,
-      runtimeTerminalEventsByRunId,
-      sessionId ?? "",
-      variant,
-      contentReady,
-    ),
+    (row, index, start, measureElement, contentReady) =>
+      timelineRowElement(
+        row,
+        index,
+        start,
+        measureElement,
+        t,
+        lastAnswerKey,
+        streamOpenForSession,
+        canReadAnswerAloud,
+        associatedToolCallId,
+        registerToolCallElement,
+        handleCopyAnswer,
+        handleReadAnswerAloud,
+        handleToggleHistorySegment,
+        expandedDisclosureIds,
+        autoCollapsePreviousRunId,
+        handleDisclosureChange,
+        handleDisclosureToggle,
+        onSubagentOpen,
+        pausedSubagent,
+        resizeTimelineRow,
+        runtimeTerminalEventsByRunId,
+        sessionId ?? "",
+        variant,
+        contentReady,
+      ),
     [
       canReadAnswerAloud,
+      associatedToolCallId,
       autoCollapsePreviousRunId,
       expandedDisclosureIds,
       handleCopyAnswer,
@@ -1197,6 +1630,7 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
       lastAnswerKey,
       onSubagentOpen,
       pausedSubagent,
+      registerToolCallElement,
       resizeTimelineRow,
       runtimeTerminalEventsByRunId,
       sessionId,
@@ -1213,9 +1647,32 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
   useEffect(() => {
     pendingRoundNavigationRef.current = null;
     setActiveRunId(null);
-    setExpandedHistorySegmentIds(new Set());
-    setExpandedDisclosureIds(new Set());
-  }, [sessionId]);
+    if (uiStateSessionIdRef.current === sessionId) {
+      return;
+    }
+    uiStateSessionIdRef.current = sessionId;
+    const nextHistoryIds = new Set(uiState?.expandedHistorySegmentIds ?? []);
+    const nextDisclosureIds = new Set(uiState?.expandedDisclosureIds ?? []);
+    expandedHistorySegmentIdsRef.current = nextHistoryIds;
+    expandedDisclosureIdsRef.current = nextDisclosureIds;
+    if (uiState !== null) {
+      measurementCacheRef.current = uiState.measurementCache;
+      scrollSnapshotRef.current = uiState.scrollSnapshot;
+      pendingExternalUiStateRestoreRef.current = uiState.scrollSnapshot;
+    }
+    setExpandedHistorySegmentIds(nextHistoryIds);
+    setExpandedDisclosureIds(nextDisclosureIds);
+  }, [sessionId, uiState]);
+
+  useEffect(() => {
+    scheduleUiStateEmit();
+  }, [expandedDisclosureIds, expandedHistorySegmentIds, scheduleUiStateEmit]);
+
+  useLayoutEffect(() => {
+    flushUiState();
+  }, [flushUiState]);
+
+  useLayoutEffect(() => () => flushUiState(true), [flushUiState]);
 
   useEffect(() => {
     if (deferredHydrationRowKeys.length === 0) {
@@ -1259,7 +1716,9 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
         pendingProgrammaticScrollRef.current = null;
       }
       scrollSnapshotRef.current =
-        scrollSnapshotsByScopeRef.current.get(scrollScopeKey) ?? null;
+        pendingExternalUiStateRestoreRef.current ??
+        scrollSnapshotsByScopeRef.current.get(scrollScopeKey) ??
+        null;
       pendingInteractionAnchorRef.current = null;
       interactionResizePendingRef.current = false;
       setInteractionBottomSpacer(0);
@@ -1273,7 +1732,8 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
     ) {
       return;
     }
-    const snapshot = scrollSnapshotRef.current;
+    const externalRestoreSnapshot = pendingExternalUiStateRestoreRef.current;
+    const snapshot = externalRestoreSnapshot ?? scrollSnapshotRef.current;
     const restoredAnchorRowKey = snapshot?.anchor?.rowKey ?? null;
     const restoredAnchorReady = restoredAnchorRowKey === null ||
       rows.some((row) => row.key === restoredAnchorRowKey);
@@ -1321,10 +1781,25 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
       setNewContentAvailable(true);
     }
     const roundNavigationPending = pendingRoundNavigationRef.current !== null;
-    const shouldWriteScrollPosition = roundNavigationPending || scopeChanged ||
-      scopeRestoreBecameReady || snapshot === null ||
-      snapshot.shouldFollow || snapshot.preferAnchor ||
-      (contentChanged && !contentAppended);
+    const interactionAnchorPending =
+      pendingInteractionAnchorRef.current?.scopeKey === scrollScopeKey;
+    const externalRestoreReady =
+      externalRestoreSnapshot !== null &&
+      restoredAnchorReady &&
+      restoredOffsetReady;
+    const externalAnchorDomReady =
+      restoredAnchorRowKey === null ||
+      findTimelineAnchorRow(container, restoredAnchorRowKey) !== null;
+    const shouldWriteScrollPosition =
+      !interactionAnchorPending &&
+      (externalRestoreReady ||
+        roundNavigationPending ||
+        (scopeChanged && externalRestoreSnapshot === null) ||
+        scopeRestoreBecameReady ||
+        snapshot === null ||
+        snapshot.shouldFollow ||
+        snapshot.preferAnchor ||
+        (contentChanged && !contentAppended));
     if (shouldWriteScrollPosition) {
       pendingProgrammaticScrollRef.current = {
         scopeKey: scrollScopeKey,
@@ -1335,20 +1810,25 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
             : timelineScrollTopForSnapshot(
                 container,
                 snapshot,
-                rows,
-                !scopeChanged &&
-                  !scopeRestorePending &&
-                  (snapshot.preferAnchor || (contentChanged && !contentAppended)),
+                (externalRestoreReady && externalAnchorDomReady) ||
+                  (!scopeChanged &&
+                    !scopeRestorePending &&
+                    (snapshot.preferAnchor ||
+                      (contentChanged && !contentAppended))),
               ),
         ),
       };
-      scrollSnapshotRef.current = snapshot?.shouldFollow === false
-        ? {
-            ...snapshot,
-            preferAnchor: roundNavigationPending,
-            scrollTop: scrollMetric(container.scrollTop),
-          }
-        : captureCurrentTimelineScrollSnapshot(container);
+      scrollSnapshotRef.current =
+        snapshot?.shouldFollow === false
+          ? {
+              ...snapshot,
+              preferAnchor: roundNavigationPending,
+              scrollTop: scrollMetric(container.scrollTop),
+            }
+          : captureCurrentTimelineScrollSnapshot(container);
+      if (externalRestoreReady && externalAnchorDomReady) {
+        scheduleExternalRestoreRelease(externalRestoreSnapshot, scrollScopeKey);
+      }
     }
     const interactionScrollTop = restorePendingInteractionAnchor(
       container,
@@ -1398,7 +1878,9 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
     expandedDisclosureIds,
     hydrateCurrentViewportRows,
     interactionBottomSpacer,
+    pendingExternalAnchorVirtualReady,
     rows,
+    scheduleExternalRestoreRelease,
     scrollScopeKey,
     timelineHeight,
     visible,
@@ -1465,8 +1947,10 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
         data-runtime-run-count={runtimeRunList.length}
         data-scroll-owner={variant}
         data-total-row-count={rows.length}
+        onKeyDownCapture={handleTimelineKeyDown}
         onPointerDown={handleTimelinePointerDown}
         onScroll={handleTimelineScroll}
+        onWheelCapture={handleTimelineWheel}
         ref={parentRef}
         tabIndex={0}
       >
@@ -1738,28 +2222,78 @@ interface RuntimeTextAccumulator {
   row: TimelineRow;
 }
 
-interface TimelineScrollAnchor {
-  offset: number;
-  rowKey: string;
+function timelineUiStateEquals(
+  left: MessageTimelineUiState | null,
+  right: MessageTimelineUiState,
+): boolean {
+  if (left === null) {
+    return false;
+  }
+  return (
+    stringArrayEquals(
+      left.expandedDisclosureIds,
+      right.expandedDisclosureIds,
+    ) &&
+    stringArrayEquals(
+      left.expandedHistorySegmentIds,
+      right.expandedHistorySegmentIds,
+    ) &&
+    timelineMeasurementCacheEquals(
+      left.measurementCache,
+      right.measurementCache,
+    ) &&
+    timelineScrollSnapshotEquals(left.scrollSnapshot, right.scrollSnapshot)
+  );
 }
 
-interface TimelineScrollSnapshot {
-  anchor: TimelineScrollAnchor | null;
-  preferAnchor: boolean;
-  scrollTop: number;
-  shouldFollow: boolean;
+function stringArrayEquals(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
 }
 
-interface PendingProgrammaticScroll {
-  scopeKey: string;
-  scrollTop: number;
+function timelineMeasurementCacheEquals(
+  left: readonly TimelineMeasurementCacheItem[],
+  right: readonly TimelineMeasurementCacheItem[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((item, index) => {
+      const other = right[index];
+      return (
+        other !== undefined &&
+        item.end === other.end &&
+        item.index === other.index &&
+        item.key === other.key &&
+        item.lane === other.lane &&
+        item.size === other.size &&
+        item.start === other.start
+      );
+    })
+  );
 }
 
-interface PendingInteractionAnchor {
-  control: HTMLElement;
-  controlViewportTop: number;
-  rowKey: string;
-  scopeKey: string;
+function timelineScrollSnapshotEquals(
+  left: TimelineScrollSnapshot | null,
+  right: TimelineScrollSnapshot | null,
+): boolean {
+  if (left === right) {
+    return true;
+  }
+  if (left === null || right === null) {
+    return false;
+  }
+  return (
+    left.preferAnchor === right.preferAnchor &&
+    left.scrollTop === right.scrollTop &&
+    left.shouldFollow === right.shouldFollow &&
+    left.anchor?.viewportOffset === right.anchor?.viewportOffset &&
+    left.anchor?.rowKey === right.anchor?.rowKey
+  );
 }
 
 interface PendingRoundNavigation {
@@ -1907,57 +2441,10 @@ function rememberTimelineScopeValue<Value>(
   }
 }
 
-function captureTimelineScrollSnapshot(
-  container: HTMLElement,
-  forceAnchor = false,
-  preferAnchor = false,
-  anchor: TimelineScrollAnchor | null = null,
-): TimelineScrollSnapshot {
-  const scrollTop = scrollMetric(container.scrollTop);
-  const shouldFollow = !forceAnchor && isTimelineNearBottom(container);
-  return {
-    anchor: shouldFollow ? null : anchor,
-    preferAnchor,
-    scrollTop,
-    shouldFollow,
-  };
-}
-
-function timelineScrollTopForSnapshot(
-  container: HTMLElement,
-  snapshot: TimelineScrollSnapshot,
+function estimatedTimelineRowTop(
   rows: TimelineRow[],
-  useAnchor: boolean,
-): number {
-  if (snapshot.shouldFollow) {
-    return timelineMaxScrollTop(container);
-  }
-  if (!useAnchor) {
-    return clampScrollTop(container, snapshot.scrollTop);
-  }
-  const anchoredScrollTop = timelineAnchorScrollTop(container, snapshot, rows);
-  return clampScrollTop(container, anchoredScrollTop);
-}
-
-function timelineAnchorScrollTop(
-  container: HTMLElement,
-  snapshot: TimelineScrollSnapshot,
-  rows: TimelineRow[],
-): number {
-  if (snapshot.anchor === null) {
-    return snapshot.scrollTop;
-  }
-  const row = findTimelineAnchorRow(container, snapshot.anchor.rowKey);
-  if (row === null) {
-    const estimatedRowTop = estimatedTimelineRowTop(rows, snapshot.anchor.rowKey);
-    return estimatedRowTop === null
-      ? snapshot.scrollTop
-      : estimatedRowTop + snapshot.anchor.offset;
-  }
-  return timelineRowTop(row) + snapshot.anchor.offset;
-}
-
-function estimatedTimelineRowTop(rows: TimelineRow[], rowKey: string): number | null {
+  rowKey: string,
+): number | null {
   let top = 0;
   for (const row of rows) {
     if (row.key === rowKey) {
@@ -1968,152 +2455,17 @@ function estimatedTimelineRowTop(rows: TimelineRow[], rowKey: string): number | 
   return null;
 }
 
-function findTimelineAnchorRow(
-  container: HTMLElement,
-  rowKey: string,
-): HTMLElement | null {
-  const escapedRowKey = rowKey
-    .replaceAll("\\", "\\\\")
-    .replaceAll('"', '\\"');
-  return container.querySelector<HTMLElement>(
-    `.at-timeline-row[data-row-key="${escapedRowKey}"]`,
-  );
-}
-
 function roundNavigationScrollSnapshot(
   rows: TimelineRow[],
   rowKey: string,
 ): TimelineScrollSnapshot {
   const scrollTop = estimatedTimelineRowTop(rows, rowKey) ?? 0;
   return {
-    anchor: { offset: 0, rowKey },
+    anchor: { rowKey, viewportOffset: 0 },
     preferAnchor: true,
     scrollTop,
     shouldFollow: false,
   };
-}
-
-function syncTimelineScrollPosition(
-  container: HTMLElement,
-  scrollTop: number,
-): number {
-  const nextScrollTop = clampScrollTop(container, scrollTop);
-  container.scrollTop = nextScrollTop;
-  return nextScrollTop;
-}
-
-function restorePendingInteractionAnchor(
-  container: HTMLElement,
-  pendingAnchorRef: { current: PendingInteractionAnchor | null },
-  scopeKey: string,
-): number | null {
-  const pending = pendingAnchorRef.current;
-  if (pending === null) {
-    return null;
-  }
-  if (
-    pending.scopeKey !== scopeKey ||
-    !pending.control.isConnected ||
-    pending.control.closest(".at-timeline") !== container
-  ) {
-    pendingAnchorRef.current = null;
-    return null;
-  }
-  if (findTimelineAnchorRow(container, pending.rowKey) === null) {
-    pendingAnchorRef.current = null;
-    return null;
-  }
-  const controlViewportTop = pending.control.getBoundingClientRect().top;
-  const delta = controlViewportTop - pending.controlViewportTop;
-  const nextScrollTop = Math.abs(delta) <= 0.5
-    ? container.scrollTop
-    : syncTimelineScrollPosition(container, container.scrollTop + delta);
-  return scrollMetric(nextScrollTop);
-}
-
-function requiredTimelineInteractionSpacer(
-  container: HTMLElement,
-  currentSpacer: number,
-): number {
-  const naturalScrollHeight = Math.max(
-    container.clientHeight,
-    container.scrollHeight - currentSpacer,
-  );
-  const naturalMaxScrollTop = naturalScrollHeight - container.clientHeight;
-  return scrollMetric(
-    Math.max(0, container.scrollTop - naturalMaxScrollTop),
-  );
-}
-
-function timelineScrollAnchorFromVirtualItems(
-  scrollTop: number,
-  virtualItems: readonly { index: number; size?: number; start: number }[],
-  rows: TimelineRow[],
-): TimelineScrollAnchor | null {
-  for (const virtualItem of virtualItems) {
-    const row = rows[virtualItem.index];
-    if (row === undefined) {
-      continue;
-    }
-    const size = virtualItem.size ?? estimateRowSize(row);
-    if (virtualItem.start + size >= scrollTop) {
-      return {
-        offset: scrollTop - virtualItem.start,
-        rowKey: row.key,
-      };
-    }
-  }
-  return null;
-}
-
-function consumePendingProgrammaticTimelineScroll(
-  pendingScrollRef: { current: PendingProgrammaticScroll | null },
-  container: HTMLElement,
-  scopeKey: string,
-): boolean {
-  const pendingScroll = pendingScrollRef.current;
-  if (pendingScroll === null) {
-    return false;
-  }
-  pendingScrollRef.current = null;
-  return pendingScroll.scopeKey === scopeKey &&
-    Math.abs(scrollMetric(container.scrollTop) - pendingScroll.scrollTop) <= 1;
-}
-
-function isTimelineNearBottom(container: HTMLElement): boolean {
-  return timelineMaxScrollTop(container) - scrollMetric(container.scrollTop)
-    <= TIMELINE_BOTTOM_FOLLOW_THRESHOLD_PX;
-}
-
-function clampScrollTop(container: HTMLElement, scrollTop: number): number {
-  return Math.min(
-    timelineMaxScrollTop(container),
-    Math.max(0, scrollMetric(scrollTop)),
-  );
-}
-
-function timelineMaxScrollTop(container: HTMLElement): number {
-  return Math.max(
-    0,
-    scrollMetric(container.scrollHeight) - scrollMetric(container.clientHeight),
-  );
-}
-
-function timelineRowTop(row: HTMLElement): number {
-  const virtualHost = row.closest(".at-timeline-virtual");
-  const hostTop = virtualHost instanceof HTMLElement
-    ? scrollMetric(virtualHost.offsetTop)
-    : 0;
-  return hostTop + translateY(row.style.transform);
-}
-
-function translateY(transform: string): number {
-  const match = transform.match(/translateY\(([-\d.]+)px\)/);
-  return match?.[1] === undefined ? 0 : Number(match[1]);
-}
-
-function scrollMetric(value: number): number {
-  return Number.isFinite(value) ? value : 0;
 }
 
 function fallbackVirtualItems(rows: TimelineRow[]): FallbackVirtualItem[] {
@@ -2136,6 +2488,11 @@ function timelineRowElement(
   lastAnswerKey: string | null,
   streamOpenForSession: boolean,
   canReadAnswerAloud: boolean,
+  associatedToolCallId: string | null,
+  registerToolCallElement: (
+    toolCallId: string,
+    element: HTMLDetailsElement | null,
+  ) => void,
   onCopyAnswer: (row: TimelineRow | undefined) => void,
   onReadAnswerAloud: (row: TimelineRow | undefined) => void,
   onToggleHistorySegment: (segmentId: string) => void,
@@ -2159,15 +2516,20 @@ function timelineRowElement(
     return (
       <ProcessedGroupRow
         group={row.processedGroup}
-        expanded={!automaticallyCollapsed && (row.processedGroup.continuity
-          ? !expandedDisclosureIds.has(collapsedDisclosureId)
-          : expandedDisclosureIds.has(disclosureId))}
+        associatedToolCallId={associatedToolCallId}
+        expanded={
+          !automaticallyCollapsed &&
+          (row.processedGroup.continuity
+            ? !expandedDisclosureIds.has(collapsedDisclosureId)
+            : expandedDisclosureIds.has(disclosureId))
+        }
         expandedDisclosureIds={expandedDisclosureIds}
         index={index}
         key={`${row.key}:${automaticallyCollapsed ? "auto-collapsed" : "controlled"}`}
         measureElement={measureElement}
         onSubagentOpen={onSubagentOpen}
         pausedSubagent={pausedSubagent}
+        registerToolCallElement={registerToolCallElement}
         resizeTimelineRow={resizeTimelineRow}
         onDisclosureChange={(changedDisclosureId, expanded) => {
           if (changedDisclosureId === disclosureId && row.processedGroup?.continuity) {
@@ -2224,14 +2586,18 @@ function timelineRowElement(
         ref={measureElement}
         style={style}
       >
-        {contentReady ? <RoundMarker
-          index={row.roundMarker.index}
-          onPromptOpenChange={(expanded) =>
-            onDisclosureChange(disclosureId, expanded)}
-          promptOpen={expandedDisclosureIds.has(disclosureId)}
-          round={row.roundMarker.round}
-          t={t}
-        /> : (
+        {contentReady ? (
+          <RoundMarker
+            index={row.roundMarker.index}
+            onPromptOpenChange={(expanded) =>
+              onDisclosureChange(disclosureId, expanded)
+            }
+            promptDisclosureId={disclosureId}
+            promptOpen={expandedDisclosureIds.has(disclosureId)}
+            round={row.roundMarker.round}
+            t={t}
+          />
+        ) : (
           <TimelineRowHydrationPlaceholder
             estimatedHeight={estimateRowSize(row) - 28}
             rowKey={row.key}
@@ -2271,18 +2637,22 @@ function timelineRowElement(
           {displayRole(row.role, t)}
         </Typography.Text>
       ) : null}
-      {contentReady ? <MessageRowContent
-        expandedDisclosureIds={expandedDisclosureIds}
-        resizeTimelineRow={resizeTimelineRow}
-        onDisclosureChange={onDisclosureChange}
-        onDisclosureToggle={onDisclosureToggle}
-        onSubagentOpen={onSubagentOpen}
-        pausedSubagent={pausedSubagent}
-        parts={row.parts}
-        row={row}
-        sessionId={sessionId}
-        t={t}
-      /> : (
+      {contentReady ? (
+        <MessageRowContent
+          associatedToolCallId={associatedToolCallId}
+          expandedDisclosureIds={expandedDisclosureIds}
+          resizeTimelineRow={resizeTimelineRow}
+          onDisclosureChange={onDisclosureChange}
+          onDisclosureToggle={onDisclosureToggle}
+          onSubagentOpen={onSubagentOpen}
+          pausedSubagent={pausedSubagent}
+          registerToolCallElement={registerToolCallElement}
+          parts={row.parts}
+          row={row}
+          sessionId={sessionId}
+          t={t}
+        />
+      ) : (
         <TimelineRowHydrationPlaceholder
           estimatedHeight={estimateRowSize(row) - 28}
           rowKey={row.key}
@@ -2302,6 +2672,7 @@ function timelineRowElement(
 }
 
 function ProcessedGroupRow({
+  associatedToolCallId,
   contentReady,
   expanded,
   expandedDisclosureIds,
@@ -2310,6 +2681,7 @@ function ProcessedGroupRow({
   measureElement,
   onSubagentOpen,
   pausedSubagent,
+  registerToolCallElement,
   onDisclosureChange,
   onDisclosureToggle,
   resizeTimelineRow,
@@ -2319,6 +2691,7 @@ function ProcessedGroupRow({
   style,
   t,
 }: {
+  associatedToolCallId: string | null;
   contentReady: boolean;
   expanded: boolean;
   expandedDisclosureIds: ReadonlySet<string>;
@@ -2327,6 +2700,10 @@ function ProcessedGroupRow({
   measureElement: (element: Element | null) => void;
   onSubagentOpen?: (subagent: TimelineSubagentReference) => void;
   pausedSubagent: TimelineSubagentReference | null;
+  registerToolCallElement: (
+    toolCallId: string,
+    element: HTMLDetailsElement | null,
+  ) => void;
   onDisclosureChange: (disclosureId: string, expanded: boolean) => void;
   onDisclosureToggle: (event: SyntheticEvent<HTMLDetailsElement>) => void;
   resizeTimelineRow: (index: number, size: number) => void;
@@ -2346,47 +2723,60 @@ function ProcessedGroupRow({
       ref={measureElement}
       style={style}
     >
-      {contentReady ? <TimelineDisclosure
-        className="at-processed-group"
-        disclosureId={`processed:${runId ?? rowKey}`}
-        expanded={expanded}
-        onExpandedChange={onDisclosureChange}
-        onToggle={onDisclosureToggle}
-      >
-        <summary className="at-processed-group-summary">
-          <span className="at-processed-group-toggle" aria-hidden="true">{">"}</span>
-          <span className="at-processed-group-label">{t("timelineProcessedGroup")}</span>
-        </summary>
-        <div className="at-processed-group-body">
-          {group.rows.map((groupRow) => (
-            <GroupItem
-              className={[
-                "at-processed-group-item",
-                group.continuity ? "at-message is-runtime" : "",
-                timelineRowIsToolOnly(groupRow) ? "is-tool-only" : "",
-              ].filter(Boolean).join(" ")}
-              data-instance-id={groupRow.instanceId ?? undefined}
-              data-role-id={groupRow.role}
-              data-row-key={groupRow.key}
-              data-run-id={groupRow.runId ?? undefined}
-              key={groupRow.key}
-            >
-              <MessageRowContent
-                expandedDisclosureIds={expandedDisclosureIds}
-                resizeTimelineRow={resizeTimelineRow}
-                onDisclosureChange={onDisclosureChange}
-                onDisclosureToggle={onDisclosureToggle}
-                onSubagentOpen={onSubagentOpen}
-                pausedSubagent={pausedSubagent}
-                parts={groupRow.parts}
-                row={groupRow}
-                sessionId={sessionId}
-                t={t}
-              />
-            </GroupItem>
-          ))}
-        </div>
-      </TimelineDisclosure> : (
+      {contentReady ? (
+        <TimelineDisclosure
+          className="at-processed-group"
+          disclosureId={`processed:${runId ?? rowKey}`}
+          expanded={expanded}
+          onExpandedChange={onDisclosureChange}
+          onToggle={onDisclosureToggle}
+        >
+          <summary
+            className="at-processed-group-summary"
+            data-disclosure-id={`processed:${runId ?? rowKey}`}
+          >
+            <span className="at-processed-group-toggle" aria-hidden="true">
+              {">"}
+            </span>
+            <span className="at-processed-group-label">
+              {t("timelineProcessedGroup")}
+            </span>
+          </summary>
+          <div className="at-processed-group-body">
+            {group.rows.map((groupRow) => (
+              <GroupItem
+                className={[
+                  "at-processed-group-item",
+                  group.continuity ? "at-message is-runtime" : "",
+                  timelineRowIsToolOnly(groupRow) ? "is-tool-only" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                data-instance-id={groupRow.instanceId ?? undefined}
+                data-role-id={groupRow.role}
+                data-row-key={groupRow.key}
+                data-run-id={groupRow.runId ?? undefined}
+                key={groupRow.key}
+              >
+                <MessageRowContent
+                  associatedToolCallId={associatedToolCallId}
+                  expandedDisclosureIds={expandedDisclosureIds}
+                  resizeTimelineRow={resizeTimelineRow}
+                  onDisclosureChange={onDisclosureChange}
+                  onDisclosureToggle={onDisclosureToggle}
+                  onSubagentOpen={onSubagentOpen}
+                  pausedSubagent={pausedSubagent}
+                  registerToolCallElement={registerToolCallElement}
+                  parts={groupRow.parts}
+                  row={groupRow}
+                  sessionId={sessionId}
+                  t={t}
+                />
+              </GroupItem>
+            ))}
+          </div>
+        </TimelineDisclosure>
+      ) : (
         <TimelineRowHydrationPlaceholder estimatedHeight={24} rowKey={rowKey} />
       )}
     </section>
@@ -6523,7 +6913,7 @@ function runtimeRunStateIdentityLooksLikeDetachedSubagent(
 function runtimeEntryLooksLikeDetachedSubagent(
   entry: TimelineEntry,
   runState: RuntimeRunState,
-  _primaryRoleId: string | null,
+  primaryRoleId: string | null,
   primaryInstanceId = "",
 ): boolean {
   if (entry.kind === "subagent_session_status_changed") {
@@ -6544,6 +6934,19 @@ function runtimeEntryLooksLikeDetachedSubagent(
     return true;
   }
   if (runtimeEntryHasExplicitDetachedSubagentIdentity(entry)) {
+    return true;
+  }
+  const rootLifecycleRoleId = runState.entries.find(
+    (candidate) =>
+      candidate.kind === "run_started" || candidate.kind === "run_resumed",
+  )?.roleId?.trim() ?? "";
+  const rootRoleId = primaryRoleId?.trim() ||
+    runState.targetRoleId?.trim() ||
+    rootLifecycleRoleId;
+  if (
+    runState.entries.some(runtimeEntryIsSubagentToolLifecycle) &&
+    timelineRoleCanBeDetachedAgent(entry.roleId ?? "", rootRoleId)
+  ) {
     return true;
   }
   return false;
@@ -7045,7 +7448,11 @@ function runtimeEntryIsSubagentToolLifecycle(entry: TimelineEntry): boolean {
   if (payload === null || payloadHasParseError(payload)) {
     return false;
   }
-  return runtimeToolSemantics(payload).actionFamily === "subagent";
+  if (runtimeToolSemantics(payload).actionFamily === "subagent") {
+    return true;
+  }
+  const result = unknownJsonObject(payload.result);
+  return result !== null && jsonObjectHasDetachedSubagentMarker(result);
 }
 
 function timelineMessageHasExplicitDetachedScope(message: TimelineMessage): boolean {
@@ -8643,23 +9050,30 @@ function outputDeltaMediaPart(
 }
 
 function MessageRowContent({
+  associatedToolCallId,
   expandedDisclosureIds,
   resizeTimelineRow,
   onDisclosureChange,
   onDisclosureToggle,
   onSubagentOpen,
   pausedSubagent,
+  registerToolCallElement,
   parts,
   row,
   sessionId,
   t,
 }: {
+  associatedToolCallId: string | null;
   expandedDisclosureIds: ReadonlySet<string>;
   resizeTimelineRow?: (index: number, size: number) => void;
   onDisclosureChange: (disclosureId: string, expanded: boolean) => void;
   onDisclosureToggle: (event: SyntheticEvent<HTMLDetailsElement>) => void;
   onSubagentOpen?: (subagent: TimelineSubagentReference) => void;
   pausedSubagent: TimelineSubagentReference | null;
+  registerToolCallElement: (
+    toolCallId: string,
+    element: HTMLDetailsElement | null,
+  ) => void;
   parts: TimelineRenderPart[];
   row: TimelineRow;
   sessionId: string;
@@ -8691,6 +9105,10 @@ function MessageRowContent({
           const disclosureId = toolDisclosureId(row, part, partKey);
           return (
             <MessageToolBlock
+              associated={
+                part.callId.trim().length > 0 &&
+                part.callId.trim() === associatedToolCallId?.trim()
+              }
               disclosureId={disclosureId}
               expanded={expandedDisclosureIds.has(disclosureId)}
               key={partKey}
@@ -8698,6 +9116,7 @@ function MessageRowContent({
               onDisclosureToggle={onDisclosureToggle}
               onSubagentOpen={onSubagentOpen}
               pausedSubagent={pausedSubagent}
+              registerToolCallElement={registerToolCallElement}
               sessionId={sessionId}
               tool={part}
               t={t}
@@ -8979,8 +9398,13 @@ function MessageThinkingBlock({
       onExpandedChange={onDisclosureChange}
       onToggle={onDisclosureToggle}
     >
-      <summary className="at-message-thinking-summary">
-        <span className="at-message-thinking-label">{t("timelineThinking")}</span>
+      <summary
+        className="at-message-thinking-summary"
+        data-disclosure-id={disclosureId}
+      >
+        <span className="at-message-thinking-label">
+          {t("timelineThinking")}
+        </span>
         {thinking.streaming ? (
           <span className="at-message-thinking-live">{t("timelineLive")}</span>
         ) : null}
@@ -8999,22 +9423,29 @@ function MessageThinkingBlock({
 }
 
 function MessageToolBlock({
+  associated,
   disclosureId,
   expanded,
   onDisclosureChange,
   onDisclosureToggle,
   onSubagentOpen,
   pausedSubagent,
+  registerToolCallElement,
   sessionId,
   tool,
   t,
 }: {
+  associated: boolean;
   disclosureId: string;
   expanded: boolean;
   onDisclosureChange: (disclosureId: string, expanded: boolean) => void;
   onDisclosureToggle: (event: SyntheticEvent<HTMLDetailsElement>) => void;
   onSubagentOpen?: (subagent: TimelineSubagentReference) => void;
   pausedSubagent: TimelineSubagentReference | null;
+  registerToolCallElement: (
+    toolCallId: string,
+    element: HTMLDetailsElement | null,
+  ) => void;
   sessionId: string;
   tool: TimelineToolPart;
   t: Translate;
@@ -9075,6 +9506,12 @@ function MessageToolBlock({
         onSubagentOpen(openSubagentReference);
       }
     : undefined;
+  const handleToolElementRef = useCallback(
+    (element: HTMLDetailsElement | null) => {
+      registerToolCallElement(tool.callId, element);
+    },
+    [registerToolCallElement, tool.callId],
+  );
   return (
     <TimelineDisclosure
       className={[
@@ -9082,7 +9519,11 @@ function MessageToolBlock({
         tool.error ? "is-error" : "",
         canOpenSubagent ? "is-openable-subagent" : "",
         pausedToolSubagent !== null ? "is-paused-subagent" : "",
-      ].filter(Boolean).join(" ")}
+        associated ? "is-associated-subagent" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      data-associated-subagent={associated ? "true" : undefined}
       data-status={status}
       data-subagent-instance-id={openSubagentReference?.instanceId ?? undefined}
       data-subagent-run-id={openSubagentReference?.runId ?? undefined}
@@ -9090,6 +9531,7 @@ function MessageToolBlock({
       data-tool-call-id={tool.callId || undefined}
       data-tool-name={tool.toolName}
       disclosureId={disclosureId}
+      elementRef={handleToolElementRef}
       expanded={expanded}
       onExpandedChange={onDisclosureChange}
       onToggle={onDisclosureToggle}
@@ -9097,6 +9539,7 @@ function MessageToolBlock({
       <summary
         aria-label={canOpenSubagent ? t("timelineOpenSubagentPanel") : undefined}
         className="at-message-tool-summary"
+        data-disclosure-id={disclosureId}
         onClick={handleSummaryClick}
       >
         <span className="at-message-tool-title">

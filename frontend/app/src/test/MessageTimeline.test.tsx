@@ -10,7 +10,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 import {
   listSessionMessages,
@@ -7828,20 +7828,19 @@ describe("MessageTimeline", () => {
       }),
       relayRunEvent({
         event_id: 2,
-        event_type: "tool_call",
+        event_type: "tool_result",
         instance_id: "main-instance",
         role_id: "MainAgent",
         run_id: "parent_run_1",
         trace_id: "parent_run_1",
         payload_json: JSON.stringify({
-          args: {
-            description: "Explore skill implementation",
-            prompt: "Read the project and report back.",
-            role_id: "Explorer",
+          result: {
+            subagent_instance_id: "explorer-worker",
+            subagent_role_id: "Explorer",
+            subagent_run_id: "subagent_run_1",
+            title: "Explore skill implementation",
           },
           tool_call_id: "call-spawn-explorer",
-          action_family: "subagent",
-          semantic_category: "orchestration",
           tool_name: "spawn_subagent",
         }),
       }),
@@ -7873,6 +7872,16 @@ describe("MessageTimeline", () => {
       }),
       relayRunEvent({
         event_id: 5,
+        event_type: "text_delta",
+        role_id: "Explorer",
+        run_id: "parent_run_1",
+        trace_id: "parent_run_1",
+        payload_json: JSON.stringify({
+          text: "Role-only parent-run child output should stay out of the main transcript.",
+        }),
+      }),
+      relayRunEvent({
+        event_id: 6,
         event_type: "tool_call",
         role_id: "Explorer",
         run_id: "parent_run_1",
@@ -7889,7 +7898,7 @@ describe("MessageTimeline", () => {
         }),
       }),
       relayRunEvent({
-        event_id: 6,
+        event_id: 7,
         event_type: "text_delta",
         role_id: "",
         run_id: "parent_run_1",
@@ -7899,7 +7908,7 @@ describe("MessageTimeline", () => {
         }),
       }),
       relayRunEvent({
-        event_id: 7,
+        event_id: 8,
         event_type: "run_completed",
         role_id: "MainAgent",
         run_id: "parent_run_1",
@@ -7921,6 +7930,11 @@ describe("MessageTimeline", () => {
     ).not.toBeInTheDocument();
     expect(
       screen.queryByText("Parent-run child output should stay out of the main transcript."),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        "Role-only parent-run child output should stay out of the main transcript.",
+      ),
     ).not.toBeInTheDocument();
     expect(screen.queryByText("Reading: read")).not.toBeInTheDocument();
     expect(container.querySelector('[data-role-id="Explorer"]')).toBeNull();
@@ -15184,6 +15198,77 @@ describe("MessageTimeline", () => {
     }
   });
 
+  it("coalesces timeline UI-state persistence without rerendering its parent", async () => {
+    const restoreMeasurements = mockElementMeasurements({
+      clientHeight: 320,
+      rowHeight: 120,
+    });
+    const onUiStateChange = vi.fn();
+    try {
+      listSessionMessagesMock.mockResolvedValue(
+        Array.from({ length: 8 }, (_, index) => ({
+          content: `Persisted message ${index + 1}`,
+          message_id: `assistant-${index + 1}`,
+          role_id: "MainAgent",
+        })),
+      );
+
+      let parentRenderCount = 0;
+      function TimelineUiStateHarness() {
+        parentRenderCount += 1;
+        const handleUiStateChange = useCallback(
+          (state: Parameters<typeof MessageTimeline>[0]["uiState"]) => {
+            if (state !== null) {
+              onUiStateChange(state);
+            }
+          },
+          [],
+        );
+        return (
+          <MessageTimeline
+            onUiStateChange={handleUiStateChange}
+            sessionId="session-1"
+          />
+        );
+      }
+      const queryClient = new QueryClient({
+        defaultOptions: {
+          queries: { retry: false, staleTime: Number.POSITIVE_INFINITY },
+        },
+      });
+      const { container } = render(
+        <QueryClientProvider client={queryClient}>
+          <ConfigProvider>
+            <AntApp>
+              <TimelineUiStateHarness />
+            </AntApp>
+          </ConfigProvider>
+        </QueryClientProvider>,
+      );
+      expect(await screen.findByText("Persisted message 8")).toBeVisible();
+      await waitFor(() => expect(onUiStateChange).toHaveBeenCalled());
+      onUiStateChange.mockClear();
+      const renderCountBeforeScroll = parentRenderCount;
+
+      const timeline = timelineElement(container);
+      act(() => {
+        for (let index = 0; index < 20; index += 1) {
+          timeline.scrollTop = 40 + index;
+          fireEvent.scroll(timeline);
+        }
+      });
+
+      expect(onUiStateChange).not.toHaveBeenCalled();
+      await waitFor(() => expect(onUiStateChange).toHaveBeenCalledTimes(1));
+      expect(onUiStateChange.mock.calls[0]?.[0].scrollSnapshot?.scrollTop).toBe(
+        59,
+      );
+      expect(parentRenderCount).toBe(renderCountBeforeScroll);
+    } finally {
+      restoreMeasurements();
+    }
+  });
+
   it("keeps a running subagent timeline scrollable while one streamed row grows", async () => {
     const restoreMeasurements = mockElementMeasurements({
       clientHeight: 180,
@@ -15219,6 +15304,24 @@ describe("MessageTimeline", () => {
           .toContain("Token 24 keeps streaming.");
         expect(timelineMaxScrollTop(timeline)).toBeGreaterThan(180);
       });
+      const followedScrollTop = timeline.scrollTop;
+      fireEvent.wheel(timeline, { deltaY: -120 });
+
+      act(() => {
+        setRuntimeEntries(streamingEntries(36), "open", {
+          scope: "subagent",
+          sessionId: "session-1",
+        });
+      });
+
+      await waitFor(() => {
+        expect(
+          container.querySelector(".at-message-markdown")?.textContent,
+        ).toContain("Token 36 keeps streaming.");
+      });
+      expect(timeline.scrollTop).toBe(followedScrollTop);
+      expect(timeline.scrollTop).toBeLessThan(timelineMaxScrollTop(timeline));
+
       const awayFromBottom = timelineMaxScrollTop(timeline) - 120;
       timeline.scrollTop = awayFromBottom;
       fireEvent.scroll(timeline);
@@ -15519,6 +15622,7 @@ interface RenderTimelineOptions {
   fallbackRunId?: string | null;
   latestTerminalRunId?: string | null;
   latestTerminalRunStatus?: string | null;
+  onUiStateChange?: Parameters<typeof MessageTimeline>[0]["onUiStateChange"];
   onSubagentOpen?: Parameters<typeof MessageTimeline>[0]["onSubagentOpen"];
   pausedSubagent?: Parameters<typeof MessageTimeline>[0]["pausedSubagent"];
   primaryRoleId?: string | null;
@@ -15546,29 +15650,30 @@ function renderTimeline(
   });
   return {
     ...render(
-    <QueryClientProvider client={queryClient}>
-      <ConfigProvider>
-        <AntApp>
-          <MessageTimeline
-            fallbackRunId={options.fallbackRunId ?? null}
-            latestTerminalRunId={options.latestTerminalRunId ?? null}
-            latestTerminalRunStatus={options.latestTerminalRunStatus ?? null}
-            onSubagentOpen={options.onSubagentOpen}
-            pausedSubagent={options.pausedSubagent ?? null}
-            primaryRoleId={options.primaryRoleId ?? null}
-            roundsEnabled={options.roundsEnabled ?? true}
-            sessionId={sessionId}
-            runtimeRunId={options.runtimeRunId ?? null}
-            subagentScopeInstanceId={options.subagentScopeInstanceId ?? null}
-            subagentScopeRoleId={options.subagentScopeRoleId ?? null}
-            subagentScopeTaskId={options.subagentScopeTaskId ?? null}
-            variant={options.variant ?? "session"}
-            visible={options.visible ?? true}
-            workspaceId={options.workspaceId ?? null}
-          />
-        </AntApp>
-      </ConfigProvider>
-    </QueryClientProvider>,
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider>
+          <AntApp>
+            <MessageTimeline
+              fallbackRunId={options.fallbackRunId ?? null}
+              latestTerminalRunId={options.latestTerminalRunId ?? null}
+              latestTerminalRunStatus={options.latestTerminalRunStatus ?? null}
+              onUiStateChange={options.onUiStateChange}
+              onSubagentOpen={options.onSubagentOpen}
+              pausedSubagent={options.pausedSubagent ?? null}
+              primaryRoleId={options.primaryRoleId ?? null}
+              roundsEnabled={options.roundsEnabled ?? true}
+              sessionId={sessionId}
+              runtimeRunId={options.runtimeRunId ?? null}
+              subagentScopeInstanceId={options.subagentScopeInstanceId ?? null}
+              subagentScopeRoleId={options.subagentScopeRoleId ?? null}
+              subagentScopeTaskId={options.subagentScopeTaskId ?? null}
+              variant={options.variant ?? "session"}
+              visible={options.visible ?? true}
+              workspaceId={options.workspaceId ?? null}
+            />
+          </AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>,
     ),
     queryClient,
   };

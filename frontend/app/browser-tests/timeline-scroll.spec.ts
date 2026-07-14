@@ -167,6 +167,72 @@ test("keeps disclosure clicks responsive and anchored during a long interleaved 
   }
 });
 
+test("keeps a nonzero near-top persisted disclosure anchored", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await installMockEventSource(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: handlePersistedDisclosureApi,
+      sessionTitle: "TS persisted disclosure anchor",
+    });
+
+    await page.goto(`${appServer.url}/`);
+    await waitForAppShell(page);
+
+    const timeline = page.locator(".at-timeline");
+    await timeline.evaluate((element) => {
+      element.scrollTop = Math.max(
+        1,
+        (element.scrollHeight - element.clientHeight) / 2,
+      );
+      element.dispatchEvent(new Event("scroll", { bubbles: true }));
+    });
+    const thinking = page.locator("details.at-message-thinking");
+    await expect(thinking).toHaveCount(1);
+    const summary = thinking.locator(".at-message-thinking-summary");
+    const nearTopPosition = await positionTimelineControlNearTop(summary);
+    expect(nearTopPosition.scrollTop).toBeGreaterThan(1);
+    expect(nearTopPosition.viewportTop).toBeGreaterThanOrEqual(64);
+    expect(nearTopPosition.viewportTop).toBeLessThanOrEqual(112);
+
+    const openTopBefore = await elementViewportTop(summary);
+    await summary.click();
+    await expect(thinking).toHaveAttribute("open", "");
+    expect(
+      Math.abs((await elementViewportTop(summary)) - openTopBefore),
+    ).toBeLessThanOrEqual(1);
+
+    const closeTopBefore = await elementViewportTop(summary);
+    await summary.click();
+    await expect(thinking).not.toHaveAttribute("open", "");
+    expect(
+      Math.abs((await elementViewportTop(summary)) - closeTopBefore),
+    ).toBeLessThanOrEqual(1);
+
+    await summary.focus();
+    const keyboardOpenTopBefore = await elementViewportTop(summary);
+    await summary.press("Enter");
+    await expect(thinking).toHaveAttribute("open", "");
+    expect(
+      Math.abs((await elementViewportTop(summary)) - keyboardOpenTopBefore),
+    ).toBeLessThanOrEqual(1);
+
+    const keyboardCloseTopBefore = await elementViewportTop(summary);
+    await summary.press("Space");
+    await expect(thinking).not.toHaveAttribute("open", "");
+    expect(
+      Math.abs((await elementViewportTop(summary)) - keyboardCloseTopBefore),
+    ).toBeLessThanOrEqual(1);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+  } finally {
+    await appServer.close();
+  }
+});
+
 test("expands a long user prompt below its stable disclosure control", async ({
   page,
 }) => {
@@ -281,6 +347,19 @@ async function handlePromptDisclosureApi(
       }],
       next_cursor: null,
     });
+    return true;
+  }
+  return false;
+}
+
+async function handlePersistedDisclosureApi(
+  context: MockApiRouteContext,
+): Promise<boolean> {
+  if (
+    context.method === "GET" &&
+    context.path === `/sessions/${SESSION_ID}/messages`
+  ) {
+    await context.fulfillJson(persistedDisclosureMessages());
     return true;
   }
   return false;
@@ -443,6 +522,27 @@ async function elementViewportTop(
   return locator.evaluate((element) => element.getBoundingClientRect().top);
 }
 
+async function positionTimelineControlNearTop(
+  locator: import("@playwright/test").Locator,
+): Promise<{ scrollTop: number; viewportTop: number }> {
+  return locator.evaluate((element) => {
+    const timeline = element.closest<HTMLElement>(".at-timeline");
+    if (timeline === null) {
+      throw new Error("Timeline control is missing its scroll owner.");
+    }
+    const targetViewportTop = timeline.getBoundingClientRect().top + 80;
+    timeline.scrollTop +=
+      element.getBoundingClientRect().top - targetViewportTop;
+    timeline.dispatchEvent(new Event("scroll", { bubbles: true }));
+    return {
+      scrollTop: timeline.scrollTop,
+      viewportTop:
+        element.getBoundingClientRect().top -
+        timeline.getBoundingClientRect().top,
+    };
+  });
+}
+
 interface ResponsivenessProbe {
   heartbeatCount: number;
   lastHeartbeatAt: number;
@@ -547,4 +647,42 @@ function longHistoryMessages(): Record<string, unknown>[] {
     role_id: index % 2 === 0 ? "user" : "MainAgent",
     run_id: `scroll-history-run-${index}`,
   }));
+}
+
+function persistedDisclosureMessages(): Record<string, unknown>[] {
+  return Array.from({ length: 24 }, (_, index) => {
+    if (index === 12) {
+      return {
+        created_at: "2026-07-01T09:12:00Z",
+        message_id: "persisted-disclosure-thinking",
+        message: {
+          parts: [
+            {
+              content: "Persisted planning detail that expands in place.",
+              part_kind: "thinking",
+            },
+          ],
+        },
+        role_id: "MainAgent",
+        run_id: "persisted-disclosure-run",
+      };
+    }
+    return {
+      created_at: `2026-07-01T09:${String(index).padStart(2, "0")}:00Z`,
+      message_id: `persisted-disclosure-${index}`,
+      message: {
+        parts: [
+          {
+            content: [
+              `Persisted disclosure context row ${index + 1}.`,
+              "This row gives the timeline enough content above and below the disclosure.",
+            ].join("\n"),
+            part_kind: "text",
+          },
+        ],
+      },
+      role_id: "MainAgent",
+      run_id: `persisted-disclosure-run-${index}`,
+    };
+  });
 }

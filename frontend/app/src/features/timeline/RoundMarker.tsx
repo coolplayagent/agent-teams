@@ -17,6 +17,7 @@ interface RoundMarkerProps {
   index: number;
   onPromptOpenChange?: (open: boolean) => void;
   onPromptToggle?: (event: MouseEvent<HTMLButtonElement>) => void;
+  promptDisclosureId?: string;
   promptOpen?: boolean;
   round: SessionRound;
   t: Translate;
@@ -26,6 +27,7 @@ export function RoundMarker({
   index,
   onPromptOpenChange,
   onPromptToggle,
+  promptDisclosureId,
   promptOpen = false,
   round,
   t,
@@ -140,6 +142,7 @@ export function RoundMarker({
           <button
             aria-expanded={promptOpen}
             className="at-round-prompt-toggle"
+            data-disclosure-id={promptDisclosureId}
             onClick={handlePromptSummaryClick}
             type="button"
           >

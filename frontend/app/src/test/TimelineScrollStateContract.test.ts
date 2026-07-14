@@ -7,6 +7,10 @@ const timelineSource = readFileSync(
   "src/features/timeline/MessageTimeline.tsx",
   "utf8",
 );
+const scrollAnchoringSource = readFileSync(
+  "src/features/timeline/timelineScrollAnchoring.ts",
+  "utf8",
+);
 
 describe("timeline scroll state contract", () => {
   it("stores only bounded lightweight state per session or subagent scope", () => {
@@ -40,16 +44,14 @@ describe("timeline scroll state contract", () => {
     expect(timelineSource).toContain(
       "consumePendingProgrammaticTimelineScroll(",
     );
-    expect(timelineSource).toContain(
+    expect(scrollAnchoringSource).toContain(
       "pendingScroll.scopeKey === scopeKey",
     );
     expect(timelineSource).toContain("if (event.nativeEvent.isTrusted)");
   });
 
   it("anchors explicit reading intent to stable virtual row identity", () => {
-    expect(timelineSource).toContain(
-      "timelineScrollAnchorFromVirtualItems(",
-    );
+    expect(timelineSource).toContain("captureTimelineViewportAnchor(");
     expect(timelineSource).toContain(
       "scrollSnapshotRef.current = captureCurrentTimelineScrollSnapshot(",
     );

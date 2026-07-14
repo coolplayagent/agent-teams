@@ -1,6 +1,7 @@
 import type {
   DetailsHTMLAttributes,
   MouseEvent,
+  Ref,
   SyntheticEvent,
 } from "react";
 import { useLayoutEffect, useRef, useState } from "react";
@@ -8,6 +9,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 interface TimelineDisclosureProps
   extends Omit<DetailsHTMLAttributes<HTMLDetailsElement>, "onToggle" | "open"> {
   disclosureId: string;
+  elementRef?: Ref<HTMLDetailsElement>;
   expanded: boolean;
   forceOpen?: boolean;
   onExpandedChange: (disclosureId: string, expanded: boolean) => void;
@@ -16,6 +18,7 @@ interface TimelineDisclosureProps
 
 export function TimelineDisclosure({
   disclosureId,
+  elementRef,
   expanded,
   forceOpen = false,
   onExpandedChange,
@@ -81,6 +84,7 @@ export function TimelineDisclosure({
       onClick={handleClick}
       open={open}
       onToggle={handleToggle}
+      ref={elementRef}
     />
   );
 }

@@ -50,14 +50,16 @@ test("keeps the V2 timeline anchored away from bottom and follows new text at bo
     const maxBeforeAwayStream = (await timelineMetrics(page)).maxScrollTop;
     const awayScrollTop = Math.round(maxBeforeAwayStream * 0.45);
     await setTimelineScrollTop(page, awayScrollTop);
-    const awayBefore = await timelineMetrics(page);
+    const awayAnchorBefore = await visibleTimelineAnchor(page);
 
     const awayText = "STREAM_SCROLL_AWAY_FROM_BOTTOM";
     await dispatchRuntimeText(page, 1, awayText);
     await page.waitForTimeout(120);
 
     const awayAfter = await timelineMetrics(page);
-    expect(Math.abs(awayAfter.scrollTop - awayBefore.scrollTop)).toBeLessThanOrEqual(2);
+    const awayAnchorAfter = await timelineAnchorByKey(page, awayAnchorBefore.rowKey);
+    expect(Math.abs(awayAnchorAfter.viewportTop - awayAnchorBefore.viewportTop))
+      .toBeLessThanOrEqual(1);
 
     await setTimelineScrollTop(page, awayAfter.maxScrollTop);
     await expect(page.getByText(awayText)).toBeVisible();
@@ -110,9 +112,15 @@ test("keeps disclosure clicks responsive and anchored during a long interleaved 
 
     const thinking = page.locator("details.at-message-thinking");
     await expect(thinking).toHaveCount(1);
-    await expect(thinking).not.toHaveAttribute("open", "");
     const thinkingSummary = thinking.locator(".at-message-thinking-summary");
     await thinkingSummary.scrollIntoViewIfNeeded();
+    if (await thinking.getAttribute("open") !== null) {
+      const closeTopBefore = await elementViewportTop(thinkingSummary);
+      await thinkingSummary.click();
+      await expect(thinking).not.toHaveAttribute("open", "");
+      expect(Math.abs((await elementViewportTop(thinkingSummary)) - closeTopBefore))
+        .toBeLessThanOrEqual(1);
+    }
     const thinkingTopBefore = await elementViewportTop(thinkingSummary);
     const thinkingClickMs = await measuredClick(thinkingSummary);
     await expect(thinking).toHaveAttribute("open", "");
@@ -120,7 +128,7 @@ test("keeps disclosure clicks responsive and anchored during a long interleaved 
       (await elementViewportTop(thinkingSummary)) - thinkingTopBefore,
     );
     expect(thinkingClickMs).toBeLessThan(1_000);
-    expect(thinkingHeaderShiftPx).toBeLessThanOrEqual(2);
+    expect(thinkingHeaderShiftPx).toBeLessThanOrEqual(1);
 
     await dispatchRuntimeText(page, 1_203, "stream continues while thinking stays open");
     await expect(thinking).toHaveAttribute("open", "");
@@ -137,7 +145,7 @@ test("keeps disclosure clicks responsive and anchored during a long interleaved 
       (await elementViewportTop(toolSummary)) - toolTopBefore,
     );
     expect(toolClickMs).toBeLessThan(1_000);
-    expect(toolHeaderShiftPx).toBeLessThanOrEqual(2);
+    expect(toolHeaderShiftPx).toBeLessThanOrEqual(1);
 
     const probe = await responsivenessProbe(page);
     await testInfo.attach("timeline-responsiveness", {
@@ -153,6 +161,53 @@ test("keeps disclosure clicks responsive and anchored during a long interleaved 
     expect(probe.heartbeatCount).toBeGreaterThan(3);
     expect(probe.maxHeartbeatGapMs).toBeLessThan(1_000);
     expect(probe.maxLongTaskMs).toBeLessThan(1_000);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+  } finally {
+    await appServer.close();
+  }
+});
+
+test("expands a long user prompt below its stable disclosure control", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendDist();
+  const unhandledApiRoutes: string[] = [];
+  try {
+    await installShellState(page);
+    await installMockEventSource(page);
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: handlePromptDisclosureApi,
+      sessionTitle: "TS prompt disclosure anchor",
+    });
+
+    await page.goto(`${appServer.url}/`);
+    await waitForAppShell(page);
+
+    const toggle = page.locator(".at-round-prompt-toggle");
+    const body = page.locator(".at-round-prompt-body");
+    await expect(toggle).toHaveCount(1);
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await toggle.scrollIntoViewIfNeeded();
+    const topBefore = await elementViewportTop(toggle);
+
+    await toggle.click();
+
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    const topAfter = await elementViewportTop(toggle);
+    expect(Math.abs(topAfter - topBefore)).toBeLessThanOrEqual(1);
+    const geometry = await page.evaluate(() => {
+      const control = document.querySelector<HTMLElement>(".at-round-prompt-toggle");
+      const prompt = document.querySelector<HTMLElement>(".at-round-prompt-body");
+      if (control === null || prompt === null) {
+        throw new Error("Prompt disclosure geometry was not rendered.");
+      }
+      return {
+        controlBottom: control.getBoundingClientRect().bottom,
+        promptTop: prompt.getBoundingClientRect().top,
+      };
+    });
+    expect(geometry.promptTop).toBeGreaterThanOrEqual(geometry.controlBottom - 1);
+    await expect(body).toContainText("PROMPT_DISCLOSURE_FINAL_LINE");
     expectNoUnhandledApiRoutes(unhandledApiRoutes);
   } finally {
     await appServer.close();
@@ -185,6 +240,46 @@ async function handleTimelineScrollApi(
       pending_tool_approvals: [],
       pending_user_questions: [],
       recoverable_stopped_run: null,
+    });
+    return true;
+  }
+  return false;
+}
+
+async function handlePromptDisclosureApi(
+  context: MockApiRouteContext,
+): Promise<boolean> {
+  if (context.method === "GET" && context.path === `/sessions/${SESSION_ID}/messages`) {
+    await context.fulfillJson([
+      {
+        content: longPrompt(),
+        created_at: "2026-07-01T11:00:00Z",
+        message_id: "prompt-disclosure-user",
+        role: "user",
+        run_id: "run-prompt-disclosure",
+      },
+      {
+        content: "Prompt disclosure response",
+        created_at: "2026-07-01T11:00:01Z",
+        message_id: "prompt-disclosure-assistant",
+        role_id: "MainAgent",
+        run_id: "run-prompt-disclosure",
+      },
+    ]);
+    return true;
+  }
+  if (context.method === "GET" && context.path === `/sessions/${SESSION_ID}/rounds`) {
+    await context.fulfillJson({
+      has_more: false,
+      items: [{
+        created_at: "2026-07-01T11:00:00Z",
+        intent: longPrompt(),
+        intent_parts: [{ kind: "text", text: longPrompt() }],
+        run_id: "run-prompt-disclosure",
+        run_status: "completed",
+        run_user_message: longPrompt(),
+      }],
+      next_cursor: null,
     });
     return true;
   }
@@ -374,11 +469,63 @@ async function timelineMetrics(page: Page): Promise<TimelineMetrics> {
   });
 }
 
+async function visibleTimelineAnchor(page: Page): Promise<TimelineViewportAnchor> {
+  return page.locator(".at-timeline").evaluate((timeline) => {
+    const timelineRect = timeline.getBoundingClientRect();
+    const rows = Array.from(
+      timeline.querySelectorAll<HTMLElement>(".at-timeline-row[data-row-key]"),
+    );
+    const row = rows.find((candidate) => {
+      const rect = candidate.getBoundingClientRect();
+      return rect.top >= timelineRect.top + 12 && rect.bottom <= timelineRect.bottom - 12;
+    });
+    if (row === undefined || row.dataset.rowKey === undefined) {
+      throw new Error("No fully visible timeline anchor row was available.");
+    }
+    return {
+      rowKey: row.dataset.rowKey,
+      viewportTop: row.getBoundingClientRect().top,
+    };
+  });
+}
+
+async function timelineAnchorByKey(
+  page: Page,
+  rowKey: string,
+): Promise<TimelineViewportAnchor> {
+  return page.locator(".at-timeline").evaluate((timeline, key) => {
+    const row = Array.from(
+      timeline.querySelectorAll<HTMLElement>(".at-timeline-row[data-row-key]"),
+    ).find((candidate) => candidate.dataset.rowKey === key);
+    if (row === undefined) {
+      throw new Error(`Timeline anchor row ${key} was not retained.`);
+    }
+    return {
+      rowKey: key,
+      viewportTop: row.getBoundingClientRect().top,
+    };
+  }, rowKey);
+}
+
 interface TimelineMetrics {
   clientHeight: number;
   maxScrollTop: number;
   scrollHeight: number;
   scrollTop: number;
+}
+
+interface TimelineViewportAnchor {
+  rowKey: string;
+  viewportTop: number;
+}
+
+function longPrompt(): string {
+  return [
+    "Inspect the timeline interaction model and preserve the reader position.",
+    "Keep every disclosure local to the content the user selected.",
+    "Do not pull an inspecting reader back to the live tail.",
+    "PROMPT_DISCLOSURE_FINAL_LINE",
+  ].join("\n");
 }
 
 function longHistoryMessages(): Record<string, unknown>[] {

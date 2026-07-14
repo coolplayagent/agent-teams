@@ -137,14 +137,6 @@ export function RoundMarker({
           className="at-round-marker-intent"
           data-open={promptOpen ? "true" : "false"}
         >
-          <div
-            className={[
-              "at-round-prompt-body",
-              promptOpen ? "is-expanded" : "is-collapsed",
-            ].join(" ")}
-          >
-            {summary.promptText}
-          </div>
           <button
             aria-expanded={promptOpen}
             className="at-round-prompt-toggle"
@@ -158,6 +150,14 @@ export function RoundMarker({
               {promptActionLabel}
             </span>
           </button>
+          <div
+            className={[
+              "at-round-prompt-body",
+              promptOpen ? "is-expanded" : "is-collapsed",
+            ].join(" ")}
+          >
+            {summary.promptText}
+          </div>
         </div>
       ) : (
         <div className="at-round-marker-title">{summary.title}</div>

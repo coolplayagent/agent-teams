@@ -5101,7 +5101,12 @@ describe("MessageTimeline", () => {
     );
     const action = marker?.querySelector(".at-round-marker-intent-action");
     expect(action?.textContent).toBe("Expand");
-    expect(marker?.querySelector(".at-round-prompt-body")).toHaveClass("is-collapsed");
+    const collapsedBody = marker?.querySelector(".at-round-prompt-body");
+    expect(collapsedBody).toHaveClass("is-collapsed");
+    expect(
+      (toggle as Element).compareDocumentPosition(collapsedBody as Element) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
 
     fireEvent.click(toggle as Element);
 

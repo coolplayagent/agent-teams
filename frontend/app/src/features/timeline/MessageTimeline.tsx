@@ -243,6 +243,12 @@ export function MessageTimeline({
     null,
   );
   const pendingRoundNavigationRef = useRef<PendingRoundNavigation | null>(null);
+  const pendingInteractionAnchorRef = useRef<PendingInteractionAnchor | null>(
+    null,
+  );
+  const interactionResizePendingRef = useRef(false);
+  const interactionSettleFrameRef = useRef<number | null>(null);
+  const [interactionBottomSpacer, setInteractionBottomSpacer] = useState(0);
   const scrollScopeKey = timelineScrollScopeKey(
     sessionId,
     variant,
@@ -845,6 +851,33 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
     !roundsQuery.isLoading &&
     !roundsQuery.isError &&
     railRounds.length > 0;
+  const scheduleInteractionAnchorRelease = useCallback((
+    anchor: PendingInteractionAnchor,
+  ) => {
+    if (interactionSettleFrameRef.current !== null) {
+      window.cancelAnimationFrame(interactionSettleFrameRef.current);
+    }
+    interactionSettleFrameRef.current = window.requestAnimationFrame(() => {
+      interactionSettleFrameRef.current = window.requestAnimationFrame(() => {
+        interactionSettleFrameRef.current = null;
+        if (pendingInteractionAnchorRef.current !== anchor) {
+          return;
+        }
+        interactionResizePendingRef.current = false;
+        const container = parentRef.current;
+        setInteractionBottomSpacer((current) =>
+          container === null
+            ? 0
+            : requiredTimelineInteractionSpacer(container, current)
+        );
+      });
+    });
+  }, []);
+  useEffect(() => () => {
+    if (interactionSettleFrameRef.current !== null) {
+      window.cancelAnimationFrame(interactionSettleFrameRef.current);
+    }
+  }, []);
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
@@ -852,6 +885,18 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
     estimateSize: (index) => estimateRowSize(rows[index]),
     overscan: 8,
   });
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) => {
+    const pendingInteractionAnchor = pendingInteractionAnchorRef.current;
+    if (
+      pendingInteractionAnchor !== null &&
+      pendingInteractionAnchor.scopeKey === scrollScopeKey &&
+      item.key === pendingInteractionAnchor.rowKey
+    ) {
+      scheduleInteractionAnchorRelease(pendingInteractionAnchor);
+      return false;
+    }
+    return item.start < (instance.scrollOffset ?? 0);
+  };
   const virtualItems = virtualizer.getVirtualItems();
   const renderedVirtualItems = virtualItems.length > 0
     ? virtualItems
@@ -933,6 +978,9 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
       ) {
         return;
       }
+      if (!interactionResizePendingRef.current) {
+        pendingInteractionAnchorRef.current = null;
+      }
     } else {
       pendingProgrammaticScrollRef.current = null;
     }
@@ -966,10 +1014,16 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
         );
       }
       hydrateCurrentViewportRows(container);
+      if (!interactionResizePendingRef.current && interactionBottomSpacer > 0) {
+        setInteractionBottomSpacer(
+          requiredTimelineInteractionSpacer(container, interactionBottomSpacer),
+        );
+      }
     }
   }, [
     captureCurrentTimelineScrollSnapshot,
     hydrateCurrentViewportRows,
+    interactionBottomSpacer,
     rows,
     scrollScopeKey,
     visible,
@@ -979,22 +1033,59 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
     if (!(target instanceof Element)) {
       return;
     }
-    if (
-      target.closest(
-        ".at-message-thinking-summary, .at-message-tool-summary, .at-processed-group-summary, .at-round-prompt-toggle",
-      ) === null
-    ) {
+    const disclosureControl = target.closest<HTMLElement>(
+      ".at-message-thinking-summary, .at-message-tool-summary, .at-processed-group-summary, .at-round-prompt-toggle",
+    );
+    if (disclosureControl === null) {
+      pendingInteractionAnchorRef.current = null;
+      interactionResizePendingRef.current = false;
       return;
     }
     const container = parentRef.current;
     if (container !== null) {
+      const row = disclosureControl.closest<HTMLElement>(
+        ".at-timeline-row[data-row-key]",
+      );
+      const rowKey = row?.dataset.rowKey;
+      if (row !== null && rowKey !== undefined) {
+        if (interactionSettleFrameRef.current !== null) {
+          window.cancelAnimationFrame(interactionSettleFrameRef.current);
+          interactionSettleFrameRef.current = null;
+        }
+        const initialScrollTop = container.scrollTop;
+        const nextBottomSpacer = Math.max(
+          interactionBottomSpacer,
+          container.clientHeight,
+        );
+        interactionResizePendingRef.current = true;
+        const interactionAnchor: PendingInteractionAnchor = {
+          control: disclosureControl,
+          controlViewportTop: disclosureControl.getBoundingClientRect().top,
+          rowKey,
+          scopeKey: scrollScopeKey,
+        };
+        pendingInteractionAnchorRef.current = interactionAnchor;
+        const virtualContent = container.querySelector<HTMLElement>(
+          ".at-timeline-virtual",
+        );
+        if (virtualContent !== null) {
+          virtualContent.style.height = `${timelineHeight + nextBottomSpacer}px`;
+          syncTimelineScrollPosition(container, initialScrollTop);
+        }
+        setInteractionBottomSpacer(nextBottomSpacer);
+      }
       scrollSnapshotRef.current = captureCurrentTimelineScrollSnapshot(
         container,
         true,
         true,
       );
     }
-  }, [captureCurrentTimelineScrollSnapshot]);
+  }, [
+    captureCurrentTimelineScrollSnapshot,
+    interactionBottomSpacer,
+    scrollScopeKey,
+    timelineHeight,
+  ]);
   const handleRoundSelect = useCallback((runId: string) => {
     const rowIndex = rows.findIndex((row) => row.runId === runId);
     const row = rows[rowIndex];
@@ -1169,6 +1260,9 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
       }
       scrollSnapshotRef.current =
         scrollSnapshotsByScopeRef.current.get(scrollScopeKey) ?? null;
+      pendingInteractionAnchorRef.current = null;
+      interactionResizePendingRef.current = false;
+      setInteractionBottomSpacer(0);
       setNewContentAvailable(false);
     }
     const container = parentRef.current;
@@ -1256,6 +1350,22 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
           }
         : captureCurrentTimelineScrollSnapshot(container);
     }
+    const interactionScrollTop = restorePendingInteractionAnchor(
+      container,
+      pendingInteractionAnchorRef,
+      scrollScopeKey,
+    );
+    if (interactionScrollTop !== null) {
+      pendingProgrammaticScrollRef.current = {
+        scopeKey: scrollScopeKey,
+        scrollTop: interactionScrollTop,
+      };
+      scrollSnapshotRef.current = captureCurrentTimelineScrollSnapshot(
+        container,
+        true,
+        true,
+      );
+    }
     if (!scopeRestorePending) {
       rememberTimelineScopeValue(
         contentSignaturesByScrollScopeRef.current,
@@ -1278,9 +1388,16 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
       scrollSnapshotRef.current,
     );
     hydrateCurrentViewportRows(container);
+    if (!interactionResizePendingRef.current && interactionBottomSpacer > 0) {
+      setInteractionBottomSpacer(
+        requiredTimelineInteractionSpacer(container, interactionBottomSpacer),
+      );
+    }
   }, [
     captureCurrentTimelineScrollSnapshot,
+    expandedDisclosureIds,
     hydrateCurrentViewportRows,
+    interactionBottomSpacer,
     rows,
     scrollScopeKey,
     timelineHeight,
@@ -1355,7 +1472,7 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
       >
         <div
           className="at-timeline-virtual"
-          style={{ height: `${timelineHeight}px` }}
+          style={{ height: `${timelineHeight + interactionBottomSpacer}px` }}
         >
           {renderedVirtualItems.map((virtualItem) => {
             const row = rows[virtualItem.index];
@@ -1638,6 +1755,13 @@ interface PendingProgrammaticScroll {
   scrollTop: number;
 }
 
+interface PendingInteractionAnchor {
+  control: HTMLElement;
+  controlViewportTop: number;
+  rowKey: string;
+  scopeKey: string;
+}
+
 interface PendingRoundNavigation {
   rowKey: string;
   runId: string;
@@ -1876,6 +2000,49 @@ function syncTimelineScrollPosition(
   const nextScrollTop = clampScrollTop(container, scrollTop);
   container.scrollTop = nextScrollTop;
   return nextScrollTop;
+}
+
+function restorePendingInteractionAnchor(
+  container: HTMLElement,
+  pendingAnchorRef: { current: PendingInteractionAnchor | null },
+  scopeKey: string,
+): number | null {
+  const pending = pendingAnchorRef.current;
+  if (pending === null) {
+    return null;
+  }
+  if (
+    pending.scopeKey !== scopeKey ||
+    !pending.control.isConnected ||
+    pending.control.closest(".at-timeline") !== container
+  ) {
+    pendingAnchorRef.current = null;
+    return null;
+  }
+  if (findTimelineAnchorRow(container, pending.rowKey) === null) {
+    pendingAnchorRef.current = null;
+    return null;
+  }
+  const controlViewportTop = pending.control.getBoundingClientRect().top;
+  const delta = controlViewportTop - pending.controlViewportTop;
+  const nextScrollTop = Math.abs(delta) <= 0.5
+    ? container.scrollTop
+    : syncTimelineScrollPosition(container, container.scrollTop + delta);
+  return scrollMetric(nextScrollTop);
+}
+
+function requiredTimelineInteractionSpacer(
+  container: HTMLElement,
+  currentSpacer: number,
+): number {
+  const naturalScrollHeight = Math.max(
+    container.clientHeight,
+    container.scrollHeight - currentSpacer,
+  );
+  const naturalMaxScrollTop = naturalScrollHeight - container.clientHeight;
+  return scrollMetric(
+    Math.max(0, container.scrollTop - naturalMaxScrollTop),
+  );
 }
 
 function timelineScrollAnchorFromVirtualItems(

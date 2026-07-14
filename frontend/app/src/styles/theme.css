@@ -1440,6 +1440,7 @@ body {
   min-height: 0;
   height: 100%;
   overflow: auto;
+  overflow-anchor: none;
   padding: 18px 26px 12px;
 }
 

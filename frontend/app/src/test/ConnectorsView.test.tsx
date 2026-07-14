@@ -532,6 +532,46 @@ describe("ConnectorsView", () => {
     );
   });
 
+  it("keeps required gateway feedback localized inside the connector dialog", async () => {
+    useUiStore.setState({ language: "zh-CN" });
+    listConnectorsMock.mockResolvedValue({
+      summary: {
+        connected: 0,
+        disabled: 0,
+        error: 0,
+        needs_config: 1,
+        total: 1,
+      },
+      items: [
+        {
+          account_count: 0,
+          auth_type: "api_token",
+          capabilities: ["messages"],
+          category: "im",
+          connector_id: "discord",
+          description: "Connect Discord.",
+          display_name: "Discord",
+          enabled_count: 0,
+          last_activity_at: null,
+          last_error: null,
+          provider: "discord",
+          status: "needs_config",
+        },
+      ],
+    });
+
+    renderView();
+    fireEvent.click(await screen.findByTestId("connector-action-discord"));
+    const dialog = await screen.findByRole("dialog", { name: "Discord" });
+    fireEvent.click(
+      await within(dialog).findByRole("button", { name: "保存" }),
+    );
+
+    expect(await within(dialog).findByText("此字段为必填项。")).toBeVisible();
+    expect(within(dialog).queryByText("Please enter Token")).not.toBeInTheDocument();
+    expect(createDiscordGatewayAccountMock).not.toHaveBeenCalled();
+  });
+
   it("opens a real Xiaoluban account editor and creates an account", async () => {
     listConnectorsMock.mockResolvedValue({
       summary: {

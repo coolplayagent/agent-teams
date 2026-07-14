@@ -218,7 +218,12 @@ export function GatewayConnectorEditor({
             <Form.Item
               label={t("connectorsGatewayDisplayName")}
               name="displayName"
-              rules={[{ required: true }]}
+              rules={[
+                {
+                  message: t("settingsHooksFieldRequired"),
+                  required: true,
+                },
+              ]}
             >
               <Input />
             </Form.Item>
@@ -230,7 +235,12 @@ export function GatewayConnectorEditor({
               }
               label={t("connectorsGatewayToken")}
               name="token"
-              rules={[{ required: selectedAccount === null }]}
+              rules={[
+                {
+                  message: t("settingsHooksFieldRequired"),
+                  required: selectedAccount === null,
+                },
+              ]}
             >
               <Input.Password autoComplete="new-password" />
             </Form.Item>
@@ -262,7 +272,12 @@ export function GatewayConnectorEditor({
             <Form.Item
               label={t("settingsTriggersWorkspace")}
               name="workspaceId"
-              rules={[{ required: true }]}
+              rules={[
+                {
+                  message: t("settingsTriggersWorkspaceRequired"),
+                  required: true,
+                },
+              ]}
             >
               <Select
                 options={(workspacesQuery.data ?? []).map((workspace) => ({

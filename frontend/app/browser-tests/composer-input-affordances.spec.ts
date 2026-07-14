@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { createServer as createViteServer } from "vite";
 
 import {
   captureStableElementScreenshot,
@@ -141,6 +142,50 @@ test("shows configured voice input as disabled when runtime support is missing",
   }
 });
 
+test("keeps wrapped slash selections fully visible across sticky groups", async ({
+  page,
+}) => {
+  const appServer = await serveFrontendSource();
+  const state: ComposerAffordanceState = {
+    activeRunId: null,
+    runCreateRequests: [],
+    speechConfigured: true,
+  };
+  try {
+    await installVoiceRuntimeSupport(page);
+    await installShellState(page);
+    await installMockEventSource(page);
+    const unhandledApiRoutes: string[] = [];
+    await mockShellApi(page, appServer.url, unhandledApiRoutes, {
+      handleRequest: (context) => handleComposerAffordanceApi(context, state),
+      sessionTitle: "TS composer wrapped menu navigation",
+    });
+
+    await page.setViewportSize({ height: 768, width: 1024 });
+    await page.goto(`${appServer.url}/`);
+    await waitForAppShell(page);
+
+    const prompt = page.getByRole("combobox", { name: "Prompt" });
+    await prompt.fill("/");
+    const menu = page.getByLabel("Prompt suggestions");
+    await expect(menu).toBeVisible();
+    await expect(page.getByRole("option")).toHaveCount(13);
+
+    await prompt.press("ArrowUp");
+    await expect(page.getByRole("option", { selected: true }))
+      .toContainText("/skill-02");
+    await expectActiveMentionFullyVisible(page);
+
+    await prompt.press("ArrowDown");
+    await expect(page.getByRole("option", { selected: true }))
+      .toContainText("/command-00");
+    await expectActiveMentionFullyVisible(page);
+    expectNoUnhandledApiRoutes(unhandledApiRoutes);
+  } finally {
+    await appServer.close();
+  }
+});
+
 test("keeps the contextual composer and primary action inside supported viewports", async ({
   page,
 }) => {
@@ -235,6 +280,21 @@ async function handleComposerAffordanceApi(
       language: "en-US",
       stt_profile_name: state.speechConfigured ? "browser-stt" : null,
       supported_models: ["browser-stt"],
+    });
+    return true;
+  }
+  if (context.method === "GET" && context.path === "/system/commands:catalog") {
+    await context.fulfillJson({
+      app_commands: Array.from({ length: 24 }, (_, index) => ({
+        aliases: [],
+        description: `Browser command ${index}`,
+        discovery_source: "app",
+        name: `command-${String(index).padStart(2, "0")}`,
+        scope: "app",
+        source_path: `C:/commands/command-${index}.md`,
+        template: `Run browser command ${index}`,
+      })),
+      workspaces: [],
     });
     return true;
   }
@@ -362,7 +422,68 @@ function roleOptions(): Record<string, unknown> {
       roleOption("Writer", "Writer", "Writes browser fixtures"),
       roleOption("Reviewer", "Reviewer", "Reviews browser fixtures"),
     ],
+    skills: Array.from({ length: 3 }, (_, index) => ({
+      description: `Browser skill ${index}`,
+      name: `skill-${String(index).padStart(2, "0")}`,
+      ref: `user:skill-${String(index).padStart(2, "0")}`,
+      source: "user",
+    })),
     subagent_roles: [],
+  };
+}
+
+async function expectActiveMentionFullyVisible(page: Page): Promise<void> {
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const list = document.querySelector<HTMLElement>(
+          ".at-prompt-mention-menu-list",
+        );
+        const active = list?.querySelector<HTMLElement>(
+          '[role="option"][aria-selected="true"]',
+        );
+        if (list === null || active === null || active === undefined) {
+          return false;
+        }
+        const listRect = list.getBoundingClientRect();
+        const activeRect = active.getBoundingClientRect();
+        const stickyHeaderHeight = Array.from(
+          list.querySelectorAll<HTMLElement>(".at-prompt-mention-group-label"),
+        ).reduce(
+          (height, label) => Math.max(height, label.getBoundingClientRect().height),
+          0,
+        );
+        return (
+          activeRect.top >= listRect.top + stickyHeaderHeight - 0.5 &&
+          activeRect.bottom <= listRect.bottom + 0.5
+        );
+      }),
+    )
+    .toBe(true);
+}
+
+async function serveFrontendSource(): Promise<{
+  close: () => Promise<void>;
+  url: string;
+}> {
+  const server = await createViteServer({
+    configFile: "vite.config.ts",
+    logLevel: "silent",
+    server: {
+      host: "127.0.0.1",
+      port: 0,
+      strictPort: false,
+    },
+  });
+  await server.listen();
+  const url = server.resolvedUrls?.local[0];
+  if (url === undefined) {
+    await server.close();
+    throw new Error("Expected the Vite browser test server to expose a URL.");
+  }
+  return {
+    close: () => server.close(),
+    url: url.replace(/\/$/, ""),
   };
 }
 

@@ -8,7 +8,10 @@ import {
 import { useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { PromptMentionMenu } from "../features/composer/PromptMentionMenu";
+import {
+  ensurePromptMentionOptionVisible,
+  PromptMentionMenu,
+} from "../features/composer/PromptMentionMenu";
 import type { PromptMentionOption } from "../features/composer/PromptMentions";
 import { useUiStore } from "../runtime/uiStore";
 
@@ -78,11 +81,6 @@ afterEach(() => {
 
 describe("PromptMentionMenu", () => {
   it("portals an upward-anchored bounded menu and scrolls the active option", async () => {
-    const scrollIntoView = vi.fn();
-    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
-      configurable: true,
-      value: scrollIntoView,
-    });
     const onSelect = vi.fn();
     const view = render(
       <MenuHarness activeIndex={0} onSelect={onSelect} options={options} />,
@@ -115,7 +113,10 @@ describe("PromptMentionMenu", () => {
     view.rerender(
       <MenuHarness activeIndex={3} onSelect={onSelect} options={options} />,
     );
-    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" }));
+    await waitFor(() =>
+      expect(screen.getByRole("option", { name: /@Writer/ }))
+        .toHaveAttribute("aria-selected", "true"),
+    );
 
     fireEvent.mouseDown(screen.getByRole("option", { name: /@Writer/ }));
     expect(onSelect).toHaveBeenCalledWith(options[3]);
@@ -189,24 +190,102 @@ describe("PromptMentionMenu", () => {
   });
 
   it("does not reposition the active option when its own list scrolls", async () => {
-    const scrollIntoView = vi.fn();
-    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
-      configurable: true,
-      value: scrollIntoView,
-    });
     render(
       <MenuHarness activeIndex={0} options={options} />,
     );
 
     const listbox = await screen.findByRole("listbox");
-    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
-    scrollIntoView.mockClear();
+    Object.defineProperty(listbox, "scrollTop", {
+      configurable: true,
+      value: 40,
+      writable: true,
+    });
 
     fireEvent.scroll(listbox);
 
-    expect(scrollIntoView).not.toHaveBeenCalled();
+    expect(listbox.scrollTop).toBe(40);
+  });
+
+  it("keeps wrapped selections below sticky group headings and inside the bottom edge", () => {
+    const list = document.createElement("div");
+    const group = document.createElement("div");
+    const heading = document.createElement("div");
+    const option = document.createElement("button");
+    heading.className = "at-prompt-mention-group-label";
+    group.append(heading, option);
+    list.append(group);
+    Object.defineProperties(list, {
+      clientHeight: { configurable: true, value: 200 },
+      scrollHeight: { configurable: true, value: 900 },
+      scrollTop: { configurable: true, value: 500, writable: true },
+    });
+    setRect(list, rect(100, 300));
+    setRect(heading, rect(100, 120));
+    const optionRect = vi.fn<() => DOMRect>();
+    Object.defineProperty(option, "getBoundingClientRect", {
+      configurable: true,
+      value: optionRect,
+    });
+
+    optionRect.mockReturnValue(rect(92, 122));
+    ensurePromptMentionOptionVisible(list, option);
+    expect(list.scrollTop).toBe(472);
+
+    optionRect.mockReturnValue(rect(288, 318));
+    ensurePromptMentionOptionVisible(list, option);
+    expect(list.scrollTop).toBe(490);
+  });
+
+  it("clamps wrapped selections at the first and last scroll boundary", () => {
+    const list = document.createElement("div");
+    const heading = document.createElement("div");
+    const option = document.createElement("button");
+    heading.className = "at-prompt-mention-group-label";
+    list.append(heading, option);
+    Object.defineProperties(list, {
+      clientHeight: { configurable: true, value: 200 },
+      scrollHeight: { configurable: true, value: 900 },
+      scrollTop: { configurable: true, value: 4, writable: true },
+    });
+    setRect(list, rect(100, 300));
+    setRect(heading, rect(100, 120));
+    const optionRect = vi.fn<() => DOMRect>();
+    Object.defineProperty(option, "getBoundingClientRect", {
+      configurable: true,
+      value: optionRect,
+    });
+
+    optionRect.mockReturnValue(rect(20, 50));
+    ensurePromptMentionOptionVisible(list, option);
+    expect(list.scrollTop).toBe(0);
+
+    list.scrollTop = 696;
+    optionRect.mockReturnValue(rect(390, 420));
+    ensurePromptMentionOptionVisible(list, option);
+    expect(list.scrollTop).toBe(700);
   });
 });
+
+function rect(top: number, bottom: number): DOMRect {
+  return {
+    bottom,
+    height: bottom - top,
+    left: 0,
+    right: 640,
+    top,
+    width: 640,
+    x: 0,
+    y: top,
+    toJSON: () => ({}),
+  };
+}
+
+function setRect(element: HTMLElement, value: DOMRect): void {
+  Object.defineProperty(element, "getBoundingClientRect", {
+    configurable: true,
+    value: () => value,
+  });
+}
 
 interface MenuHarnessProps {
   activeIndex: number;

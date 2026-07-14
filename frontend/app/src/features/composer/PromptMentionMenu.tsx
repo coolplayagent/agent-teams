@@ -12,6 +12,7 @@ import {
 import {
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -98,10 +99,11 @@ export function PromptMentionMenu({
     };
   }, [anchorRef, open]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    const list = listRef.current;
     const activeOption = activeOptionRef.current;
-    if (activeOption !== null && typeof activeOption.scrollIntoView === "function") {
-      activeOption.scrollIntoView({ block: "nearest" });
+    if (list !== null && activeOption !== null) {
+      ensurePromptMentionOptionVisible(list, activeOption);
     }
   }, [activeIndex, options, position]);
 
@@ -205,6 +207,36 @@ export function PromptMentionMenu({
 
 export function promptMentionOptionId(menuId: string, index: number): string {
   return `${menuId}-option-${index}`;
+}
+
+export function ensurePromptMentionOptionVisible(
+  list: HTMLDivElement,
+  option: HTMLButtonElement,
+): void {
+  const listRect = list.getBoundingClientRect();
+  const optionRect = option.getBoundingClientRect();
+  const stickyHeaderHeight = Array.from(
+    list.querySelectorAll<HTMLElement>(".at-prompt-mention-group-label"),
+  ).reduce(
+    (height, label) => Math.max(height, label.getBoundingClientRect().height),
+    0,
+  );
+  const visibleTop = listRect.top + stickyHeaderHeight;
+  const visibleBottom = listRect.bottom;
+  let delta = 0;
+  if (optionRect.top < visibleTop) {
+    delta = optionRect.top - visibleTop;
+  } else if (optionRect.bottom > visibleBottom) {
+    delta = optionRect.bottom - visibleBottom;
+  }
+  if (delta === 0) {
+    return;
+  }
+  const maxScrollTop = Math.max(0, list.scrollHeight - list.clientHeight);
+  list.scrollTop = Math.min(
+    maxScrollTop,
+    Math.max(0, list.scrollTop + delta),
+  );
 }
 
 function handlePromptMentionWheel(event: WheelEvent, list: HTMLDivElement) {

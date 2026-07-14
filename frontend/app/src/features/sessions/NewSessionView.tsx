@@ -1,14 +1,18 @@
-import {
-  App,
-  Button,
-  Popover,
-  Select,
-  Tooltip,
-  Typography,
-} from "antd";
+import { App, Button, Input, Popover, Select, Tooltip, Typography } from "antd";
 import { Sender } from "@ant-design/x";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Folder, Plus, Send } from "lucide-react";
+import {
+  Bug,
+  Folder,
+  Hammer,
+  PencilLine,
+  Plus,
+  SearchCode,
+  Send,
+  ShieldCheck,
+  Sparkles,
+  type LucideIcon,
+} from "lucide-react";
 import type { ClipboardEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -26,7 +30,6 @@ import type {
   RunCreateRequest,
   RunThinkingConfig,
   SessionRecord,
-  ThinkingEffort,
   WorkspaceRecord,
 } from "../../api/contracts";
 import { useTranslations, type Translate } from "../../i18n";
@@ -46,6 +49,7 @@ import {
 import { PromptMentionMenu } from "../composer/PromptMentionMenu";
 import { resolveComposerPromptSubmission } from "../composer/promptSubmission";
 import { buildComposerQuickActionOptions } from "../composer/composerQuickActions";
+import { ComposerRunControls } from "../composer/ComposerRunControls";
 import {
   GENERAL_RUN_PREFERENCES_QUERY_KEY,
   persistThinkingState,
@@ -54,10 +58,6 @@ import {
   updateThinkingState,
 } from "../composer/runPreferences";
 import { useComposerMentionController } from "../composer/useComposerMentionController";
-import {
-  NewSessionRunSettings,
-  type NewSessionMode,
-} from "./NewSessionRunSettings";
 import "../composer/Composer.css";
 import "./NewSessionView.css";
 
@@ -79,7 +79,6 @@ interface NewSessionProgress {
 
 interface NewSessionViewProps {
   initialWorkspaceId: string | null;
-  onCancel: () => void;
   onCreated: (
     session: SessionRecord,
     run: RunCreateResponse | null,
@@ -90,7 +89,6 @@ interface NewSessionViewProps {
 
 export function NewSessionView({
   initialWorkspaceId,
-  onCancel,
   onCreated,
   workspaces,
 }: NewSessionViewProps) {
@@ -99,13 +97,16 @@ export function NewSessionView({
   const t = useTranslations();
   const [workspaceId, setWorkspaceId] = useState(initialWorkspaceId ?? "");
   const [modelProfile, setModelProfile] = useState<string | null>(null);
-  const [sessionMode, setSessionMode] = useState<NewSessionMode>("normal");
+  const [sessionMode, setSessionMode] = useState<"normal" | "orchestration">(
+    "normal",
+  );
   const [roleId, setRoleId] = useState<string | null>(null);
   const [orchestrationPresetId, setOrchestrationPresetId] = useState<
     string | null
   >(null);
   const [targetRoleId, setTargetRoleId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
+  const [titleMenuOpen, setTitleMenuOpen] = useState(false);
   const [promptText, setPromptText] = useState("");
   const [promptAttachments, setPromptAttachments] = useState<
     PromptAttachment[]
@@ -187,6 +188,7 @@ export function NewSessionView({
     () => buildComposerQuickActionOptions(t, thinking.enabled),
     [t, thinking.enabled],
   );
+  const quickTasks = useMemo(() => newSessionQuickTasks(t), [t]);
   const mentions = useComposerMentionController({
     active: true,
     draft: promptText,
@@ -224,33 +226,10 @@ export function NewSessionView({
     targetRoleId: effectiveTargetRoleId,
     t,
   });
-  const displayedComposerStatus =
-    attachmentValidationMessage || composerStatus;
+  const displayedComposerStatus = attachmentValidationMessage || composerStatus;
   const selectedWorkspaceLabel =
     workspaceOptions.find((option) => option.value === workspaceId)?.label ??
     t("sidebarWorkspaces");
-  const selectedModeLabel =
-    sessionMode === "normal" ? t("composerNormal") : t("composerOrchestration");
-  const selectedTopologyLabel =
-    sessionMode === "normal"
-      ? (roleOptions.find((option) => option.value === roleId)?.label ??
-        t("composerRole"))
-      : (orchestrationOptions.find(
-          (option) => option.value === orchestrationPresetId,
-        )?.label ?? t("composerPreset"));
-  const selectedModelLabel =
-    profileOptions.find((option) => option.value === modelProfile)?.label ??
-    t("composerDefault");
-  const selectedThinkingLabel = thinking.enabled
-    ? (thinkingEffortOptions(t).find(
-        (option) => option.value === thinking.effort,
-      )?.label ?? t("composerThinking"))
-    : t("composerThinkingDisabled");
-  const runSettingsSummary = [
-    `${selectedModeLabel} · ${selectedTopologyLabel}`,
-    selectedModelLabel,
-    selectedThinkingLabel,
-  ].join(" · ");
 
   useEffect(() => {
     if (!workspaceId && workspaceOptions.length > 0) {
@@ -330,7 +309,7 @@ export function NewSessionView({
         return { promptText: "", run: null, session };
       }
       if (shellSafetyPolicyEnabled === null) {
-        throw new Error("Run preferences are not ready.");
+        throw new Error(t("newSessionRunPreferencesNotReady"));
       }
       const resolvedPrompt = await resolveComposerPromptSubmission({
         promptText: effectivePromptText,
@@ -466,41 +445,55 @@ export function NewSessionView({
     <section
       aria-label={t("sidebarNewSession")}
       className="at-new-session-view"
-      onKeyDown={(event) => {
-        if (event.key === "Escape" && !createMutation.isPending) {
-          onCancel();
-        }
-      }}
     >
       <div className="at-new-session-stage">
-        <header className="at-new-session-header">
-          <Button
-            aria-label={t("workspaceBackToChat")}
-            icon={<ArrowLeft size={16} />}
-            onClick={onCancel}
-            type="text"
-          />
-          <div>
-            <Typography.Title level={2}>
-              {t("sidebarNewSession")}
-            </Typography.Title>
-            <Typography.Text type="secondary">
-              {t("composerPromptPlaceholder")}
-            </Typography.Text>
+        <div className="at-new-session-empty-state">
+          <div aria-hidden className="at-new-session-mark">
+            <Sparkles size={22} strokeWidth={1.7} />
           </div>
-        </header>
+          <Typography.Title className="at-new-session-context-title" level={2}>
+            {t("newSessionWorkspaceHeading", {
+              workspace: selectedWorkspaceLabel,
+            })}
+          </Typography.Title>
 
-        {queryError !== null && queryError !== undefined ? (
-          <Typography.Text
-            className="at-new-session-error"
-            role="alert"
-            type="danger"
+          {queryError !== null && queryError !== undefined ? (
+            <Typography.Text
+              className="at-new-session-error"
+              role="alert"
+              type="danger"
+            >
+              {queryError instanceof Error
+                ? queryError.message
+                : t("sidebarCreateFailed")}
+            </Typography.Text>
+          ) : null}
+
+          <div
+            aria-label={t("newSessionQuickTasks")}
+            className="at-new-session-quick-grid"
+            role="group"
           >
-            {queryError instanceof Error
-              ? queryError.message
-              : t("sidebarCreateFailed")}
-          </Typography.Text>
-        ) : null}
+            {quickTasks.map((task) => {
+              const Icon = task.icon;
+              return (
+                <button
+                  className="at-new-session-quick-card"
+                  key={task.id}
+                  onClick={() => {
+                    setPromptText(task.prompt);
+                    mentions.setQuickMenuOpen(false);
+                    queueMicrotask(() => mentions.inputRef.current?.focus());
+                  }}
+                  type="button"
+                >
+                  <Icon aria-hidden size={17} strokeWidth={1.8} />
+                  <span>{task.title}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
         <ComposerSurface
           actions={
@@ -524,9 +517,7 @@ export function NewSessionView({
                   (hasInitialInput && shellSafetyPolicyEnabled === null)
                 }
                 htmlType="submit"
-                icon={
-                  hasInitialInput ? <Send size={16} /> : <Plus size={16} />
-                }
+                icon={hasInitialInput ? <Send size={16} /> : <Plus size={16} />}
                 loading={createMutation.isPending}
                 shape="circle"
                 type="primary"
@@ -534,11 +525,6 @@ export function NewSessionView({
             </Tooltip>
           }
           className="at-new-session-composer"
-          onKeyDown={(event) => {
-            if (event.key === "Escape" && !createMutation.isPending) {
-              onCancel();
-            }
-          }}
           onSubmit={(event) => {
             event.preventDefault();
             submit();
@@ -600,34 +586,71 @@ export function NewSessionView({
                   </span>
                 </Button>
               </Popover>
-              <NewSessionRunSettings
-                generalConfigReady={generalConfigQuery.isSuccess}
-                modelProfile={modelProfile}
-                onModelProfileChange={setModelProfile}
-                onOrchestrationPresetChange={setOrchestrationPresetId}
+              <Popover
+                arrow={false}
+                content={
+                  <div className="at-new-session-title-menu">
+                    <Typography.Text strong>
+                      {t("newSessionNameOptional")}
+                    </Typography.Text>
+                    <Input
+                      allowClear
+                      aria-label={t("newSessionNameOptional")}
+                      onChange={(event) => setTitle(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setTitleMenuOpen(false);
+                        }
+                      }}
+                      value={title}
+                    />
+                  </div>
+                }
+                overlayClassName="at-composer-advanced-popover"
+                onOpenChange={setTitleMenuOpen}
+                open={titleMenuOpen}
+                placement="topLeft"
+                trigger="click"
+              >
+                <Tooltip title={t("newSessionNameOptional")}>
+                  <Button
+                    aria-label={t("newSessionNameOptional")}
+                    className="at-composer-plus-button at-new-session-title-button"
+                    icon={<PencilLine size={15} />}
+                    shape="circle"
+                    size="small"
+                    type="text"
+                  />
+                </Tooltip>
+              </Popover>
+              <ComposerRunControls
+                className="at-new-session-run-controls"
+                modelLoading={profilesQuery.isLoading}
+                modelOptions={profileOptions}
+                modelValue={modelProfile}
+                mode={sessionMode}
+                onModelChange={setModelProfile}
+                onModeChange={setSessionMode}
+                onPresetChange={setOrchestrationPresetId}
                 onRoleChange={setRoleId}
-                onSessionModeChange={setSessionMode}
-                onShellSafetyPolicyChange={setShellSafetyPolicyEnabled}
+                onShellSafetyChange={setShellSafetyPolicyEnabled}
                 onTargetRoleChange={setTargetRoleId}
                 onThinkingChange={updateThinking}
-                onTitleChange={setTitle}
                 onYoloChange={setYolo}
-                orchestrationLoading={orchestrationQuery.isLoading}
-                orchestrationOptions={orchestrationOptions}
-                orchestrationPresetId={orchestrationPresetId}
-                profileOptions={profileOptions}
-                profilesLoading={profilesQuery.isLoading}
-                roleId={roleId}
+                presetLoading={orchestrationQuery.isLoading}
+                presetOptions={orchestrationOptions}
+                presetValue={orchestrationPresetId}
+                roleLoading={rolesQuery.isLoading}
                 roleOptions={roleOptions}
-                rolesLoading={rolesQuery.isLoading}
-                runSettingsSummary={runSettingsSummary}
-                selectedModeLabel={selectedModeLabel}
-                sessionMode={sessionMode}
-                shellSafetyPolicyEnabled={shellSafetyPolicyEnabled}
-                targetRoleId={targetRoleId}
+                roleValue={roleId}
+                shellSafetyDisabled={!generalConfigQuery.isSuccess}
+                shellSafetyEnabled={shellSafetyPolicyEnabled === true}
+                targetRoleLoading={rolesQuery.isLoading}
                 targetRoleOptions={targetRoleOptions}
+                targetRoleValue={targetRoleId}
                 thinking={thinking}
-                title={title}
                 yolo={yolo}
               />
             </>
@@ -695,9 +718,7 @@ export function NewSessionView({
             hasError={Boolean(attachmentValidationMessage)}
             onRemove={(attachmentId) => {
               setPromptAttachments((current) =>
-                current.filter(
-                  (attachment) => attachment.id !== attachmentId,
-                ),
+                current.filter((attachment) => attachment.id !== attachmentId),
               );
             }}
           />
@@ -724,7 +745,7 @@ export function NewSessionView({
       mentions.inputRef.current?.focus();
     } catch (error) {
       setComposerStatus(
-        error instanceof Error ? error.message : "Failed to read pasted image.",
+        error instanceof Error ? error.message : t("composerImagePasteFailed"),
       );
     }
   }
@@ -743,7 +764,7 @@ export function NewSessionView({
       mentions.inputRef.current?.focus();
     } catch (error) {
       setComposerStatus(
-        error instanceof Error ? error.message : "Failed to read image attachment.",
+        error instanceof Error ? error.message : t("composerImagePasteFailed"),
       );
     }
   }
@@ -764,14 +785,38 @@ function appendComposerToken(draft: string, token: string): string {
   return /\s$/.test(draft) ? `${draft}${token}` : `${draft} ${token}`;
 }
 
-function thinkingEffortOptions(t: Translate): Array<{
-  label: string;
-  value: ThinkingEffort;
-}> {
+interface NewSessionQuickTask {
+  icon: LucideIcon;
+  id: "build" | "explore" | "fix" | "review";
+  prompt: string;
+  title: string;
+}
+
+function newSessionQuickTasks(t: Translate): NewSessionQuickTask[] {
   return [
-    { label: t("composerMinimal"), value: "minimal" },
-    { label: t("composerLow"), value: "low" },
-    { label: t("composerMedium"), value: "medium" },
-    { label: t("composerHigh"), value: "high" },
+    {
+      icon: SearchCode,
+      id: "explore",
+      prompt: t("newSessionQuickExplorePrompt"),
+      title: t("newSessionQuickExploreTitle"),
+    },
+    {
+      icon: Hammer,
+      id: "build",
+      prompt: t("newSessionQuickBuildPrompt"),
+      title: t("newSessionQuickBuildTitle"),
+    },
+    {
+      icon: ShieldCheck,
+      id: "review",
+      prompt: t("newSessionQuickReviewPrompt"),
+      title: t("newSessionQuickReviewTitle"),
+    },
+    {
+      icon: Bug,
+      id: "fix",
+      prompt: t("newSessionQuickFixPrompt"),
+      title: t("newSessionQuickFixTitle"),
+    },
   ];
 }

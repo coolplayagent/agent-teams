@@ -4,7 +4,14 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const appShellSource = readFileSync("src/features/shell/AppShell.tsx", "utf8");
-const composerSource = readFileSync("src/features/composer/Composer.tsx", "utf8");
+const composerSource = readFileSync(
+  "src/features/composer/Composer.tsx",
+  "utf8",
+);
+const composerRunControlsSource = readFileSync(
+  "src/features/composer/ComposerRunControls.tsx",
+  "utf8",
+);
 const currentSessionIndicatorSource = readFileSync(
   "src/features/shell/CurrentSessionIndicator.tsx",
   "utf8",
@@ -52,13 +59,18 @@ describe("workspace prompt shell parity", () => {
     expect(appShellSource).toContain('className="at-shell"');
     expect(appShellSource).toContain('className="at-body"');
     expect(appShellSource).toContain("<CurrentSessionIndicator");
-    expect(currentSessionIndicatorSource).toContain('className="at-session-title"');
+    expect(currentSessionIndicatorSource).toContain(
+      'className="at-session-title"',
+    );
     expect(currentSessionIndicatorSource).toContain("{label}");
     expect(currentSessionIndicatorSource).toContain("workspaceLabel");
   });
 
   it("keeps top bar, mode, token, and prompt controls in the React shell contract", () => {
-    expectOrdered(appShellSource, ["<CurrentSessionIndicator", 'className="at-topbar-right"']);
+    expectOrdered(appShellSource, [
+      "<CurrentSessionIndicator",
+      'className="at-topbar-right"',
+    ]);
     expectOrdered(topbarRightBlock(), [
       "handleLanguageToggle",
       "<MessageExportMenu",
@@ -68,15 +80,30 @@ describe("workspace prompt shell parity", () => {
 
     expect(composerSource).toContain('aria-label={t("composerPrompt")}');
     expect(composerSource).toContain("composerPromptPlaceholder");
-    expect(composerSource).toContain('className="at-session-mode-control"');
-    expect(composerSource).toContain('className="at-normal-root-role-select"');
-    expect(composerSource).toContain('className="at-orchestration-preset-select"');
-    expect(composerSource).toContain('className="at-role-select"');
-    expect(composerSource).toContain('className="at-model-profile-select"');
-    expect(composerSource).toContain('t("composerThinking")');
-    expect(composerSource).toContain('t("composerShellSafetyPolicy")');
-    expect(composerSource).toContain('t("composerShellSafetyShort")');
-    expect(composerSource).toContain('t("composerYolo")');
+    expect(composerSource).toContain("<ComposerRunControls");
+    expect(composerRunControlsSource).toContain(
+      'className="at-session-mode-control"',
+    );
+    expect(composerRunControlsSource).toContain(
+      'className="at-composer-role-select"',
+    );
+    expect(composerRunControlsSource).toContain(
+      'className="at-composer-preset-select"',
+    );
+    expect(composerRunControlsSource).toContain(
+      'className="at-composer-target-select"',
+    );
+    expect(composerRunControlsSource).toContain(
+      'className="at-composer-model-select"',
+    );
+    expect(composerRunControlsSource).toContain('t("composerThinking")');
+    expect(composerRunControlsSource).toContain(
+      't("composerShellSafetyPolicy")',
+    );
+    expect(composerRunControlsSource).toContain(
+      't("composerShellSafetyShort")',
+    );
+    expect(composerRunControlsSource).toContain('t("composerYolo")');
 
     expect(sessionTokenUsageSource).toContain('className="at-token-usage"');
     expect(sessionTokenUsageSource).toContain('t("tokenUsage")');
@@ -98,7 +125,9 @@ describe("workspace prompt shell parity", () => {
     expect(themeCss).toContain(".at-message-tool-summary");
     expect(themeCss).toContain(".streaming-cursor");
 
-    expect(messageTimelineSource).toMatch(/if \(!hasText\) \{[\s\S]*?return null;/);
+    expect(messageTimelineSource).toMatch(
+      /if \(!hasText\) \{[\s\S]*?return null;/,
+    );
     expect(messageTimelineSource).toContain('className="at-message-actions"');
     expect(messageTimelineSource).toContain("StreamingCursor");
     expect(markdownMessageSource).toContain("<ReactMarkdown");

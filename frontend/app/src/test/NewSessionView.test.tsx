@@ -17,7 +17,7 @@ import {
   type KeyboardEventHandler,
 } from "react";
 
-import type { SessionRecord } from "../api/contracts";
+import type { SessionRecord, WorkspaceRecord } from "../api/contracts";
 import { NewSessionView } from "../features/sessions/NewSessionView";
 import { useOptimisticRunStore } from "../runtime/optimisticRunStore";
 import { useUiStore } from "../runtime/uiStore";
@@ -179,7 +179,9 @@ describe("NewSessionView", () => {
     renderView(onCreated);
 
     await waitForReady();
-    openRunSettings();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Session name (optional)" }),
+    );
     fireEvent.change(
       screen.getByRole("textbox", { name: "Session name (optional)" }),
       {
@@ -329,8 +331,7 @@ describe("NewSessionView", () => {
     renderView(onCreated);
 
     await waitForReady();
-    openRunSettings();
-    fireEvent.click(screen.getByText("Orchestration"));
+    fireEvent.click(segmentedItem("Orchestration"));
     expect(
       screen.getByRole("combobox", { name: "Orchestration preset" }),
     ).toBeInTheDocument();
@@ -348,11 +349,13 @@ describe("NewSessionView", () => {
     expect(onCreated).toHaveBeenCalledWith(orchestratedSession, null, "");
   });
 
-  it("uses the shared composer surface and progressively discloses pre-create settings", async () => {
+  it("uses the shared composer surface with visible contextual run controls", async () => {
     renderView();
 
     await waitForReady();
-    const composer = document.querySelector(".at-new-session-composer.at-composer");
+    const composer = document.querySelector(
+      ".at-new-session-composer.at-composer",
+    );
     expect(composer).not.toBeNull();
     expect(composer?.querySelector(".at-composer-sender")).not.toBeNull();
     expect(composer?.querySelector(".at-composer-controls")).not.toBeNull();
@@ -366,6 +369,17 @@ describe("NewSessionView", () => {
       screen.queryByRole("textbox", { name: "Session name (optional)" }),
     ).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+    expect(screen.getByRole("group", { name: "Run settings" })).toBeVisible();
+    expect(screen.getByLabelText("Session mode")).toBeVisible();
+    expect(screen.getByRole("combobox", { name: "Root role" })).toBeVisible();
+    expect(
+      screen.getByRole("combobox", { name: "Model profile" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("combobox", { name: "Target role" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Shell safety policy")).toBeChecked();
+    expect(screen.getByLabelText("YOLO")).toBeChecked();
 
     fireEvent.click(
       screen.getByRole("button", { name: "Workspaces: Agent Teams" }),
@@ -377,29 +391,77 @@ describe("NewSessionView", () => {
       screen.getByRole("button", { name: "Workspaces: Agent Teams" }),
     );
 
-    openRunSettings();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Session name (optional)" }),
+    );
     expect(
-      screen.getByLabelText("Session mode"),
+      screen.getByRole("textbox", { name: "Session name (optional)" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Roles" })).toBeInTheDocument();
+
+    fireEvent.click(segmentedItem("Orchestration"));
     expect(
-      screen.getByRole("combobox", { name: "Model profile" }),
+      screen.getByRole("combobox", { name: "Orchestration preset" }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole("combobox", { name: "Initial task (optional)" }),
-    ).toBeVisible();
     expect(
       screen.getByRole("combobox", { name: "Target role" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("textbox", { name: "Session name (optional)" }),
-    ).toBeInTheDocument();
-    expect(screen.getByLabelText("Shell safety policy")).toBeChecked();
-    expect(screen.getByLabelText("YOLO")).toBeChecked();
+      screen.queryByRole("combobox", { name: "Root role" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("fills and focuses the shared prompt from a keyboard-activated shortcut", async () => {
+    renderView();
+
+    await waitForReady();
+    const shortcut = screen.getByRole("button", {
+      name: "Explore and understand the workspace",
+    });
+    shortcut.focus();
+    fireEvent.keyDown(shortcut, { key: "Enter" });
+    fireEvent.click(shortcut);
+
+    const prompt = screen.getByRole("combobox", {
+      name: "Initial task (optional)",
+    });
+    await waitFor(() => expect(prompt).toHaveFocus());
+    expect(prompt).toHaveValue(
+      "Explore this workspace and explain its architecture, important modules, and current development context.",
+    );
+    expect(api.createSession).not.toHaveBeenCalled();
+  });
+
+  it("updates workspace context without replacing the shared composer", async () => {
+    renderView(vi.fn(), [
+      workspace,
+      {
+        display_name: "Research",
+        root_path: "C:/work/research",
+        workspace_id: "workspace-research",
+      },
+    ]);
+
+    await waitForReady();
+    expect(
+      screen.getByRole("heading", {
+        name: "What should we work on in Agent Teams?",
+      }),
+    ).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Workspaces: Agent Teams" }),
+    );
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: "Workspaces" }));
+    fireEvent.click(await screen.findByText("Research"));
+
+    expect(
+      screen.getByRole("heading", {
+        name: "What should we work on in Research?",
+      }),
+    ).toBeVisible();
+    expect(screen.getByRole("group", { name: "Run settings" })).toBeVisible();
   });
 
   it("keeps the regular composer quick-action and slash-command interaction", async () => {
-    const onCancel = vi.fn();
     api.getCommandCatalog.mockResolvedValue({
       app_commands: [],
       workspaces: [
@@ -422,7 +484,7 @@ describe("NewSessionView", () => {
         },
       ],
     });
-    renderView(vi.fn(), onCancel);
+    renderView();
 
     await waitForReady();
     fireEvent.click(
@@ -439,7 +501,29 @@ describe("NewSessionView", () => {
 
     fireEvent.keyDown(prompt, { key: "Escape" });
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
-    expect(onCancel).not.toHaveBeenCalled();
+    expect(screen.getByRole("region", { name: "New session" })).toBeVisible();
+  });
+
+  it("closes local editing context without leaving the new-session page", async () => {
+    renderView();
+
+    await waitForReady();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Session name (optional)" }),
+    );
+    const titleInput = await screen.findByRole("textbox", {
+      name: "Session name (optional)",
+    });
+    fireEvent.keyDown(titleInput, { key: "Escape" });
+
+    expect(
+      screen.queryByRole("textbox", { name: "Session name (optional)" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", {
+        name: "What should we work on in Agent Teams?",
+      }),
+    ).toBeVisible();
   });
 
   it("submits pasted images through the same media pipeline as an active session", async () => {
@@ -503,7 +587,16 @@ describe("NewSessionView", () => {
   });
 });
 
-function renderView(onCreated = vi.fn(), onCancel = vi.fn()) {
+const workspace: WorkspaceRecord = {
+  workspace_id: "workspace-main",
+  root_path: "C:/work/agent-teams",
+  display_name: "Agent Teams",
+};
+
+function renderView(
+  onCreated = vi.fn(),
+  workspaces: WorkspaceRecord[] = [workspace],
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -513,15 +606,8 @@ function renderView(onCreated = vi.fn(), onCancel = vi.fn()) {
         <QueryClientProvider client={queryClient}>
           <NewSessionView
             initialWorkspaceId="workspace-main"
-            onCancel={onCancel}
             onCreated={onCreated}
-            workspaces={[
-              {
-                workspace_id: "workspace-main",
-                root_path: "C:/work/agent-teams",
-                display_name: "Agent Teams",
-              },
-            ]}
+            workspaces={workspaces}
           />
         </QueryClientProvider>
       </App>
@@ -529,14 +615,18 @@ function renderView(onCreated = vi.fn(), onCancel = vi.fn()) {
   );
 }
 
-function openRunSettings(): void {
-  fireEvent.click(
-    screen.getByRole("button", { name: /^Run settings:/ }),
-  );
+async function waitForReady(): Promise<void> {
+  await screen.findByRole("group", { name: "Run settings" });
+  await screen.findByRole("combobox", { name: "Model profile" });
 }
 
-async function waitForReady(): Promise<void> {
-  await screen.findByRole("button", {
-    name: /^Run settings:.*Main agent/,
-  });
+function segmentedItem(label: string): HTMLElement {
+  const element = screen
+    .getAllByText(label)
+    .map((candidate) => candidate.closest(".ant-segmented-item"))
+    .find((candidate) => candidate !== null);
+  if (element === undefined || element === null) {
+    throw new Error(`${label} segmented item was not rendered.`);
+  }
+  return element as HTMLElement;
 }

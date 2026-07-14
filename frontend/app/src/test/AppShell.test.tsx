@@ -231,11 +231,7 @@ vi.mock("../features/shell/CurrentSessionIndicator", () => ({
 }));
 
 vi.mock("../features/sessions/NewSessionView", () => ({
-  NewSessionView: ({ onCancel }: { onCancel: () => void }) => (
-    <section data-testid="new-session-view">
-      <button onClick={onCancel} type="button">Cancel new session</button>
-    </section>
-  ),
+  NewSessionView: () => <section data-testid="new-session-view" />,
 }));
 
 vi.mock("../features/shell/MessageExportMenu", () => ({
@@ -1390,9 +1386,6 @@ describe("AppShell", () => {
     expect(await screen.findByTestId("new-session-view")).toBeVisible();
     expect(runStreamControllerMock.clearRunStream).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByRole("button", { name: "Cancel new session" }));
-
-    expect(await screen.findByTestId("timeline")).toBeVisible();
   });
 
   it("detaches the active foreground stream before opening the workspace view", async () => {

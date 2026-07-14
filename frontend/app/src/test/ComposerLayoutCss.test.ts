@@ -12,6 +12,14 @@ const composerSurfaceSource = readFileSync(
   "src/features/composer/ComposerSurface.tsx",
   "utf8",
 );
+const runControlsSource = readFileSync(
+  "src/features/composer/ComposerRunControls.tsx",
+  "utf8",
+);
+const newSessionSource = readFileSync(
+  "src/features/sessions/NewSessionView.tsx",
+  "utf8",
+);
 
 describe("contextual composer layout", () => {
   it("keeps the prompt primary and the action rail fixed inside the composer", () => {
@@ -31,18 +39,30 @@ describe("contextual composer layout", () => {
     );
   });
 
-  it("moves infrequent configuration into a dense contextual surface", () => {
-    expect(composerSurfaceSource).toContain(
-      'overlayClassName="at-composer-advanced-popover"',
+  it("keeps runtime settings visible through one shared contextual control rail", () => {
+    expect(composerSource).toContain("<ComposerRunControls");
+    expect(newSessionSource).toContain("<ComposerRunControls");
+    expect(runControlsSource).toContain('role="group"');
+    expect(runControlsSource).toContain(
+      'aria-label={t("composerSessionMode")}',
+    );
+    expect(runControlsSource).toContain(
+      'aria-label={t("composerModelProfile")}',
+    );
+    expect(runControlsSource).toContain('ariaLabel={t("composerThinking")}');
+    expect(runControlsSource).toContain(
+      'ariaLabel={t("composerShellSafetyPolicy")}',
+    );
+    expect(runControlsSource).toContain('label={t("composerYolo")}');
+    expect(composerSurfaceSource).not.toContain("ComposerRunSettingsPopover");
+    expect(composerCss).toMatch(
+      /\.at-composer \.at-composer-run-controls\s*{[\s\S]*?display:\s*flex;[\s\S]*?min-width:\s*0;/,
     );
     expect(composerCss).toMatch(
-      /\.at-composer-advanced-panel\s*{[\s\S]*?width:\s*min\(680px, calc\(100vw - 50px\)\);/,
+      /\.at-composer \.at-composer-topology-controls,[\s\S]*?\.at-composer \.at-composer-execution-controls\s*{[\s\S]*?display:\s*flex;/,
     );
     expect(composerCss).toMatch(
-      /\.at-composer-advanced-panel \.at-composer-control-set\s*{[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/,
-    );
-    expect(composerCss).toMatch(
-      /@media \(max-width:\s*720px\)[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/,
+      /@container composer \(max-width: 560px\)[\s\S]*?\.at-composer \.at-composer-topology-controls\s*{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/,
     );
   });
 
@@ -54,28 +74,20 @@ describe("contextual composer layout", () => {
       /\.at-composer \.at-prompt-attachment\s*{[\s\S]*?flex:\s*0 0 54px;[\s\S]*?max-width:\s*54px;/,
     );
     expect(composerCss).toMatch(
-      /@container composer \(max-width:\s*380px\)[\s\S]*?\.at-composer \.at-composer-summary-copy,[\s\S]*?display:\s*none;/,
+      /\.at-composer \.at-composer-toolbar-start\s*{[\s\S]*?min-width:\s*0;[\s\S]*?overflow:\s*hidden;/,
     );
     expect(composerCss).toContain("@media (prefers-reduced-motion: reduce)");
   });
 
-  it("uses one intrinsic run-settings summary in split-width composers", () => {
-    expect(composerSource).toContain("composerTopologySummary");
-    expect(composerSource).toContain("composerRunSettingsSummary");
-    expect(composerSource).toContain(
-      "abbreviateComposerModeLabel(composerModeLabel)",
+  it("scopes target role to orchestration without duplicating runtime controls", () => {
+    expect(runControlsSource).toMatch(
+      /mode === "normal"[\s\S]*?at-composer-role-select[\s\S]*?at-composer-preset-select/,
     );
-    expect(composerSource).toContain("summary={composerRunSettingsSummary}");
-    expect(composerSource).toContain("composerConversationSettings");
-    expect(composerSource).toContain("composerExecutionSettings");
-    expect(composerSource).not.toContain("at-composer-model-summary");
-    expect(composerSource).not.toContain("at-composer-state-button");
-    expect(composerCss).toMatch(
-      /\.at-composer \.at-composer-run-settings-summary\s*{[\s\S]*?flex:\s*0 0 auto;[\s\S]*?max-width:\s*min\(460px, 58cqw\);/,
+    expect(runControlsSource).toMatch(
+      /mode === "orchestration"[\s\S]*?at-composer-target-select/,
     );
-    expect(composerCss).toMatch(
-      /@container composer \(max-width:\s*680px\)[\s\S]*?\.at-composer \.at-composer-summary-full\s*{[\s\S]*?display:\s*none;[\s\S]*?\.at-composer \.at-composer-summary-compact\s*{[\s\S]*?display:\s*inline;/,
-    );
+    expect(composerSource).not.toContain("ComposerRunSettingsPopover");
+    expect(newSessionSource).not.toContain("NewSessionRunSettings");
   });
 
   it("renders suggestions as a bounded floating surface", () => {

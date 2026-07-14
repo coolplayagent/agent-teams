@@ -31,7 +31,7 @@ describe("NewSessionView V1 parity contract", () => {
 
   it("keeps run-only controls out of the session topology payload", () => {
     const topologyStart = source.indexOf("if (!progress.topologyReady)");
-    const firstRunStart = source.indexOf("const normalizedPrompt");
+    const firstRunStart = source.indexOf("const session = progress.session");
     expect(topologyStart).toBeGreaterThanOrEqual(0);
     expect(firstRunStart).toBeGreaterThan(topologyStart);
     const topologySection = source.slice(topologyStart, firstRunStart);

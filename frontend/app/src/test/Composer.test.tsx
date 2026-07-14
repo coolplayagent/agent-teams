@@ -1,6 +1,13 @@
 import { App as AntApp, ConfigProvider } from "antd";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   forwardRef,
@@ -27,10 +34,7 @@ import {
   updateSessionTopology,
   updateSessionNormalModelProfile,
 } from "../api/client";
-import {
-  createSpeechSttWebSocketUrl,
-  fetchSpeechConfig,
-} from "../api/speech";
+import { createSpeechSttWebSocketUrl, fetchSpeechConfig } from "../api/speech";
 import { Composer } from "../features/composer/Composer";
 import type {
   RecoverySnapshot,
@@ -202,18 +206,21 @@ describe("Composer", () => {
       "What would you like the agents to do?",
     );
     await openAdvancedControls();
-    expect(screen.getAllByText("Mode")).not.toHaveLength(0);
-    expect(screen.getByText("Role")).toBeInTheDocument();
-    expect(screen.getByText("Target")).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Run settings" })).toBeVisible();
     expect(selectRoot("Root role")).toBeInTheDocument();
     expect(
       screen.queryByRole("combobox", { name: "Orchestration preset" }),
     ).not.toBeInTheDocument();
-    expect(selectRoot("Target role")).toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: "Shell safety policy" }))
-      .toBeChecked();
+    expect(
+      screen.queryByRole("combobox", { name: "Target role" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("checkbox", { name: "Shell safety policy" }),
+    ).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "YOLO" })).toBeChecked();
-    expect(screen.getByRole("switch", { name: "Thinking" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("switch", { name: "Thinking" }),
+    ).toBeInTheDocument();
     expect(
       screen.queryByRole("combobox", { name: "Thinking effort" }),
     ).not.toBeInTheDocument();
@@ -222,11 +229,16 @@ describe("Composer", () => {
 
     expect(selectRoot("Thinking effort")).toBeInTheDocument();
     await openModelControls();
-    expect(screen.getAllByText("Model")).not.toHaveLength(0);
     expect(selectRoot("Model profile")).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: /^Run settings:/i })).toHaveLength(1);
-    expect(screen.queryByRole("button", { name: "Thinking" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Model profile" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("group", { name: "Run settings" })).toHaveLength(
+      1,
+    );
+    expect(
+      screen.queryByRole("button", { name: "Thinking" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Model profile" }),
+    ).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Send" })).toHaveAttribute(
       "title",
       "Enter a prompt or attach a file before sending.",
@@ -252,19 +264,27 @@ describe("Composer", () => {
     );
     await openAdvancedControls("模式: normal");
     expect(segmentedItem("普通模式")).toBeInTheDocument();
-    expect(screen.getAllByText("模式")).not.toHaveLength(0);
-    expect(screen.getByText("角色")).toBeInTheDocument();
-    expect(screen.getByText("目标")).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "根角色" })).toBeInTheDocument();
-    expect(screen.queryByRole("combobox", { name: "编排预设" })).not.toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "目标角色" })).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: /^运行设置:/ })).toHaveLength(1);
-    expect(screen.queryByRole("button", { name: "思考" })).not.toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: "Shell 安全策略" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: "根角色" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("combobox", { name: "编排预设" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("combobox", { name: "目标角色" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getAllByRole("group", { name: "运行设置" })).toHaveLength(1);
+    expect(
+      screen.queryByRole("button", { name: "思考" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("checkbox", { name: "Shell 安全策略" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("Shell")).toBeInTheDocument();
     await openModelControls("模型配置");
-    expect(screen.getAllByText("模型")).not.toHaveLength(0);
-    expect(screen.getByRole("combobox", { name: "模型配置" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: "模型配置" }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "发送" })).toBeVisible();
   });
 
@@ -297,8 +317,9 @@ describe("Composer", () => {
 
     fireEvent.keyDown(prompt, { key: "ArrowDown" });
     await waitFor(() =>
-      expect(screen.getByRole("option", { name: /@Main Agent/ }))
-        .toHaveAttribute("aria-selected", "true"),
+      expect(
+        screen.getByRole("option", { name: /@Main Agent/ }),
+      ).toHaveAttribute("aria-selected", "true"),
     );
     fireEvent.keyDown(prompt, { key: "Tab" });
 
@@ -357,7 +378,9 @@ describe("Composer", () => {
     await waitFor(() => {
       const activeId = prompt.getAttribute("aria-activedescendant");
       expect(activeId).not.toBeNull();
-      expect(document.getElementById(activeId ?? "")).toHaveTextContent("Role 8");
+      expect(document.getElementById(activeId ?? "")).toHaveTextContent(
+        "Role 8",
+      );
     });
     expect(listbox.scrollTop).toBeGreaterThan(0);
     expect(document.activeElement).toBe(prompt);
@@ -372,7 +395,9 @@ describe("Composer", () => {
     fireEvent.keyDown(prompt, { key: "Home" });
     await waitFor(() => {
       const activeId = prompt.getAttribute("aria-activedescendant");
-      expect(document.getElementById(activeId ?? "")).toHaveTextContent("Role 0");
+      expect(document.getElementById(activeId ?? "")).toHaveTextContent(
+        "Role 0",
+      );
     });
     expect(listbox.scrollTop).toBe(0);
     expect(document.activeElement).toBe(prompt);
@@ -405,13 +430,22 @@ describe("Composer", () => {
     expect(
       await screen.findByRole("combobox", { name: "Orchestration preset" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Preset")).toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: "Target role" }),
+    ).toBeInTheDocument();
     expect(
       screen.queryByRole("combobox", { name: "Root role" }),
     ).not.toBeInTheDocument();
   });
 
   it("passes the selected target role to AG-UI run creation", async () => {
+    getSessionMock.mockResolvedValue({
+      session_id: "session-1",
+      workspace_id: "workspace-1",
+      session_mode: "orchestration",
+      orchestration_preset_id: "team",
+      can_switch_mode: true,
+    });
     getRoleConfigOptionsMock.mockResolvedValue({
       coordinator_role_id: "Coordinator",
       main_agent_role_id: "MainAgent",
@@ -516,7 +550,9 @@ describe("Composer", () => {
         run_id: `run-${submissionMethod}`,
         session_id: "session-1",
       });
-      const nowSpy = vi.spyOn(globalThis.performance, "now").mockReturnValue(321.5);
+      const nowSpy = vi
+        .spyOn(globalThis.performance, "now")
+        .mockReturnValue(321.5);
       const markSpy = vi.spyOn(globalThis.performance, "mark");
 
       renderComposer();
@@ -553,12 +589,15 @@ describe("Composer", () => {
     const controller = runStreamController();
     const queryClient = createComposerQueryClient();
     const setQueryDataSpy = vi.spyOn(queryClient, "setQueryData");
-    queryClient.setQueryData<SessionRecord>(["sessions", "detail", "session-1"], {
-      can_switch_mode: true,
-      session_id: "session-1",
-      title: "Old title",
-      workspace_id: "workspace-1",
-    });
+    queryClient.setQueryData<SessionRecord>(
+      ["sessions", "detail", "session-1"],
+      {
+        can_switch_mode: true,
+        session_id: "session-1",
+        title: "Old title",
+        workspace_id: "workspace-1",
+      },
+    );
     const sidebarRows: SessionSidebarRecord[] = [
       {
         metadata: {
@@ -582,11 +621,15 @@ describe("Composer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
     await waitFor(() => expect(createRunMock).toHaveBeenCalledOnce());
-    expect(useOptimisticRunStore.getState().prompts["session-1"]).toMatchObject({
-      sessionId: "session-1",
-      text: "preview after run",
-    });
-    expect(queryClient.getQueryData(["sessions", "sidebar"])).toEqual(sidebarRows);
+    expect(useOptimisticRunStore.getState().prompts["session-1"]).toMatchObject(
+      {
+        sessionId: "session-1",
+        text: "preview after run",
+      },
+    );
+    expect(queryClient.getQueryData(["sessions", "sidebar"])).toEqual(
+      sidebarRows,
+    );
     setQueryDataSpy.mockClear();
 
     await act(async () => {
@@ -627,14 +670,17 @@ describe("Composer", () => {
       runId: "run-1",
       sessionId: "session-1",
     });
-    expect(vi.mocked(controller.startRunStream).mock.invocationCallOrder[0])
-      .toBeLessThan(
+    expect(
+      vi.mocked(controller.startRunStream).mock.invocationCallOrder[0],
+    ).toBeLessThan(
       setQueryDataSpy.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
     );
-    expect(useOptimisticRunStore.getState().prompts["session-1"]).toMatchObject({
-      runId: "run-1",
-      text: "preview after run",
-    });
+    expect(useOptimisticRunStore.getState().prompts["session-1"]).toMatchObject(
+      {
+        runId: "run-1",
+        text: "preview after run",
+      },
+    );
   });
 
   it("explains why sending is disabled before input is available", async () => {
@@ -739,7 +785,9 @@ describe("Composer", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
-    await waitFor(() => expect(resolveCommandPromptMock).toHaveBeenCalledOnce());
+    await waitFor(() =>
+      expect(resolveCommandPromptMock).toHaveBeenCalledOnce(),
+    );
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Send" })).not.toBeDisabled(),
     );
@@ -885,27 +933,30 @@ describe("Composer", () => {
     expect(await screen.findByText("Add image")).toBeVisible();
     await waitFor(() =>
       expect(
-        screen.getAllByRole("option").some((option) =>
-          option.textContent?.includes("/review"),
-        ),
+        screen
+          .getAllByRole("option")
+          .some((option) => option.textContent?.includes("/review")),
       ).toBe(true),
     );
-    const reviewOption = screen.getAllByRole("option").find((option) =>
-      option.textContent?.includes("/review") &&
-      option.textContent.includes("Review changed files"),
-    );
+    const reviewOption = screen
+      .getAllByRole("option")
+      .find(
+        (option) =>
+          option.textContent?.includes("/review") &&
+          option.textContent.includes("Review changed files"),
+      );
     if (reviewOption === undefined) {
       throw new Error("Quick command option was not rendered.");
     }
     expect(
-      screen.getAllByRole("option").some((option) =>
-        option.textContent?.includes("/review-skill"),
-      ),
+      screen
+        .getAllByRole("option")
+        .some((option) => option.textContent?.includes("/review-skill")),
     ).toBe(true);
     expect(
-      screen.getAllByRole("option").some((option) =>
-        option.textContent?.includes("@Writer"),
-      ),
+      screen
+        .getAllByRole("option")
+        .some((option) => option.textContent?.includes("@Writer")),
     ).toBe(true);
     expect(screen.getByText("Targets")).toBeVisible();
     expect(screen.getAllByText("Command").length).toBeGreaterThan(0);
@@ -913,10 +964,14 @@ describe("Composer", () => {
 
     fireEvent.mouseDown(reviewOption);
     expect(prompt).toHaveValue("/review ");
-    expect(screen.queryByLabelText("Prompt suggestions")).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Prompt suggestions"),
+    ).not.toBeInTheDocument();
 
     fireEvent.change(prompt, { target: { value: "@" } });
-    const writerOption = await screen.findByRole("option", { name: /@Writer.*Role/ });
+    const writerOption = await screen.findByRole("option", {
+      name: /@Writer.*Role/,
+    });
     fireEvent.mouseDown(writerOption);
     await waitFor(() => expect(prompt).toHaveValue("@Writer "));
   });
@@ -944,7 +999,9 @@ describe("Composer", () => {
     fireEvent.mouseDown(browseOption);
 
     await waitFor(() => expect(prompt).toHaveValue("@"));
-    expect(await screen.findByRole("option", { name: /@Writer/ })).toBeVisible();
+    expect(
+      await screen.findByRole("option", { name: /@Writer/ }),
+    ).toBeVisible();
 
     fireEvent.pointerDown(document.body);
     await waitFor(() =>
@@ -1750,7 +1807,9 @@ describe("Composer", () => {
     const prompt = await screen.findByLabelText("Prompt");
     fireEvent.change(prompt, { target: { value: "@Rev" } });
 
-    expect(await screen.findByRole("option", { name: /@Reviewer/ })).toBeVisible();
+    expect(
+      await screen.findByRole("option", { name: /@Reviewer/ }),
+    ).toBeVisible();
     fireEvent.keyDown(prompt, { key: "Enter" });
 
     expect(createRunMock).not.toHaveBeenCalled();
@@ -1773,7 +1832,9 @@ describe("Composer", () => {
     const prompt = await screen.findByLabelText("Prompt");
     fireEvent.change(prompt, { target: { value: "@W" } });
 
-    expect(await screen.findByRole("option", { name: /@Writer/ })).toBeVisible();
+    expect(
+      await screen.findByRole("option", { name: /@Writer/ }),
+    ).toBeVisible();
     fireEvent.keyDown(prompt, { key: "Escape" });
 
     await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
@@ -1870,7 +1931,9 @@ describe("Composer", () => {
       target: { value: "@Writer Draft the update" },
     });
 
-    expect(await screen.findByText("Mention is ambiguous: Writer, Writer.")).toBeVisible();
+    expect(
+      await screen.findByText("Mention is ambiguous: Writer, Writer."),
+    ).toBeVisible();
     expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
@@ -2077,7 +2140,9 @@ describe("Composer", () => {
 
     expect(await screen.findByLabelText("Prompt attachments")).toBeVisible();
     expect(await screen.findByText("removable.png")).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Remove removable.png" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Remove removable.png" }),
+    );
 
     await waitFor(() => expect(screen.queryByText("removable.png")).toBeNull());
     expect(screen.queryByLabelText("Prompt attachments")).toBeNull();
@@ -2150,8 +2215,9 @@ describe("Composer", () => {
     pasteImage("profile-vision.png");
 
     expect(await screen.findByText("profile-vision.png")).toBeVisible();
-    expect(screen.queryByText("Writer does not support image input."))
-      .not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Writer does not support image input."),
+    ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
     await waitFor(() => expect(createRunMock).toHaveBeenCalledOnce());
@@ -2585,7 +2651,9 @@ describe("Composer", () => {
         sessionId: "session-1",
       }),
     );
-    await waitFor(() => expect(getSessionMock).toHaveBeenCalledWith("session-1"));
+    await waitFor(() =>
+      expect(getSessionMock).toHaveBeenCalledWith("session-1"),
+    );
     if (resolveSession === undefined) {
       throw new Error("Session detail query did not start.");
     }
@@ -2673,9 +2741,9 @@ describe("Composer", () => {
       }),
     );
     expect(invalidateQueriesSpy).not.toHaveBeenCalled();
-    expect(queryClient.getQueryData(
-      ["sessions", "topology-lock", "session-a"],
-    )).toBe(true);
+    expect(
+      queryClient.getQueryData(["sessions", "topology-lock", "session-a"]),
+    ).toBe(true);
   });
 
   it("updates the current session model profile", async () => {
@@ -2781,7 +2849,8 @@ describe("Composer", () => {
 
     await openAdvancedControls();
     await waitFor(
-      () => expect(selectRoot("Root role")).not.toHaveClass("ant-select-disabled"),
+      () =>
+        expect(selectRoot("Root role")).not.toHaveClass("ant-select-disabled"),
       { timeout: 5000 },
     );
     fireEvent.mouseDown(screen.getByRole("combobox", { name: "Root role" }));
@@ -2861,7 +2930,9 @@ describe("Composer", () => {
     });
 
     const queryClient = renderComposer(runStreamController(), "sidebar");
-    const sidebarRows = [{ metadata: { title: "Sidebar" }, session_id: "sidebar" }];
+    const sidebarRows = [
+      { metadata: { title: "Sidebar" }, session_id: "sidebar" },
+    ];
     queryClient.setQueryData(["sessions", "sidebar"], sidebarRows);
 
     await openModelControls();
@@ -2887,9 +2958,9 @@ describe("Composer", () => {
       sidebarRows,
     );
     await waitFor(() =>
-      expect(queryClient.getQueryData(["sessions", "detail", "sidebar"])).toEqual(
-        updatedSession,
-      ),
+      expect(
+        queryClient.getQueryData(["sessions", "detail", "sidebar"]),
+      ).toEqual(updatedSession),
     );
   });
 
@@ -2919,7 +2990,9 @@ describe("Composer", () => {
     await openAdvancedControls();
     expect(screen.getAllByText("Thinking")).not.toHaveLength(0);
     fireEvent.click(screen.getByRole("switch", { name: "Thinking" }));
-    fireEvent.mouseDown(screen.getByRole("combobox", { name: "Thinking effort" }));
+    fireEvent.mouseDown(
+      screen.getByRole("combobox", { name: "Thinking effort" }),
+    );
     fireEvent.click(await screen.findByText("High"));
     fireEvent.change(screen.getByLabelText("Prompt"), {
       target: { value: "Think through the migration" },
@@ -3101,9 +3174,13 @@ describe("Composer", () => {
 
     await waitFor(() => expect(fetchSpeechConfigMock).toHaveBeenCalledOnce());
     expect(
-      screen.queryByRole("button", { name: "Configure speech to text before using voice input" }),
+      screen.queryByRole("button", {
+        name: "Configure speech to text before using voice input",
+      }),
     ).toBeNull();
-    expect(screen.queryByRole("button", { name: "Voice input unsupported" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Voice input unsupported" }),
+    ).toBeNull();
   });
 
   it("keeps voice input disabled when configured speech runtime is unavailable", async () => {
@@ -3207,13 +3284,17 @@ describe("Composer", () => {
 
     renderComposer();
 
-    const prompt = (await screen.findByLabelText("Prompt")) as HTMLTextAreaElement;
+    const prompt = (await screen.findByLabelText(
+      "Prompt",
+    )) as HTMLTextAreaElement;
     fireEvent.change(prompt, {
       target: { value: "Before  after" },
     });
     prompt.focus();
     prompt.setSelectionRange(7, 7);
-    const voiceButton = await screen.findByRole("button", { name: "Voice input" });
+    const voiceButton = await screen.findByRole("button", {
+      name: "Voice input",
+    });
     voiceButton.focus();
     fireEvent.click(voiceButton);
 
@@ -3277,8 +3358,9 @@ describe("Composer", () => {
     firstSocket.open();
     firstSocket.error();
     await waitFor(() =>
-      expect(document.querySelector(".at-composer-status"))
-        .toHaveTextContent("Voice input stream failed."),
+      expect(document.querySelector(".at-composer-status")).toHaveTextContent(
+        "Voice input stream failed.",
+      ),
     );
 
     await waitFor(() =>
@@ -3290,11 +3372,13 @@ describe("Composer", () => {
     secondSocket.open();
     secondSocket.error();
 
-    expect(document.querySelector(".at-composer-status"))
-      .toHaveTextContent("Voice input stream failed.");
+    expect(document.querySelector(".at-composer-status")).toHaveTextContent(
+      "Voice input stream failed.",
+    );
     await waitFor(() =>
-      expect(document.querySelectorAll(".ant-message-notice-content"))
-        .toHaveLength(1),
+      expect(
+        document.querySelectorAll(".ant-message-notice-content"),
+      ).toHaveLength(1),
     );
   });
 
@@ -3312,7 +3396,9 @@ describe("Composer", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Voice input" }));
     await waitFor(() => expect(voiceRuntime.sockets).toHaveLength(1));
-    await waitFor(() => expect(voiceRuntime.contexts[0]?.processors).toHaveLength(1));
+    await waitFor(() =>
+      expect(voiceRuntime.contexts[0]?.processors).toHaveLength(1),
+    );
     const socket = voiceRuntime.sockets[0];
     const processor = voiceRuntime.contexts[0]?.processors[0];
     if (processor === undefined) {
@@ -3417,8 +3503,9 @@ describe("Composer", () => {
     expect(invalidateQueriesSpy).toHaveBeenCalledWith({
       queryKey: ["sessions", "sidebar"],
     });
-    expect(queryClient.getQueryData<RecoverySnapshot>(recoveryQueryKey)?.active_run)
-      .toBeNull();
+    expect(
+      queryClient.getQueryData<RecoverySnapshot>(recoveryQueryKey)?.active_run,
+    ).toBeNull();
     expect(invalidateQueriesSpy).toHaveBeenCalledWith({
       queryKey: recoveryQueryKey,
     });
@@ -3538,7 +3625,9 @@ function deferred<T>(): {
   };
 }
 
-function runStreamController(activeRunId: string | null = null): RunStreamController {
+function runStreamController(
+  activeRunId: string | null = null,
+): RunStreamController {
   return {
     activeRunId,
     activeRunIds: activeRunId === null ? [] : [activeRunId],
@@ -3553,7 +3642,9 @@ function runStreamController(activeRunId: string | null = null): RunStreamContro
 }
 
 function selectRoot(label: string): HTMLElement {
-  const element = screen.getByRole("combobox", { name: label }).closest(".ant-select");
+  const element = screen
+    .getByRole("combobox", { name: label })
+    .closest(".ant-select");
   if (element === undefined || element === null) {
     throw new Error(`${label} select root was not rendered.`);
   }
@@ -3573,29 +3664,15 @@ function segmentedItem(label: string): HTMLElement {
 
 async function waitForRoleOption(label: string) {
   await openAdvancedControls();
-  fireEvent.mouseDown(await screen.findByRole("combobox", { name: "Target role" }));
-  await screen.findAllByText(label);
-  fireEvent.keyDown(document.body, { key: "Escape" });
+  await waitFor(() => expect(screen.getAllByText(label)).not.toHaveLength(0));
 }
 
-async function openAdvancedControls(label = "Mode: normal") {
-  const target = screen.queryByRole("combobox", { name: /Target role|目标角色/ });
-  if (target !== null) {
-    return target;
-  }
-  const accessibleName = label.startsWith("模式") ? /^运行设置:/ : /^Run settings:/i;
-  fireEvent.click(await screen.findByRole("button", { name: accessibleName }));
-  return screen.findByRole("combobox", { name: /Target role|目标角色/ });
+async function openAdvancedControls(_label = "Mode: normal") {
+  return screen.findByRole("group", { name: /Run settings|运行设置/ });
 }
 
 async function openModelControls(_label = "Model profile") {
-  const model = screen.queryByRole("combobox", { name: /Model profile|模型配置/ });
-  if (model !== null) {
-    return model;
-  }
-  await openAdvancedControls(
-    useUiStore.getState().language === "zh-CN" ? "模式: normal" : "Mode: normal",
-  );
+  await openAdvancedControls();
   return screen.findByRole("combobox", { name: /Model profile|模型配置/ });
 }
 
@@ -3629,7 +3706,10 @@ class MockVoiceWebSocket extends EventTarget {
   readyState: number = WebSocket.CONNECTING;
   readonly url: string;
 
-  constructor(url: string, private readonly sockets: MockVoiceWebSocket[]) {
+  constructor(
+    url: string,
+    private readonly sockets: MockVoiceWebSocket[],
+  ) {
     super();
     this.url = url;
     this.sockets.push(this);
@@ -3723,7 +3803,9 @@ class MockAudioContext {
 
   close = vi.fn(async () => undefined);
   createGain = vi.fn(() => mockGainNode());
-  createMediaStreamSource = vi.fn(() => mockAudioNode() as MediaStreamAudioSourceNode);
+  createMediaStreamSource = vi.fn(
+    () => mockAudioNode() as MediaStreamAudioSourceNode,
+  );
   createScriptProcessor = vi.fn(() => {
     const processor = new MockScriptProcessorNode();
     this.processors.push(processor);

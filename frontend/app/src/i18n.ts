@@ -694,6 +694,21 @@ const messages = {
     newSessionInitialTask: "Initial task (optional)",
     newSessionCreateAndRun: "Create and run",
     newSessionAdvanced: "Advanced runtime settings",
+    newSessionWorkspaceHeading: "What should we work on in {workspace}?",
+    newSessionQuickTasks: "Suggested tasks",
+    newSessionQuickExploreTitle: "Explore and understand the workspace",
+    newSessionQuickExplorePrompt:
+      "Explore this workspace and explain its architecture, important modules, and current development context.",
+    newSessionQuickBuildTitle: "Build a feature or tool",
+    newSessionQuickBuildPrompt:
+      "Implement a useful feature or tool in this workspace, including tests and validation.",
+    newSessionQuickReviewTitle: "Review the current changes",
+    newSessionQuickReviewPrompt:
+      "Review the current workspace changes, identify risks, and suggest concrete improvements.",
+    newSessionQuickFixTitle: "Find and fix a problem",
+    newSessionQuickFixPrompt:
+      "Investigate the most important current problem in this workspace, fix its root cause, and verify the result.",
+    newSessionRunPreferencesNotReady: "Run preferences are still loading.",
     sidebarNoSessions: "No sessions",
     sidebarOpenWorkspaceView: "Open workspace view",
     sidebarOpenWorkspaceViewFor: "Open workspace view for {label}",
@@ -2540,6 +2555,21 @@ const messages = {
     newSessionInitialTask: "初始任务（可选）",
     newSessionCreateAndRun: "创建并运行",
     newSessionAdvanced: "高级运行设置",
+    newSessionWorkspaceHeading: "我们应该在 {workspace} 中做什么？",
+    newSessionQuickTasks: "建议任务",
+    newSessionQuickExploreTitle: "探索并理解工作区",
+    newSessionQuickExplorePrompt:
+      "探索这个工作区，说明其架构、重要模块和当前开发上下文。",
+    newSessionQuickBuildTitle: "构建新功能或工具",
+    newSessionQuickBuildPrompt:
+      "在这个工作区实现一个有价值的功能或工具，并补齐测试与验证。",
+    newSessionQuickReviewTitle: "审查当前变更",
+    newSessionQuickReviewPrompt:
+      "审查当前工作区变更，识别风险，并提出具体的改进建议。",
+    newSessionQuickFixTitle: "定位并修复问题",
+    newSessionQuickFixPrompt:
+      "调查这个工作区当前最重要的问题，修复根因并验证结果。",
+    newSessionRunPreferencesNotReady: "运行偏好仍在加载中。",
     sidebarNoSessions: "暂无会话",
     sidebarOpenWorkspaceView: "打开工作区视图",
     sidebarOpenWorkspaceViewFor: "打开 {label} 的工作区视图",

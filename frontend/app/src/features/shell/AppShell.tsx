@@ -973,7 +973,6 @@ export function AppShell() {
           ) : activeView === "new-session" ? (
             <NewSessionView
               initialWorkspaceId={selectedWorkspaceId}
-              onCancel={() => openPrimaryShellView("chat", "replace")}
               onCreated={(session, run, promptText) => {
                 setSelectedWorkspaceId(session.workspace_id);
                 setSelectedSessionId(session.session_id);

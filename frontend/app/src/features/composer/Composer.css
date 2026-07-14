@@ -183,6 +183,125 @@
   overflow: hidden;
 }
 
+.at-composer .at-composer-run-controls {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  gap: 6px;
+  min-width: 0;
+  padding: 1px 2px;
+}
+
+.at-composer .at-composer-topology-controls,
+.at-composer .at-composer-execution-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.at-composer .at-composer-topology-controls {
+  flex: 1 1 auto;
+}
+
+.at-composer .at-composer-execution-controls {
+  flex: 0 0 auto;
+}
+
+.at-composer .at-composer-run-controls .at-session-mode-control {
+  width: 134px;
+}
+
+.at-composer
+  .at-composer-run-controls
+  .at-session-mode-control
+  .ant-segmented-group {
+  width: 100%;
+}
+
+.at-composer
+  .at-composer-run-controls
+  .at-session-mode-control
+  .ant-segmented-item {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.at-composer .at-composer-role-select,
+.at-composer .at-composer-preset-select,
+.at-composer .at-composer-target-select {
+  width: 110px;
+}
+
+.at-composer .at-composer-model-select {
+  width: 126px;
+}
+
+.at-composer .at-composer-thinking-select {
+  width: 88px;
+}
+
+.at-composer .at-composer-run-controls .at-choice-control {
+  min-height: 30px;
+  padding: 3px 5px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+.at-composer .at-composer-run-controls .at-choice-control:hover {
+  background: var(--at-surface-elevated);
+}
+
+@container composer (max-width: 760px) {
+  .at-composer .at-composer-toolbar-start {
+    flex-wrap: wrap;
+    row-gap: 4px;
+    overflow: visible;
+  }
+
+  .at-composer .at-composer-run-controls {
+    order: 10;
+    flex: 1 0 100%;
+    width: 100%;
+    padding: 5px 0 0;
+    border-top: 1px solid var(--at-border);
+  }
+
+  .at-composer .at-composer-topology-controls {
+    flex: 1 1 auto;
+  }
+}
+
+@container composer (max-width: 560px) {
+  .at-composer .at-composer-run-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .at-composer .at-composer-topology-controls {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .at-composer .at-composer-execution-controls {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  .at-composer .at-composer-run-controls .at-session-mode-control,
+  .at-composer .at-composer-role-select,
+  .at-composer .at-composer-preset-select,
+  .at-composer .at-composer-target-select,
+  .at-composer .at-composer-model-select {
+    width: 100%;
+  }
+
+  .at-composer .at-composer-run-controls .at-session-mode-control {
+    grid-column: 1 / -1;
+  }
+}
+
 .at-composer .at-composer-file-input {
   position: absolute;
   width: 1px;
@@ -235,20 +354,6 @@
   white-space: nowrap;
 }
 
-.at-composer .at-composer-summary-compact {
-  display: none;
-}
-
-.at-composer .at-composer-run-settings-summary {
-  flex: 0 0 auto;
-  max-width: min(460px, 58cqw);
-}
-
-.at-composer .at-composer-summary-separator {
-  padding-inline: 5px;
-  color: var(--at-text-muted);
-}
-
 .at-composer .at-voice-input-button,
 .at-composer .at-composer-secondary-action,
 .at-composer .at-composer-primary-action {
@@ -290,118 +395,6 @@
   box-shadow: 0 14px 36px rgba(32, 35, 31, 0.2);
 }
 
-.at-composer-advanced-panel {
-  width: min(680px, calc(100vw - 50px));
-}
-
-.at-composer-advanced-heading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.at-composer-section-label {
-  display: block;
-  margin: 2px 0 7px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.at-composer-execution-section-label {
-  grid-column: 1 / -1;
-  margin-top: 2px;
-}
-
-.at-composer .at-composer-control-set,
-.at-composer-advanced-panel .at-composer-control-set {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px 12px;
-  min-width: 0;
-}
-
-.at-composer .at-composer-field,
-.at-composer-advanced-panel .at-composer-field {
-  display: grid;
-  grid-template-columns: 84px minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.at-composer .at-composer-mode-field,
-.at-composer-advanced-panel .at-composer-mode-field,
-.at-composer .at-composer-toggles,
-.at-composer-advanced-panel .at-composer-toggles {
-  grid-column: 1 / -1;
-}
-
-.at-composer .at-composer-field-label,
-.at-composer .at-control-label,
-.at-composer .at-composer-toggles .at-choice-control {
-  white-space: nowrap;
-}
-
-.at-composer .at-composer-toggles .at-choice-control {
-  min-height: 30px;
-  padding-block: 3px;
-}
-
-.at-composer .at-session-mode-control,
-.at-composer .at-normal-root-role-select,
-.at-composer .at-orchestration-preset-select,
-.at-composer .at-role-select,
-.at-composer .at-model-profile-select,
-.at-composer-advanced-panel .at-session-mode-control,
-.at-composer-advanced-panel .at-normal-root-role-select,
-.at-composer-advanced-panel .at-orchestration-preset-select,
-.at-composer-advanced-panel .at-role-select,
-.at-composer-advanced-panel .at-model-profile-select {
-  min-width: 0;
-  width: 100%;
-}
-
-.at-composer .at-session-mode-control .ant-segmented-group,
-.at-composer-advanced-panel .at-session-mode-control .ant-segmented-group {
-  width: 100%;
-}
-
-.at-composer .at-session-mode-control .ant-segmented-item,
-.at-composer-advanced-panel .at-session-mode-control .ant-segmented-item {
-  flex: 1 1 0;
-  min-width: 0;
-}
-
-.at-composer .at-composer-toggles,
-.at-composer-advanced-panel .at-composer-toggles {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-}
-
-.at-composer .at-thinking-effort-select,
-.at-composer-advanced-panel .at-thinking-effort-select {
-  width: 112px;
-}
-
-@container composer (max-width: 680px) {
-  .at-composer .at-composer-summary-full {
-    display: none;
-  }
-
-  .at-composer .at-composer-summary-compact {
-    display: inline;
-  }
-
-  .at-composer .at-composer-run-settings-summary {
-    max-width: 300px;
-  }
-}
-
 @container composer (max-width: 460px) {
   .at-composer .at-composer-summary-button {
     max-width: 132px;
@@ -422,17 +415,6 @@
     width: 30px;
     min-width: 30px;
     padding: 0;
-  }
-}
-
-@media (max-width: 720px) {
-  .at-composer-advanced-panel .at-composer-control-set {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .at-composer-advanced-panel .at-composer-field,
-  .at-composer-advanced-panel .at-composer-toggles {
-    grid-column: 1;
   }
 }
 

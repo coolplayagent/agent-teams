@@ -1,12 +1,4 @@
-import {
-  App,
-  Button,
-  Segmented,
-  Select,
-  Space,
-  Tooltip,
-  Typography,
-} from "antd";
+import { App, Button, Tooltip, Typography } from "antd";
 import { Sender } from "@ant-design/x";
 import {
   ChevronDown,
@@ -39,7 +31,6 @@ import {
   updateSessionNormalModelProfile,
 } from "../../api/client";
 import { showFeedbackMessage } from "../../components/feedbackMessages";
-import { ChoiceControl } from "../../components/ChoiceControl";
 import type {
   InjectionDeliveryMode,
   ModelProfilesPayload,
@@ -50,7 +41,6 @@ import type {
   SessionMode,
   SessionRecord,
   SessionSidebarRecord,
-  ThinkingEffort,
 } from "../../api/contracts";
 import type { RunStreamController } from "../../runtime/useRunStreamController";
 import { useOptimisticRunStore } from "../../runtime/optimisticRunStore";
@@ -68,13 +58,12 @@ import {
   type LeadingRoleMention,
 } from "./PromptMentions";
 import { useVoiceInput } from "./useVoiceInput";
-import { ComposerRunSettingsPopover } from "./ComposerSurface";
+import { ComposerRunControls } from "./ComposerRunControls";
 import { resolveComposerPromptSubmission } from "./promptSubmission";
 import { useComposerMentionController } from "./useComposerMentionController";
 import { resolveImageInputBlockedMessage } from "./imageInputValidation";
 import { buildComposerQuickActionOptions } from "./composerQuickActions";
 import {
-  DEFAULT_THINKING_EFFORT,
   GENERAL_RUN_PREFERENCES_QUERY_KEY,
   persistThinkingState,
   readSavedThinkingState,
@@ -642,31 +631,6 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     },
     onTextChange: setDraft,
   });
-  const composerModeLabel = selectedSessionMode === "normal"
-    ? t("composerNormal")
-    : t("composerOrchestration");
-  const composerTopologyLabel = selectedSessionMode === "normal"
-    ? normalRootRoleOptions.find(
-        (option) => option.value === selectedNormalRootRoleId,
-      )?.label ?? t("composerRootRole")
-    : orchestrationPresetOptions.find(
-        (option) => option.value === selectedOrchestrationPresetId,
-      )?.label ?? t("composerPreset");
-  const composerTopologySummary = `${composerModeLabel} · ${composerTopologyLabel}`;
-  const composerModelLabel = modelProfileOptions.find(
-    (option) => option.value === selectedModelProfile,
-  )?.label ?? t("composerModel");
-  const composerThinkingLabel = thinking.enabled
-    ? thinkingEffortOptions(t).find(
-        (option) => option.value === thinking.effort,
-      )?.label ?? t("composerThinking")
-    : t("composerThinkingDisabled");
-  const composerRunSettingsSummary = [
-    composerTopologySummary,
-    composerModelLabel,
-    composerThinkingLabel,
-  ].join(" · ");
-
   return (
     <form
       className="at-composer"
@@ -783,206 +747,79 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
                 ref={mentions.quickMenuButtonRef}
               />
             </Tooltip>
-            <ComposerRunSettingsPopover
-              compactSummary={abbreviateComposerModeLabel(composerModeLabel)}
-              heading={t("composerRunSettings")}
-              summary={composerRunSettingsSummary}
-            >
-                  <Typography.Text className="at-composer-section-label" type="secondary">
-                    {t("composerConversationSettings")}
-                  </Typography.Text>
-                  <div className="at-composer-control-set">
-            <div className="at-composer-field at-composer-mode-field">
-              <Typography.Text className="at-composer-field-label">
-                {t("composerMode")}
-              </Typography.Text>
-              <Segmented<SessionMode>
-                aria-label={t("composerSessionMode")}
-                className="at-session-mode-control"
-                disabled={!canChangeTopology}
-                onChange={(mode) => {
-                  if (mode !== selectedSessionMode) {
-                    updateSessionTopologyMode(mode);
-                  }
-                }}
-                options={sessionModeOptions(t).map((option) => ({
-                  ...option,
-                  disabled:
-                    option.value === "orchestration" &&
-                    orchestrationPresetOptions.length === 0,
-                }))}
-                size="small"
-                value={selectedSessionMode}
-              />
-            </div>
-            <div className="at-composer-field at-composer-role-field">
-              <Typography.Text className="at-composer-field-label">
-                {selectedSessionMode === "normal"
-                  ? t("composerRole")
-                  : t("composerPreset")}
-              </Typography.Text>
-              {selectedSessionMode === "normal" ? (
-                <Select
-                  aria-label={t("composerRootRole")}
-                  className="at-normal-root-role-select"
-                  disabled={
-                    !canChangeTopology ||
-                    normalRootRoleOptions.length === 0
-                  }
-                  loading={
-                    roleOptionsQuery.isLoading ||
-                    updateTopologyMutation.isPending
-                  }
-                  onChange={(roleId) => {
-                    const nextRoleId = normalizeProfileName(roleId);
-                    if (nextRoleId && nextRoleId !== selectedNormalRootRoleId) {
-                      updateSessionTopologyMode("normal", {
-                        normalRootRoleId: nextRoleId,
-                      });
-                    }
-                  }}
-                  optionFilterProp="label"
-                  options={normalRootRoleOptions}
-                  placeholder={t("composerRootRole")}
-                  popupMatchSelectWidth={false}
-                  showSearch
-                  size="small"
-                  value={selectedNormalRootRoleId || undefined}
-                />
-              ) : null}
-              {selectedSessionMode === "orchestration" ? (
-                <Select
-                  aria-label={t("composerOrchestrationPreset")}
-                  className="at-orchestration-preset-select"
-                  disabled={
-                    !canChangeTopology ||
-                    orchestrationPresetOptions.length === 0
-                  }
-                  loading={
-                    orchestrationQuery.isLoading || updateTopologyMutation.isPending
-                  }
-                  onChange={(presetId) => {
-                    const nextPresetId = normalizeProfileName(presetId);
-                    if (
-                      nextPresetId &&
-                      nextPresetId !== selectedOrchestrationPresetId
-                    ) {
-                      updateSessionTopologyMode("orchestration", {
-                        orchestrationPresetId: nextPresetId,
-                      });
-                    }
-                  }}
-                  optionFilterProp="label"
-                  options={orchestrationPresetOptions}
-                  placeholder={t("composerPreset")}
-                  popupMatchSelectWidth={false}
-                  showSearch
-                  size="small"
-                  value={selectedOrchestrationPresetId || undefined}
-                />
-              ) : null}
-            </div>
-            <div className="at-composer-field at-composer-target-field">
-              <Typography.Text className="at-composer-field-label">
-                {t("composerTarget")}
-              </Typography.Text>
-              <Select
-                allowClear
-                aria-label={t("composerTargetRole")}
-                className="at-role-select"
-                disabled={busy || activeRunId !== null}
-                loading={roleOptionsQuery.isLoading}
-                onChange={(value) => setTargetRoleId(value ?? null)}
-                optionFilterProp="label"
-                options={roleOptions}
-                placeholder={t("composerTargetRole")}
-                showSearch
-                size="small"
-                value={targetRoleId ?? undefined}
-              />
-            </div>
-            <div className="at-composer-field at-composer-model-field">
-              <Typography.Text className="at-composer-field-label">
-                {t("composerModel")}
-              </Typography.Text>
-              <Select
-                allowClear
-                aria-label={t("composerModelProfile")}
-                className="at-model-profile-select"
-                disabled={busy || activeRunId !== null || !canChangeModelProfile}
-                loading={
-                  sessionQuery.isLoading ||
-                  modelProfilesQuery.isLoading ||
-                  updateModelProfileMutation.isPending
+            <ComposerRunControls
+              modelDisabled={busy || activeRunId !== null || !canChangeModelProfile}
+              modelLoading={
+                sessionQuery.isLoading ||
+                modelProfilesQuery.isLoading ||
+                updateModelProfileMutation.isPending
+              }
+              modelOptions={modelProfileOptions}
+              modelValue={selectedModelProfile}
+              mode={selectedSessionMode}
+              modeDisabled={!canChangeTopology}
+              onModelChange={(value) => {
+                const nextProfile = normalizeProfileName(value);
+                if (
+                  selectedModelProfile !== null &&
+                  nextProfile !== selectedModelProfile
+                ) {
+                  updateModelProfileMutation.mutate(nextProfile);
                 }
-                onChange={(value) => {
-                  const nextProfile = normalizeProfileName(value);
-                  if (
-                    selectedModelProfile !== null &&
-                    nextProfile !== selectedModelProfile
-                  ) {
-                    updateModelProfileMutation.mutate(nextProfile);
-                  }
-                }}
-                optionFilterProp="label"
-                options={modelProfileOptions}
-                placeholder={t("composerModel")}
-                popupMatchSelectWidth={false}
-                showSearch
-                size="small"
-                value={selectedModelProfile ?? undefined}
-              />
-            </div>
-            <Typography.Text
-              className="at-composer-section-label at-composer-execution-section-label"
-              type="secondary"
-            >
-              {t("composerExecutionSettings")}
-            </Typography.Text>
-            <div className="at-composer-toggles">
-              <Space className="at-thinking-control" size={6}>
-                <ChoiceControl
-                  ariaLabel={t("composerThinking")}
-                  checked={thinking.enabled}
-                  disabled={busy || activeRunId !== null}
-                  kind="switch"
-                  label={t("composerThinking")}
-                  onChange={(enabled) => updateThinking({ enabled })}
-                />
-                {thinking.enabled ? (
-                  <Select
-                    aria-label={t("composerThinkingEffort")}
-                    className="at-thinking-effort-select"
-                    disabled={busy || activeRunId !== null}
-                    onChange={(effort) => updateThinking({ effort })}
-                    options={thinkingEffortOptions(t)}
-                    popupMatchSelectWidth={false}
-                    size="small"
-                    value={thinking.effort ?? DEFAULT_THINKING_EFFORT}
-                  />
-                ) : null}
-              </Space>
-              <Tooltip title={t("composerShellSafetyPolicy")}>
-                <ChoiceControl
-                  ariaLabel={t("composerShellSafetyPolicy")}
-                  className="at-shell-safety-checkbox"
-                  checked={shellSafetyPolicyEnabled}
-                  disabled={
-                    busy || activeRunId !== null || !canOverrideShellSafetyPolicy
-                  }
-                  label={t("composerShellSafetyShort")}
-                  onChange={(checked) => setShellSafetyPolicyEnabled(checked)}
-                />
-              </Tooltip>
-              <ChoiceControl
-                checked={yolo}
-                disabled={busy || activeRunId !== null}
-                label={t("composerYolo")}
-                onChange={(checked) => setYolo(checked)}
-              />
-            </div>
-                  </div>
-            </ComposerRunSettingsPopover>
+              }}
+              onModeChange={(mode) => {
+                if (mode !== selectedSessionMode) {
+                  updateSessionTopologyMode(mode);
+                }
+              }}
+              onPresetChange={(value) => {
+                const nextPresetId = normalizeProfileName(value);
+                if (
+                  nextPresetId &&
+                  nextPresetId !== selectedOrchestrationPresetId
+                ) {
+                  updateSessionTopologyMode("orchestration", {
+                    orchestrationPresetId: nextPresetId,
+                  });
+                }
+              }}
+              onRoleChange={(value) => {
+                const nextRoleId = normalizeProfileName(value);
+                if (nextRoleId && nextRoleId !== selectedNormalRootRoleId) {
+                  updateSessionTopologyMode("normal", {
+                    normalRootRoleId: nextRoleId,
+                  });
+                }
+              }}
+              onShellSafetyChange={setShellSafetyPolicyEnabled}
+              onTargetRoleChange={setTargetRoleId}
+              onThinkingChange={updateThinking}
+              onYoloChange={setYolo}
+              presetDisabled={!canChangeTopology}
+              presetLoading={
+                orchestrationQuery.isLoading || updateTopologyMutation.isPending
+              }
+              presetOptions={orchestrationPresetOptions}
+              presetValue={selectedOrchestrationPresetId}
+              roleDisabled={!canChangeTopology}
+              roleLoading={
+                roleOptionsQuery.isLoading || updateTopologyMutation.isPending
+              }
+              roleOptions={normalRootRoleOptions}
+              roleValue={selectedNormalRootRoleId}
+              shellSafetyDisabled={
+                busy || activeRunId !== null || !canOverrideShellSafetyPolicy
+              }
+              shellSafetyEnabled={shellSafetyPolicyEnabled}
+              targetRoleDisabled={busy || activeRunId !== null}
+              targetRoleLoading={roleOptionsQuery.isLoading}
+              targetRoleOptions={roleOptions}
+              targetRoleValue={targetRoleId}
+              thinking={thinking}
+              thinkingDisabled={busy || activeRunId !== null}
+              yolo={yolo}
+              yoloDisabled={busy || activeRunId !== null}
+            />
           </div>
           <div className="at-composer-actions">
             {voiceInput.visible ? (
@@ -1286,33 +1123,6 @@ function resolveDraftValidationMessage(
     return t("composerPromptAfterMention");
   }
   return "";
-}
-
-function thinkingEffortOptions(t: Translate): Array<{
-  label: string;
-  value: ThinkingEffort;
-}> {
-  return [
-    { label: t("composerMinimal"), value: "minimal" },
-    { label: t("composerLow"), value: "low" },
-    { label: t("composerMedium"), value: "medium" },
-    { label: t("composerHigh"), value: "high" },
-  ];
-}
-
-function sessionModeOptions(t: Translate): Array<{
-  label: string;
-  value: SessionMode;
-}> {
-  return [
-    { label: t("composerNormal"), value: "normal" },
-    { label: t("composerOrchestration"), value: "orchestration" },
-  ];
-}
-
-function abbreviateComposerModeLabel(label: string): string {
-  const characters = Array.from(label.trim());
-  return characters.length > 6 ? `${characters.slice(0, 4).join("")}.` : label;
 }
 
 function normalizeProfileName(value: string | null | undefined): string {

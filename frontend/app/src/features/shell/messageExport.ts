@@ -40,6 +40,27 @@ interface PngBlock {
   height: number;
 }
 
+interface HtmlExportCopy {
+  assistant: string;
+  completed: string;
+  conversation: string;
+  empty: string;
+  entries: string;
+  exportedAt: string;
+  failed: string;
+  input: string;
+  insertedMessage: string;
+  output: string;
+  round: string;
+  rounds: string;
+  status: string;
+  subagent: string;
+  thinking: string;
+  tool: string;
+  tools: string;
+  user: string;
+}
+
 const PNG_WIDTH = 960;
 const PNG_PADDING_X = 36;
 const PNG_PADDING_TOP = 32;
@@ -69,7 +90,7 @@ export async function exportSessionMessages({
     return 1;
   }
   if (format === "html") {
-    const html = buildMessagesHtml(sessionId, rounds);
+    const html = buildMessagesHtml(sessionId, rounds, activeExportLocale());
     downloadBlob(
       `${messageExportFilenameBase(sessionId)}.html`,
       new Blob([html], { type: "text/html;charset=utf-8" }),
@@ -105,79 +126,225 @@ export function buildMessagesJson(
 export function buildMessagesHtml(
   sessionId: string,
   rounds: SessionRound[],
+  locale = "en",
 ): string {
   const transcript = buildMessageTranscript(sessionId, rounds);
-  const rows = transcript.rounds.map(transcriptRoundHtml).join("");
+  const copy = htmlExportCopy(locale);
+  const rows = transcript.rounds.map((round) => transcriptRoundHtml(round, copy)).join("");
+  const toolCount = transcript.entries.filter(
+    (entry) => entry.metadata.tool?.stage === "call",
+  ).length;
+  const conversationEntryCount = transcript.entries.filter(
+    (entry) => entry.kind === "user"
+      || entry.kind === "assistant"
+      || entry.kind === "subagent"
+      || entry.kind === "injection",
+  ).length;
   return `<!doctype html>
-<html lang="en">
+<html lang="${escapeHtml(locale)}">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>${escapeHtml(sessionId)} transcript</title>
+  <title>${escapeHtml(sessionId)} · ${copy.conversation}</title>
   <style>
-    :root { color-scheme: light dark; --bg: #f5f6f4; --panel: #fff; --text: #20231f; --muted: #6b7069; --line: #dfe1dc; --accent: #2563eb; --code: #f1f3ef; }
-    @media (prefers-color-scheme: dark) { :root { --bg: #171917; --panel: #222522; --text: #eef0eb; --muted: #abb0a8; --line: #3a3e39; --accent: #7ca8ff; --code: #161816; } }
+    :root { color-scheme: light dark; --bg: #f6f7f5; --panel: #fff; --surface: #f0f2ee; --surface-strong: #e5e9e2; --text: #20231f; --muted: #656b63; --line: #d9ddd6; --accent: #1769d2; --accent-soft: #edf5ff; --danger: #b42318; --danger-soft: #fff1f0; --code: #f1f3ef; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #171917; --panel: #222522; --surface: #2b2f2a; --surface-strong: #353a34; --text: #eef0eb; --muted: #b3b8af; --line: #3f443d; --accent: #82b2ff; --accent-soft: #1c2c42; --danger: #ff9b91; --danger-soft: #3b2422; --code: #191b19; } }
     * { box-sizing: border-box; }
-    body { margin: 0; font: 15px/1.6 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--text); background: var(--bg); }
-    main { width: min(920px, calc(100% - 32px)); margin: 32px auto 64px; }
-    .transcript-header { margin-bottom: 24px; }
-    h1 { margin: 0 0 4px; overflow-wrap: anywhere; font-size: 24px; line-height: 1.3; }
+    html { scroll-behavior: smooth; }
+    body { margin: 0; font: 15px/1.65 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--text); background: var(--bg); }
+    .page { display: grid; grid-template-columns: minmax(0, 1fr); width: min(1040px, calc(100% - 32px)); margin: 36px auto 72px; }
+    main { min-width: 0; }
+    .transcript-header { padding: 0 4px 24px; border-bottom: 1px solid var(--line); }
+    .eyebrow { margin: 0 0 5px; color: var(--accent); font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+    h1 { margin: 0; overflow-wrap: anywhere; font-size: clamp(24px, 4vw, 34px); line-height: 1.25; letter-spacing: -.02em; }
     .meta { margin: 0; color: var(--muted); font-size: 12px; }
-    .round { margin-top: 18px; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
-    .round-header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
-    .round-title { margin: 0; font-size: 15px; }
-    .entry { margin-top: 12px; padding: 12px 14px; border-left: 3px solid var(--line); border-radius: 7px; background: color-mix(in srgb, var(--panel) 94%, var(--line)); }
-    .entry[data-kind="user"], .entry[data-kind="injection"] { border-left-color: var(--accent); }
-    .entry[data-kind="thinking"] { opacity: .82; }
-    .entry[data-kind="tool"], .entry[data-kind="question"] { background: var(--code); }
-    .entry-head { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 6px; color: var(--muted); font-size: 12px; }
-    .entry-label { color: var(--text); font-weight: 650; }
+    .export-meta { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 12px; }
+    .metric { display: inline-flex; align-items: baseline; gap: 5px; color: var(--muted); font-size: 13px; }
+    .metric strong { color: var(--text); font-size: 14px; }
+    .round { margin-top: 28px; }
+    .round-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+    .round-title { margin: 0; font-size: 17px; line-height: 1.35; }
+    .entry { margin-top: 12px; padding: 13px 15px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel); }
+    .entry[data-kind="user"] { margin-left: clamp(0px, 8vw, 84px); border-color: #b8d4f6; background: var(--accent-soft); }
+    .entry[data-kind="assistant"], .entry[data-kind="subagent"] { border-color: transparent; background: transparent; }
+    .entry[data-kind="subagent"] { border-left: 3px solid var(--line); border-radius: 0; }
+    .entry[data-kind="injection"], .entry[data-kind="question"] { border-left: 3px solid var(--accent); background: var(--panel); }
+    .entry-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 7px; color: var(--muted); font-size: 12px; }
+    .entry-label { color: var(--text); font-weight: 700; }
+    .content { min-width: 0; overflow-wrap: anywhere; }
     .content > :first-child { margin-top: 0; } .content > :last-child { margin-bottom: 0; }
-    .content p, .content ul, .content ol, .content pre { margin: 8px 0; }
+    .content p, .content ul, .content ol, .content pre, .content blockquote, .content table { margin: 9px 0; }
+    .content h2, .content h3, .content h4, .content h5, .content h6 { margin: 20px 0 8px; line-height: 1.35; }
+    .content h2 { font-size: 19px; } .content h3 { font-size: 17px; } .content h4, .content h5, .content h6 { font-size: 15px; }
+    .content ul, .content ol { padding-left: 24px; }
+    blockquote { padding-left: 12px; border-left: 3px solid var(--line); color: var(--muted); }
     pre, code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
-    pre { overflow-x: auto; padding: 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--code); white-space: pre-wrap; overflow-wrap: anywhere; }
+    pre { max-width: 100%; overflow-x: auto; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--code); white-space: pre-wrap; overflow-wrap: anywhere; }
     code { padding: 1px 4px; border-radius: 4px; background: var(--code); }
     pre code { padding: 0; background: transparent; }
-    @media print { body { background: #fff; } main { width: 100%; margin: 0; } .round { break-inside: avoid; } }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 8px 10px; border: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { background: var(--surface); font-weight: 700; }
+    details.technical { margin-top: 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); }
+    details.technical > summary { display: flex; align-items: center; gap: 9px; padding: 9px 12px; cursor: pointer; list-style: none; color: var(--muted); font-size: 13px; }
+    details.technical > summary::-webkit-details-marker { display: none; }
+    details.technical > summary::before { content: "›"; color: var(--muted); font-size: 18px; line-height: 1; transform-origin: center; transition: transform .14s ease; }
+    details.technical[open] > summary::before { transform: rotate(90deg); }
+    details.technical > summary .entry-label { flex: 1; }
+    .technical-body { padding: 2px 14px 14px 38px; }
+    .technical-section + .technical-section { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+    .technical-section h4 { margin: 0 0 7px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+    .badge { display: inline-flex; align-items: center; min-height: 22px; padding: 1px 8px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--muted); font-size: 11px; white-space: nowrap; }
+    .badge.failed { border-color: var(--danger); background: var(--danger-soft); color: var(--danger); }
+    .structured-fields { display: grid; grid-template-columns: minmax(110px, .3fr) minmax(0, 1fr); margin: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+    .structured-fields dt, .structured-fields dd { min-width: 0; margin: 0; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+    .structured-fields dt { background: var(--surface); color: var(--muted); font-size: 12px; font-weight: 650; overflow-wrap: anywhere; }
+    .structured-fields dd { overflow-wrap: anywhere; }
+    .structured-fields > :nth-last-child(-n+2) { border-bottom: 0; }
+    .structured-list { margin: 0; padding-left: 24px; }
+    .value-empty { color: var(--muted); }
+    .routine-status { display: none; }
+    * { scrollbar-width: thin; scrollbar-color: var(--surface-strong) transparent; }
+    *::-webkit-scrollbar { width: 8px; height: 8px; }
+    *::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 999px; background: var(--surface-strong); background-clip: padding-box; }
+    @media (max-width: 640px) {
+      .page { width: min(100% - 20px, 1040px); margin-top: 20px; }
+      .round-header, .entry-head { align-items: flex-start; flex-direction: column; gap: 4px; }
+      .entry[data-kind="user"] { margin-left: 0; }
+      .structured-fields { grid-template-columns: 1fr; }
+      .structured-fields dt { border-bottom: 0; }
+      .structured-fields > :nth-last-child(-n+2) { border-bottom: 1px solid var(--line); }
+      .structured-fields > :last-child { border-bottom: 0; }
+      .technical-body { padding-left: 14px; }
+    }
+    @media print {
+      :root { color-scheme: light; --bg: #fff; --panel: #fff; --surface: #f4f4f2; --text: #111; --muted: #555; --line: #d2d2ce; --accent-soft: #f5f9ff; }
+      body { background: #fff; font-size: 11pt; }
+      .page { display: block; width: 100%; margin: 0; }
+      .transcript-header { padding: 0 0 16px; }
+      .round { break-before: auto; }
+      .entry { break-inside: avoid; }
+      details.technical { break-inside: avoid; }
+      details.technical:not([open]) .technical-body { display: none; }
+    }
   </style>
 </head>
 <body>
-  <main>
+  <div class="page"><main>
     <header class="transcript-header">
+      <p class="eyebrow">${copy.conversation}</p>
       <h1>${escapeHtml(sessionId)}</h1>
-      <p class="meta">${transcript.entries.length} entries · Exported ${escapeHtml(formatExportTime(transcript.exportedAt))}</p>
+      <div class="export-meta" aria-label="${copy.status}">
+        <span class="metric"><strong>${transcript.rounds.length}</strong> ${copy.rounds}</span>
+        <span class="metric"><strong>${conversationEntryCount}</strong> ${copy.entries}</span>
+        <span class="metric"><strong>${toolCount}</strong> ${copy.tools}</span>
+        <span class="metric">${copy.exportedAt} ${escapeHtml(formatExportTime(transcript.exportedAt))}</span>
+      </div>
     </header>
-    ${rows || '<p class="meta">No messages.</p>'}
-  </main>
+    ${rows || `<p class="meta">${copy.empty}</p>`}
+  </main></div>
 </body>
 </html>`;
 }
 
-function transcriptRoundHtml(round: MessageTranscript["rounds"][number]): string {
+function transcriptRoundHtml(
+  round: MessageTranscript["rounds"][number],
+  copy: HtmlExportCopy,
+): string {
   const meta = [round.createdAt ? formatExportTime(round.createdAt) : "", round.status ?? ""]
     .filter(Boolean)
     .join(" · ");
-  return `<section class="round" data-run-id="${escapeHtml(round.runId)}">
+  return `<section class="round" id="round-${round.index + 1}" data-run-id="${escapeHtml(round.runId)}">
     <header class="round-header">
-      <h2 class="round-title">Round ${round.index + 1}</h2>
+      <h2 class="round-title">${copy.round} ${round.index + 1}</h2>
       <span class="meta">${escapeHtml(meta)}</span>
     </header>
-    ${round.entries.map(transcriptEntryHtml).join("")}
+    ${transcriptEntriesHtml(round.entries, copy)}
   </section>`;
 }
 
-function transcriptEntryHtml(entry: TranscriptEntry): string {
+function transcriptEntriesHtml(entries: TranscriptEntry[], copy: HtmlExportCopy): string {
+  const rendered: string[] = [];
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index];
+    if (entry === undefined) {
+      continue;
+    }
+    if (entry.kind === "tool") {
+      const next = entries[index + 1];
+      const sameCall = entry.metadata.tool?.stage === "call"
+        && next?.kind === "tool"
+        && next.metadata.tool?.stage === "return"
+        && entry.metadata.tool.callId
+        && entry.metadata.tool.callId === next.metadata.tool.callId;
+      rendered.push(toolEntryHtml(entry, sameCall ? next : undefined, copy));
+      if (sameCall) {
+        index += 1;
+      }
+      continue;
+    }
+    rendered.push(transcriptEntryHtml(entry, copy));
+  }
+  return rendered.join("");
+}
+
+function transcriptEntryHtml(entry: TranscriptEntry, copy: HtmlExportCopy): string {
   const time = entry.createdAt ? formatExportTime(entry.createdAt) : "";
-  const content = entry.kind === "tool" || entry.kind === "question" || entry.kind === "status"
-    ? `<pre><code>${escapeHtml(entry.text)}</code></pre>`
+  if (entry.kind === "thinking") {
+    return `<details class="technical thinking-entry" data-actor="${escapeHtml(entry.metadata.actor)}" data-kind="thinking" data-sequence="${entry.sequence}">
+      <summary><span class="entry-label">${copy.thinking}</span><time>${escapeHtml(time)}</time></summary>
+      <div class="technical-body content">${renderSafeMarkdown(entry.text)}</div>
+    </details>`;
+  }
+  if (entry.kind === "status") {
+    if (isRoutineStatus(entry.text)) {
+      return `<span class="routine-status" aria-hidden="true">${escapeHtml(entry.text)}</span>`;
+    }
+    return `<details class="technical status-entry" data-actor="unknown" data-kind="status" data-sequence="${entry.sequence}">
+      <summary><span class="entry-label">${escapeHtml(entry.label || copy.status)}</span><time>${escapeHtml(time)}</time></summary>
+      <div class="technical-body">${structuredTextHtml(entry.text)}</div>
+    </details>`;
+  }
+  const content = entry.kind === "question"
+    ? structuredTextHtml(entry.text)
     : renderSafeMarkdown(entry.text);
-  return `<article class="entry" data-actor="${entry.metadata.actor}" data-kind="${entry.kind}" data-sequence="${entry.sequence}">
+  return `<article class="entry" data-actor="${escapeHtml(entry.metadata.actor)}" data-kind="${entry.kind}" data-sequence="${entry.sequence}">
     <header class="entry-head">
-      <span class="entry-label">${escapeHtml(entry.label)}</span>
+      <span class="entry-label">${escapeHtml(readableEntryLabel(entry, copy))}</span>
       <time>${escapeHtml(time)}</time>
     </header>
     <div class="content">${content}</div>
   </article>`;
+}
+
+function toolEntryHtml(
+  entry: TranscriptEntry,
+  resultEntry: TranscriptEntry | undefined,
+  copy: HtmlExportCopy,
+): string {
+  const call = entry.metadata.tool?.stage === "call" ? entry : undefined;
+  const result = resultEntry ?? (entry.metadata.tool?.stage === "return" ? entry : undefined);
+  const metadata = call?.metadata.tool ?? result?.metadata.tool;
+  const isError = result?.metadata.tool?.isError === true;
+  const time = call?.createdAt ?? result?.createdAt;
+  const formattedTime = time ? formatExportTime(time) : "";
+  const input = call?.metadata.tool?.args;
+  const output = result?.metadata.tool?.result;
+  return `<details class="technical tool-entry" data-actor="${escapeHtml(entry.metadata.actor)}" data-kind="tool" data-sequence="${entry.sequence}">
+    <summary>
+      <span class="entry-label">${copy.tool} · ${escapeHtml(metadata?.name || entry.label)}</span>
+      <span class="badge${isError ? " failed" : ""}">${isError ? copy.failed : result ? copy.completed : copy.status}</span>
+      <time>${escapeHtml(formattedTime)}</time>
+    </summary>
+    <div class="technical-body">
+      ${input === undefined && call === undefined ? "" : technicalSectionHtml(copy.input, input ?? call?.text ?? "")}
+      ${output === undefined && result === undefined ? "" : technicalSectionHtml(copy.output, output ?? result?.text ?? "")}
+    </div>
+  </details>`;
+}
+
+function technicalSectionHtml(label: string, value: JsonValue): string {
+  return `<section class="technical-section"><h4>${escapeHtml(label)}</h4>${structuredValueHtml(value)}</section>`;
 }
 
 function renderSafeMarkdown(markdown: string): string {
@@ -205,23 +372,225 @@ function renderSafeMarkdown(markdown: string): string {
 }
 
 function renderSafeMarkdownText(markdown: string): string {
-  const escaped = escapeHtml(markdown)
-    .replace(/`([^`\n]+)`/g, "<code>$1</code>")
-    .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
-  return escaped
+  return markdown
+    .replace(/\r\n?/g, "\n")
     .split(/\n{2,}/)
-    .map((block) => {
-      const trimmed = block.trim();
-      if (!trimmed) {
-        return "";
-      }
-      const lines = trimmed.split("\n");
-      if (lines.every((line) => /^[-*] /.test(line))) {
-        return `<ul>${lines.map((line) => `<li>${line.slice(2)}</li>`).join("")}</ul>`;
-      }
-      return `<p>${lines.join("<br />")}</p>`;
-    })
+    .map(renderMarkdownBlock)
     .join("");
+}
+
+function renderMarkdownBlock(block: string): string {
+  const trimmed = block.trim();
+  if (!trimmed) {
+    return "";
+  }
+  const lines = trimmed.split("\n");
+  if (isMarkdownTable(lines)) {
+    return renderMarkdownTable(lines);
+  }
+  if (lines.every((line) => /^\s*[-*+]\s+/.test(line))) {
+    return `<ul>${lines.map((line) => `<li>${renderInlineMarkdown(line.replace(/^\s*[-*+]\s+/, ""))}</li>`).join("")}</ul>`;
+  }
+  if (lines.every((line) => /^\s*\d+[.)]\s+/.test(line))) {
+    return `<ol>${lines.map((line) => `<li>${renderInlineMarkdown(line.replace(/^\s*\d+[.)]\s+/, ""))}</li>`).join("")}</ol>`;
+  }
+  if (lines.every((line) => /^\s*>\s?/.test(line))) {
+    return `<blockquote>${lines.map((line) => renderInlineMarkdown(line.replace(/^\s*>\s?/, ""))).join("<br />")}</blockquote>`;
+  }
+  if (lines.length === 1) {
+    const heading = /^(#{1,6})\s+(.+)$/.exec(lines[0] ?? "");
+    if (heading) {
+      const level = Math.min(6, Math.max(2, (heading[1]?.length ?? 1) + 1));
+      return `<h${level}>${renderInlineMarkdown(heading[2] ?? "")}</h${level}>`;
+    }
+  }
+  return `<p>${lines.map(renderInlineMarkdown).join("<br />")}</p>`;
+}
+
+function renderInlineMarkdown(value: string): string {
+  return escapeHtml(value)
+    .replace(/`([^`\n]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/__([^_\n]+)__/g, "<strong>$1</strong>")
+    .replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, "<em>$1</em>");
+}
+
+function isMarkdownTable(lines: string[]): boolean {
+  if (lines.length < 2) {
+    return false;
+  }
+  const separator = tableCells(lines[1] ?? "");
+  return separator.length > 0
+    && separator.every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
+}
+
+function renderMarkdownTable(lines: string[]): string {
+  const headers = tableCells(lines[0] ?? "");
+  const bodyRows = lines.slice(2).map(tableCells);
+  return `<table><thead><tr>${headers.map((cell) => `<th>${renderInlineMarkdown(cell.trim())}</th>`).join("")}</tr></thead><tbody>${bodyRows.map((row) => `<tr>${headers.map((_, index) => `<td>${renderInlineMarkdown(row[index]?.trim() ?? "")}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+}
+
+function tableCells(line: string): string[] {
+  const trimmed = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+  return trimmed ? trimmed.split("|") : [];
+}
+
+function structuredTextHtml(text: string): string {
+  const parsed = parseJsonValue(text);
+  if (parsed !== null) {
+    return structuredValueHtml(parsed);
+  }
+  const fields = parseKeyValueLines(text);
+  return fields === null
+    ? structuredValueHtml(text)
+    : structuredValueHtml(fields);
+}
+
+function parseKeyValueLines(value: string): Record<string, JsonValue> | null {
+  const lines = value.split("\n").map((line) => line.trim()).filter(Boolean);
+  if (lines.length === 0) {
+    return null;
+  }
+  const fields: Record<string, JsonValue> = {};
+  for (const line of lines) {
+    const separator = line.indexOf(":");
+    if (separator <= 0) {
+      return null;
+    }
+    const key = line.slice(0, separator).trim();
+    const fieldValue = line.slice(separator + 1).trim();
+    if (!key || Object.prototype.hasOwnProperty.call(fields, key)) {
+      return null;
+    }
+    fields[key] = fieldValue;
+  }
+  return fields;
+}
+
+function structuredValueHtml(value: JsonValue): string {
+  if (value === null) {
+    return '<span class="value-empty">—</span>';
+  }
+  if (typeof value === "string") {
+    const parsed = parseJsonValue(value);
+    if (parsed !== null && parsed !== value) {
+      return structuredValueHtml(parsed);
+    }
+    return value.includes("\n")
+      ? `<pre><code>${escapeHtml(value)}</code></pre>`
+      : `<code>${escapeHtml(value || "—")}</code>`;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return `<span>${escapeHtml(String(value))}</span>`;
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return '<span class="value-empty">—</span>';
+    }
+    return `<ol class="structured-list">${value.map((item) => `<li>${structuredValueHtml(item)}</li>`).join("")}</ol>`;
+  }
+  const fields = Object.entries(value);
+  if (fields.length === 0) {
+    return '<span class="value-empty">—</span>';
+  }
+  return `<dl class="structured-fields">${fields.map(([key, fieldValue]) => `<dt>${escapeHtml(key)}</dt><dd>${structuredValueHtml(fieldValue)}</dd>`).join("")}</dl>`;
+}
+
+function parseJsonValue(value: string): JsonValue | null {
+  const trimmed = value.trim();
+  if (!(trimmed.startsWith("{") && trimmed.endsWith("}"))
+    && !(trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+    return null;
+  }
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    return isJsonValue(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function isJsonValue(value: unknown): value is JsonValue {
+  if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return true;
+  }
+  if (Array.isArray(value)) {
+    return value.every(isJsonValue);
+  }
+  if (typeof value !== "object") {
+    return false;
+  }
+  return Object.values(value).every(isJsonValue);
+}
+
+function isRoutineStatus(text: string): boolean {
+  const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
+  return lines.length === 1 && lines[0]?.startsWith("Status:") === true;
+}
+
+function readableEntryLabel(entry: TranscriptEntry, copy: HtmlExportCopy): string {
+  if (entry.kind === "user") {
+    return copy.user;
+  }
+  if (entry.kind === "subagent") {
+    return entry.label === "Subagent" ? copy.subagent : entry.label;
+  }
+  if (entry.kind === "injection") {
+    return entry.label === "Inserted message" ? copy.insertedMessage : entry.label;
+  }
+  if (entry.kind === "assistant") {
+    return entry.label === "Assistant" ? copy.assistant : entry.label;
+  }
+  return entry.label;
+}
+
+function activeExportLocale(): string {
+  return document.documentElement.lang || navigator.language || "en";
+}
+
+function htmlExportCopy(locale: string): HtmlExportCopy {
+  if (locale.toLowerCase().startsWith("zh")) {
+    return {
+      assistant: "助手",
+      completed: "已完成",
+      conversation: "会话记录",
+      empty: "此会话没有可导出的消息。",
+      entries: "条会话消息",
+      exportedAt: "导出于",
+      failed: "失败",
+      input: "输入",
+      insertedMessage: "插入消息",
+      output: "输出",
+      round: "轮次",
+      rounds: "轮",
+      status: "状态",
+      subagent: "子代理",
+      thinking: "思考",
+      tool: "工具",
+      tools: "次工具调用",
+      user: "用户",
+    };
+  }
+  return {
+    assistant: "Assistant",
+    completed: "Completed",
+    conversation: "Conversation transcript",
+    empty: "This session has no messages to export.",
+    entries: "conversation messages",
+    exportedAt: "Exported",
+    failed: "Failed",
+    input: "Input",
+    insertedMessage: "Inserted message",
+    output: "Output",
+    round: "Round",
+    rounds: "rounds",
+    status: "Status",
+    subagent: "Subagent",
+    thinking: "Thinking",
+    tool: "Tool",
+    tools: "tool calls",
+    user: "User",
+  };
 }
 
 function formatExportTime(value: string): string {

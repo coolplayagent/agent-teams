@@ -85,13 +85,66 @@ describe("messageExport", () => {
     expect(html).toContain("First part");
     expect(html).toContain("data-kind=\"tool\"");
     expect(html).toContain("execute_command");
-    expect(html).toContain("&quot;cmd&quot;: &quot;npm test&quot;");
+    const document = new DOMParser().parseFromString(html, "text/html");
+    expect(document.querySelector("details.tool-entry summary")?.textContent)
+      .toContain("execute_command");
+    expect(document.querySelector("details.tool-entry dt")?.textContent).toBe("cmd");
+    expect(document.querySelector("details.tool-entry dd")?.textContent).toBe("npm test");
     expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
     expect(html).toContain("Inserted message");
     expect(html).toContain("Injected note");
     expect(html).toContain("<!doctype html>");
     expect(html).not.toContain("relay-teams.session-transcript");
     expect(html).not.toContain("<script>alert(1)</script>");
+    expect(html).not.toContain("&quot;cmd&quot;");
+  });
+
+  it("exports a localized, human-first transcript instead of a JSON dump", () => {
+    const html = buildMessagesHtml("会话一", [{
+      coordinator_messages: [{
+        created_at: "2026-07-14T01:00:01Z",
+        message: { parts: [
+          { content: "I should inspect the current state.", part_kind: "thinking" },
+          {
+            args: { path: "frontend/app", recursive: true },
+            part_kind: "tool-call",
+            tool_call_id: "call-1",
+            tool_name: "read",
+          },
+          {
+            content: { count: 2, files: ["Composer.tsx", "messageExport.ts"] },
+            part_kind: "tool-return",
+            tool_call_id: "call-1",
+            tool_name: "read",
+          },
+          {
+            content: "## 结果\n\n| 文件 | 状态 |\n| --- | --- |\n| Composer.tsx | 正常 |",
+            part_kind: "text",
+          },
+        ] },
+        role: "assistant",
+      }],
+      intent: "检查导出",
+      run_id: "run-1",
+      run_phase: "completed",
+      run_status: "completed",
+    }], "zh-CN");
+
+    const document = new DOMParser().parseFromString(html, "text/html");
+    expect(document.documentElement.lang).toBe("zh-CN");
+    expect(document.querySelector(".eyebrow")?.textContent).toBe("会话记录");
+    expect(document.querySelector(".entry[data-kind='user'] .entry-label")?.textContent)
+      .toBe("用户");
+    expect(document.querySelectorAll("details.tool-entry")).toHaveLength(1);
+    expect(document.querySelector("details.tool-entry")?.hasAttribute("open")).toBe(false);
+    expect(document.querySelector("details.thinking-entry")?.hasAttribute("open")).toBe(false);
+    expect(document.querySelector("details.tool-entry")?.textContent).toContain("工具 · read");
+    expect(document.querySelector("details.tool-entry")?.textContent).toContain("Composer.tsx");
+    expect(document.querySelector(".entry[data-kind='assistant'] table")?.textContent)
+      .toContain("正常");
+    expect(document.querySelector(".routine-status")).not.toBeNull();
+    expect(html).not.toContain("relay-teams.session-transcript");
+    expect(html).not.toContain("&quot;recursive&quot;");
   });
 
   it("renders readable Markdown and escaped code without executable markup", () => {
@@ -312,11 +365,11 @@ describe("messageExport", () => {
     }]);
 
     const document = new DOMParser().parseFromString(html, "text/html");
-    expect(document.querySelectorAll("article[data-kind='tool']")).toHaveLength(2);
+    expect(document.querySelectorAll("details[data-kind='tool']")).toHaveLength(2);
     expect(document.querySelectorAll("article[data-kind='question']")).toHaveLength(0);
-    expect(document.querySelector("article[data-actor='assistant']")?.textContent)
+    expect(document.querySelector("details[data-actor='assistant']")?.textContent)
       .toContain("ask_question");
-    expect(document.querySelector("article[data-actor='subagent']")?.textContent)
+    expect(document.querySelector("details[data-actor='subagent']")?.textContent)
       .toContain("request_user_input");
   });
 
@@ -346,19 +399,19 @@ describe("messageExport", () => {
       },
     ]);
 
-    expect(html).toContain("Pending approvals: 1");
-    expect(html).toContain("Pending questions: 2");
+    expect(html).toContain("<dt>Pending approvals</dt><dd><code>1</code></dd>");
+    expect(html).toContain("<dt>Pending questions</dt><dd><code>2</code></dd>");
     expect(html).toContain("Retry 1");
-    expect(html).toContain("&quot;kind&quot;: &quot;retry&quot;");
-    expect(html).toContain("&quot;phase&quot;: &quot;scheduled&quot;");
-    expect(html).toContain("&quot;attempt_number&quot;: 3");
-    expect(html).toContain("&quot;retry_in_ms&quot;: 2500");
-    expect(html).toContain("&quot;error_code&quot;: &quot;rate_limit&quot;");
-    expect(html).toContain("&quot;error_message&quot;: &quot;Try again later&quot;");
-    expect(html).toContain("&quot;is_active&quot;: true");
+    expect(html).toContain("<dt>kind</dt><dd><code>retry</code></dd>");
+    expect(html).toContain("<dt>phase</dt><dd><code>scheduled</code></dd>");
+    expect(html).toContain("<dt>attempt_number</dt><dd><span>3</span></dd>");
+    expect(html).toContain("<dt>retry_in_ms</dt><dd><span>2500</span></dd>");
+    expect(html).toContain("<dt>error_code</dt><dd><code>rate_limit</code></dd>");
+    expect(html).toContain("<dt>error_message</dt><dd><code>Try again later</code></dd>");
+    expect(html).toContain("<dt>is_active</dt><dd><span>true</span></dd>");
     expect(html).toContain("Retry 2");
-    expect(html).toContain("&quot;kind&quot;: &quot;fallback&quot;");
-    expect(html).toContain("&quot;to_profile_id&quot;: &quot;secondary&quot;");
+    expect(html).toContain("<dt>kind</dt><dd><code>fallback</code></dd>");
+    expect(html).toContain("<dt>to_profile_id</dt><dd><code>secondary</code></dd>");
   });
 
   it("downloads the HTML transcript", async () => {

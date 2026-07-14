@@ -12,16 +12,25 @@ import {
 import { normalizeExternalHttpUrl } from "./externalLinks.js";
 import { selectAvailableDesktopPort } from "./ports.js";
 import { bundledBackendExecutable } from "./releasePaths.js";
+import {
+  desktopStartupCopy,
+  type DesktopStartupCopy,
+} from "./startupCopy.js";
+import {
+  desktopFailureDocumentUrl,
+  desktopLoadingDocumentUrl,
+} from "./startupDocument.js";
 import { buildDesktopWindowOptions } from "./windowOptions.js";
 
 let mainWindow: BrowserWindow | null = null;
 let backendProcess: ChildProcess | null = null;
 let backendStatus: DesktopBackendStatus = {
   baseUrl: "",
-  message: "Backend has not started.",
+  message: "",
   state: "starting",
 };
 let appQuitting = false;
+let startupCopy: DesktopStartupCopy = desktopStartupCopy("en");
 
 export interface DesktopHostOperations {
   copyText: (text: string) => void;
@@ -34,6 +43,12 @@ let hostOperations: DesktopHostOperations | null = null;
 export function startDesktopApplication(operations: DesktopHostOperations): void {
   hostOperations = operations;
   app.whenReady().then(() => {
+    startupCopy = desktopStartupCopy(app.getLocale());
+    backendStatus = {
+      baseUrl: "",
+      message: startupCopy.backendHasNotStarted,
+      state: "starting",
+    };
     registerIpcHandlers();
     void startDesktopApp();
   });
@@ -65,29 +80,33 @@ async function loadDesktopApp(window: BrowserWindow): Promise<void> {
   const plan = await buildRuntimeBackendPlan();
   setBackendStatus({
     baseUrl: plan.baseUrl,
-    message: "Starting backend.",
+    message: startupCopy.backendStarting,
     state: "starting",
   });
-  await window.loadURL(loadingDocumentUrl(plan));
+  await window.loadURL(desktopLoadingDocumentUrl(plan.baseUrl, startupCopy));
 
   try {
     await ensureBackendReady(plan);
     setBackendStatus({
       baseUrl: plan.baseUrl,
-      message: "Backend ready.",
+      message: startupCopy.backendReady,
       state: "ready",
     });
     const appLoad = window.loadURL(plan.appUrl);
     requireHostOperations().onBackendReady();
     await appLoad;
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Backend startup failed.";
+    const message = error instanceof Error
+      ? error.message
+      : startupCopy.backendStartupFailed;
     setBackendStatus({
       baseUrl: plan.baseUrl,
       message,
       state: "failed",
     });
-    await window.loadURL(failureDocumentUrl(plan, message));
+    await window.loadURL(
+      desktopFailureDocumentUrl(plan.baseUrl, message, startupCopy),
+    );
   }
 }
 
@@ -175,15 +194,19 @@ function startManagedBackend(plan: DesktopBackendPlan): void {
     if (appQuitting) {
       setBackendStatus({
         baseUrl: plan.baseUrl,
-        message: "Backend stopped.",
+        message: startupCopy.backendStopped,
         state: "stopped",
       });
       return;
     }
-    const detail = signal !== null ? `signal ${signal}` : `code ${code ?? "unknown"}`;
+    const detail = signal !== null
+      ? startupCopy.backendExitedSignal(signal)
+      : code === null
+        ? startupCopy.backendExitedUnknown
+        : startupCopy.backendExitedCode(code);
     setBackendStatus({
       baseUrl: plan.baseUrl,
-      message: `Backend process exited with ${detail}.`,
+      message: startupCopy.backendProcessExited(detail),
       state: "failed",
     });
   });
@@ -205,7 +228,7 @@ async function waitForBackend(plan: DesktopBackendPlan): Promise<void> {
     }
     await sleep(plan.healthPollMs);
   }
-  throw new Error(`Backend was not ready at ${plan.baseUrl}.`);
+  throw new Error(startupCopy.backendNotReady(plan.baseUrl));
 }
 
 async function isBackendHealthy(healthUrl: string): Promise<boolean> {
@@ -243,58 +266,6 @@ function requireHostOperations(): DesktopHostOperations {
     throw new Error("Desktop host operations have not been configured.");
   }
   return hostOperations;
-}
-
-function loadingDocumentUrl(plan: DesktopBackendPlan): string {
-  return dataDocumentUrl(
-    "Agent Teams",
-    `<main class="desktop-status" aria-live="polite"><div class="status-label">Starting</div><h1>Agent Teams</h1><p>Starting local backend at ${escapeHtml(
-      plan.baseUrl,
-    )}.</p></main>`,
-  );
-}
-
-function failureDocumentUrl(plan: DesktopBackendPlan, message: string): string {
-  const diagnostic = `Backend: ${plan.baseUrl}\nStatus: ${message}`;
-  return dataDocumentUrl(
-    "Agent Teams startup failed",
-    `<main class="desktop-status is-failed" role="alert"><div class="status-label">Agent Teams</div><h1>Startup failed</h1><p>${escapeHtml(
-      message,
-    )}</p><code id="desktop-diagnostic">${escapeHtml(
-      diagnostic,
-    )}</code><div class="status-actions"><button type="button" onclick="window.agentTeamsDesktop.copyText(document.getElementById('desktop-diagnostic')?.innerText ?? '')">Copy diagnostics</button><button type="button" onclick="window.agentTeamsDesktop.retryStartup()">Retry startup</button></div></main>`,
-  );
-}
-
-function dataDocumentUrl(title: string, body: string): string {
-  return `data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>${escapeHtml(title)}</title>
-    <style>
-      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f7f7f3; color: #1f2328; font: 14px system-ui, sans-serif; }
-      .desktop-status { display: grid; gap: 12px; width: min(480px, calc(100vw - 48px)); padding: 24px; border: 1px solid #d8d6cf; border-radius: 8px; background: #ffffff; }
-      .status-label { color: #5b625f; font-size: 12px; }
-      h1 { margin: 0; font-size: 22px; font-weight: 650; }
-      p { margin: 0; color: #656d76; line-height: 1.45; }
-      code { display: block; overflow-wrap: anywhere; white-space: pre-wrap; border: 1px solid #e5e2da; border-radius: 6px; padding: 10px; background: #faf9f5; color: #24292f; }
-      .status-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-      button { height: 32px; border: 1px solid #d0d7de; border-radius: 6px; background: #ffffff; color: #24292f; font: inherit; padding: 0 12px; }
-      button:hover { background: #f6f8fa; }
-    </style>
-  </head>
-  <body>${body}</body>
-</html>`)}`;
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll("\"", "&quot;");
 }
 
 function sleep(ms: number): Promise<void> {

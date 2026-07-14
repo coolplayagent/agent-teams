@@ -24,6 +24,15 @@ describe("desktop release packaging", () => {
     expect(packageJson.scripts?.["desktop:dist"]).toContain("nsis");
     expect(packageJson.scripts?.["desktop:release"]).toContain("dir nsis");
     expect(packageJson.scripts?.["desktop:verify"]).toContain("desktop:release");
+    expect(packageJson.scripts?.["desktop:test-build"]).toContain(
+      "tsconfig.desktop-test.json",
+    );
+    expect(packageJson.scripts?.["desktop:build"]).toContain(
+      "cleanDesktopProductionOutput.mjs",
+    );
+    expect(packageJson.scripts?.["desktop:smoke"]).toContain(
+      "desktop:test-build",
+    );
   });
 
   it("packages the compiled desktop shell and bundled backend as resources", () => {
@@ -35,6 +44,8 @@ describe("desktop release packaging", () => {
     expect(builderConfig).toContain("appId: io.relayteams.desktop");
     expect(builderConfig).toContain("asar: true");
     expect(builderConfig).toContain("dist-desktop/desktop/**/*.js");
+    expect(builderConfig).toContain("!dist-desktop/desktop/testMain.js");
+    expect(builderConfig).not.toContain("dist-desktop-test/desktop");
     expect(builderConfig).toContain("from: dist-backend/relay-teams-backend");
     expect(builderConfig).toContain("target: nsis");
     expect(builderConfig).toContain("arch:\n        - x64");

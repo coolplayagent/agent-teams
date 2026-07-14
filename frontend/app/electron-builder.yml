@@ -13,6 +13,7 @@ files:
   - dist-desktop/desktop/**/*.js
   - dist-desktop/desktop/**/*.cjs
   - dist-desktop/desktop/**/*.json
+  - "!dist-desktop/desktop/testMain.js"
   - package.json
 
 extraResources:

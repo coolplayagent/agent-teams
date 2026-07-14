@@ -16,7 +16,12 @@ import { chromium, expect, test, type Browser, type Page } from "@playwright/tes
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(packageRoot, "../..");
 const frontendRoot = join(repoRoot, "frontend", "dist");
-const testMainScript = join(packageRoot, "dist-desktop", "desktop", "testMain.js");
+const testMainScript = join(
+  packageRoot,
+  "dist-desktop-test",
+  "desktop",
+  "testMain.js",
+);
 const desktopArtifactRoot = join(repoRoot, ".tmp", "frontend-desktop");
 const desktopReleaseRoot = join(repoRoot, ".tmp", "desktop-release");
 const packagedAppRoot = join(desktopReleaseRoot, "win-unpacked");
@@ -131,7 +136,7 @@ test("packaged distribution starts bundled backend and survives renderer refresh
 test("electron loads renderer with isolated preload", async () => {
   expect(
     existsSync(testMainScript),
-    "Run npm run desktop:build before desktop smoke tests.",
+    "Run npm run desktop:test-build before desktop smoke tests.",
   ).toBe(true);
 
   const backend = await serveDesktopBackend(true);
@@ -595,6 +600,7 @@ async function launchElectron(
     [
       `--remote-debugging-port=${debugPort}`,
       `--user-data-dir=${userDataDir}`,
+      "--lang=en-US",
       testMainScript,
     ],
     {

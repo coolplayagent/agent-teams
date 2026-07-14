@@ -11,5 +11,5 @@
     "types": ["node", "electron"]
   },
   "include": ["src/desktop/**/*.cts", "src/desktop/**/*.ts"],
-  "exclude": []
+  "exclude": ["src/desktop/testMain.ts"]
 }

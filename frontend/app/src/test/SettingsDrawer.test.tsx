@@ -2939,7 +2939,7 @@ describe("SettingsDrawer", () => {
     });
     fireEvent.click(within(sections).getByRole("button", { name: "Orchestration" }));
 
-    const shippingRow = (await screen.findByText("1 roles · Release flow")).closest(
+    const shippingRow = (await screen.findByText("1 role · Release flow")).closest(
       ".at-settings-list-row",
     );
     expect(shippingRow).not.toBeNull();
@@ -2967,7 +2967,7 @@ describe("SettingsDrawer", () => {
     fireEvent.click(await screen.findByRole("button", { name: "New orchestration" }));
     expectSelectedSelectOption("Roles", "Reviewer (reviewer)");
     fireEvent.change(await screen.findByLabelText("Preset ID"), {
-      target: { value: "analysis" },
+      target: { value: "shipping" },
     });
     fireEvent.change(screen.getByLabelText("Preset name"), {
       target: { value: "Analysis" },
@@ -2977,6 +2977,15 @@ describe("SettingsDrawer", () => {
     });
     fireEvent.change(screen.getByLabelText("Orchestration prompt"), {
       target: { value: "Analyze and report risks." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(
+      await screen.findByText("Orchestration preset IDs must be unique."),
+    ).toBeVisible();
+    expect(saveOrchestrationConfigMock).toHaveBeenCalledTimes(2);
+    fireEvent.change(screen.getByLabelText("Preset ID"), {
+      target: { value: "analysis" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
@@ -3045,7 +3054,7 @@ describe("SettingsDrawer", () => {
     renderDrawer();
     await openSettingsSection("Orchestration");
 
-    const omittedRow = (await screen.findByText("1 roles · Omitted policy")).closest(
+    const omittedRow = (await screen.findByText("1 role · Omitted policy")).closest(
       ".at-settings-list-row",
     );
     expect(omittedRow).not.toBeNull();
@@ -3084,7 +3093,7 @@ describe("SettingsDrawer", () => {
     if (backButton !== null) {
       fireEvent.click(backButton);
     }
-    const inheritedRow = (await screen.findByText("1 roles · Inherited limits")).closest(
+    const inheritedRow = (await screen.findByText("1 role · Inherited limits")).closest(
       ".at-settings-list-row",
     );
     expect(inheritedRow).not.toBeNull();
@@ -3109,7 +3118,7 @@ describe("SettingsDrawer", () => {
     if (renamedBackButton !== null) {
       fireEvent.click(renamedBackButton);
     }
-    const explicitRow = (await screen.findByText("1 roles · Explicit limits")).closest(
+    const explicitRow = (await screen.findByText("1 role · Explicit limits")).closest(
       ".at-settings-list-row",
     );
     expect(explicitRow).not.toBeNull();

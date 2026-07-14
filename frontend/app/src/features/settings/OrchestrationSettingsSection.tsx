@@ -20,7 +20,7 @@ import type {
   RoleConfigOptions,
   RoleOption,
 } from "../../api/contracts";
-import { useTranslations } from "../../i18n";
+import { useTranslations, type Translate } from "../../i18n";
 import {
   SettingsFormCard,
   SettingsFormGrid,
@@ -118,11 +118,14 @@ export function OrchestrationSettingsSection({
         sourcePresetId !== null
           ? config.presets?.find((preset) => preset.preset_id === sourcePresetId)
           : undefined;
-      const nextPreset = orchestrationPresetFromForm(values, sourcePreset, {
-        graphInvalid: t("settingsOrchestrationGraphInvalid"),
-        graphObjectRequired: t("settingsOrchestrationGraphObjectRequired"),
-      });
-      const nextConfig = upsertOrchestrationPreset(config, sourcePresetId, nextPreset);
+      const validationMessages = orchestrationValidationMessages(t);
+      const nextPreset = orchestrationPresetFromForm(values, sourcePreset, validationMessages);
+      const nextConfig = upsertOrchestrationPreset(
+        config,
+        sourcePresetId,
+        nextPreset,
+        validationMessages.duplicatePresetId,
+      );
       saveMutation.mutate({
         nextConfig,
         nextSelectedPresetId: nextPreset.preset_id,
@@ -211,7 +214,11 @@ export function OrchestrationSettingsSection({
                 disabled={roleOptionsLoading || roleOptionsError !== null}
                 onClick={() => {
                   setCreatingPresetDocument(
-                    newOrchestrationPresetDraft(config, roles),
+                    newOrchestrationPresetDraft(
+                      config,
+                      roles,
+                      t("settingsOrchestrationNew"),
+                    ),
                   );
                 }}
                 type="primary"
@@ -268,8 +275,8 @@ function OrchestrationPresetList({
               type="button"
             >
               <span>{preset.name ?? preset.preset_id}</span>
-              <Typography.Text ellipsis title={orchestrationPresetDetail(preset)}>
-                {orchestrationPresetDetail(preset)}
+              <Typography.Text ellipsis title={orchestrationPresetDetail(preset, t)}>
+                {orchestrationPresetDetail(preset, t)}
               </Typography.Text>
             </button>
             <Typography.Text className="at-settings-list-meta" ellipsis title={preset.preset_id}>
@@ -480,10 +487,17 @@ function OrchestrationPresetDetail({
   );
 }
 
-function orchestrationPresetDetail(preset: OrchestrationPreset): string {
+function orchestrationPresetDetail(preset: OrchestrationPreset, t: Translate): string {
   const roleCount = preset.role_ids?.length ?? 0;
   return [
-    roleCount > 0 ? `${roleCount} roles` : "",
+    roleCount > 0
+      ? t(
+          roleCount === 1
+            ? "settingsOrchestrationRoleCountOne"
+            : "settingsOrchestrationRoleCountMany",
+          { count: roleCount },
+        )
+      : "",
     preset.description?.trim() || "",
   ].filter(Boolean).join(" · ") || "-";
 }
@@ -508,6 +522,7 @@ function upsertOrchestrationPreset(
   config: OrchestrationConfig,
   sourcePresetId: string | null,
   nextPreset: OrchestrationPreset,
+  duplicatePresetIdMessage: string,
 ): OrchestrationConfig {
   const serializedNextPreset = serializeOrchestrationPreset(nextPreset);
   let replacedSource = false;
@@ -522,7 +537,7 @@ function upsertOrchestrationPreset(
     nextPresets.push(serializedNextPreset);
   }
   if (hasDuplicateOrchestrationIds(nextPresets)) {
-    throw new Error("Orchestration preset IDs must be unique.");
+    throw new Error(duplicatePresetIdMessage);
   }
   const defaultPresetId = resolveDefaultOrchestrationPresetId(
     config.default_orchestration_preset_id,
@@ -559,13 +574,17 @@ function deleteOrchestrationPreset(
 function orchestrationPresetFromForm(
   values: OrchestrationPresetForm,
   sourcePreset: OrchestrationPreset | undefined,
-  graphMessages: GraphParseMessages,
+  validationMessages: OrchestrationValidationMessages,
 ): OrchestrationPreset {
-  const policy = orchestrationPolicyFromForm(values, sourcePreset?.policy);
+  const policy = orchestrationPolicyFromForm(
+    values,
+    sourcePreset?.policy,
+    validationMessages,
+  );
   const nextPreset: OrchestrationPreset = {
     ...sourcePreset,
     description: textValue(values.description),
-    graph: parseOptionalGraph(values.graph, graphMessages),
+    graph: parseOptionalGraph(values.graph, validationMessages),
     name: textValue(values.name),
     orchestration_prompt: textValue(values.orchestration_prompt),
     policy,
@@ -633,6 +652,22 @@ interface GraphParseMessages {
   graphObjectRequired: string;
 }
 
+interface OrchestrationValidationMessages extends GraphParseMessages {
+  duplicatePresetId: string;
+  maxCyclesInvalid: string;
+  maxParallelInvalid: string;
+}
+
+function orchestrationValidationMessages(t: Translate): OrchestrationValidationMessages {
+  return {
+    duplicatePresetId: t("settingsOrchestrationPresetIdUnique"),
+    graphInvalid: t("settingsOrchestrationGraphInvalid"),
+    graphObjectRequired: t("settingsOrchestrationGraphObjectRequired"),
+    maxCyclesInvalid: t("settingsOrchestrationMaxCyclesRequired"),
+    maxParallelInvalid: t("settingsOrchestrationMaxParallelRequired"),
+  };
+}
+
 function parseOptionalGraph(
   value: string | undefined,
   messages: GraphParseMessages,
@@ -666,14 +701,17 @@ function isJsonRecord(value: unknown): value is { [key: string]: JsonValue } {
 function orchestrationPolicyFromForm(
   values: OrchestrationPresetForm,
   sourcePolicy: OrchestrationPolicy | undefined,
+  validationMessages: OrchestrationValidationMessages,
 ): OrchestrationPolicy | undefined {
   const maxCycles = validateOptionalInteger(
     values.max_orchestration_cycles,
     64,
+    validationMessages.maxCyclesInvalid,
   );
   const maxParallel = validateOptionalInteger(
     values.max_parallel_delegated_tasks,
     16,
+    validationMessages.maxParallelInvalid,
   );
   if (
     sourcePolicy === undefined
@@ -714,12 +752,13 @@ function assignOptionalPolicyValue(
 function validateOptionalInteger(
   value: number | null | undefined,
   maxValue: number,
+  invalidMessage: string,
 ): number | null | undefined {
   if (value === null || value === undefined) {
     return value;
   }
   if (!Number.isInteger(value) || value < 0 || value > maxValue) {
-    throw new Error(`Expected an integer from 0 to ${maxValue}.`);
+    throw new Error(invalidMessage);
   }
   return value;
 }
@@ -758,6 +797,7 @@ function uniqueRoleIds(value: string[]): string[] {
 function newOrchestrationPresetDraft(
   config: OrchestrationConfig,
   roles: RoleConfigOptions | undefined,
+  name: string,
 ): OrchestrationPreset {
   const roleOptions = orchestrationRoleOptions(roles);
   const preferredRole = (roles?.subagent_roles ?? [])
@@ -766,7 +806,7 @@ function newOrchestrationPresetDraft(
   const initialRole = preferredRole ?? roleOptions[0];
   return {
     description: "",
-    name: "New Orchestration",
+    name,
     orchestration_prompt: "",
     policy: {
       max_orchestration_cycles: 8,

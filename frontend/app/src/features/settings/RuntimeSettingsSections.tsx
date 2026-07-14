@@ -1117,6 +1117,7 @@ function AgentRuntimeEditor({
       const payload = buildAgentRuntimeSavePayload(
         values,
         query.data,
+        t,
         environmentRecords,
       );
       return saveAgentRuntime(payload.pathAgentId, payload.config);
@@ -1151,6 +1152,7 @@ function AgentRuntimeEditor({
       const payload = buildAgentRuntimeSavePayload(
         values,
         query.data,
+        t,
         environmentRecords,
       );
       const saved = await saveAgentRuntime(payload.pathAgentId, payload.config);
@@ -2220,17 +2222,18 @@ function configToForm(config: AgentRuntimeConfig): AgentRuntimeFormValues {
 function buildAgentRuntimeSavePayload(
   values: AgentRuntimeFormValues,
   current: AgentRuntimeConfig | undefined,
+  t: Translate,
   environmentRecords: readonly EnvironmentVariableRecord[] = [],
 ): { config: AgentRuntimeConfig; pathAgentId: string } {
   const agentId = values.agent_id.trim();
   const name = values.name.trim();
   if (!agentId) {
-    throw new Error("Agent ID is required.");
+    throw new Error(t("settingsAgentRuntimeIdRequired"));
   }
   if (!name) {
-    throw new Error("Agent name is required.");
+    throw new Error(t("settingsAgentRuntimeNameRequired"));
   }
-  validateProtocolTransport(values.protocol, values.transport);
+  validateProtocolTransport(values.protocol, values.transport, t);
   const config: AgentRuntimeConfig = {
     agent_id: agentId,
     description: values.description?.trim() ?? "",
@@ -2244,6 +2247,7 @@ function buildAgentRuntimeSavePayload(
     transport: buildAgentRuntimeTransport(
       values,
       current?.transport,
+      t,
       environmentRecords,
     ),
   };
@@ -2256,13 +2260,14 @@ function buildAgentRuntimeSavePayload(
 function buildAgentRuntimeTransport(
   values: AgentRuntimeFormValues,
   current: AgentRuntimeTransportConfig | undefined,
+  t: Translate,
   environmentRecords: readonly EnvironmentVariableRecord[] = [],
 ): AgentRuntimeTransportConfig {
   if (values.transport === "streamable_http") {
     const existing = current?.transport === "streamable_http" ? current : undefined;
     const url = values.url?.trim() ?? "";
     if (!url) {
-      throw new Error("HTTP transport URL is required.");
+      throw new Error(t("settingsAgentRuntimeUrlRequired"));
     }
     return {
       headers: bindingsFromForm(values.http_headers, existing?.headers ?? []),
@@ -2274,11 +2279,11 @@ function buildAgentRuntimeTransport(
   if (values.transport === "custom") {
     const adapterId = values.adapter_id?.trim() ?? "";
     if (!adapterId) {
-      throw new Error("Custom adapter ID is required.");
+      throw new Error(t("settingsAgentRuntimeAdapterRequired"));
     }
     return {
       adapter_id: adapterId,
-      config: parseCustomConfig(values.custom_config),
+      config: parseCustomConfig(values.custom_config, t),
       transport: "custom",
     };
   }
@@ -2286,7 +2291,7 @@ function buildAgentRuntimeTransport(
     const existing = current?.transport === "registry" ? current : undefined;
     const registryId = values.registry_id?.trim() ?? "";
     if (!registryId) {
-      throw new Error("Registry ID is required.");
+      throw new Error(t("settingsAgentRuntimeRegistryIdRequired"));
     }
     return {
       distribution: values.registry_distribution ?? "auto",
@@ -2304,7 +2309,7 @@ function buildAgentRuntimeTransport(
   const existing = current?.transport === "stdio" ? current : undefined;
   const command = values.command?.trim() ?? "";
   if (!command) {
-    throw new Error("Command is required.");
+    throw new Error(t("settingsAgentRuntimeCommandRequired"));
   }
   return {
     args: listFromLines(values.args),
@@ -2321,15 +2326,16 @@ function buildAgentRuntimeTransport(
 function validateProtocolTransport(
   protocol: AgentRuntimeProtocol,
   transport: AgentRuntimeTransportType,
+  t: Translate,
 ): void {
   if (protocol === "a2a" && transport !== "streamable_http") {
-    throw new Error("A2A agent runtimes require streamable_http transport.");
+    throw new Error(t("settingsAgentRuntimeA2aTransportRequired"));
   }
   if (protocol === "cli" && transport !== "stdio") {
-    throw new Error("CLI agent runtimes require stdio transport.");
+    throw new Error(t("settingsAgentRuntimeCliTransportRequired"));
   }
   if (transport === "registry" && protocol !== "acp") {
-    throw new Error("Registry agent runtimes require ACP protocol.");
+    throw new Error(t("settingsAgentRuntimeRegistryProtocolRequired"));
   }
 }
 
@@ -2413,16 +2419,28 @@ function environmentScopeLabel(record: EnvironmentVariableRecord, t: Translate):
     : t("settingsEnvironmentApp");
 }
 
-function parseCustomConfig(value: string | undefined): Record<string, JsonValue> {
+function parseCustomConfig(
+  value: string | undefined,
+  t: Translate,
+): Record<string, JsonValue> {
   const trimmed = value?.trim() ?? "";
   if (!trimmed) {
     return {};
   }
-  const parsed: unknown = JSON.parse(trimmed);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch (error) {
+    throw new Error(
+      t("settingsAgentRuntimeCustomConfigInvalidJson", {
+        message: error instanceof Error ? error.message : "",
+      }),
+    );
+  }
   if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
     return parsed as Record<string, JsonValue>;
   }
-  throw new Error("Custom config must be a JSON object.");
+  throw new Error(t("settingsAgentRuntimeCustomConfigObjectRequired"));
 }
 
 function linesFromList(values: readonly string[]): string {

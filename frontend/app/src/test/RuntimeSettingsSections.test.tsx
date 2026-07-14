@@ -24,6 +24,7 @@ import type {
   EnvironmentVariableCatalog,
 } from "../api/contracts";
 import { AgentRuntimeSettingsSection } from "../features/settings/RuntimeSettingsSections";
+import { useUiStore } from "../runtime/uiStore";
 
 const antdMocks = vi.hoisted(() => ({
   message: {
@@ -86,6 +87,7 @@ let runtimeConfigs: Record<string, AgentRuntimeConfig>;
 describe("AgentRuntimeSettingsSection", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useUiStore.setState({ language: "en" });
     runtimeConfigs = {
       codex_local: stdioRuntimeConfig(),
       registry_secret_runtime: registrySecretRuntimeConfig(),
@@ -242,6 +244,63 @@ describe("AgentRuntimeSettingsSection", () => {
         transport: "registry",
       },
     });
+  });
+
+  it("reports local runtime validation in the selected interface language", async () => {
+    useUiStore.setState({ language: "zh-CN" });
+    runtimes = [runtimeSummary(runtimeConfigs.codex_local)];
+    renderSection();
+
+    expect(await screen.findByText("Codex Local")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "新增 runtime" }));
+    fireEvent.change(await screen.findByLabelText("Agent ID"), {
+      target: { value: "invalid_a2a" },
+    });
+    fireEvent.change(screen.getByLabelText("名称"), {
+      target: { value: "Invalid A2A" },
+    });
+    fireEvent.change(screen.getByLabelText("命令"), {
+      target: { value: "agent-runtime" },
+    });
+    await chooseSelectOption("协议", "A2A");
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() =>
+      expect(antdMocks.message.error).toHaveBeenCalledWith(
+        "A2A 代理运行时必须使用 streamable_http 传输方式。",
+      ),
+    );
+    expect(saveAgentRuntimeMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps JSON parser detail behind a localized validation summary", async () => {
+    useUiStore.setState({ language: "zh-CN" });
+    runtimes = [runtimeSummary(runtimeConfigs.codex_local)];
+    renderSection();
+
+    expect(await screen.findByText("Codex Local")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "新增 runtime" }));
+    fireEvent.change(await screen.findByLabelText("Agent ID"), {
+      target: { value: "invalid_custom" },
+    });
+    fireEvent.change(screen.getByLabelText("名称"), {
+      target: { value: "Invalid Custom" },
+    });
+    await chooseSelectOption("Transport", "custom");
+    fireEvent.change(await screen.findByLabelText("Adapter ID"), {
+      target: { value: "custom-adapter" },
+    });
+    fireEvent.change(screen.getByLabelText("自定义配置 JSON"), {
+      target: { value: "{" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() =>
+      expect(antdMocks.message.error).toHaveBeenCalledWith(
+        expect.stringMatching(/^自定义配置 JSON 无效：.+/),
+      ),
+    );
+    expect(saveAgentRuntimeMock).not.toHaveBeenCalled();
   });
 });
 

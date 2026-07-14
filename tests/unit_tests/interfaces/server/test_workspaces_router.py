@@ -134,6 +134,21 @@ class FailingSessionSidebarService:
         raise ValueError("Invalid session pagination cursor")
 
 
+class RecordingWorkspaceSessionDeleteService:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, bool, bool]] = []
+
+    async def delete_workspace_sessions_async(
+        self,
+        workspace_id: str,
+        *,
+        force: bool = False,
+        cascade: bool = False,
+    ) -> tuple[str, ...]:
+        self.calls.append((workspace_id, force, cascade))
+        return ()
+
+
 def _create_test_client(
     tmp_path: Path,
     *,
@@ -146,8 +161,12 @@ def _create_test_client(
         repository=WorkspaceRepository(tmp_path / "workspaces_router.db")
     )
     app.dependency_overrides[get_workspace_service] = lambda: resolved_service
-    if session_service is not None:
-        app.dependency_overrides[get_session_service] = lambda: session_service
+    resolved_session_service = (
+        session_service
+        if session_service is not None
+        else RecordingWorkspaceSessionDeleteService()
+    )
+    app.dependency_overrides[get_session_service] = lambda: resolved_session_service
     return TestClient(app), resolved_service
 
 
@@ -1268,6 +1287,37 @@ def test_delete_workspace_supports_remove_directory_query(tmp_path: Path) -> Non
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
     assert root_path.exists() is False
+    assert service.list_workspaces() == ()
+
+
+def test_delete_workspace_cascades_related_sessions_through_session_service(
+    tmp_path: Path,
+) -> None:
+    root_path = tmp_path / "workspace-root"
+    root_path.mkdir()
+    service = WorkspaceService(
+        repository=WorkspaceRepository(tmp_path / "workspaces_router.db")
+    )
+    _ = service.create_workspace(
+        workspace_id="project-alpha",
+        root_path=root_path,
+    )
+    session_service = RecordingWorkspaceSessionDeleteService()
+    client, _ = _create_test_client(
+        tmp_path,
+        service=service,
+        session_service=session_service,
+    )
+
+    response = client.request(
+        "DELETE",
+        "/api/workspaces/project-alpha",
+        json={"cascade": True, "force": True},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+    assert session_service.calls == [("project-alpha", True, True)]
     assert service.list_workspaces() == ()
 
 

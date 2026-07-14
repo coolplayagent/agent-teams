@@ -250,10 +250,7 @@ export function deleteWorkspace(
     `/workspaces/${encodeURIComponent(workspaceId)}${query}`,
     {
       method: "DELETE",
-      body:
-        options.removeDirectory === true
-          ? JSON.stringify({ force: true })
-          : undefined,
+      body: JSON.stringify({ cascade: true, force: true }),
     },
   );
 }

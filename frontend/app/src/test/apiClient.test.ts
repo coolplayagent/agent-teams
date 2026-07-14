@@ -271,7 +271,7 @@ describe("api client", () => {
       1,
       "/api/workspaces/workspace%20one",
       expect.objectContaining({
-        body: undefined,
+        body: JSON.stringify({ cascade: true, force: true }),
         method: "DELETE",
       }),
     );
@@ -279,7 +279,7 @@ describe("api client", () => {
       2,
       "/api/workspaces/workspace%20one?remove_directory=true",
       expect.objectContaining({
-        body: JSON.stringify({ force: true }),
+        body: JSON.stringify({ cascade: true, force: true }),
         method: "DELETE",
       }),
     );

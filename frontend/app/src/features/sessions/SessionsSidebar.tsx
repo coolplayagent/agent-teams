@@ -423,6 +423,12 @@ function SessionsSidebarView({
     mutationFn: ({ removeDirectory, workspaceId }: DeleteWorkspacePayload) =>
       deleteWorkspace(workspaceId, { removeDirectory }),
     onSuccess: (_result, payload) => {
+      const deletedSessions = (
+        queryClient.getQueryData<SessionSidebarRecord[]>([
+          "sessions",
+          "sidebar",
+        ]) ?? []
+      ).filter((session) => session.workspace_id === payload.workspaceId);
       const remainingWorkspaces = workspaceOptions.filter(
         (workspace) => workspace.workspace_id !== payload.workspaceId,
       );
@@ -432,6 +438,24 @@ function SessionsSidebarView({
           (workspace) => workspace.workspace_id !== payload.workspaceId,
         ),
       );
+      queryClient.setQueryData<SessionSidebarRecord[]>(
+        ["sessions", "sidebar"],
+        (current) =>
+          (current ?? []).filter(
+            (session) => session.workspace_id !== payload.workspaceId,
+          ),
+      );
+      deletedSessions.forEach((session) => {
+        queryClient.removeQueries({
+          queryKey: ["sessions", session.session_id],
+        });
+        queryClient.removeQueries({
+          queryKey: ["sessions", "detail", session.session_id],
+        });
+        queryClient.removeQueries({
+          queryKey: ["sessions", "topology-lock", session.session_id],
+        });
+      });
       if (selectedWorkspaceId === payload.workspaceId) {
         setSelectedWorkspaceId(remainingWorkspaces[0]?.workspace_id ?? null);
         setSelectedSessionId(null);
@@ -1090,6 +1114,14 @@ function SessionsSidebarView({
                       )}
                     </div>
                   </div>
+                  {deleteWorkspaceTarget?.workspace_id === workspaceId ? (
+                    <div className="at-workspace-delete-message" role="note">
+                      {t("sidebarDeleteWorkspaceMessage", {
+                        count: group.sessions.length,
+                        label: group.label,
+                      })}
+                    </div>
+                  ) : null}
                   <DisclosureMotion
                     className="at-workspace-group-disclosure"
                     open={groupExpanded}

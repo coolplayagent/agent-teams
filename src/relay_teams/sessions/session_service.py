@@ -1326,6 +1326,31 @@ class SessionService:
         )
         await self._consolidate_session_memory_after_delete_async(delete_context)
 
+    async def delete_workspace_sessions_async(
+        self,
+        workspace_id: str,
+        *,
+        force: bool = False,
+        cascade: bool = False,
+    ) -> tuple[str, ...]:
+        sessions = await self._session_repo.list_by_workspace_async(workspace_id)
+        if sessions:
+            require_cascade_delete(
+                cascade,
+                message=(
+                    "Cannot delete workspace without cascading its related sessions"
+                ),
+            )
+        deleted_session_ids: list[str] = []
+        for session in sessions:
+            await self.delete_session_async(
+                session.session_id,
+                force=force,
+                cascade=True,
+            )
+            deleted_session_ids.append(session.session_id)
+        return tuple(deleted_session_ids)
+
     def _delete_session_with_prepared_context(
         self,
         session_id: str,

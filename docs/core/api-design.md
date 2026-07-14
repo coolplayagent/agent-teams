@@ -3836,10 +3836,13 @@ Query:
 - `remove_worktree`: `true|false` (deprecated alias for `remove_directory`)
 
 Request body:
-- optional `force`: required when `remove_directory=true` or `remove_worktree=true`
+- optional `cascade`: required when the workspace owns sessions
+- optional `force`: required when deleting running sessions or when `remove_directory=true` or `remove_worktree=true`
 
 Rules:
-- When `remove_directory=false`, the backend deletes only the workspace record.
+- The backend deletes the workspace's sessions through the session service before deleting the workspace record. This preserves the normal session cleanup semantics for runs, messages, subagents, and artifacts.
+- When the workspace owns sessions and `cascade` is omitted or `false`, the backend returns `409` without deleting the workspace or its sessions.
+- When `remove_directory=false`, local workspace files remain on disk.
 - When `remove_directory=true` and `force` is omitted or `false`, the backend returns `409` instead of removing the directory.
 - When `remove_directory=true` for `file_scope.backend = "git_worktree"`, the backend runs `git worktree remove --force` before deleting the workspace record.
 - When `remove_directory=true` for other workspace types, the backend deletes `root_path` before deleting the workspace record.

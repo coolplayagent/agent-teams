@@ -22,6 +22,7 @@ import {
   pickWorkspace,
   updateSession,
 } from "../api/client";
+import type { SessionSidebarRecord } from "../api/contracts";
 import {
   normalizeSessionSubagent,
   SessionsSidebar,
@@ -933,11 +934,11 @@ describe("SessionsSidebar", () => {
     expect(useUiStore.getState().selectedSessionId).toBeNull();
   });
 
-  it("confirms workspace removal without deleting the local directory by default", async () => {
+  it("confirms workspace and conversation removal while preserving local files by default", async () => {
     useUiStore.setState({
       selectedWorkspaceId: "workspace-1",
     });
-    listWorkspacesMock.mockResolvedValue([
+    listWorkspacesMock.mockResolvedValueOnce([
       {
         workspace_id: "workspace-1",
         root_path: "C:/work/agent-teams",
@@ -948,8 +949,27 @@ describe("SessionsSidebar", () => {
         root_path: "C:/work/extra-project",
         display_name: "Extra Project",
       },
+    ]).mockResolvedValue([
+      {
+        workspace_id: "workspace-1",
+        root_path: "C:/work/agent-teams",
+        display_name: "Agent Teams",
+      },
     ]);
-    listSidebarSessionsMock.mockResolvedValue([
+    listSidebarSessionsMock.mockResolvedValueOnce([
+      {
+        session_id: "session-a",
+        metadata: { title: "Alpha" },
+        updated_at: "2026-06-23T10:00:00Z",
+        workspace_id: "workspace-1",
+      },
+      {
+        session_id: "session-extra",
+        metadata: { title: "Extra conversation" },
+        updated_at: "2026-06-23T09:00:00Z",
+        workspace_id: "workspace-2",
+      },
+    ]).mockResolvedValue([
       {
         session_id: "session-a",
         metadata: { title: "Alpha" },
@@ -959,7 +979,7 @@ describe("SessionsSidebar", () => {
     ]);
     deleteWorkspaceMock.mockResolvedValue({ status: "ok" });
 
-    renderSidebar();
+    const queryClient = renderSidebar();
 
     expect(await screen.findByText("Extra Project")).toBeVisible();
     fireEvent.click(
@@ -978,6 +998,9 @@ describe("SessionsSidebar", () => {
     expect(within(workspaceHeader as HTMLElement).getByRole("button", {
       name: "Confirm delete",
     })).toBeVisible();
+    expect(screen.getByRole("note")).toHaveTextContent(
+      "Remove Extra Project and delete its 1 conversations?",
+    );
     const cancelWorkspaceDelete = within(workspaceHeader as HTMLElement)
       .getByRole("button", { name: "Cancel" });
     await waitFor(() => expect(cancelWorkspaceDelete).toHaveFocus());
@@ -1002,6 +1025,15 @@ describe("SessionsSidebar", () => {
         removeDirectory: false,
       }),
     );
+    await waitFor(() =>
+      expect(screen.queryByText("Extra Project")).not.toBeInTheDocument(),
+    );
+    expect(screen.queryByText("Extra conversation")).not.toBeInTheDocument();
+    expect(
+      queryClient
+        .getQueryData<SessionSidebarRecord[]>(["sessions", "sidebar"])
+        ?.map((session) => session.session_id),
+    ).toEqual(["session-a"]);
   });
 
   it("localizes the persistent sidebar frame in Chinese", async () => {

@@ -679,6 +679,13 @@ body {
   font-size: 11px;
 }
 
+.at-workspace-delete-message {
+  margin: 0 5px 2px 33px;
+  color: var(--at-danger);
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+
 .at-workspace-group-actions .ant-btn.is-active,
 .at-workspace-group-actions .ant-btn:hover,
 .at-workspace-group-actions .ant-btn:focus-visible {

@@ -358,7 +358,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
         return { promptId: null, sessionId: null, submittedAt };
       }
       const promptText =
-        effectivePromptText || summarizePromptAttachments(promptAttachments);
+        effectivePromptText || summarizePromptAttachments(promptAttachments, t);
       const promptId = useOptimisticRunStore
         .getState()
         .beginPrompt(sessionId, promptText);
@@ -398,7 +398,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
         request.shell_safety_policy_enabled = shellSafetyPolicyEnabled;
       }
       const titlePreview =
-        effectivePromptText || summarizePromptAttachments(promptAttachments);
+        effectivePromptText || summarizePromptAttachments(promptAttachments, t);
       const result = await createRun(request);
       return { result, titlePreview };
     },
@@ -926,17 +926,15 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
 
   async function handlePromptPaste(event: ClipboardEvent<HTMLElement>) {
     try {
-      const attachments = await readPastedImageAttachments(event);
+      const attachments = await readPastedImageAttachments(event, t);
       if (attachments.length === 0) {
         return;
       }
       setComposerStatus("");
       setPromptAttachments((current) => [...current, ...attachments]);
       mentions.inputRef.current?.focus();
-    } catch (error) {
-      setComposerStatus(
-        error instanceof Error ? error.message : "Failed to read pasted image.",
-      );
+    } catch {
+      setComposerStatus(t("composerImagePasteFailed"));
     }
   }
 
@@ -945,17 +943,15 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       return;
     }
     try {
-      const attachments = await readImageAttachmentFiles(files);
+      const attachments = await readImageAttachmentFiles(files, t);
       if (attachments.length === 0) {
         return;
       }
       setComposerStatus("");
       setPromptAttachments((current) => [...current, ...attachments]);
       mentions.inputRef.current?.focus();
-    } catch (error) {
-      setComposerStatus(
-        error instanceof Error ? error.message : "Failed to read image attachment.",
-      );
+    } catch {
+      setComposerStatus(t("composerImagePasteFailed"));
     }
   }
 

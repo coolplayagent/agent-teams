@@ -338,7 +338,8 @@ export function NewSessionView({
       const run = await createRun(request);
       return {
         promptText:
-          effectivePromptText || summarizePromptAttachments(promptAttachments),
+          effectivePromptText ||
+          summarizePromptAttachments(promptAttachments, t),
         run,
         session,
       };
@@ -390,7 +391,8 @@ export function NewSessionView({
       setPendingSession({
         error: null,
         promptText:
-          effectivePromptText || summarizePromptAttachments(promptAttachments),
+          effectivePromptText ||
+          summarizePromptAttachments(promptAttachments, t),
       });
       createMutation.mutate();
     }
@@ -736,17 +738,15 @@ export function NewSessionView({
     event: ClipboardEvent<HTMLElement>,
   ): Promise<void> {
     try {
-      const attachments = await readPastedImageAttachments(event);
+      const attachments = await readPastedImageAttachments(event, t);
       if (attachments.length === 0) {
         return;
       }
       setComposerStatus("");
       setPromptAttachments((current) => [...current, ...attachments]);
       mentions.inputRef.current?.focus();
-    } catch (error) {
-      setComposerStatus(
-        error instanceof Error ? error.message : t("composerImagePasteFailed"),
-      );
+    } catch {
+      setComposerStatus(t("composerImagePasteFailed"));
     }
   }
 
@@ -755,17 +755,15 @@ export function NewSessionView({
       return;
     }
     try {
-      const attachments = await readImageAttachmentFiles(files);
+      const attachments = await readImageAttachmentFiles(files, t);
       if (attachments.length === 0) {
         return;
       }
       setComposerStatus("");
       setPromptAttachments((current) => [...current, ...attachments]);
       mentions.inputRef.current?.focus();
-    } catch (error) {
-      setComposerStatus(
-        error instanceof Error ? error.message : t("composerImagePasteFailed"),
-      );
+    } catch {
+      setComposerStatus(t("composerImagePasteFailed"));
     }
   }
 

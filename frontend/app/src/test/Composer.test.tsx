@@ -2129,6 +2129,78 @@ describe("Composer", () => {
     });
   });
 
+  it("localizes attachment controls, generated names, and media-only summaries", async () => {
+    useUiStore.setState({ language: "zh-CN" });
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [
+        {
+          role_id: "Writer",
+          name: "Writer",
+          input_modalities: ["image"],
+        },
+      ],
+    });
+    createRunMock.mockResolvedValue({
+      run_id: "run-1",
+      session_id: "session-1",
+    });
+    const controller = runStreamController();
+
+    renderComposer(controller);
+
+    pasteImage("", "image/webp");
+
+    expect(await screen.findByLabelText("提示附件")).toBeVisible();
+    expect(await screen.findByText("粘贴图片-1.webp")).toBeVisible();
+    expect(screen.getByText("预览")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "移除 粘贴图片-1.webp" }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => expect(createRunMock).toHaveBeenCalledOnce());
+    expect(createRunMock.mock.calls[0]?.[0].input[0]).toMatchObject({
+      kind: "inline_media",
+      mime_type: "image/webp",
+      name: "粘贴图片-1.webp",
+    });
+    await waitFor(() =>
+      expect(controller.startRunStream).toHaveBeenCalledWith({
+        promptText: "[图片]",
+        runId: "run-1",
+        sessionId: "session-1",
+      }),
+    );
+  });
+
+  it("shows localized attachment read failures instead of browser error text", async () => {
+    useUiStore.setState({ language: "zh-CN" });
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [
+        {
+          role_id: "Writer",
+          name: "Writer",
+          input_modalities: ["image"],
+        },
+      ],
+    });
+    const readSpy = vi
+      .spyOn(FileReader.prototype, "readAsDataURL")
+      .mockImplementation(function (this: FileReader) {
+        this.dispatchEvent(new ProgressEvent("error"));
+      });
+
+    try {
+      renderComposer();
+      pasteImage("broken.png");
+
+      expect(await screen.findByText("读取粘贴图片失败。")).toBeVisible();
+      expect(screen.queryByText(/raw|failed to read/i)).toBeNull();
+    } finally {
+      readSpy.mockRestore();
+    }
+  });
+
   it("removes pasted image attachments before sending", async () => {
     getRoleConfigOptionsMock.mockResolvedValue({
       normal_mode_roles: [],
@@ -3678,7 +3750,7 @@ async function openModelControls(_label = "Model profile") {
 
 function pasteImage(filename: string, mimeType = "image/png"): File {
   const file = new File(["image-bytes"], filename, { type: mimeType });
-  fireEvent.paste(screen.getByLabelText("Prompt"), {
+  fireEvent.paste(screen.getByLabelText(/^(Prompt|提示词)$/), {
     clipboardData: {
       items: [
         {

@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 import type { ClipboardEvent } from "react";
 
 import type { RunInputPart } from "../../api/contracts";
+import { useTranslations, type Translate } from "../../i18n";
 
 export interface PromptAttachment {
   base64Data: string;
@@ -28,12 +29,13 @@ export function PromptAttachments({
   hasError,
   onRemove,
 }: PromptAttachmentsProps) {
+  const t = useTranslations();
   if (attachments.length === 0) {
     return null;
   }
   return (
     <div
-      aria-label="Prompt attachments"
+      aria-label={t("composerPromptAttachments")}
       className={`at-prompt-attachments${hasError ? " is-error" : ""}`}
     >
       {attachments.map((attachment) => (
@@ -43,7 +45,7 @@ export function PromptAttachments({
             className="at-prompt-attachment-thumb"
             height={44}
             preview={{
-              mask: "Preview",
+              mask: t("composerAttachmentPreview"),
             }}
             src={attachment.previewUrl}
             width={44}
@@ -56,11 +58,16 @@ export function PromptAttachments({
               className="at-prompt-attachment-meta"
               type="secondary"
             >
-              {formatAttachmentSize(attachment.sizeBytes)}
+              {formatAttachmentSize(
+                attachment.sizeBytes,
+                t("composerAttachmentImage"),
+              )}
             </Typography.Text>
           </div>
           <Button
-            aria-label={`Remove ${attachment.name}`}
+            aria-label={t("composerAttachmentRemove", {
+              name: attachment.name,
+            })}
             icon={<X size={14} />}
             onClick={() => onRemove(attachment.id)}
             size="small"
@@ -74,6 +81,7 @@ export function PromptAttachments({
 
 export async function readPastedImageAttachments(
   event: ClipboardEvent<HTMLElement>,
+  t: Translate,
 ): Promise<PromptAttachment[]> {
   const files = Array.from(event.clipboardData?.items ?? [])
     .filter((item) => String(item.type || "").startsWith("image/"))
@@ -84,19 +92,20 @@ export async function readPastedImageAttachments(
   }
   event.preventDefault();
   const attachments = await Promise.all(
-    files.map((file, index) => normalizeImageAttachment(file, index)),
+    files.map((file, index) => normalizeImageAttachment(file, index, t)),
   );
   return attachments.filter((attachment): attachment is PromptAttachment => attachment !== null);
 }
 
 export async function readImageAttachmentFiles(
   files: Iterable<File>,
+  t: Translate,
 ): Promise<PromptAttachment[]> {
   const imageFiles = Array.from(files).filter((file) =>
     String(file.type || "").startsWith("image/"),
   );
   const attachments = await Promise.all(
-    imageFiles.map((file, index) => normalizeImageAttachment(file, index)),
+    imageFiles.map((file, index) => normalizeImageAttachment(file, index, t)),
   );
   return attachments.filter(
     (attachment): attachment is PromptAttachment => attachment !== null,
@@ -127,16 +136,22 @@ export function buildPromptInputParts(
   return parts;
 }
 
-export function summarizePromptAttachments(attachments: PromptAttachment[]): string {
+export function summarizePromptAttachments(
+  attachments: PromptAttachment[],
+  t: Translate,
+): string {
   if (attachments.length === 0) {
     return "";
   }
-  return attachments.length === 1 ? "[image]" : `[${attachments.length} images]`;
+  return attachments.length === 1
+    ? t("composerAttachmentSummarySingle")
+    : t("composerAttachmentSummaryMultiple", { count: attachments.length });
 }
 
 function normalizeImageAttachment(
   file: File,
   index: number,
+  t: Translate,
 ): Promise<PromptAttachment | null> {
   return readFileAsDataUrl(file).then((previewUrl) => {
     const { base64Data, mimeType } = parseDataUrl(previewUrl);
@@ -148,7 +163,7 @@ function normalizeImageAttachment(
       height: null,
       id: `attachment-${Date.now()}-${attachmentSequence++}`,
       mimeType,
-      name: resolveAttachmentName(file, index, mimeType),
+      name: resolveAttachmentName(file, index, mimeType, t),
       previewUrl,
       sizeBytes: Number.isFinite(file.size) ? file.size : null,
       width: null,
@@ -161,7 +176,7 @@ function readFileAsDataUrl(file: File): Promise<string> {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result || ""));
     reader.onerror = () => {
-      reject(reader.error ?? new Error("Failed to read pasted image."));
+      reject(reader.error ?? new Error());
     };
     reader.readAsDataURL(file);
   });
@@ -178,13 +193,21 @@ function parseDataUrl(dataUrl: string): { base64Data: string; mimeType: string }
   };
 }
 
-function resolveAttachmentName(file: File, index: number, mimeType: string): string {
+function resolveAttachmentName(
+  file: File,
+  index: number,
+  mimeType: string,
+  t: Translate,
+): string {
   const name = file.name.trim();
   if (name) {
     return name;
   }
   const extension = attachmentExtension(mimeType);
-  return `pasted-image-${index + 1}.${extension}`;
+  return t("composerPastedImageName", {
+    extension,
+    index: index + 1,
+  });
 }
 
 function attachmentExtension(mimeType: string): string {
@@ -195,9 +218,12 @@ function attachmentExtension(mimeType: string): string {
   return subtype === "jpeg" ? "jpg" : subtype.replace(/[^a-z0-9]+/g, "") || "png";
 }
 
-function formatAttachmentSize(sizeBytes: number | null): string {
+function formatAttachmentSize(
+  sizeBytes: number | null,
+  imageLabel: string,
+): string {
   if (sizeBytes === null) {
-    return "Image";
+    return imageLabel;
   }
   if (sizeBytes < 1024) {
     return `${sizeBytes} B`;

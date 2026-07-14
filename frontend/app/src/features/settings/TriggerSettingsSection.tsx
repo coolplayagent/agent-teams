@@ -44,6 +44,10 @@ import type {
 import { FormChoiceControl } from "../../components/ChoiceControl";
 import { useTranslations, type Translate } from "../../i18n";
 import { SettingsQueryState, SettingsSection } from "./SettingsShared";
+import {
+  triggerSettingsScope,
+  type TriggerSettingsProvider,
+} from "./triggerSettingsAdapters";
 
 type FeishuEditorMode = "create" | "edit";
 
@@ -108,8 +112,6 @@ const DEFAULT_TRIGGER_RULE: FeishuTriggerRule = "mention_only";
 const DEFAULT_SESSION_MODE: SessionMode = "normal";
 const DEFAULT_THINKING_EFFORT: ThinkingEffort = "medium";
 
-export type TriggerSettingsProvider = "feishu" | "wechat";
-
 export function TriggerSettingsSection({
   embedded = false,
   onSaved,
@@ -122,6 +124,7 @@ export function TriggerSettingsSection({
   const { message, modal } = App.useApp();
   const queryClient = useQueryClient();
   const t = useTranslations();
+  const scope = triggerSettingsScope(provider);
   const [form] = Form.useForm<FeishuTriggerFormValues>();
   const [wechatForm] = Form.useForm<WeChatGatewayFormValues>();
   const [editor, setEditor] = useState<FeishuEditorState | null>(null);
@@ -140,12 +143,12 @@ export function TriggerSettingsSection({
     Form.useWatch("thinking_enabled", wechatForm) ?? false;
 
   const accountsQuery = useQuery({
-    enabled: provider !== "wechat",
+    enabled: scope.includeFeishu,
     queryKey: ["settings", "triggers", "feishu", "accounts"],
     queryFn: listFeishuGatewayAccounts,
   });
   const wechatAccountsQuery = useQuery({
-    enabled: provider !== "feishu",
+    enabled: scope.includeWechat,
     queryKey: ["settings", "triggers", "wechat", "accounts"],
     queryFn: listWeChatGatewayAccounts,
   });
@@ -171,14 +174,14 @@ export function TriggerSettingsSection({
     [wechatAccountsQuery.data],
   );
   const loading =
-    (provider !== "wechat" && accountsQuery.isLoading) ||
-    (provider !== "feishu" && wechatAccountsQuery.isLoading) ||
+    (scope.includeFeishu && accountsQuery.isLoading) ||
+    (scope.includeWechat && wechatAccountsQuery.isLoading) ||
     workspacesQuery.isLoading ||
     rolesQuery.isLoading ||
     orchestrationQuery.isLoading;
   const error =
-    (provider !== "wechat" ? accountsQuery.error : null) ??
-    (provider !== "feishu" ? wechatAccountsQuery.error : null) ??
+    (scope.includeFeishu ? accountsQuery.error : null) ??
+    (scope.includeWechat ? wechatAccountsQuery.error : null) ??
     workspacesQuery.error ??
     rolesQuery.error ??
     orchestrationQuery.error;
@@ -784,20 +787,14 @@ export function TriggerSettingsSection({
   return (
     <SettingsSection
       embedded={embedded}
-      title={
-        provider === "feishu"
-          ? t("settingsTriggersFeishu")
-          : provider === "wechat"
-            ? t("settingsTriggersWeChat")
-            : t("settingsTriggers")
-      }
+      title={t(scope.titleKey)}
     >
       <SettingsQueryState error={error} loading={loading} />
       {!loading &&
-      (provider === "wechat" || accountsQuery.data !== undefined) &&
-      (provider === "feishu" || wechatAccountsQuery.data !== undefined) ? (
+      (!scope.includeFeishu || accountsQuery.data !== undefined) &&
+      (!scope.includeWechat || wechatAccountsQuery.data !== undefined) ? (
         <div className="at-trigger-provider-grid">
-          {provider !== "wechat" ? (
+          {scope.includeFeishu ? (
             <section className="at-trigger-provider-section">
               <div className="at-trigger-provider-head">
                 <div className="at-settings-list-main">
@@ -919,7 +916,7 @@ export function TriggerSettingsSection({
             </section>
           ) : null}
 
-          {provider !== "feishu" ? (
+          {scope.includeWechat ? (
             <section className="at-trigger-provider-section">
               <div className="at-trigger-provider-head">
                 <div className="at-settings-list-main">

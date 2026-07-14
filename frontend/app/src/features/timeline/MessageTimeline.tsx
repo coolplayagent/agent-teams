@@ -242,7 +242,7 @@ export function MessageTimeline({
   const pendingProgrammaticScrollRef = useRef<PendingProgrammaticScroll | null>(
     null,
   );
-  const pendingRoundRunIdRef = useRef<string | null>(null);
+  const pendingRoundNavigationRef = useRef<PendingRoundNavigation | null>(null);
   const scrollScopeKey = timelineScrollScopeKey(
     sessionId,
     variant,
@@ -937,7 +937,10 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
       pendingProgrammaticScrollRef.current = null;
     }
     if (container === parentRef.current) {
-      const snapshot = captureCurrentTimelineScrollSnapshot(container);
+      const pendingRoundNavigation = pendingRoundNavigationRef.current;
+      let snapshot = pendingRoundNavigation === null
+        ? captureCurrentTimelineScrollSnapshot(container)
+        : roundNavigationScrollSnapshot(rows, pendingRoundNavigation.rowKey);
       scrollSnapshotRef.current = snapshot;
       rememberTimelineScopeValue(
         scrollSnapshotsByScopeRef.current,
@@ -947,10 +950,30 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
       if (snapshot.shouldFollow) {
         setNewContentAvailable(false);
       }
-      syncActiveRunIdFromViewport(container, pendingRoundRunIdRef, setActiveRunId);
+      if (
+        syncActiveRunIdFromViewport(
+          container,
+          pendingRoundNavigationRef,
+          setActiveRunId,
+        )
+      ) {
+        snapshot = captureCurrentTimelineScrollSnapshot(container);
+        scrollSnapshotRef.current = snapshot;
+        rememberTimelineScopeValue(
+          scrollSnapshotsByScopeRef.current,
+          scrollScopeKey,
+          snapshot,
+        );
+      }
       hydrateCurrentViewportRows(container);
     }
-  }, [captureCurrentTimelineScrollSnapshot, hydrateCurrentViewportRows, scrollScopeKey, visible]);
+  }, [
+    captureCurrentTimelineScrollSnapshot,
+    hydrateCurrentViewportRows,
+    rows,
+    scrollScopeKey,
+    visible,
+  ]);
   const handleTimelinePointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
     const target = event.target;
     if (!(target instanceof Element)) {
@@ -973,13 +996,23 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
     }
   }, [captureCurrentTimelineScrollSnapshot]);
   const handleRoundSelect = useCallback((runId: string) => {
-    pendingRoundRunIdRef.current = runId;
-    setActiveRunId(runId);
     const rowIndex = rows.findIndex((row) => row.runId === runId);
-    if (rowIndex >= 0) {
-      virtualizer.scrollToIndex(rowIndex, { align: "start" });
+    const row = rows[rowIndex];
+    if (row === undefined) {
+      return;
     }
-  }, [rows, virtualizer]);
+    const navigation = { rowKey: row.key, runId };
+    const snapshot = roundNavigationScrollSnapshot(rows, row.key);
+    pendingRoundNavigationRef.current = navigation;
+    scrollSnapshotRef.current = snapshot;
+    rememberTimelineScopeValue(
+      scrollSnapshotsByScopeRef.current,
+      scrollScopeKey,
+      snapshot,
+    );
+    setActiveRunId(runId);
+    virtualizer.scrollToIndex(rowIndex, { align: "start" });
+  }, [rows, scrollScopeKey, virtualizer]);
   const handleJumpToLatest = useCallback(() => {
     const container = parentRef.current;
     if (container === null) {
@@ -1087,7 +1120,7 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
   }, [liveProcessedRunCount]);
 
   useEffect(() => {
-    pendingRoundRunIdRef.current = null;
+    pendingRoundNavigationRef.current = null;
     setActiveRunId(null);
     setExpandedHistorySegmentIds(new Set());
     setExpandedDisclosureIds(new Set());
@@ -1193,7 +1226,9 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
     ) {
       setNewContentAvailable(true);
     }
-    const shouldWriteScrollPosition = scopeChanged || scopeRestoreBecameReady || snapshot === null ||
+    const roundNavigationPending = pendingRoundNavigationRef.current !== null;
+    const shouldWriteScrollPosition = roundNavigationPending || scopeChanged ||
+      scopeRestoreBecameReady || snapshot === null ||
       snapshot.shouldFollow || snapshot.preferAnchor ||
       (contentChanged && !contentAppended);
     if (shouldWriteScrollPosition) {
@@ -1216,16 +1251,11 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
       scrollSnapshotRef.current = snapshot?.shouldFollow === false
         ? {
             ...snapshot,
-            preferAnchor: false,
+            preferAnchor: roundNavigationPending,
             scrollTop: scrollMetric(container.scrollTop),
           }
         : captureCurrentTimelineScrollSnapshot(container);
     }
-    rememberTimelineScopeValue(
-      scrollSnapshotsByScopeRef.current,
-      scrollScopeKey,
-      scrollSnapshotRef.current,
-    );
     if (!scopeRestorePending) {
       rememberTimelineScopeValue(
         contentSignaturesByScrollScopeRef.current,
@@ -1233,7 +1263,20 @@ function relocateCoveredOpenRuntimeCursors(rows: TimelineRow[]): TimelineRow[] {
         nextContentSignature,
       );
     }
-    syncActiveRunIdFromViewport(container, pendingRoundRunIdRef, setActiveRunId);
+    if (
+      syncActiveRunIdFromViewport(
+        container,
+        pendingRoundNavigationRef,
+        setActiveRunId,
+      )
+    ) {
+      scrollSnapshotRef.current = captureCurrentTimelineScrollSnapshot(container);
+    }
+    rememberTimelineScopeValue(
+      scrollSnapshotsByScopeRef.current,
+      scrollScopeKey,
+      scrollSnapshotRef.current,
+    );
     hydrateCurrentViewportRows(container);
   }, [
     captureCurrentTimelineScrollSnapshot,
@@ -1595,6 +1638,11 @@ interface PendingProgrammaticScroll {
   scrollTop: number;
 }
 
+interface PendingRoundNavigation {
+  rowKey: string;
+  runId: string;
+}
+
 interface TimelineContentSignature {
   lastRowContentLength: number;
   lastRowKey: string;
@@ -1806,6 +1854,19 @@ function findTimelineAnchorRow(
   return container.querySelector<HTMLElement>(
     `.at-timeline-row[data-row-key="${escapedRowKey}"]`,
   );
+}
+
+function roundNavigationScrollSnapshot(
+  rows: TimelineRow[],
+  rowKey: string,
+): TimelineScrollSnapshot {
+  const scrollTop = estimatedTimelineRowTop(rows, rowKey) ?? 0;
+  return {
+    anchor: { offset: 0, rowKey },
+    preferAnchor: true,
+    scrollTop,
+    shouldFollow: false,
+  };
 }
 
 function syncTimelineScrollPosition(
@@ -6641,22 +6702,24 @@ function visibleRunIdFromRenderedRows(container: HTMLElement): string | null {
 
 function syncActiveRunIdFromViewport(
   container: HTMLElement,
-  pendingRoundRunIdRef: { current: string | null },
+  pendingRoundNavigationRef: { current: PendingRoundNavigation | null },
   setActiveRunId: (runId: string) => void,
-): void {
+): boolean {
   if (scrollMetric(container.clientHeight) <= 0 || scrollMetric(container.scrollHeight) <= 0) {
-    return;
+    return false;
   }
   const visibleRunId = visibleRunIdFromRenderedRows(container);
   if (visibleRunId === null) {
-    return;
+    return false;
   }
-  const pendingRunId = pendingRoundRunIdRef.current;
+  const pendingRunId = pendingRoundNavigationRef.current?.runId ?? null;
   if (pendingRunId !== null && visibleRunId !== pendingRunId) {
-    return;
+    return false;
   }
-  pendingRoundRunIdRef.current = null;
+  const resolvedPendingNavigation = pendingRunId !== null;
+  pendingRoundNavigationRef.current = null;
   setActiveRunId(visibleRunId);
+  return resolvedPendingNavigation;
 }
 
 function createMessageRoundLookup(rounds: SessionRound[]): MessageRoundLookup {

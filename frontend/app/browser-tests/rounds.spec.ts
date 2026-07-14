@@ -316,9 +316,31 @@ test("collects paged round rail history and navigates older rounds", async ({ pa
     await expect
       .poll(() => timeline.evaluate((element) => element.scrollTop))
       .toBeLessThan(initialScrollTop);
-    await expect(
-      page.locator(".at-message").filter({ hasText: "Paged archive output" }),
-    ).toBeVisible();
+    const archiveMessage = page.locator(".at-message").filter({
+      hasText: "Paged archive output",
+    });
+    await expect(archiveMessage).toBeVisible();
+    const firstClickScrollTop = await timeline.evaluate((element) => element.scrollTop);
+    await page.evaluate(() =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      })
+    );
+    expect(
+      Math.abs(
+        (await timeline.evaluate((element) => element.scrollTop)) - firstClickScrollTop,
+      ),
+    ).toBeLessThanOrEqual(1);
+    const [timelineBox, archiveMessageBox] = await Promise.all([
+      timeline.boundingBox(),
+      archiveMessage.boundingBox(),
+    ]);
+    expect(timelineBox).not.toBeNull();
+    expect(archiveMessageBox).not.toBeNull();
+    expect(archiveMessageBox?.y ?? Number.POSITIVE_INFINITY)
+      .toBeGreaterThanOrEqual(timelineBox?.y ?? 0);
+    expect(archiveMessageBox?.y ?? Number.POSITIVE_INFINITY)
+      .toBeLessThan((timelineBox?.y ?? 0) + (timelineBox?.height ?? 0));
 
     await archiveButton.hover();
     const detail = roundRail.locator(".at-round-rail-detail.is-open");
@@ -327,9 +349,20 @@ test("collects paged round rail history and navigates older rounds", async ({ pa
     await expect(detail.getByText("Audit old replay boundary")).toBeVisible();
     await expect(detail.getByText("Replay archived stream")).toBeVisible();
     await expect(detail.getByText("1 pending approvals")).toBeVisible();
+    await expect(detail).not.toHaveClass(/is-compact/);
+    const richDetailWidth = (await detail.boundingBox())?.width ?? 0;
+    expect(richDetailWidth).toBeGreaterThan(200);
     await expect(
       page.locator(".at-message").filter({ hasText: "Audit old replay boundary" }),
     ).toHaveCount(0);
+
+    await middleButton.hover();
+    await expect(detail).toHaveClass(/is-compact/);
+    await expect(detail).toContainText("Completed");
+    const compactDetailWidth = (await detail.boundingBox())?.width ?? 0;
+    expect(compactDetailWidth).toBeGreaterThan(0);
+    expect(compactDetailWidth).toBeLessThan(richDetailWidth);
+    expect(compactDetailWidth).toBeLessThan(120);
 
     await latestButton.hover();
     await expect(archiveButton).toHaveAttribute("aria-current", "step");

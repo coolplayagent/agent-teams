@@ -40,6 +40,8 @@ export function RoundRail({
           const active = round.run_id === activeRunId;
           const detailId = `at-round-rail-detail-${index}`;
           const todoItems = round.todo?.items ?? [];
+          const detailMetaItems = roundDetailMetaItems(summary, t);
+          const compactDetail = todoItems.length === 0 && detailMetaItems.length <= 1;
           const detailOpen = activeDetail?.runId === round.run_id;
           const classNames = [
             "at-round-rail-item",
@@ -75,17 +77,21 @@ export function RoundRail({
                 aria-label={t("timelineRoundDetail")}
                 className={
                   detailOpen
-                    ? "at-round-rail-detail is-open"
-                    : "at-round-rail-detail"
+                    ? `at-round-rail-detail ${compactDetail ? "is-compact " : ""}is-open`
+                    : `at-round-rail-detail${compactDetail ? " is-compact" : ""}`
                 }
                 id={detailId}
                 style={
                   detailOpen
-                    ? { left: activeDetail.left, top: activeDetail.top }
+                    ? {
+                        maxWidth: activeDetail.maxWidth,
+                        right: activeDetail.right,
+                        top: activeDetail.top,
+                      }
                     : undefined
                 }
               >
-                <RoundRailDetail summary={summary} t={t} todoItems={todoItems} />
+                <RoundRailDetail metaItems={detailMetaItems} t={t} todoItems={todoItems} />
               </div>
             </div>
           );
@@ -96,7 +102,8 @@ export function RoundRail({
 }
 
 interface RoundRailDetailPosition {
-  left: number;
+  maxWidth: number;
+  right: number;
   runId: string;
   top: number;
 }
@@ -109,18 +116,22 @@ const ROUND_RAIL_DETAIL_MARGIN = 12;
 function detailPosition(runId: string, rect: DOMRect): RoundRailDetailPosition {
   const viewportWidth = window.innerWidth;
   const viewportHeight = window.innerHeight;
-  const left = Math.max(
+  const right = Math.max(
     ROUND_RAIL_DETAIL_MARGIN,
+    viewportWidth - rect.left + ROUND_RAIL_DETAIL_GAP,
+  );
+  const maxWidth = Math.max(
+    0,
     Math.min(
-      rect.left - ROUND_RAIL_DETAIL_WIDTH - ROUND_RAIL_DETAIL_GAP,
-      viewportWidth - ROUND_RAIL_DETAIL_WIDTH - ROUND_RAIL_DETAIL_MARGIN,
+      ROUND_RAIL_DETAIL_WIDTH,
+      viewportWidth - right - ROUND_RAIL_DETAIL_MARGIN,
     ),
   );
   const top = Math.max(
     ROUND_RAIL_DETAIL_MARGIN,
     Math.min(rect.top, viewportHeight - ROUND_RAIL_DETAIL_MAX_HEIGHT - ROUND_RAIL_DETAIL_MARGIN),
   );
-  return { left, runId, top };
+  return { maxWidth, right, runId, top };
 }
 
 function handleDetailBlur(
@@ -135,15 +146,14 @@ function handleDetailBlur(
 }
 
 function RoundRailDetail({
-  summary,
+  metaItems,
   t,
   todoItems,
 }: {
-  summary: RoundSummary;
+  metaItems: string[];
   t: Translate;
   todoItems: SessionRoundTodoItem[];
 }) {
-  const metaItems = roundDetailMetaItems(summary, t);
   return (
     <>
       {metaItems.length > 0 ? (

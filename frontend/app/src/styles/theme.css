@@ -5347,7 +5347,7 @@ body {
   z-index: 8;
   display: grid;
   gap: 8px;
-  width: min(272px, calc(100vw - 32px));
+  width: 272px;
   max-height: min(320px, 56vh);
   padding: 10px 11px;
   overflow: auto;
@@ -5359,6 +5359,10 @@ body {
   pointer-events: none;
   visibility: hidden;
   box-shadow: 0 8px 20px var(--at-shadow-color);
+}
+
+.at-round-rail-detail.is-compact {
+  width: max-content;
 }
 
 .at-round-rail-detail.is-open {

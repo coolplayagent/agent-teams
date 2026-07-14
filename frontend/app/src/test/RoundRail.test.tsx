@@ -164,7 +164,8 @@ describe("RoundRail", () => {
 
     const detail = screen.getByLabelText("Round detail");
     expect(detail).toHaveClass("is-open");
-    expect(detail).toHaveStyle({ left: "12px", top: "12px" });
+    expect(detail).not.toHaveClass("is-compact");
+    expect(detail).toHaveStyle({ maxWidth: "100px", right: "108px", top: "12px" });
     expect(within(detail).getByText("Running")).toBeVisible();
     expect(within(detail).getByText("2 pending approvals")).toBeVisible();
     expect(within(detail).getByText("Todo")).toBeVisible();
@@ -173,6 +174,27 @@ describe("RoundRail", () => {
     expect(within(detail).getByText("In progress")).toBeVisible();
     expect(within(detail).getByText("Record exact replay deltas")).toBeVisible();
     expect(within(detail).getByText("blocked")).toBeVisible();
+  });
+
+  it("keeps status-only details compact and aligned to the rail edge", () => {
+    setViewportSize(1000, 720);
+    const { container } = render(
+      <RoundRail
+        activeRunId="run-1"
+        onSelectRun={vi.fn()}
+        rounds={[round("run-1", "Inspect issue")]}
+        t={t}
+      />,
+    );
+    const runNode = requireElement(container, ".at-round-rail-node");
+    setElementRect(runNode, { left: 840, top: 40, width: 128, height: 44 });
+
+    fireEvent.mouseEnter(runNode);
+
+    const detail = screen.getByLabelText("Round detail");
+    expect(detail).toHaveClass("is-compact", "is-open");
+    expect(detail).toHaveStyle({ maxWidth: "272px", right: "168px", top: "40px" });
+    expect(within(detail).getByText("Completed")).toBeVisible();
   });
 
   it("keeps the detail open while focus moves inside it and closes on outside blur", () => {

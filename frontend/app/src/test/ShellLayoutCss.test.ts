@@ -402,6 +402,12 @@ describe("shell layout CSS", () => {
       /\.at-round-rail-item:hover,[\s\S]*?\.at-round-rail-item:focus-visible,[\s\S]*?\.at-round-rail-item\.is-active\s*{[\s\S]*?background:\s*var\(--at-surface-muted\);[\s\S]*?outline:\s*none;/,
     );
     expect(themeCss).toMatch(
+      /\.at-round-rail-detail\s*{[\s\S]*?width:\s*272px;/,
+    );
+    expect(themeCss).toMatch(
+      /\.at-round-rail-detail\.is-compact\s*{[\s\S]*?width:\s*max-content;/,
+    );
+    expect(themeCss).toMatch(
       /\.at-round-rail-title\s*{[\s\S]*?overflow:\s*hidden;[\s\S]*?text-overflow:\s*ellipsis;[\s\S]*?white-space:\s*nowrap;/,
     );
     expect(themeCss).toMatch(

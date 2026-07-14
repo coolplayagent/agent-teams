@@ -3783,7 +3783,7 @@ describe("MessageTimeline", () => {
 
   it("renders the round rail from session rounds and marks selected rounds", async () => {
     const restoreMeasurements = mockElementMeasurements({
-      clientHeight: 220,
+      clientHeight: 80,
       rowHeight: 86,
     });
     const restoreRects = mockTimelineRects();
@@ -3867,10 +3867,14 @@ describe("MessageTimeline", () => {
       });
       await waitFor(() => expect(followUpRound).toHaveAttribute("aria-current", "step"));
       expect(initialRound).not.toHaveAttribute("aria-current");
+      const timeline = timelineElement(container);
+      const latestRoundScrollTop = timeline.scrollTop;
+      expect(latestRoundScrollTop).toBeGreaterThan(0);
 
       fireEvent.click(initialRound);
 
       await waitFor(() => expect(initialRound).toHaveAttribute("aria-current", "step"));
+      await waitFor(() => expect(timeline.scrollTop).toBeLessThan(latestRoundScrollTop));
       expect(followUpRound).not.toHaveAttribute("aria-current");
       fireEvent.click(followUpRound);
 
@@ -3953,18 +3957,6 @@ describe("MessageTimeline", () => {
       fireEvent.click(thirdRound);
 
       await waitFor(() => expect(thirdRound).toHaveAttribute("aria-current", "step"));
-      timeline.scrollTop = 0;
-      fireEvent.scroll(timeline);
-      expect(thirdRound).toHaveAttribute("aria-current", "step");
-
-      const thirdRoundRow = container.querySelector(
-        '.at-timeline-row[data-run-id="run-3"]',
-      );
-      expect(thirdRoundRow).not.toBeNull();
-      timeline.scrollTop = translateY(thirdRoundRow);
-      fireEvent.scroll(timeline);
-      await waitFor(() => expect(thirdRound).toHaveAttribute("aria-current", "step"));
-
       timeline.scrollTop = 0;
       fireEvent.scroll(timeline);
       await waitFor(() => expect(firstRound).toHaveAttribute("aria-current", "step"));

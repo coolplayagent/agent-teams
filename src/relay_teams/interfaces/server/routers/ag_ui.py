@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Annotated, cast
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
@@ -431,7 +431,7 @@ def _to_json_value(value: object) -> JsonValue:
     try:
         return JSON_VALUE_ADAPTER.validate_python(value)
     except ValidationError:
-        return cast(JsonValue, str(value))
+        return str(value)
 
 
 def _format_stream_error(message: str) -> str:

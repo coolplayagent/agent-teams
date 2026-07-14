@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import ClassVar, Protocol, cast
+from typing import ClassVar, Protocol
 
 from fastapi import HTTPException, Request
 from pydantic import BaseModel, ConfigDict
@@ -90,7 +90,7 @@ def _run_content_container_from_request(request: Request) -> RunContentContainer
             status_code=503,
             detail="Media uploads require the server container to be initialized",
         )
-    return cast(RunContentContainer, container)
+    return container
 
 
 def _reuse_normalized_inline_media_refs(

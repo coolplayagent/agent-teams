@@ -173,9 +173,9 @@ def _profile_ineligibility_reason(
         return "diarization_not_supported"
     if realtime_model is not None or is_supported_realtime_stt_model(profile.model):
         return None
-    if profile.capabilities.input.audio is True:
+    if profile.capabilities.input.audio:
         return None
-    if profile.capabilities.output.audio is True:
+    if profile.capabilities.output.audio:
         return "tts_only"
     if profile.capabilities.input.audio is False:
         return "input_audio_not_supported"

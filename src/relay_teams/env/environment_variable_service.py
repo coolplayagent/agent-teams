@@ -155,8 +155,8 @@ class EnvironmentVariableService:
         self._on_app_env_changed(frozenset(changed_keys))
         return self._public_record(next_record)
 
+    @staticmethod
     def _public_record(
-        self,
         record: EnvironmentVariableRecord,
     ) -> EnvironmentVariableRecord:
         if not is_sensitive_env_key(record.key):

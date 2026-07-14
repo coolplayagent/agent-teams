@@ -297,6 +297,12 @@ describe("BoardTodosView", () => {
     expect(screen.getByText("Review board handoff")).toBeVisible();
     expect(screen.getByText("PR #12")).toBeVisible();
     expect(screen.getByRole("status")).toHaveTextContent(/Showing\s+3/);
+    const archiveToggle = screen.getByRole("switch", {
+      name: "Include archived",
+    });
+    expect(archiveToggle.closest(".at-choice-control")).toHaveClass(
+      "at-board-archive-toggle",
+    );
     expect(screen.queryByText("Revision")).not.toBeInTheDocument();
     expect(
       document.querySelector(".at-board-overview"),

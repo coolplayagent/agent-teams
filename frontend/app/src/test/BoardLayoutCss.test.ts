@@ -22,5 +22,11 @@ describe("board workbench layout", () => {
     expect(css).toMatch(
       /\.at-board-content\s*{[\s\S]*?gap:\s*8px;[\s\S]*?padding:\s*10px 14px 14px;/,
     );
+    expect(css).toMatch(
+      /\.at-board-view \.at-board-archive-toggle\s*{[\s\S]*?display:\s*inline-grid;[\s\S]*?align-items:\s*center;[\s\S]*?min-height:\s*32px;/,
+    );
+    expect(css).toMatch(
+      /\.at-board-view \.at-board-archive-toggle \.at-choice-control-label\s*{[\s\S]*?display:\s*inline-flex;[\s\S]*?align-items:\s*center;[\s\S]*?line-height:\s*1;/,
+    );
   });
 });

@@ -556,6 +556,7 @@ export function BoardTodosView({
           </Typography.Text>
           <ChoiceControl
             checked={includeArchived}
+            className="at-board-archive-toggle"
             kind="switch"
             label={
               <>

@@ -49,6 +49,26 @@
   font-weight: 620;
 }
 
+.at-board-view .at-board-archive-toggle {
+  display: inline-grid;
+  grid-template-columns: var(--at-choice-size) minmax(0, auto);
+  align-items: center;
+  justify-self: end;
+  gap: 7px;
+  min-height: 32px;
+}
+
+.at-board-view .at-board-archive-toggle .at-choice-control-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  line-height: 1;
+}
+
+.at-board-view .at-board-archive-toggle .at-choice-control-label > svg {
+  flex: 0 0 auto;
+}
+
 .at-board-columns,
 .at-board-columns.is-archived-visible {
   grid-template-columns: repeat(4, minmax(220px, 1fr));

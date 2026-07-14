@@ -832,6 +832,9 @@ export function AppShell() {
               onClick={() => setThemeMode(oppositeThemeMode(resolvedThemeMode))}
             />
           </Tooltip>
+          <Button className="at-topbar-action" href="/v1/" size="small">
+            V1
+          </Button>
         </Space>
       </Header>
       <Layout className="at-body">

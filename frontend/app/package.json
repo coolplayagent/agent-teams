@@ -8,10 +8,11 @@
   "main": "dist-desktop/desktop/main.js",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "npm run typecheck && npm run desktop:build && vite build",
+    "build": "npm run typecheck && npm run desktop:build && vite build && npm run build:legacy",
+    "build:legacy": "node ../legacy/build.mjs",
     "desktop:build": "tsc -p tsconfig.desktop.json",
     "desktop:dev": "npm run desktop:build && electron dist-desktop/desktop/main.js",
-    "desktop:release:prepare": "npm run typecheck && npm run desktop:build && vite build && node dist-desktop/desktop/buildBackend.cjs",
+    "desktop:release:prepare": "npm run typecheck && npm run desktop:build && vite build && npm run build:legacy && node dist-desktop/desktop/buildBackend.cjs",
     "desktop:package": "npm run desktop:release:prepare && electron-builder --config electron-builder.yml --win --dir",
     "desktop:dist": "npm run desktop:release:prepare && electron-builder --config electron-builder.yml --win nsis",
     "desktop:release": "npm run desktop:release:prepare && electron-builder --config electron-builder.yml --win dir nsis",

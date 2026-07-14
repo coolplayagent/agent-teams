@@ -765,6 +765,9 @@ function frontendFilePath(requestPath: string): string {
   }
   const candidate = join(distRoot, requestPath.slice(1));
   if (existsSync(candidate)) {
+    if (statSync(candidate).isDirectory()) {
+      return join(candidate, "index.html");
+    }
     return candidate;
   }
   return join(distRoot, "index.html");

@@ -2,10 +2,12 @@
 
 ## Frontend Hosting
 
-The production React application is served from `frontend/dist/` at the root
-route. Browser and Electron clients share the same `/api/*` HTTP and SSE
-contracts. There is no separate migration frontend mount or user-facing
-interface switch.
+The production React application (V2) is served from `frontend/dist/` at the
+root route. The maintained legacy application (V1) is built from
+`frontend/legacy/src/` into `frontend/dist/v1/` and is served at `/v1/`. Both
+interfaces provide an unconditional switch to the other version and share the
+same origin-relative `/api/*` HTTP and SSE contracts. Electron starts on V2 at
+the root route; users can switch to V1 from the application header.
 
 ## Overview
 

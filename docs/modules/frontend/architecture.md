@@ -2,7 +2,7 @@
 
 ## Runtime Shape
 
-The frontend is a React 19 and TypeScript SPA. Vite emits hashed assets to `frontend/dist/`; Starlette serves the output at `/`. Electron starts the same backend, waits for health, and loads the same root URL.
+V2 is a React 19 and TypeScript SPA. Vite emits its hashed assets to `frontend/dist/`; the V1 build then copies the independently maintained `frontend/legacy/src/` bundle to `frontend/dist/v1/`. Starlette serves V2 at `/` and V1 at `/v1/`. Both use the same origin-relative `/api/*` boundary and expose a bidirectional version switch. Electron starts the same backend, waits for health, and initially loads V2 at the root URL.
 
 ```mermaid
 flowchart LR

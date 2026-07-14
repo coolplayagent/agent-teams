@@ -1118,7 +1118,10 @@ describe("AppShell", () => {
     const topbar = htmlElement(document.querySelector(".at-topbar"), "topbar");
     expect(within(topbar).getByRole("button", { name: "Settings" })).toBeVisible();
     expect(within(topbar).queryByRole("button", { name: "More actions" })).toBeNull();
-    expect(within(topbar).queryByRole("link")).toBeNull();
+    expect(within(topbar).getByRole("link", { name: "V1" })).toHaveAttribute(
+      "href",
+      "/v1/",
+    );
     expect(
       within(topbar).getByRole("button", { name: "Observability" }),
     ).toBeVisible();

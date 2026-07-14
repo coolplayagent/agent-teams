@@ -604,18 +604,114 @@ function isSessionLoadCurrent(sessionId) {
     return currentSessionId === requestedSessionId;
 }
 
-export function createLiveRound(runId, intentText, intentParts = null) {
+function normalizeRoundModelProfile(value) {
+    const normalized = String(value || '').trim();
+    return normalized || null;
+}
+
+function roundModelProfile(round) {
+    return normalizeRoundModelProfile(round?.normal_model_profile || round?.normalModelProfile);
+}
+
+function roundUsageModelProfile(usage) {
+    const directProfile = normalizeRoundModelProfile(usage?.model_profile || usage?.modelProfile);
+    if (directProfile) {
+        return directProfile;
+    }
+    const agents = Array.isArray(usage?.by_agent)
+        ? usage.by_agent
+        : (Array.isArray(usage?.byAgent) ? usage.byAgent : []);
+    for (const agent of agents) {
+        const agentProfile = normalizeRoundModelProfile(
+            agent?.model_profile || agent?.modelProfile,
+        );
+        if (agentProfile) {
+            return agentProfile;
+        }
+    }
+    return null;
+}
+
+function renderRoundModelProfile(value) {
+    const modelProfile = value && typeof value === 'object'
+        ? roundModelProfile(value)
+        : normalizeRoundModelProfile(value);
+    if (!modelProfile) {
+        return '';
+    }
+    const title = formatMessage('rounds.model_profile_title', { model: modelProfile });
+    return `<span class="round-model-profile" title="${esc(title)}">${esc(modelProfile)}</span>`;
+}
+
+function renderRoundTokenSummaryHtml(usage, renderedToolCallCount = 0) {
+    const toolCallCount = Math.max(
+        Number(usage?.total_tool_calls || 0),
+        Number(renderedToolCallCount || 0),
+    );
+    return `
+        <div class="round-token-summary" title="${esc(formatMessage('rounds.token_title', {
+            input: usage.total_input_tokens,
+            output: usage.total_output_tokens,
+            requests: usage.total_requests,
+        }))}">
+            <span class="token-in">${esc(formatMessage('rounds.token_in', {
+                value: formatRoundTokenCount(usage.total_input_tokens),
+            }))}</span>
+            <span class="token-out">${esc(formatMessage('rounds.token_out', {
+                value: formatRoundTokenCount(usage.total_output_tokens),
+            }))}</span>
+            ${toolCallCount > 0 ? `<span class="token-tools">${esc(formatMessage('rounds.token_tools', { value: toolCallCount }))}</span>` : ''}
+        </div>
+    `;
+}
+
+function renderRoundMetaTailHtml(tokenSummaryHtml = '', modelProfile = '') {
+    const parts = [];
+    const normalizedTokenSummary = String(tokenSummaryHtml || '').trim();
+    if (normalizedTokenSummary) {
+        parts.push(normalizedTokenSummary);
+    }
+    const modelProfileHtml = renderRoundModelProfile(modelProfile);
+    if (modelProfileHtml) {
+        parts.push(modelProfileHtml);
+    }
+    if (parts.length === 0) {
+        return '';
+    }
+    return parts.join('');
+}
+
+function syncRoundHeaderMetaTail(section, round) {
+    const tokenHost = section.querySelector('.round-detail-token-host');
+    if (!tokenHost) {
+        return;
+    }
+    const tokenSummaryHtml = tokenHost.querySelector('.round-token-summary')?.outerHTML || '';
+    const existingModelProfile = normalizeRoundModelProfile(
+        tokenHost.querySelector('.round-model-profile')?.textContent,
+    );
+    tokenHost.innerHTML = renderRoundMetaTailHtml(
+        tokenSummaryHtml,
+        roundModelProfile(round) || existingModelProfile,
+    );
+}
+
+export function createLiveRound(runId, intentText, intentParts = null, options = {}) {
     const safeRunId = String(runId || '').trim();
     if (!safeRunId) return;
     clearPendingRunStartPlaceholder();
     const normalizedIntent = normalizeRoundIntentText(intentText);
     const normalizedIntentParts = normalizeRoundIntentParts(intentParts);
+    const normalizedModelProfile = normalizeRoundModelProfile(
+        options?.normalModelProfile || options?.normal_model_profile,
+    );
     const createdAt = new Date().toISOString();
     const buildLiveRound = () => ({
         run_id: safeRunId,
         created_at: createdAt,
         intent: normalizedIntent,
         intent_parts: normalizedIntentParts,
+        normal_model_profile: normalizedModelProfile,
         primary_role_id: getRunPrimaryRoleId(safeRunId) || null,
         coordinator_messages: [],
         injection_messages: [],
@@ -632,6 +728,7 @@ export function createLiveRound(runId, intentText, intentParts = null) {
         ...round,
         intent: normalizedIntent || round.intent,
         intent_parts: normalizedIntentParts || round.intent_parts || null,
+        normal_model_profile: normalizedModelProfile || roundModelProfile(round),
         primary_role_id: round.primary_role_id || getRunPrimaryRoleId(safeRunId) || null,
         run_status: round.run_status || 'running',
         run_phase: round.run_phase || 'running',
@@ -1948,9 +2045,9 @@ export function renderRoundSection(round, index, options = {}) {
         <div class="round-detail-topline">
             <div class="round-detail-mainline">
                 <div class="round-detail-meta">
-                    <div class="round-detail-time">${time}</div>
+                    <div class="round-detail-time">${esc(time)}</div>
                     ${roundIsRunning(round) ? '<span class="live-badge">LIVE</span>' : ''}
-                    <div class="round-detail-token-host"></div>
+                    <div class="round-detail-token-host">${renderRoundMetaTailHtml('', roundModelProfile(round))}</div>
                 </div>
             </div>
             <div class="round-detail-badges">${renderRoundBadges(round, stateLabel, stateTone, approvalCount)}</div>
@@ -2029,26 +2126,20 @@ export function renderRoundSection(round, index, options = {}) {
                 return;
             }
             if (!usage || usage.total_tokens === 0) return;
-            const fmt = n => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
             const toolCallCount = Math.max(
                 Number(usage.total_tool_calls || 0),
                 renderedToolCallCount,
             );
-            const pill = document.createElement('div');
-            pill.className = 'round-token-summary';
-            pill.title = formatMessage('rounds.token_title', {
-                input: usage.total_input_tokens,
-                output: usage.total_output_tokens,
-                requests: usage.total_requests,
-            });
-            pill.innerHTML = `
-                <span class="token-in">${esc(formatMessage('rounds.token_in', { value: fmt(usage.total_input_tokens) }))}</span>
-                <span class="token-out">${esc(formatMessage('rounds.token_out', { value: fmt(usage.total_output_tokens) }))}</span>
-                ${toolCallCount > 0 ? `<span class="token-tools">${esc(formatMessage('rounds.token_tools', { value: toolCallCount }))}</span>` : ''}
-            `;
+            const modelProfile = roundModelProfile(round) || roundUsageModelProfile(usage);
+            if (!roundModelProfile(round) && modelProfile) {
+                round.normal_model_profile = modelProfile;
+            }
             const tokenHost = headerEl.querySelector('.round-detail-token-host');
             if (tokenHost) {
-                tokenHost.appendChild(pill);
+                tokenHost.innerHTML = renderRoundMetaTailHtml(
+                    renderRoundTokenSummaryHtml(usage, toolCallCount),
+                    modelProfile,
+                );
             }
         }).catch(error => {
             if (error?.name === 'AbortError') {
@@ -3035,6 +3126,7 @@ function patchRoundHeader(round, _roundIndex) {
     } else if (liveBadge && !roundIsRunning(round)) {
         liveBadge.remove();
     }
+    syncRoundHeaderMetaTail(section, round);
 
     const badgesEl = section.querySelector('.round-detail-badges');
     if (badgesEl) {

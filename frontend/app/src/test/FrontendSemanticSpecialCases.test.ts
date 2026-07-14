@@ -21,7 +21,7 @@ interface AllowedLiteralPredicate {
 // entries for product policy, provider/model/tool names, role names, or user content.
 const ALLOWED_LITERAL_PREDICATES: readonly AllowedLiteralPredicate[] = [
   {
-    file: "features/composer/Composer.tsx",
+    file: "features/composer/promptSubmission.ts",
     literal: "/",
     method: "startsWith",
     receiver: "prompt",

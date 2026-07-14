@@ -59,13 +59,15 @@ export interface PromptResourceMentionOption {
   resourceKind: "directory" | "file";
 }
 
+export type PromptActionId =
+  | "attach-image"
+  | "browse-workspace"
+  | "toggle-thinking"
+  | "use-normal-mode"
+  | "use-orchestration-mode";
+
 export interface PromptActionMentionOption {
-  actionId:
-    | "attach-image"
-    | "browse-workspace"
-    | "toggle-thinking"
-    | "use-normal-mode"
-    | "use-orchestration-mode";
+  actionId: PromptActionId;
   aliases: string[];
   description: string;
   displayName: string;

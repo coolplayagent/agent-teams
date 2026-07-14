@@ -12,6 +12,8 @@ export const GENERAL_RUN_PREFERENCES_QUERY_KEY = [
 const THINKING_MODE_STORAGE_KEY = "agent_teams_thinking_enabled";
 const THINKING_EFFORT_STORAGE_KEY = "agent_teams_thinking_effort";
 export const DEFAULT_THINKING_EFFORT: ThinkingEffort = "medium";
+type ThinkingStateListener = (state: RunThinkingConfig) => void;
+const thinkingStateListeners = new Set<ThinkingStateListener>();
 
 export function readSavedThinkingState(): RunThinkingConfig {
   try {
@@ -29,9 +31,9 @@ export function readSavedThinkingState(): RunThinkingConfig {
 }
 
 export function persistThinkingState(state: RunThinkingConfig): void {
+  const normalized = normalizeThinkingState(state);
   try {
     const storage = globalThis.localStorage;
-    const normalized = normalizeThinkingState(state);
     storage.setItem(
       THINKING_MODE_STORAGE_KEY,
       normalized.enabled ? "true" : "false",
@@ -41,8 +43,21 @@ export function persistThinkingState(state: RunThinkingConfig): void {
       normalized.effort ?? DEFAULT_THINKING_EFFORT,
     );
   } catch (_error) {
-    return;
+    // The in-memory composer preference still needs to stay synchronized when
+    // storage is unavailable, such as in a restricted desktop webview.
   }
+  globalThis.queueMicrotask(() => {
+    for (const listener of thinkingStateListeners) {
+      listener(normalized);
+    }
+  });
+}
+
+export function subscribeThinkingState(
+  listener: ThinkingStateListener,
+): () => void {
+  thinkingStateListeners.add(listener);
+  return () => thinkingStateListeners.delete(listener);
 }
 
 export function updateThinkingState(

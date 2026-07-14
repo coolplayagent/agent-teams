@@ -1,7 +1,6 @@
 import {
   App,
   Button,
-  Popover,
   Segmented,
   Select,
   Space,
@@ -9,7 +8,6 @@ import {
   Typography,
 } from "antd";
 import { Sender } from "@ant-design/x";
-import type { SenderRef } from "@ant-design/x/es/sender";
 import {
   ChevronDown,
   Mic,
@@ -17,11 +15,10 @@ import {
   Plus,
   Play,
   Send,
-  Settings2,
   Square,
 } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
-import type { ClipboardEvent, KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ClipboardEvent } from "react";
 import {
   useMutation,
   useQuery,
@@ -31,15 +28,12 @@ import {
 
 import {
   createRun,
-  getCommandCatalog,
   getGeneralConfig,
   getModelProfiles,
   getOrchestrationConfig,
   getRoleConfigOptions,
   getSession,
   injectRunMessage,
-  resolveCommandPrompt,
-  searchWorkspacePaths,
   stopRun,
   updateSessionTopology,
   updateSessionNormalModelProfile,
@@ -51,15 +45,12 @@ import type {
   ModelProfilesPayload,
   OrchestrationConfig,
   RecoverySnapshot,
-  RoleOption,
-  RoleConfigOptions,
   RunCreateRequest,
   RunThinkingConfig,
   SessionMode,
   SessionRecord,
   SessionSidebarRecord,
   ThinkingEffort,
-  WorkspaceSearchResponse,
 } from "../../api/contracts";
 import type { RunStreamController } from "../../runtime/useRunStreamController";
 import { useOptimisticRunStore } from "../../runtime/optimisticRunStore";
@@ -72,32 +63,23 @@ import {
   summarizePromptAttachments,
   type PromptAttachment,
 } from "./PromptAttachments";
+import { PromptMentionMenu } from "./PromptMentionMenu";
 import {
-  PromptMentionMenu,
-  promptMentionOptionId,
-} from "./PromptMentionMenu";
-import {
-  applyPromptCommandOption,
-  applyPromptMentionOption,
-  findPromptSlashMentionOptions,
-  findLeadingRoleMentionOptions,
-  findPromptResourceMentionOptions,
-  getPromptCommandContext,
-  getPromptResourceContext,
-  parseLeadingRoleMention,
-  resolvePromptSkillInvocation,
   type LeadingRoleMention,
-  type PromptMentionOption,
-  type PromptActionMentionOption,
-  type PromptSkillMentionOption,
 } from "./PromptMentions";
 import { useVoiceInput } from "./useVoiceInput";
+import { ComposerRunSettingsPopover } from "./ComposerSurface";
+import { resolveComposerPromptSubmission } from "./promptSubmission";
+import { useComposerMentionController } from "./useComposerMentionController";
+import { resolveImageInputBlockedMessage } from "./imageInputValidation";
+import { buildComposerQuickActionOptions } from "./composerQuickActions";
 import {
   DEFAULT_THINKING_EFFORT,
   GENERAL_RUN_PREFERENCES_QUERY_KEY,
   persistThinkingState,
   readSavedThinkingState,
   shellSafetyPolicyPreference,
+  subscribeThinkingState,
   updateThinkingState,
 } from "./runPreferences";
 import "./Composer.css";
@@ -106,8 +88,6 @@ interface ComposerProps {
   runStreamController: RunStreamController;
   sessionId: string | null;
 }
-
-const MENTION_PAGE_SIZE = 8;
 
 interface ModelProfileOption {
   label: string;
@@ -118,11 +98,6 @@ interface TopologyPatch {
   sessionMode: SessionMode;
   normalRootRoleId: string | null;
   orchestrationPresetId: string | null;
-}
-
-interface PromptSlashInvocation {
-  args: string;
-  rawText: string;
 }
 
 function sessionDetailQueryKey(sessionId: string) {
@@ -213,71 +188,15 @@ function sessionWithTitlePreview(
   };
 }
 
-function promptResourceResponseForMentions({
-  currentResponse,
-  query,
-  queryClient,
-  workspaceId,
-}: {
-  currentResponse: WorkspaceSearchResponse | undefined;
-  query: string;
-  queryClient: QueryClient;
-  workspaceId: string | null;
-}): WorkspaceSearchResponse | undefined {
-  if (currentResponse !== undefined && currentResponse.results.length > 0) {
-    return currentResponse;
-  }
-  const safeWorkspaceId = workspaceId?.trim() ?? "";
-  const safeQuery = query.trim();
-  if (!safeWorkspaceId || !safeQuery) {
-    return currentResponse;
-  }
-  const cachedResults = queryClient
-    .getQueriesData<WorkspaceSearchResponse>({
-      queryKey: ["workspaces", safeWorkspaceId, "prompt-resources"],
-    })
-    .flatMap(([, response]) => response?.results ?? []);
-  const dedupedResults = dedupeWorkspaceSearchResults(cachedResults);
-  if (dedupedResults.length === 0) {
-    return currentResponse;
-  }
-  return {
-    query: safeQuery,
-    results: dedupedResults,
-    workspace_id: safeWorkspaceId,
-  };
-}
-
-function dedupeWorkspaceSearchResults(
-  results: WorkspaceSearchResponse["results"],
-): WorkspaceSearchResponse["results"] {
-  const seen = new Set<string>();
-  return results.filter((result) => {
-    const key = `${result.kind}:${result.path.trim()}`;
-    if (seen.has(key)) {
-      return false;
-    }
-    seen.add(key);
-    return true;
-  });
-}
-
 export function Composer({ runStreamController, sessionId }: ComposerProps) {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const t = useTranslations();
-  const inputRef = useRef<SenderRef | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
-  const mentionAnchorRef = useRef<HTMLDivElement | null>(null);
-  const quickMenuButtonRef = useRef<HTMLButtonElement | null>(null);
   const sessionIdRef = useRef(sessionId);
   const [draft, setDraft] = useState("");
   const [promptAttachments, setPromptAttachments] = useState<PromptAttachment[]>([]);
   const [composerStatus, setComposerStatus] = useState("");
-  const [activeMentionIndex, setActiveMentionIndex] = useState(0);
-  const mentionMenuId = useId();
-  const [dismissedMentionDraft, setDismissedMentionDraft] = useState("");
-  const [quickMenuOpen, setQuickMenuOpen] = useState(false);
   const [yolo, setYolo] = useState(true);
   const [shellSafetyPolicyEnabled, setShellSafetyPolicyEnabled] =
     useState(true);
@@ -285,8 +204,6 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     readSavedThinkingState(),
   );
   const [targetRoleId, setTargetRoleId] = useState<string | null>(null);
-  const [selectedPromptSkill, setSelectedPromptSkill] =
-    useState<PromptSkillMentionOption | null>(null);
   const activeRunId = runStreamController.activeRunId;
   const roleOptionsQuery = useQuery({
     queryKey: ["roles", "options"],
@@ -329,63 +246,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     queryFn: getOrchestrationConfig,
     staleTime: 30000,
   });
-  const promptCommandContext = useMemo(
-    () =>
-      activeRunId === null && dismissedMentionDraft !== draft
-        ? getPromptCommandContext(draft)
-        : null,
-    [activeRunId, dismissedMentionDraft, draft],
-  );
-  const promptResourceContext = useMemo(
-    () =>
-      promptCommandContext === null &&
-      activeRunId === null &&
-      dismissedMentionDraft !== draft
-        ? getPromptResourceContext(draft)
-        : null,
-    [activeRunId, dismissedMentionDraft, draft, promptCommandContext],
-  );
   const sessionWorkspaceId = normalizeOptionalId(sessionQuery.data?.workspace_id);
-  const commandCatalogQuery = useQuery({
-    queryKey: ["commands", "catalog", "composer"],
-    queryFn: getCommandCatalog,
-    enabled: promptCommandContext !== null || quickMenuOpen,
-    staleTime: 30000,
-  });
-  const resourceSearchQuery = useQuery({
-    queryKey: [
-      "workspaces",
-      sessionWorkspaceId,
-      "prompt-resources",
-      promptResourceContext?.query ?? "",
-    ],
-    queryFn: () => {
-      if (sessionWorkspaceId === null || promptResourceContext === null) {
-        throw new Error("Workspace and resource query are required.");
-      }
-      return searchWorkspacePaths(sessionWorkspaceId, promptResourceContext.query, 80);
-    },
-    enabled:
-      sessionWorkspaceId !== null &&
-      promptResourceContext !== null &&
-      promptResourceContext.query.length > 0,
-    staleTime: 30000,
-  });
-  const resourceResponseForMentions = useMemo(
-    () =>
-      promptResourceResponseForMentions({
-        currentResponse: resourceSearchQuery.data,
-        query: promptResourceContext?.query ?? "",
-        queryClient,
-        workspaceId: sessionWorkspaceId,
-      }),
-    [
-      promptResourceContext?.query,
-      queryClient,
-      resourceSearchQuery.data,
-      sessionWorkspaceId,
-    ],
-  );
   const roleOptions = useMemo(
     () =>
       (roleOptionsQuery.data?.normal_mode_roles ?? []).map((role) => ({
@@ -429,148 +290,46 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     ),
     [modelProfilesQuery.data, selectedModelProfile, t],
   );
-  const leadingRoleMention = useMemo(
-    () => parseLeadingRoleMention(draft, roleOptionsQuery.data),
-    [draft, roleOptionsQuery.data],
-  );
-  const leadingMentionOptions = useMemo(
-    () =>
-      activeRunId === null && dismissedMentionDraft !== draft
-        ? findLeadingRoleMentionOptions(draft, roleOptionsQuery.data)
-        : [],
-    [activeRunId, dismissedMentionDraft, draft, roleOptionsQuery.data],
-  );
-  const commandMentionOptions = useMemo(
-    () =>
-      promptCommandContext === null
-        ? []
-        : findPromptSlashMentionOptions({
-            catalog: commandCatalogQuery.data,
-            query: promptCommandContext.query,
-            roleOptions: roleOptionsQuery.data,
-            workspaceId: sessionWorkspaceId,
-          }),
-    [
-      commandCatalogQuery.data,
-      promptCommandContext,
-      roleOptionsQuery.data,
-      sessionWorkspaceId,
-    ],
-  );
-  const resourceMentionOptions = useMemo(
-    () =>
-      promptResourceContext === null
-        ? []
-        : findPromptResourceMentionOptions({
-            query: promptResourceContext.query,
-            resourceResponse: resourceResponseForMentions,
-            roleOptions: roleOptionsQuery.data,
-          }),
-    [
-      promptResourceContext,
-      resourceResponseForMentions,
-      roleOptionsQuery.data,
-    ],
-  );
-  const quickActionOptions = useMemo<PromptActionMentionOption[]>(
-    () => [
-      {
-        actionId: "browse-workspace",
-        aliases: ["file", "folder", "context"],
-        description: t("composerBrowseWorkspaceHelp"),
-        displayName: t("composerBrowseWorkspace"),
-        insertTerm: "",
-        kind: "action",
-      },
-      {
-        actionId: "attach-image",
-        aliases: ["image", "attachment"],
-        description: t("composerAddImageHelp"),
-        displayName: t("composerAddImage"),
-        insertTerm: "",
-        kind: "action",
-      },
-      {
-        actionId: "toggle-thinking",
-        aliases: ["thinking"],
-        description: t("composerThinkingEffort"),
-        displayName: thinking.enabled
-          ? t("composerDisableThinking")
-          : t("composerEnableThinking"),
-        insertTerm: "",
-        kind: "action",
-      },
-      {
-        actionId: "use-normal-mode",
-        aliases: ["normal"],
-        description: t("composerRootRole"),
-        displayName: t("composerSwitchNormal"),
-        insertTerm: "",
-        kind: "action",
-      },
-      {
-        actionId: "use-orchestration-mode",
-        aliases: ["orchestration"],
-        description: t("composerOrchestrationPreset"),
-        displayName: t("composerSwitchOrchestration"),
-        insertTerm: "",
-        kind: "action",
-      },
-    ],
+  const quickActionOptions = useMemo(
+    () => buildComposerQuickActionOptions(t, thinking.enabled),
     [t, thinking.enabled],
   );
-  const quickCommandOptions = useMemo(
-    () =>
-      findPromptSlashMentionOptions({
-        catalog: commandCatalogQuery.data,
-        query: "",
-        roleOptions: roleOptionsQuery.data,
-        workspaceId: sessionWorkspaceId,
-      }),
-    [commandCatalogQuery.data, roleOptionsQuery.data, sessionWorkspaceId],
-  );
-  const quickMentionOptions = useMemo(
-    () =>
-      findPromptResourceMentionOptions({
-        query: "",
-        resourceResponse: undefined,
-        roleOptions: roleOptionsQuery.data,
-      }),
-    [roleOptionsQuery.data],
-  );
-  const promptMentionOptions = quickMenuOpen
-    ? [...quickActionOptions, ...quickMentionOptions, ...quickCommandOptions]
-    : promptCommandContext !== null
-      ? commandMentionOptions
-      : promptResourceContext !== null
-        ? resourceMentionOptions
-        : leadingMentionOptions;
-  const mentionMenuOpen =
-    quickMenuOpen ||
-    promptCommandContext !== null ||
-    promptResourceContext !== null ||
-    leadingMentionOptions.length > 0;
-  const mentionMenuLoading = quickMenuOpen
-    ? commandCatalogQuery.isLoading || roleOptionsQuery.isLoading
-    : promptCommandContext !== null
-      ? commandCatalogQuery.isLoading || roleOptionsQuery.isLoading
-      : promptResourceContext !== null
-        ? roleOptionsQuery.isLoading ||
-          (promptResourceContext.query.length > 0 && resourceSearchQuery.isLoading)
-        : false;
-  const mentionMenuEmptyLabel = quickMenuOpen
-    ? t("settingsCommandsNoMatches")
-    : promptCommandContext !== null
-      ? t("settingsCommandsNoMatches")
-      : promptResourceContext?.query
-        ? t("workspaceNoFileMatches")
-        : t("settingsNoRoles");
-  const effectiveTargetRoleId = leadingRoleMention.roleId ?? targetRoleId;
-  const effectivePromptText =
-    leadingRoleMention.roleId === null ? draft.trim() : leadingRoleMention.promptText;
+  const mentions = useComposerMentionController({
+    active: activeRunId === null,
+    draft,
+    onAction: (option) => {
+      if (option.actionId === "attach-image") {
+        attachmentInputRef.current?.click();
+      } else if (option.actionId === "browse-workspace") {
+        setDraft((currentDraft) => appendComposerToken(currentDraft, "@"));
+      } else if (option.actionId === "toggle-thinking") {
+        updateThinking({ enabled: !thinking.enabled });
+      } else if (option.actionId === "use-normal-mode") {
+        if (selectedSessionMode !== "normal" && canChangeTopology) {
+          updateSessionTopologyMode("normal");
+        }
+      } else if (
+        selectedSessionMode !== "orchestration" &&
+        canChangeTopology
+      ) {
+        updateSessionTopologyMode("orchestration");
+      }
+    },
+    quickActionOptions,
+    roleOptions: roleOptionsQuery.data,
+    setDraft,
+    workspaceId: sessionWorkspaceId,
+  });
+  const effectiveTargetRoleId =
+    mentions.leadingRoleMention.roleId ?? targetRoleId;
+  const effectivePromptText = mentions.effectivePromptText;
   const draftValidationMessage =
     activeRunId === null
-      ? resolveDraftValidationMessage(leadingRoleMention, promptAttachments, t)
+      ? resolveDraftValidationMessage(
+          mentions.leadingRoleMention,
+          promptAttachments,
+          t,
+        )
       : "";
   const attachmentValidationMessage = resolveImageInputBlockedMessage({
     activeRunId,
@@ -590,6 +349,11 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     sessionIdRef.current = sessionId;
   }, [sessionId]);
 
+  useEffect(
+    () => subscribeThinkingState((state) => setThinking(state)),
+    [],
+  );
+
   useEffect(() => {
     if (generalConfigQuery.data !== undefined) {
       setShellSafetyPolicyEnabled(
@@ -597,60 +361,6 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       );
     }
   }, [generalConfigQuery.data]);
-
-  useEffect(() => {
-    setActiveMentionIndex(0);
-  }, [promptMentionOptions.length, quickMenuOpen]);
-
-  useEffect(() => {
-    const promptInput = inputRef.current?.nativeElement.querySelector("textarea");
-    if (promptInput === undefined || promptInput === null) {
-      return;
-    }
-    promptInput.setAttribute("role", "combobox");
-    promptInput.setAttribute("aria-autocomplete", "list");
-    promptInput.setAttribute("aria-haspopup", "listbox");
-    promptInput.setAttribute("aria-expanded", String(mentionMenuOpen));
-    if (mentionMenuOpen) {
-      promptInput.setAttribute("aria-controls", mentionMenuId);
-    } else {
-      promptInput.removeAttribute("aria-controls");
-    }
-    if (mentionMenuOpen && promptMentionOptions.length > 0) {
-      promptInput.setAttribute(
-        "aria-activedescendant",
-        promptMentionOptionId(
-          mentionMenuId,
-          Math.min(activeMentionIndex, promptMentionOptions.length - 1),
-        ),
-      );
-    } else {
-      promptInput.removeAttribute("aria-activedescendant");
-    }
-  }, [activeMentionIndex, mentionMenuId, mentionMenuOpen, promptMentionOptions.length]);
-
-  useEffect(() => {
-    if (!mentionMenuOpen) {
-      return;
-    }
-    const handleOutsidePointer = (event: PointerEvent) => {
-      const target = event.target;
-      if (!(target instanceof Element)) {
-        return;
-      }
-      if (
-        mentionAnchorRef.current?.contains(target) ||
-        quickMenuButtonRef.current?.contains(target) ||
-        target.closest(".at-prompt-mention-menu") !== null
-      ) {
-        return;
-      }
-      setQuickMenuOpen(false);
-      setDismissedMentionDraft(draft);
-    };
-    document.addEventListener("pointerdown", handleOutsidePointer);
-    return () => document.removeEventListener("pointerdown", handleOutsidePointer);
-  }, [draft, mentionMenuOpen]);
 
   const createRunMutation = useMutation({
     onMutate: () => {
@@ -675,7 +385,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       const resolvedPrompt = await resolveComposerPromptSubmission({
         promptText: effectivePromptText,
         roleOptions: roleOptionsQuery.data,
-        selectedSkill: selectedPromptSkill,
+        selectedSkill: mentions.selectedPromptSkill,
         session: sessionQuery.data,
         sessionMode: selectedSessionMode,
         t,
@@ -717,7 +427,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       });
       setDraft("");
       setPromptAttachments([]);
-      setSelectedPromptSkill(null);
+      mentions.setSelectedPromptSkill(null);
       setComposerStatus("");
       queryClient.setQueryData(sessionTopologyLockQueryKey(result.session_id), true);
       queryClient.setQueryData<SessionRecord | undefined>(
@@ -884,9 +594,9 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
     !busy &&
     !draftValidationMessage &&
     !attachmentValidationMessage &&
-    (promptCommandContext !== null ||
-      leadingMentionOptions.length === 0 ||
-      leadingRoleMention.roleId !== null);
+    (mentions.promptCommandContext !== null ||
+      !mentions.hasLeadingMentionOptions ||
+      mentions.leadingRoleMention.roleId !== null);
   const canInject =
     activeRunId !== null &&
     draft.trim().length > 0 &&
@@ -985,9 +695,12 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
           tabIndex={-1}
           type="file"
         />
-        <div className="at-composer-prompt-anchor" ref={mentionAnchorRef}>
+        <div
+          className="at-composer-prompt-anchor"
+          ref={mentions.mentionAnchorRef}
+        >
           <Sender
-            ref={inputRef}
+            ref={mentions.inputRef}
             aria-label={t("composerPrompt")}
             autoSize={{ minRows: 1, maxRows: 7 }}
             disabled={busy || sessionId === null}
@@ -997,15 +710,13 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
               if (voiceInput.isBusy) {
                 voiceInput.stop({ ignoreTextUpdates: true });
               }
-              setQuickMenuOpen(false);
+              mentions.setQuickMenuOpen(false);
               setDraft(value);
             }}
             onPaste={(event) => {
               void handlePromptPaste(event);
             }}
-            onKeyDown={(event) => {
-              handlePromptKeyDown(event);
-            }}
+            onKeyDown={mentions.handleKeyDown}
             onSubmit={() => {
               if (canCreateRun) {
                 createRunMutation.mutate();
@@ -1021,16 +732,22 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
             actions={false}
           />
           <PromptMentionMenu
-            activeIndex={activeMentionIndex}
-            anchorRef={mentionAnchorRef}
-            emptyLabel={mentionMenuEmptyLabel}
-            loading={mentionMenuLoading}
+            activeIndex={mentions.activeIndex}
+            anchorRef={mentions.mentionAnchorRef}
+            emptyLabel={
+              mentions.quickMenuOpen || mentions.promptCommandContext !== null
+                ? t("settingsCommandsNoMatches")
+                : mentions.promptResourceContext?.query
+                  ? t("workspaceNoFileMatches")
+                  : t("settingsNoRoles")
+            }
+            loading={mentions.loading || roleOptionsQuery.isLoading}
             loadingLabel={t("connectorsRuntimeToolsStatusLoading")}
             menuLabel={t("composerPromptSuggestions")}
-            menuId={mentionMenuId}
-            onSelect={selectPromptMentionOption}
-            open={mentionMenuOpen}
-            options={promptMentionOptions}
+            menuId={mentions.mentionMenuId}
+            onSelect={mentions.selectOption}
+            open={mentions.open}
+            options={mentions.options}
           />
         </div>
         <PromptAttachments
@@ -1051,30 +768,26 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
           <div className="at-composer-toolbar-start">
             <Tooltip title={t("composerQuickActions")}>
               <Button
-                aria-expanded={quickMenuOpen}
+                aria-expanded={mentions.quickMenuOpen}
                 aria-label={t("composerQuickActions")}
-                className={quickMenuOpen ? "at-composer-plus-button is-active" : "at-composer-plus-button"}
+                className={mentions.quickMenuOpen ? "at-composer-plus-button is-active" : "at-composer-plus-button"}
                 icon={<Plus size={17} />}
                 onClick={() => {
-                  setDismissedMentionDraft("");
-                  setQuickMenuOpen((current) => !current);
-                  queueMicrotask(() => inputRef.current?.focus());
+                  mentions.setDismissedMentionDraft("");
+                  mentions.setQuickMenuOpen((current) => !current);
+                  queueMicrotask(() => mentions.inputRef.current?.focus());
                 }}
                 shape="circle"
                 size="small"
                 type="text"
-                ref={quickMenuButtonRef}
+                ref={mentions.quickMenuButtonRef}
               />
             </Tooltip>
-            <Tooltip title={composerRunSettingsSummary}>
-              <Popover
-                arrow={false}
-                content={(
-                <div className="at-composer-advanced-panel at-composer-run-settings-panel">
-                  <div className="at-composer-advanced-heading">
-                    <Settings2 aria-hidden size={16} />
-                    <Typography.Text strong>{t("composerRunSettings")}</Typography.Text>
-                  </div>
+            <ComposerRunSettingsPopover
+              compactSummary={abbreviateComposerModeLabel(composerModeLabel)}
+              heading={t("composerRunSettings")}
+              summary={composerRunSettingsSummary}
+            >
                   <Typography.Text className="at-composer-section-label" type="secondary">
                     {t("composerConversationSettings")}
                   </Typography.Text>
@@ -1269,29 +982,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
               />
             </div>
                   </div>
-                </div>
-                )}
-                overlayClassName="at-composer-advanced-popover"
-                placement="topLeft"
-                trigger="click"
-              >
-                <Button
-                  aria-label={`${t("composerRunSettings")}: ${composerRunSettingsSummary}`}
-                  className="at-composer-summary-button at-composer-run-settings-summary"
-                  icon={<Settings2 size={15} />}
-                  size="small"
-                  type="text"
-                >
-                  <span aria-hidden className="at-composer-summary-copy at-composer-summary-full">
-                    {composerRunSettingsSummary}
-                  </span>
-                  <span aria-hidden className="at-composer-summary-copy at-composer-summary-compact">
-                    {abbreviateComposerModeLabel(composerModeLabel)}
-                  </span>
-                  <ChevronDown aria-hidden size={13} />
-                </Button>
-              </Popover>
-            </Tooltip>
+            </ComposerRunSettingsPopover>
           </div>
           <div className="at-composer-actions">
             {voiceInput.visible ? (
@@ -1307,7 +998,10 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
                   loading={voiceInput.state === "transcribing"}
                   onClick={() =>
                     voiceInput.toggle(
-                      readPromptSelection(draft, inputRef.current?.nativeElement),
+                      readPromptSelection(
+                        draft,
+                        mentions.inputRef.current?.nativeElement,
+                      ),
                     )
                   }
                   shape="circle"
@@ -1401,7 +1095,7 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       }
       setComposerStatus("");
       setPromptAttachments((current) => [...current, ...attachments]);
-      inputRef.current?.focus();
+      mentions.inputRef.current?.focus();
     } catch (error) {
       setComposerStatus(
         error instanceof Error ? error.message : "Failed to read pasted image.",
@@ -1420,108 +1114,12 @@ export function Composer({ runStreamController, sessionId }: ComposerProps) {
       }
       setComposerStatus("");
       setPromptAttachments((current) => [...current, ...attachments]);
-      inputRef.current?.focus();
+      mentions.inputRef.current?.focus();
     } catch (error) {
       setComposerStatus(
         error instanceof Error ? error.message : "Failed to read image attachment.",
       );
     }
-  }
-
-  function handlePromptKeyDown(event: KeyboardEvent<HTMLElement>) {
-    if (promptMentionOptions.length === 0) {
-      return;
-    }
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-      const direction = event.key === "ArrowDown" ? 1 : -1;
-      setActiveMentionIndex((current) =>
-        wrapIndex(current + direction, promptMentionOptions.length),
-      );
-      return;
-    }
-    if (event.key === "PageDown" || event.key === "PageUp") {
-      event.preventDefault();
-      const direction = event.key === "PageDown" ? 1 : -1;
-      setActiveMentionIndex((current) =>
-        clampIndex(
-          current + direction * MENTION_PAGE_SIZE,
-          promptMentionOptions.length,
-        ),
-      );
-      return;
-    }
-    if (event.key === "Home" || event.key === "End") {
-      event.preventDefault();
-      setActiveMentionIndex(
-        event.key === "Home" ? 0 : promptMentionOptions.length - 1,
-      );
-      return;
-    }
-    if (event.key === "Enter" || event.key === "Tab") {
-      event.preventDefault();
-      selectPromptMentionOption(
-        promptMentionOptions[
-          Math.min(activeMentionIndex, promptMentionOptions.length - 1)
-        ],
-      );
-      return;
-    }
-    if (event.key === "Escape") {
-      event.preventDefault();
-      setQuickMenuOpen(false);
-      setDismissedMentionDraft(draft);
-    }
-  }
-
-  function selectPromptMentionOption(option: PromptMentionOption | undefined) {
-    if (option === undefined) {
-      return;
-    }
-    if (option.kind === "action") {
-      if (option.actionId === "attach-image") {
-        attachmentInputRef.current?.click();
-      } else if (option.actionId === "browse-workspace") {
-        setDraft((currentDraft) => appendComposerToken(currentDraft, "@"));
-        setDismissedMentionDraft("");
-      } else if (option.actionId === "toggle-thinking") {
-        updateThinking({ enabled: !thinking.enabled });
-      } else if (option.actionId === "use-normal-mode") {
-        if (selectedSessionMode !== "normal" && canChangeTopology) {
-          updateSessionTopologyMode("normal");
-        }
-      } else if (
-        selectedSessionMode !== "orchestration" &&
-        canChangeTopology
-      ) {
-        updateSessionTopologyMode("orchestration");
-      }
-      setQuickMenuOpen(false);
-      inputRef.current?.focus();
-      return;
-    }
-    if (option.kind === "command" || option.kind === "skill") {
-      setSelectedPromptSkill(option.kind === "skill" ? option : null);
-      setDraft((currentDraft) => {
-        const context = promptCommandContext ?? getPromptCommandContext(currentDraft);
-        return context === null
-          ? `/${option.insertTerm} `
-          : applyPromptCommandOption(currentDraft, context, option);
-      });
-    } else {
-      if (option.kind === "role") {
-        setSelectedPromptSkill(null);
-      }
-      setDraft((currentDraft) => {
-        const context = promptResourceContext ?? getPromptResourceContext(currentDraft);
-        return context === null
-          ? `@${option.insertTerm} `
-          : applyPromptMentionOption(currentDraft, context, option);
-      });
-    }
-    setQuickMenuOpen(false);
-    setDismissedMentionDraft("");
-    inputRef.current?.focus();
   }
 
   function updateSessionTopologyMode(
@@ -1690,150 +1288,6 @@ function resolveDraftValidationMessage(
   return "";
 }
 
-async function resolveComposerPromptSubmission({
-  promptText,
-  roleOptions,
-  selectedSkill,
-  session,
-  sessionMode,
-  t,
-}: {
-  promptText: string;
-  roleOptions: RoleConfigOptions | undefined;
-  selectedSkill: PromptSkillMentionOption | null;
-  session: SessionRecord | undefined;
-  sessionMode: SessionMode;
-  t: Translate;
-}): Promise<{ promptText: string; skills: string[] }> {
-  const selectedSkillInvocation = resolvePromptSkillInvocation({
-    promptText,
-    roleOptions,
-    selectedSkill,
-  });
-  if (selectedSkill !== null && selectedSkillInvocation !== null) {
-    return {
-      promptText: selectedSkillInvocation.args,
-      skills: [selectedSkillInvocation.skill.skillRef],
-    };
-  }
-  const invocation = extractPromptSlashInvocation(promptText);
-  if (invocation === null) {
-    return { promptText, skills: [] };
-  }
-  const workspaceId = normalizeOptionalId(session?.workspace_id);
-  if (workspaceId !== null) {
-    const response = await resolveCommandPrompt({
-      workspace_id: workspaceId,
-      raw_text: invocation.rawText,
-      mode: sessionMode,
-    });
-    if (response.matched) {
-      const expandedPrompt = normalizeProfileName(response.expanded_prompt);
-      return { promptText: expandedPrompt || promptText, skills: [] };
-    }
-  }
-  const fallbackSkillInvocation = resolvePromptSkillInvocation({
-    promptText,
-    roleOptions,
-    selectedSkill: null,
-  });
-  if (fallbackSkillInvocation !== null) {
-    return {
-      promptText: fallbackSkillInvocation.args,
-      skills: [fallbackSkillInvocation.skill.skillRef],
-    };
-  }
-  if (workspaceId === null) {
-    throw new Error(t("composerCommandRequiresWorkspace"));
-  }
-  return { promptText, skills: [] };
-}
-
-function extractPromptSlashInvocation(promptText: string): PromptSlashInvocation | null {
-  const trimmedPrompt = promptText.trim();
-  // semantic-special-case-allow: prompt-command-prefix — "/" is public command syntax.
-  if (!trimmedPrompt.startsWith("/")) {
-    return null;
-  }
-  const match = /^\/([^\s/]+)(?:\s+([\s\S]*))?$/.exec(trimmedPrompt);
-  if (match === null) {
-    return null;
-  }
-  const name = normalizeProfileName(match[1]);
-  if (!name) {
-    return null;
-  }
-  const args = normalizeProfileName(match[2]);
-  return {
-    args,
-    rawText: `/${name}${args ? ` ${args}` : ""}`,
-  };
-}
-
-function resolveImageInputBlockedMessage({
-  activeRunId,
-  attachments,
-  modelProfiles,
-  roleOptions,
-  selectedModelProfile,
-  selectedNormalRootRoleId,
-  selectedSessionMode,
-  targetRoleId,
-  t,
-}: {
-  activeRunId: string | null;
-  attachments: PromptAttachment[];
-  modelProfiles: ModelProfilesPayload | undefined;
-  roleOptions: RoleConfigOptions | undefined;
-  selectedModelProfile: string | null;
-  selectedNormalRootRoleId: string;
-  selectedSessionMode: SessionMode;
-  targetRoleId: string | null;
-  t: Translate;
-}): string {
-  if (attachments.length === 0) {
-    return "";
-  }
-  if (activeRunId !== null) {
-    return t("composerRuntimeTextOnly");
-  }
-  const resolvedTargetRoleId = resolveValidationRoleId(
-    selectedSessionMode,
-    roleOptions,
-    selectedNormalRootRoleId,
-    targetRoleId,
-  );
-  if (!resolvedTargetRoleId) {
-    return "";
-  }
-  const selectedProfileSupport =
-    selectedSessionMode === "normal"
-      ? resolveModelProfileInputModalitySupport(
-          modelProfiles,
-          selectedModelProfile,
-          "image",
-        )
-      : { label: "", support: null };
-  const roleSupport = resolveRoleInputModalitySupport(
-    roleOptions,
-    resolvedTargetRoleId,
-    "image",
-  );
-  const imageSupport = selectedProfileSupport.support ?? roleSupport.support;
-  if (imageSupport === true) {
-    return "";
-  }
-  const targetLabel =
-    selectedProfileSupport.label ||
-    roleSupport.label ||
-    resolvedTargetRoleId ||
-    t("composerSelectedAgent");
-  if (imageSupport === null) {
-    return t("composerImageSupportUnknown", { target: targetLabel });
-  }
-  return t("composerImageUnsupported", { target: targetLabel });
-}
-
 function thinkingEffortOptions(t: Translate): Array<{
   label: string;
   value: ThinkingEffort;
@@ -1859,139 +1313,6 @@ function sessionModeOptions(t: Translate): Array<{
 function abbreviateComposerModeLabel(label: string): string {
   const characters = Array.from(label.trim());
   return characters.length > 6 ? `${characters.slice(0, 4).join("")}.` : label;
-}
-
-function resolveValidationRoleId(
-  sessionMode: SessionMode,
-  roleOptions: RoleConfigOptions | undefined,
-  selectedNormalRootRoleId: string,
-  targetRoleId: string | null,
-): string {
-  if (sessionMode === "normal") {
-    return (
-      normalizeProfileName(targetRoleId) ||
-      resolvePrimaryRoleId(sessionMode, roleOptions, selectedNormalRootRoleId)
-    );
-  }
-  return resolvePrimaryRoleId(sessionMode, roleOptions, selectedNormalRootRoleId);
-}
-
-function resolveModelProfileInputModalitySupport(
-  profiles: ModelProfilesPayload | undefined,
-  selectedProfile: string | null,
-  modality: "image",
-): { label: string; support: boolean | null } {
-  const profileName = normalizeProfileName(selectedProfile);
-  if (!profileName) {
-    return { label: "", support: null };
-  }
-  const profile = profiles?.[profileName];
-  if (profile === undefined) {
-    return { label: profileName, support: null };
-  }
-  const inputModalities = normalizeInputModalities(profile.input_modalities);
-  if (inputModalities !== null) {
-    return {
-      label: normalizeProfileName(profile.model) || profileName,
-      support: inputModalities.includes(modality),
-    };
-  }
-  return {
-    label: normalizeProfileName(profile.model) || profileName,
-    support:
-      resolveCapabilityInputSupport(profile.resolved_capabilities?.input, modality) ??
-      resolveCapabilityInputSupport(profile.capabilities?.input, modality),
-  };
-}
-
-function resolveRoleInputModalitySupport(
-  roleOptions: RoleConfigOptions | undefined,
-  roleId: string,
-  modality: "image",
-): { label: string; support: boolean | null } {
-  const role = findRoleOption(roleOptions, roleId);
-  if (role === undefined) {
-    return { label: roleId, support: null };
-  }
-  const label =
-    normalizeProfileName(role.model_name) ||
-    normalizeProfileName(role.model_profile) ||
-    normalizeProfileName(role.name) ||
-    role.role_id;
-  const capabilitySupport = resolveCapabilityInputSupport(
-    role.capabilities?.input,
-    modality,
-  );
-  if (capabilitySupport !== null) {
-    return { label, support: capabilitySupport };
-  }
-  const inputModalities = normalizeInputModalities(role.input_modalities);
-  return {
-    label,
-    support: inputModalities === null ? null : inputModalities.includes(modality),
-  };
-}
-
-function resolvePrimaryRoleId(
-  sessionMode: SessionMode,
-  roleOptions: RoleConfigOptions | undefined,
-  selectedNormalRootRoleId: string,
-): string {
-  if (sessionMode === "orchestration") {
-    return (
-      normalizeProfileName(roleOptions?.coordinator_role_id) ||
-      normalizeProfileName(roleOptions?.coordinator_role?.role_id)
-    );
-  }
-  return (
-    normalizeProfileName(selectedNormalRootRoleId) ||
-    normalizeProfileName(roleOptions?.main_agent_role_id) ||
-    normalizeProfileName(roleOptions?.main_agent_role?.role_id) ||
-    normalizeProfileName(roleOptions?.normal_mode_roles?.[0]?.role_id)
-  );
-}
-
-function findRoleOption(
-  roleOptions: RoleConfigOptions | undefined,
-  roleId: string,
-): RoleOption | undefined {
-  const normalizedRoleId = normalizeProfileName(roleId);
-  return [
-    roleOptions?.coordinator_role,
-    roleOptions?.main_agent_role,
-    ...(roleOptions?.normal_mode_roles ?? []),
-    ...(roleOptions?.subagent_roles ?? []),
-  ]
-    .filter((option): option is RoleOption => option !== null && option !== undefined)
-    .find((option) => option.role_id === normalizedRoleId);
-}
-
-function resolveCapabilityInputSupport(
-  inputCapabilities: { image?: boolean | null } | undefined,
-  modality: "image",
-): boolean | null {
-  const support = inputCapabilities?.[modality];
-  return typeof support === "boolean" ? support : null;
-}
-
-function normalizeInputModalities(inputModalities: string[] | undefined): string[] | null {
-  if (!Array.isArray(inputModalities)) {
-    return null;
-  }
-  return inputModalities
-    .map((modality) => modality.trim().toLowerCase())
-    .filter(Boolean);
-}
-
-function wrapIndex(index: number, length: number): number {
-  if (length <= 0) {
-    return 0;
-  }
-  return ((index % length) + length) % length;
-}
-
-function clampIndex(index: number, length: number): number {
-  return Math.max(0, Math.min(index, Math.max(0, length - 1)));
 }
 
 function normalizeProfileName(value: string | null | undefined): string {

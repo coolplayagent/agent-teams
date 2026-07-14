@@ -315,11 +315,6 @@ describe("Composer", () => {
   });
 
   it("navigates long mention menus without moving focus out of the prompt", async () => {
-    const scrollIntoView = vi.fn();
-    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
-      configurable: true,
-      value: scrollIntoView,
-    });
     getRoleConfigOptionsMock.mockResolvedValue({
       normal_mode_roles: Array.from({ length: 24 }, (_, index) => ({
         description: `Role ${index} description`,
@@ -334,6 +329,26 @@ describe("Composer", () => {
     prompt.focus();
     fireEvent.change(prompt, { target: { value: "@" } });
     const listbox = await screen.findByRole("listbox");
+    Object.defineProperties(listbox, {
+      clientHeight: { configurable: true, value: 120 },
+      scrollHeight: { configurable: true, value: 720 },
+      scrollTop: { configurable: true, value: 0, writable: true },
+    });
+    const originalRect = HTMLElement.prototype.getBoundingClientRect;
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function controlledMentionRect(this: HTMLElement) {
+        if (this === listbox) {
+          return testRect(0, 120);
+        }
+        if (this.getAttribute("role") === "option") {
+          const options = screen.getAllByRole("option");
+          const optionIndex = options.indexOf(this);
+          const top = optionIndex * 30 - listbox.scrollTop;
+          return testRect(top, top + 30);
+        }
+        return originalRect.call(this);
+      });
     expect(prompt).toHaveAttribute("aria-controls", listbox.id);
     expect(prompt).toHaveAttribute("aria-expanded", "true");
     expect(prompt).toHaveAttribute("aria-haspopup", "listbox");
@@ -344,6 +359,7 @@ describe("Composer", () => {
       expect(activeId).not.toBeNull();
       expect(document.getElementById(activeId ?? "")).toHaveTextContent("Role 8");
     });
+    expect(listbox.scrollTop).toBeGreaterThan(0);
     expect(document.activeElement).toBe(prompt);
 
     fireEvent.keyDown(prompt, { key: "End" });
@@ -358,7 +374,10 @@ describe("Composer", () => {
       const activeId = prompt.getAttribute("aria-activedescendant");
       expect(document.getElementById(activeId ?? "")).toHaveTextContent("Role 0");
     });
-    expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
+    expect(listbox.scrollTop).toBe(0);
+    expect(document.activeElement).toBe(prompt);
+    expect(window.scrollY).toBe(0);
+    rectSpy.mockRestore();
   });
 
   it("keeps composer topology controls scoped to the active session mode", async () => {
@@ -3751,4 +3770,18 @@ function mockMediaStream(): MediaStream {
       } as unknown as MediaStreamTrack,
     ],
   } as unknown as MediaStream;
+}
+
+function testRect(top: number, bottom: number): DOMRect {
+  return {
+    bottom,
+    height: bottom - top,
+    left: 0,
+    right: 640,
+    top,
+    width: 640,
+    x: 0,
+    y: top,
+    toJSON: () => ({}),
+  };
 }

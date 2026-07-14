@@ -8,6 +8,10 @@ const composerSource = readFileSync(
   "src/features/composer/Composer.tsx",
   "utf8",
 );
+const composerSurfaceSource = readFileSync(
+  "src/features/composer/ComposerSurface.tsx",
+  "utf8",
+);
 
 describe("contextual composer layout", () => {
   it("keeps the prompt primary and the action rail fixed inside the composer", () => {
@@ -28,7 +32,7 @@ describe("contextual composer layout", () => {
   });
 
   it("moves infrequent configuration into a dense contextual surface", () => {
-    expect(composerSource).toContain(
+    expect(composerSurfaceSource).toContain(
       'overlayClassName="at-composer-advanced-popover"',
     );
     expect(composerCss).toMatch(
@@ -61,7 +65,7 @@ describe("contextual composer layout", () => {
     expect(composerSource).toContain(
       "abbreviateComposerModeLabel(composerModeLabel)",
     );
-    expect(composerSource).toContain("title={composerRunSettingsSummary}");
+    expect(composerSource).toContain("summary={composerRunSettingsSummary}");
     expect(composerSource).toContain("composerConversationSettings");
     expect(composerSource).toContain("composerExecutionSettings");
     expect(composerSource).not.toContain("at-composer-model-summary");

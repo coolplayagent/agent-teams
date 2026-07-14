@@ -1,0 +1,101 @@
+.at-new-session-view {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: clamp(20px, 5vh, 56px) clamp(16px, 5vw, 72px);
+}
+
+.at-new-session-stage {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 22px;
+  width: min(920px, 100%);
+  min-height: 100%;
+  margin: 0 auto;
+}
+
+.at-new-session-header {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  width: min(760px, 100%);
+  margin-inline: auto;
+}
+
+.at-new-session-header h2 {
+  margin: 0 0 3px !important;
+}
+
+.at-new-session-composer.at-composer {
+  grid-row: auto;
+  width: min(760px, 100%);
+  max-height: none;
+  margin-inline: auto;
+  padding: 0;
+  overflow: visible;
+  background: transparent;
+}
+
+.at-new-session-workspace-button {
+  flex: 0 1 auto;
+  max-width: min(220px, 30cqw) !important;
+}
+
+.at-new-session-workspace-menu {
+  display: grid;
+  gap: 10px;
+  width: min(360px, calc(100vw - 56px));
+}
+
+.at-new-session-workspace-menu .ant-select {
+  width: 100%;
+}
+
+.at-new-session-title-field {
+  grid-column: 1 / -1;
+}
+
+.at-new-session-error {
+  display: block;
+  width: min(760px, 100%);
+  margin-inline: auto;
+}
+
+.at-new-session-pending-content {
+  position: relative;
+  display: grid;
+  gap: 16px;
+  width: min(780px, 100%);
+  margin: 0 auto;
+}
+
+.at-new-session-pending .at-model-request-status {
+  position: static;
+  justify-self: center;
+  transform: none;
+}
+
+.at-new-session-pending-error {
+  display: grid;
+  gap: 12px;
+}
+
+.at-new-session-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+@media (max-width: 720px) {
+  .at-new-session-view {
+    padding: 16px 12px;
+  }
+
+  .at-new-session-stage {
+    justify-content: flex-start;
+  }
+
+}

@@ -3290,6 +3290,76 @@ describe("Composer", () => {
     await waitFor(() => expect(voiceButton).toBeEnabled());
   });
 
+  it("localizes voice input controls and protocol errors in Chinese", async () => {
+    useUiStore.setState({ language: "zh-CN" });
+    fetchSpeechConfigMock.mockResolvedValue({
+      configured: true,
+      stt_profile_name: "stt",
+    });
+    const voiceRuntime = installVoiceRuntime();
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+
+    renderComposer();
+
+    fireEvent.click(await screen.findByRole("button", { name: "语音输入" }));
+    await waitFor(() => expect(voiceRuntime.sockets).toHaveLength(1));
+    const socket = voiceRuntime.sockets[0];
+    expect(
+      await screen.findByRole("button", { name: "正在连接语音输入" }),
+    ).toBeEnabled();
+
+    socket.open();
+    socket.message({ type: "status", status: "ready", sample_rate: 16000 });
+    await screen.findByRole("button", { name: "停止语音输入" });
+    socket.message({
+      type: "error",
+      code: "missing_config",
+      message: "Speech recognition is not configured.",
+    });
+
+    await waitFor(() =>
+      expect(document.querySelector(".at-composer-status")).toHaveTextContent(
+        "请先配置语音转文字再使用语音输入",
+      ),
+    );
+    expect(document.body).not.toHaveTextContent(
+      "Speech recognition is not configured.",
+    );
+  });
+
+  it("localizes microphone permission failures instead of exposing browser text", async () => {
+    useUiStore.setState({ language: "zh-CN" });
+    fetchSpeechConfigMock.mockResolvedValue({
+      configured: true,
+      stt_profile_name: "stt",
+    });
+    installVoiceRuntime();
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn(async () => {
+          throw new DOMException("Permission denied", "NotAllowedError");
+        }),
+      },
+    });
+    getRoleConfigOptionsMock.mockResolvedValue({
+      normal_mode_roles: [],
+    });
+
+    renderComposer();
+
+    fireEvent.click(await screen.findByRole("button", { name: "语音输入" }));
+
+    await waitFor(() =>
+      expect(document.querySelector(".at-composer-status")).toHaveTextContent(
+        "请允许访问麦克风后再使用语音输入。",
+      ),
+    );
+    expect(document.body).not.toHaveTextContent("Permission denied");
+  });
+
   it("cancels voice input while the WebSocket is still connecting", async () => {
     fetchSpeechConfigMock.mockResolvedValue({
       configured: true,

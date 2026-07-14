@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { createSpeechSttWebSocketUrl, fetchSpeechConfig } from "../../api/speech";
+import { type Translate, useTranslations } from "../../i18n";
 
 type VoiceInputState =
   | "idle"
@@ -88,6 +89,8 @@ export function useVoiceInput({
   const nextTokenRef = useRef(1);
   const onErrorRef = useRef(onError);
   const onTextChangeRef = useRef(onTextChange);
+  const translate = useTranslations();
+  const translateRef = useRef(translate);
   const speechConfigQuery = useQuery({
     queryKey: ["speech", "config"],
     queryFn: fetchSpeechConfig,
@@ -103,13 +106,19 @@ export function useVoiceInput({
     !visible ||
     state === "transcribing" ||
     (!isBusy && (!canStart || speechConfigQuery.isLoading));
-  const tooltip = isBusy ? "Stop voice input" : resolveVoiceTooltip({
-    configured,
-    disabled,
-    hasRuntimeSupport,
-    loading: speechConfigQuery.isLoading,
-  });
-  const ariaLabel = isBusy ? resolveVoiceStatusLabel(state) : tooltip;
+  const tooltip = isBusy
+    ? translate("composerVoiceStop")
+    : resolveVoiceTooltip(translate, {
+        configured,
+        disabled,
+        hasRuntimeSupport,
+        loading: speechConfigQuery.isLoading,
+      });
+  const ariaLabel = isBusy ? resolveVoiceStatusLabel(translate, state) : tooltip;
+
+  useEffect(() => {
+    translateRef.current = translate;
+  }, [translate]);
 
   useEffect(() => {
     onErrorRef.current = onError;
@@ -171,7 +180,7 @@ export function useVoiceInput({
     }
     const audioContextCtor = resolveAudioContextConstructor();
     if (!audioContextCtor || !navigator.mediaDevices?.getUserMedia || !window.WebSocket) {
-      failVoiceInput("Voice input is not supported in this browser.");
+      failVoiceInput(translateRef.current("composerVoiceBrowserUnsupported"));
       return;
     }
     const token = nextTokenRef.current;
@@ -202,7 +211,9 @@ export function useVoiceInput({
       }
       setVoiceState("connecting");
     } catch (error) {
-      await cleanupFailedStart(errorMessageFromUnknown(error));
+      await cleanupFailedStart(
+        errorMessageFromUnknown(error, translateRef.current),
+      );
     }
   }
 
@@ -254,7 +265,7 @@ export function useVoiceInput({
       if (!isCurrentSession(session)) {
         return;
       }
-      failVoiceInput("Voice input stream failed.");
+      failVoiceInput(translateRef.current("composerVoiceStreamFailed"));
       closeSession(session, { keepErrorState: true });
     });
     session.socket.addEventListener("close", () => {
@@ -291,7 +302,7 @@ export function useVoiceInput({
       return;
     }
     if (type === "error") {
-      failVoiceInput(String(payload.message ?? "Voice input stream failed."));
+      failVoiceInput(resolveVoiceStreamError(translateRef.current, payload));
       closeSession(session, { keepErrorState: true });
     }
   }
@@ -572,40 +583,56 @@ function resolveAudioContextConstructor(): AudioContextConstructor | null {
   return audioWindow.AudioContext ?? audioWindow.webkitAudioContext ?? null;
 }
 
-function resolveVoiceTooltip({
-  configured,
-  disabled,
-  hasRuntimeSupport,
-  loading,
-}: {
-  configured: boolean;
-  disabled: boolean;
-  hasRuntimeSupport: boolean;
-  loading: boolean;
-}): string {
+function resolveVoiceTooltip(
+  translate: Translate,
+  {
+    configured,
+    disabled,
+    hasRuntimeSupport,
+    loading,
+  }: {
+    configured: boolean;
+    disabled: boolean;
+    hasRuntimeSupport: boolean;
+    loading: boolean;
+  },
+): string {
   if (loading) {
-    return "Loading voice input";
+    return translate("composerVoiceLoading");
   }
   if (disabled) {
-    return "Select a session before using voice input";
+    return translate("composerVoiceSelectSession");
   }
   if (!hasRuntimeSupport) {
-    return "Voice input unsupported";
+    return translate("composerVoiceUnsupported");
   }
   if (!configured) {
-    return "Configure speech to text before using voice input";
+    return translate("composerVoiceConfigure");
   }
-  return "Voice input";
+  return translate("composerVoiceInput");
 }
 
-function resolveVoiceStatusLabel(state: VoiceInputState): string {
+function resolveVoiceStatusLabel(
+  translate: Translate,
+  state: VoiceInputState,
+): string {
   if (state === "starting" || state === "connecting") {
-    return "Voice input connecting";
+    return translate("composerVoiceConnecting");
   }
   if (state === "transcribing") {
-    return "Voice input transcribing";
+    return translate("composerVoiceTranscribing");
   }
-  return "Stop voice input";
+  return translate("composerVoiceStop");
+}
+
+function resolveVoiceStreamError(
+  translate: Translate,
+  payload: Record<string, unknown>,
+): string {
+  if (payload.code === "missing_config") {
+    return translate("composerVoiceConfigure");
+  }
+  return translate("composerVoiceStreamFailed");
 }
 
 function parseVoicePayload(data: unknown): Record<string, unknown> | null {
@@ -673,8 +700,14 @@ function stopStream(stream: MediaStream): void {
   stream.getTracks().forEach((track) => track.stop());
 }
 
-function errorMessageFromUnknown(error: unknown): string {
-  return error instanceof Error && error.message.trim()
-    ? error.message
-    : "Voice input failed to start.";
+function errorMessageFromUnknown(error: unknown, translate: Translate): string {
+  if (error instanceof DOMException) {
+    if (error.name === "NotAllowedError" || error.name === "SecurityError") {
+      return translate("composerVoiceMicrophonePermissionDenied");
+    }
+    if (error.name === "NotFoundError" || error.name === "NotReadableError") {
+      return translate("composerVoiceMicrophoneUnavailable");
+    }
+  }
+  return translate("composerVoiceStartFailed");
 }

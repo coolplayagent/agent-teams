@@ -731,7 +731,11 @@ async def test_clawhub_sdk_calls_expected_endpoints(monkeypatch) -> None:
     assert await client.delete_clawhub_skill("skill-creator-2") == {"status": "ok"}
     assert calls == [
         ("GET", "/api/system/configs/clawhub", None),
-        ("PUT", "/api/system/configs/clawhub", {"token": "ch_secret"}),
+        (
+            "PUT",
+            "/api/system/configs/clawhub",
+            {"preserve_token": True, "token": "ch_secret"},
+        ),
         (
             "POST",
             "/api/system/configs/clawhub:probe",
@@ -801,6 +805,7 @@ async def test_save_proxy_config_passes_proxy_payload(monkeypatch) -> None:
             "no_proxy": "localhost,127.0.0.1",
             "proxy_username": "alice",
             "proxy_password": "secret",
+            "preserve_password": True,
             "ssl_verify": None,
         },
     }
@@ -836,6 +841,7 @@ async def test_save_web_config_passes_web_payload(monkeypatch) -> None:
         "payload": {
             "provider": "exa",
             "exa_api_key": "secret",
+            "preserve_exa_api_key": True,
             "fallback_provider": "searxng",
             "searxng_instance_url": "https://search.example.test/",
         },
@@ -873,9 +879,54 @@ async def test_save_web_config_defaults_to_searxng_fallback_provider(
         "payload": {
             "provider": "exa",
             "exa_api_key": "secret",
+            "preserve_exa_api_key": True,
             "fallback_provider": "searxng",
             "searxng_instance_url": "https://search.example.test/",
         },
+    }
+
+
+async def test_settings_sdk_can_explicitly_clear_saved_credentials(
+    monkeypatch,
+) -> None:
+    client = AsyncAgentTeamsClient()
+    calls: list[tuple[str, object | None]] = []
+
+    async def fake_request_json(
+        method: str,
+        path: str,
+        payload: object | None = None,
+    ) -> dict[str, object]:
+        assert method == "PUT"
+        calls.append((path, payload))
+        return {"status": "ok"}
+
+    monkeypatch.setattr(client, "_request_json", fake_request_json)
+
+    await client.save_proxy_config(preserve_password=False)
+    await client.save_web_config(preserve_exa_api_key=False)
+    await client.save_clawhub_config(preserve_token=False)
+
+    assert calls[0][1] == {
+        "all_proxy": None,
+        "http_proxy": None,
+        "https_proxy": None,
+        "no_proxy": None,
+        "preserve_password": False,
+        "proxy_password": None,
+        "proxy_username": None,
+        "ssl_verify": None,
+    }
+    assert calls[1][1] == {
+        "exa_api_key": None,
+        "fallback_provider": "searxng",
+        "preserve_exa_api_key": False,
+        "provider": "exa",
+        "searxng_instance_url": None,
+    }
+    assert calls[2][1] == {
+        "preserve_token": False,
+        "token": None,
     }
 
 

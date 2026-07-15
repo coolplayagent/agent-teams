@@ -329,9 +329,25 @@ class TestBuildProjectMemorySection:
         )
         assert result == ""
 
+    async def test_task_relevant_search_uses_bounded_injection_mode(self) -> None:
+        service = create_autospec(MemoryBankService, instance=True)
+        service.search_limited_async = AsyncMock(return_value=())
+
+        result = await build_project_memory_section_async(
+            memory_bank_service=service,
+            workspace_id="ws-1",
+            role_id="crafter",
+            objective="validators",
+        )
+
+        assert result == ""
+        assert service.search_limited_async.await_count > 0
+
     async def test_handles_search_sqlite_exception(self, tmp_path: Path) -> None:
         service = create_autospec(MemoryBankService, instance=True)
-        service.search_async = AsyncMock(side_effect=sqlite3.OperationalError("locked"))
+        service.search_limited_async = AsyncMock(
+            side_effect=sqlite3.OperationalError("locked")
+        )
         result = await build_project_memory_section_async(
             memory_bank_service=service,
             workspace_id="ws-1",

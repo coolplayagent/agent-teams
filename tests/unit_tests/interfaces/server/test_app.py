@@ -522,14 +522,71 @@ def test_bootstrap_role_options_returns_builtin_roles_before_hydration() -> None
     payload = json.loads(bytes(response.body).decode("utf-8"))
     assert payload["coordinator_role_id"] == "Coordinator"
     assert payload["main_agent_role_id"] == "MainAgent"
+    assert payload["coordinator_role"]["system_role"] == "coordinator"
+    assert payload["main_agent_role"]["system_role"] == "main_agent"
     assert payload["main_agent_role"]["role_id"] == "MainAgent"
     assert payload["normal_mode_roles"]
     normal_mode_role_ids = {
         str(role["role_id"]) for role in payload["normal_mode_roles"]
     }
-    assert "Crafter" in normal_mode_role_ids
+    assert "Crafter" not in normal_mode_role_ids
     assert "DelegationPlanner" not in normal_mode_role_ids
     assert payload["subagent_roles"]
+
+
+def test_bootstrap_role_options_use_explicit_identity_and_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        server_app,
+        "_read_bootstrap_role_entries",
+        lambda: [
+            (
+                server_app.RoleMode.PRIMARY,
+                {"role_id": "root-coord", "system_role": "coordinator"},
+            ),
+            (
+                server_app.RoleMode.PRIMARY,
+                {"role_id": "root-main", "system_role": "main_agent"},
+            ),
+            (
+                server_app.RoleMode.PRIMARY,
+                {"role_id": "DelegationPlanner", "system_role": None},
+            ),
+            (
+                server_app.RoleMode.SUBAGENT,
+                {"role_id": "Coordinator", "system_role": None},
+            ),
+        ],
+    )
+
+    payload = server_app._read_bootstrap_role_options()
+    normal_mode_roles = cast(list[dict[str, object]], payload["normal_mode_roles"])
+    subagent_roles = cast(list[dict[str, object]], payload["subagent_roles"])
+
+    assert payload["coordinator_role_id"] == "root-coord"
+    assert payload["main_agent_role_id"] == "root-main"
+    assert [role["role_id"] for role in normal_mode_roles] == [
+        "root-main",
+        "DelegationPlanner",
+    ]
+    assert [role["role_id"] for role in subagent_roles] == ["Coordinator"]
+
+
+def test_bootstrap_role_options_return_503_without_required_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(server_app, "_read_bootstrap_role_entries", lambda: [])
+
+    response = asyncio.run(
+        server_app.bootstrap_role_options(cast(server_app.Request, _FakeRequest()))
+    )
+
+    assert response.status_code == 503
+    assert (
+        "system role is unavailable"
+        in json.loads(bytes(response.body).decode("utf-8"))["detail"]
+    )
 
 
 def test_bootstrap_model_profiles_reads_config_before_hydration(tmp_path: Path) -> None:
@@ -584,10 +641,6 @@ def test_bootstrap_model_profile_payload_resolves_input_modalities() -> None:
         },
         is_default=True,
     )
-    text_payload = server_app._bootstrap_model_profile_payload(
-        {"provider": "unknown-provider", "model": "plain-text"},
-        is_default=False,
-    )
     raw_capabilities_payload = server_app._bootstrap_model_profile_payload(
         {
             "capabilities": {
@@ -609,9 +662,15 @@ def test_bootstrap_model_profile_payload_resolves_input_modalities() -> None:
     assert explicit_payload["input_modalities"] == ["image", "audio"]
     assert "image" in cast(list[str], vision_payload["input_modalities"])
     assert vision_input["image"] is True
-    assert text_payload["provider"] == "unknown-provider"
-    assert text_payload["input_modalities"] == []
     assert raw_capabilities_payload["input_modalities"] == ["image"]
+
+
+def test_bootstrap_model_profile_payload_rejects_unknown_provider() -> None:
+    with pytest.raises(ValueError, match="unknown-provider"):
+        _ = server_app._bootstrap_model_profile_payload(
+            {"provider": "unknown-provider", "model": "plain-text"},
+            is_default=False,
+        )
 
 
 def test_bootstrap_profile_input_modalities_returns_empty_for_text_only() -> None:
@@ -676,6 +735,26 @@ def test_bootstrap_model_profiles_tolerates_missing_dirty_and_default_fallbacks(
     sorted_payload = server_app._read_bootstrap_model_profiles(tmp_path)
     assert sorted_payload["alpha"]["is_default"] is True
     assert sorted_payload["beta"]["is_default"] is False
+
+    config_file.write_text(
+        json.dumps(
+            {
+                "invalid": {
+                    "provider": "unknown-provider",
+                    "model": "hidden-model",
+                    "is_default": True,
+                },
+                "valid": {
+                    "provider": "anthropic",
+                    "model": "visible-model",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    filtered_payload = server_app._read_bootstrap_model_profiles(tmp_path)
+    assert set(filtered_payload) == {"valid"}
+    assert filtered_payload["valid"]["is_default"] is True
 
 
 def test_bootstrap_api_paths_include_status_probes() -> None:
@@ -1138,6 +1217,7 @@ def test_runtime_bundle_wires_runtime_app_with_fake_modules(
     fake_routers_package = ModuleType("relay_teams.interfaces.server.routers")
     for name in (
         "a2a_internal",
+        "ag_ui",
         "artifacts_router",
         "audit",
         "auto_harness",
@@ -1291,6 +1371,7 @@ def test_bootstrap_role_metadata_parses_valid_frontmatter(tmp_path: Path) -> Non
         "description: Demo description\n"
         "model_profile: fast\n"
         "mode: subagent\n"
+        "system_role: main_agent\n"
         "---\n"
         "body\n",
         encoding="utf-8",
@@ -1305,6 +1386,7 @@ def test_bootstrap_role_metadata_parses_valid_frontmatter(tmp_path: Path) -> Non
         "description": "Demo description",
         "model_profile": "fast",
         "mode": "subagent",
+        "system_role": "main_agent",
     }
     assert server_app._bootstrap_role_option(metadata)["role_id"] == "Demo"
 
@@ -1327,11 +1409,33 @@ def test_bootstrap_role_metadata_rejects_invalid_manifests(
     assert server_app._read_bootstrap_role_metadata(role_file) is None
 
 
-def test_find_bootstrap_role_uses_fallback_when_missing() -> None:
-    fallback = server_app._find_bootstrap_role([], "MissingRole")
+def test_require_bootstrap_system_role_uses_explicit_identity() -> None:
+    role = server_app._require_bootstrap_system_role(
+        [
+            {"role_id": "renamed-root", "system_role": "main_agent"},
+            {"role_id": "MainAgent", "system_role": None},
+        ],
+        server_app.SystemRoleIdentity.MAIN_AGENT,
+    )
 
-    assert fallback["role_id"] == "MissingRole"
-    assert fallback["name"] == "MissingRole"
+    assert role["role_id"] == "renamed-root"
+
+
+def test_require_bootstrap_system_role_rejects_missing_and_duplicate_identity() -> None:
+    with pytest.raises(ValueError, match="system role is unavailable: coordinator"):
+        _ = server_app._require_bootstrap_system_role(
+            [{"role_id": "Coordinator", "system_role": None}],
+            server_app.SystemRoleIdentity.COORDINATOR,
+        )
+
+    with pytest.raises(ValueError, match="Multiple bootstrap system roles"):
+        _ = server_app._require_bootstrap_system_role(
+            [
+                {"role_id": "root-a", "system_role": "coordinator"},
+                {"role_id": "root-b", "system_role": "coordinator"},
+            ],
+            server_app.SystemRoleIdentity.COORDINATOR,
+        )
 
 
 def test_count_frontend_log_events_caps_large_batches() -> None:

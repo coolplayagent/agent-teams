@@ -680,6 +680,7 @@ def test_session_rounds_timeline_batches_pending_user_question_counts(
     first = items[0]
     assert isinstance(first, dict)
     assert first["run_phase"] == "awaiting_manual_action"
+    assert first["pending_user_question_count"] == 1
 
 
 def test_session_rounds_timeline_batches_run_intent_inputs(

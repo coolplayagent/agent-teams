@@ -24,6 +24,11 @@ from relay_teams.agents.tasks.models import (
     TaskSpecArtifact,
     VerificationPlan,
 )
+from relay_teams.net.async_request_limit_phase import (
+    mark_async_request_limit_acquired,
+    mark_async_request_limit_waiting,
+)
+from relay_teams.providers.provider_contracts import ProviderStreamContract
 from relay_teams.roles.role_models import RoleDefinition
 from relay_teams.roles.role_registry import RoleRegistry
 from relay_teams.tools.registry import ToolRegistry
@@ -95,11 +100,11 @@ def test_log_slow_llm_prep_stage_emits_warning(
     assert payload["message_count"] == 3
 
 
-class _OpenAIRawStreamWithoutFinish:
+class _RawStreamWithoutFinish:
     finish_reason = None
 
 
-class _OpenAIRawStreamWithFinish:
+class _RawStreamWithFinish:
     finish_reason = "stop"
 
 
@@ -119,6 +124,30 @@ class _SlowStreamContext:
         traceback: TracebackType | None,
     ) -> bool | None:
         _ = (exc_type, exc, traceback)
+        return None
+
+
+class _QueuedStreamContext:
+    def __init__(self, *, queue_seconds: float, open_seconds: float = 0.0) -> None:
+        self._queue_seconds = queue_seconds
+        self._open_seconds = open_seconds
+        self.exited = False
+
+    async def __aenter__(self) -> session_runtime_module.AgentNodeStream:
+        mark_async_request_limit_waiting()
+        await asyncio.sleep(self._queue_seconds)
+        mark_async_request_limit_acquired()
+        await asyncio.sleep(self._open_seconds)
+        return cast(session_runtime_module.AgentNodeStream, object())
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> bool | None:
+        _ = (exc_type, exc, traceback)
+        self.exited = True
         return None
 
 
@@ -455,17 +484,25 @@ async def test_spec_checkpoint_decision_reads_task_spec_from_runtime_repo() -> N
 
 
 def test_raise_if_stream_finished_without_reason_validates_provider_streams() -> None:
-    session_runtime_module._raise_if_stream_finished_without_reason(object())
+    optional_finish_reason = ProviderStreamContract()
+    required_finish_reason = ProviderStreamContract(requires_finish_reason=True)
+
     session_runtime_module._raise_if_stream_finished_without_reason(
-        SimpleNamespace(_raw_stream_response=_ForeignRawStream())
+        object(), contract=required_finish_reason
     )
     session_runtime_module._raise_if_stream_finished_without_reason(
-        SimpleNamespace(_raw_stream_response=_OpenAIRawStreamWithFinish())
+        SimpleNamespace(_raw_stream_response=_ForeignRawStream()),
+        contract=optional_finish_reason,
+    )
+    session_runtime_module._raise_if_stream_finished_without_reason(
+        SimpleNamespace(_raw_stream_response=_RawStreamWithFinish()),
+        contract=required_finish_reason,
     )
 
     with pytest.raises(httpx.RemoteProtocolError):
         session_runtime_module._raise_if_stream_finished_without_reason(
-            SimpleNamespace(_raw_stream_response=_OpenAIRawStreamWithoutFinish())
+            SimpleNamespace(_raw_stream_response=_RawStreamWithoutFinish()),
+            contract=required_finish_reason,
         )
 
 
@@ -497,6 +534,91 @@ async def test_llm_stream_timeout_helpers_raise_read_timeout() -> None:
         ):
             entered = True
     assert entered is False
+
+
+@pytest.mark.asyncio
+async def test_llm_stream_open_timeout_excludes_request_limiter_queue() -> None:
+    context = _QueuedStreamContext(queue_seconds=0.03)
+
+    async with session_runtime_module._llm_stream_context_with_timeout(
+        cast(session_runtime_module.AgentNodeStreamContext, context),
+        timeout_seconds=0.005,
+    ):
+        assert context.exited is False
+
+    assert context.exited is True
+
+
+@pytest.mark.asyncio
+async def test_llm_stream_reports_only_user_visible_request_slot_wait(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        session_runtime_module,
+        "_MODEL_SLOT_FEEDBACK_DELAY_SECONDS",
+        0.001,
+    )
+    phases: list[str] = []
+
+    async def capture_phase(
+        payload: session_runtime_module.ModelRequestPhasePayload,
+    ) -> None:
+        phases.append(payload.phase)
+
+    context = _QueuedStreamContext(queue_seconds=0.01)
+    async with session_runtime_module._llm_stream_context_with_timeout(
+        cast(session_runtime_module.AgentNodeStreamContext, context),
+        timeout_seconds=0.1,
+        phase_callback=capture_phase,
+        role_id="Coordinator",
+        instance_id="instance-1",
+    ):
+        pass
+
+    assert phases == ["waiting_for_slot", "opening_stream"]
+
+
+@pytest.mark.asyncio
+async def test_llm_stream_does_not_flash_slot_wait_for_immediate_acquisition(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        session_runtime_module,
+        "_MODEL_SLOT_FEEDBACK_DELAY_SECONDS",
+        0.02,
+    )
+    phases: list[str] = []
+
+    async def capture_phase(
+        payload: session_runtime_module.ModelRequestPhasePayload,
+    ) -> None:
+        phases.append(payload.phase)
+
+    context = _QueuedStreamContext(queue_seconds=0.0)
+    async with session_runtime_module._llm_stream_context_with_timeout(
+        cast(session_runtime_module.AgentNodeStreamContext, context),
+        timeout_seconds=0.1,
+        phase_callback=capture_phase,
+        role_id="Coordinator",
+        instance_id="instance-1",
+    ):
+        pass
+
+    assert phases == []
+
+
+@pytest.mark.asyncio
+async def test_llm_stream_open_timeout_starts_after_request_slot_acquired() -> None:
+    context = _QueuedStreamContext(queue_seconds=0.01, open_seconds=0.03)
+
+    with pytest.raises(httpx.ReadTimeout, match="stream to open"):
+        async with session_runtime_module._llm_stream_context_with_timeout(
+            cast(session_runtime_module.AgentNodeStreamContext, context),
+            timeout_seconds=0.005,
+        ):
+            raise AssertionError("provider open hang must not enter the stream context")
+
+    await _wait_for_abandoned_stream_context_cleanup()
 
 
 @pytest.mark.asyncio
@@ -1963,18 +2085,8 @@ def test_resolve_role_allowed_tools_uses_updated_role_registry_tools() -> None:
     assert resolved == ("alpha", "generated_sum")
 
 
-def test_resolve_role_allowed_tools_filters_coordinator_tools_for_subagents() -> None:
+def test_resolve_role_allowed_tools_preserves_explicit_orchestration_tools() -> None:
     role_registry = RoleRegistry()
-    role_registry.register(
-        RoleDefinition(
-            role_id="Coordinator",
-            name="Coordinator",
-            description="Coordinates work.",
-            version="1",
-            tools=("orch_create_tasks", "orch_update_task", "orch_dispatch_task"),
-            system_prompt="Coordinate work.",
-        )
-    )
     role_registry.register(
         RoleDefinition(
             role_id="Crafter",
@@ -2000,7 +2112,7 @@ def test_resolve_role_allowed_tools_filters_coordinator_tools_for_subagents() ->
         session_id="session-1",
     )
 
-    assert resolved == ("alpha",)
+    assert resolved == ("alpha", "orch_dispatch_task")
 
 
 def test_resolve_role_allowed_tools_uses_fallback_for_missing_runtime_role() -> None:

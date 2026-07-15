@@ -1,5 +1,14 @@
 ﻿# Agent Teams API Design
 
+## Frontend Hosting
+
+The production React application (V2) is served from `frontend/dist/` at the
+root route. The maintained legacy application (V1) is built from
+`frontend/legacy/src/` into `frontend/dist/v1/` and is served at `/v1/`. Both
+interfaces provide an unconditional switch to the other version and share the
+same origin-relative `/api/*` HTTP and SSE contracts. Electron starts on V2 at
+the root route; users can switch to V1 from the application header.
+
 ## Overview
 
 - Base path: `/api`
@@ -234,18 +243,21 @@ Request field:
 
 ### `GET /system/configs/model`
 
-Returns the persisted model config with secret-backed profile API keys rehydrated for UI editing.
-Literal profile `api_key` values and secret header values are migrated out of `model.json` into the unified secret store on read.
-Saved MAAS and CodeAgent profile passwords are never returned in plaintext; password-auth profiles return `password: "••••••••••••"` when a saved password exists.
-For profile-local MaaS and CodeAgent username/password auth, raw passwords stay out of `model.json`; when the unified secret store cannot use system keyring and falls back to `secrets.json`, those password entries are stored as local-machine-bound `ENC:` encrypted values.
-The response body is a root object whose keys are profile ids and whose values use the same typed profile schema as `PUT /system/configs/model`, without any legacy top-level `config` wrapper.
+Returns the same public, normalized profile view as `GET /system/configs/model/profiles` for compatibility with older clients.
+The response never rehydrates API keys, secret header values, CodeAgent access/refresh tokens, or saved passwords. API keys are represented by `api_key: null` plus `has_api_key`; secret headers return `value: null` plus `configured`; password-backed auth returns configured flags and the existing masked password placeholder where required by the save contract.
+Literal profile `api_key` values and secret header values are still migrated out of `model.json` into the unified secret store on read, but migration does not make them part of the HTTP response.
 
 ### `GET /system/configs/model/profiles`
 
 Returns normalized model profiles.
-Each profile includes `has_api_key`, the currently stored `api_key` value so the web UI can mask it by default and reveal it on demand, `headers[]` for additional request headers, `is_default` to mark the runtime default profile, optional `context_window` for next-send context preview UI, optional `fallback_policy_id` to bind that profile to a fallback policy, `fallback_priority` to rank it as a fallback candidate, structured `capabilities.input/output.*`, and a derived `input_modalities[]` compatibility field so the UI can label profiles that accept direct media input.
+Each profile includes `has_api_key` and always returns `api_key: null`; the read endpoint never exposes the stored API key. Secret `headers[]` similarly return `value: null` plus `configured: true`, while non-secret header values remain visible for editing. The settings UI leaves credential fields blank and uses configured flags to preserve saved secrets until the user explicitly enters a replacement or clears them. Profiles also include `is_default` to mark the runtime default profile, optional `context_window` for next-send context preview UI, optional `fallback_policy_id` to bind that profile to a fallback policy, `fallback_priority` to rank it as a fallback candidate, structured `capabilities.input/output.*`, and a derived `input_modalities[]` compatibility field so the UI can label profiles that accept direct media input.
+Literal profile `api_key` values and secret header values are migrated out of `model.json` into the unified secret store on read. Saved MAAS and CodeAgent profile passwords are never returned in plaintext; password-auth profiles return `password: "••••••••••••"` when a saved password exists. For profile-local MaaS and CodeAgent username/password auth, raw passwords stay out of `model.json`; when the unified secret store cannot use system keyring and falls back to `secrets.json`, those password entries are stored as local-machine-bound `ENC:` encrypted values.
+The response body is a root object whose keys are profile ids and whose values use the same typed profile schema as `PUT /system/configs/model`, without any legacy top-level `config` wrapper.
 Profiles created from the shared model directory may also include optional `catalog_provider_id`, `catalog_provider_name`, and `catalog_model_name` metadata. These fields are descriptive and do not change provider transport selection.
 `provider` currently supports `openai_compatible`, `anthropic`, `bigmodel`, `minimax`, `maas`, `codeagent`, and the internal/testing-only `echo`. `anthropic` means the profile uses an Anthropic Messages API-compatible transport, including marketplace providers such as MiniMax entries that publish an `/anthropic/v1` API. MAAS profiles return `maas_auth` with `auth_source`, `username`, `has_password`, and `password: "••••••••••••"` when a profile password is saved so the web UI can preserve the stored password without exposing it. CodeAgent profiles return `codeagent_auth`; `auth_method = "sso"` exposes `has_access_token` and `has_refresh_token`, while `auth_method = "password"` exposes `auth_source`, `username`, `has_password`, and `password: "••••••••••••"` when a profile password is saved. The MaaS login endpoint and `app-id`, and the CodeAgent OAuth/login endpoints and inference base URL, are fixed by the backend.
+The startup bootstrap reader omits persisted profiles whose `provider` is not a
+declared provider type. It never substitutes an unknown provider with an
+OpenAI-compatible transport.
 When no profile is explicitly marked default, the backend resolves the default in this order: a profile named `default`, the only configured profile, then the first profile by name.
 
 ### `GET /system/configs/model/catalog`
@@ -262,7 +274,17 @@ Response fields:
 - `fetched_at`: timestamp for the cached directory, when available.
 - `cache_age_seconds`: age of the cached directory, when available.
 - `stale`: `true` when the returned cache is older than the freshness window, or when the backend returned stale cache after a refresh/fetch failure.
-- `providers[]`: normalized providers. Each provider includes `id`, `name`, optional `api`, optional `doc`, `env[]`, and `models[]`.
+- `providers[]`: normalized providers. Each provider includes `id`, `name`,
+  optional catalog `api`, optional backend-resolved `default_base_url`, optional
+  `doc`, `env[]`, and `models[]`. Settings clients use `default_base_url` instead
+  of maintaining provider-name-specific endpoint tables.
+- `runtime_providers[]`: backend-owned transport configuration contracts. Each
+  entry includes the provider `id`, display `name`, an `auth_kind` describing
+  which credential controls the editor must render, and a `credential_target`
+  describing the matching profile request field. Settings clients build
+  provider choices and authentication controls from this list instead of
+  maintaining provider-name tables. A provider found only in a saved profile
+  may be displayed as unavailable, but is not a selectable directory entry.
 - `error_code` and `error_message`: populated when `ok` is `false`.
 
 Model entries include `id`, `name`, optional family/date/limit fields, capability flags, normalized `capabilities`, and `input_modalities[]`.
@@ -378,21 +400,22 @@ If persisted model config is syntactically valid JSON but semantically invalid f
 ### `GET /system/configs/proxy`
 
 Returns the saved proxy configuration assembled from app `.env` in the resolved config dir, by default `~/.relay-teams/.env`, plus the unified secret store.
-Fields: `http_proxy`, `https_proxy`, `all_proxy`, `no_proxy`, `proxy_username`, `proxy_password`, `ssl_verify`.
+Fields: `http_proxy`, `https_proxy`, `all_proxy`, `no_proxy`, `proxy_username`, `has_password`, `ssl_verify`.
 Saved proxy URLs are returned without embedded credentials when the configured proxy URLs share the same username/password pair.
-If the password was persisted through the secret store, the API rehydrates it into `proxy_password` for editing.
-If a user manually forces `user:password@host` into `.env`, runtime loading still supports it and the API can read it back, but the save flow will not write that password back to `.env`.
+The read endpoint never returns the stored password. `has_password` reports whether a password is available in the unified secret store or a supported legacy URL source.
+If a user manually forces `user:password@host` into `.env`, including different credentials in different proxy URLs, runtime loading still supports it. The public settings read endpoint always strips user info from every URL. When `preserve_password: true` is used with unchanged proxy URLs, the backend keeps those exact legacy per-URL credentials in place without returning them to the browser; it never accepts a new or moved multi-password legacy set through this path.
 
 ### `PUT /system/configs/proxy`
 
 Saves proxy values into app `.env` in the resolved config dir, by default `~/.relay-teams/.env`, and the unified secret store, then reloads runtime proxy state immediately.
 Blank values remove the corresponding proxy key.
 `proxy_username` and `proxy_password` are optional shared credentials.
+When `preserve_password: true` and `proxy_password` is `null`, the backend retains the existing saved shared password. For legacy `.env` values containing different embedded credentials per URL, preserve mode only reuses the exact existing URL values when their credential-free forms are unchanged. Sending `preserve_password: false` with a null or blank password clears saved shared credentials and does not retain legacy embedded credentials.
 `ssl_verify` controls the default TLS certificate verification policy for Agent Teams outbound HTTP clients.
 When omitted or `null`, the backend removes `SSL_VERIFY` from `.env` and falls back to skipping certificate verification by default.
+On save, proxy passwords are persisted through the unified secret store. When a usable system keyring backend exists, the secret store uses keyring; otherwise it falls back to `secrets.json` in the resolved config dir, by default `~/.relay-teams/secrets.json`.
 On save, proxy passwords are persisted through the unified secret store. When a usable system keyring backend exists, the secret store uses keyring; otherwise it falls back to `secrets.json` in the resolved config dir, by default `~/.relay-teams/secrets.json`, and stores the proxy password as a local-machine-bound `ENC:` encrypted value. Existing plaintext file-backed proxy passwords remain readable for compatibility.
-The `.env` file stores proxy URLs without the password portion.
-Runtime loading still supports manual `.env` proxy URLs that already contain embedded passwords.
+For API-created shared credentials, the `.env` file stores proxy URLs without the password portion. Runtime loading still supports manual `.env` proxy URLs that already contain embedded passwords; unchanged distinct legacy URL credentials remain an explicit preservation-only exception until the user replaces or clears them.
 `no_proxy` accepts both comma-separated and semicolon-separated entries. Wildcard host patterns such as `127.*`, `192.168.*`, and the special token `<local>` are supported.
 
 ### `GET /system/configs/web`
@@ -400,8 +423,10 @@ Runtime loading still supports manual `.env` proxy URLs that already contain emb
 Returns the saved web tool configuration.
 Fields:
 - `provider`: always `exa`
-- `exa_api_key`: optional Exa key rehydrated from the unified secret store
+- `provider_options`: backend-advertised primary providers with display names and optional website URLs
+- `exa_api_key_configured`: whether an Exa key is stored; the read endpoint never returns the key
 - `fallback_provider`: `searxng` by default, or `disabled` when automatic fallback is explicitly turned off
+- `fallback_provider_options`: backend-advertised fallback choices; `uses_instance_url` tells clients whether to show the instance URL controls
 - `searxng_instance_url`: the SearXNG base URL used for fallback, defaulting to `https://search.mdosch.de/`
 - `searxng_instance_seeds`: the built-in SearXNG seed instances exposed read-only for the settings UI
 
@@ -412,8 +437,10 @@ Fields:
 Saves the web tool configuration.
 `provider` accepts only `exa`.
 `exa_api_key` remains optional because Exa hosted MCP can be used without a key; providing one only raises the rate-limit ceiling.
+When `preserve_exa_api_key: true` and `exa_api_key` is `null`, the backend retains the existing saved key. Sending an explicit replacement updates it; sending `preserve_exa_api_key: false` with a null or blank value clears it.
 `fallback_provider` defaults to `searxng`. Set it to `disabled` to opt out of automatic retry after Exa quota and rate-limit failures.
 `searxng_instance_url` defaults to `https://search.mdosch.de/`.
+Settings clients must render provider choices, labels, website links, and provider-specific fields from the capability descriptors returned by `GET /system/configs/web`; they must not maintain their own provider registry.
 The backend persists the Exa API key only through the unified secret store and does not write it back to `.env`.
 
 ### `GET /system/configs/github`
@@ -434,6 +461,20 @@ Returns the runtime-loaded hook view for the current workspace.
 The response flattens effective hook handlers across user, project, and project-local config sources so the frontend can show which hooks are actually loaded.
 Each entry includes at least the handler name, hook event, matcher, source scope/path, and any scoped filters such as tool names or role IDs.
 When no hook files are active, the endpoint returns an empty `loaded_hooks` list.
+
+`PUT /system/configs/hooks` and `POST /system/configs/hooks:validate` return
+structured validation details for schema failures. Each detail contains a stable
+`type` code, a `loc` array identifying the hook group/handler/field, and a
+human-readable `msg`. Clients must use `type` and `loc` for field placement and
+must not parse the English message text.
+
+### `GET /speech/config`
+
+Returns the persisted speech input configuration plus backend-resolved model
+profile eligibility. `profile_eligibility[]` contains `profile_name`, effective
+`model`, `eligible`, and a stable optional `reason` code. The backend is the only
+authority for realtime STT eligibility; clients must not infer it from model
+names or provider-name prefixes.
 
 ### `GET /system/configs/plugins`
 
@@ -476,6 +517,16 @@ Request:
 The response is a plugin registry containing the validated plugin record and
 diagnostics. Explicit validation is strict for manifest shape, component paths,
 settings schema, and JSON-compatible plugin component configs.
+
+### `GET /system/configs/plugins/marketplace/providers`
+
+Returns the backend-owned marketplace provider catalog. Clients build provider
+choices and provider-specific defaults from this response instead of embedding
+provider names, source locations, detail-loading behavior, or policy override
+defaults in the UI.
+
+The response contains `default_provider` and a `providers` array. Each provider
+entry exposes `provider`, `display_name`, `defaults`, and `include_details`.
 
 ### `POST /system/configs/plugins/marketplace`
 
@@ -774,7 +825,7 @@ All other UI and API routes return `403` by default. This prevents tunnel or rev
 
 Returns the saved ClawHub configuration.
 Fields:
-- `token`: optional value rehydrated from the unified secret store
+- `token_configured`: whether a token is stored; the read endpoint never returns the token
 
 The ClawHub settings currently exist to support authenticated `clawhub` shell workflows and future ClawHub-backed skill operations. When configured, the runtime injects `CLAWHUB_TOKEN` into shell subprocess environments.
 When no explicit ClawHub site or registry override exists, China-oriented environments default ClawHub subprocesses to `https://mirror-cn.clawhub.com` through both `CLAWHUB_SITE` and `CLAWHUB_REGISTRY`.
@@ -784,6 +835,7 @@ Legacy plaintext `CLAWHUB_TOKEN` values still found in `.env` are migrated into 
 
 Saves the ClawHub configuration.
 `token` is optional. The backend persists it through the unified secret store and removes any managed `CLAWHUB_TOKEN` entries from `.env`.
+When `preserve_token: true` and `token` is `null`, the backend retains the existing saved token. Sending an explicit replacement updates it; sending `preserve_token: false` with a null or blank value clears it.
 
 ### `POST /system/configs/clawhub:probe`
 
@@ -1445,13 +1497,18 @@ Returns environment variables grouped by `system` and `app` scope.
 `app` is editable and is stored across `.env` in the resolved config dir, by default `~/.relay-teams/.env`, and the unified secret store.
 Sensitive-looking app keys such as `*_API_KEY`, `*_TOKEN`, `*_SECRET`, and `*_PASSWORD` are stored in the secret store and excluded from `.env`.
 The server loads app environment values at startup and watches the app `.env` file for external edits, so saved or manually edited app values take effect without restarting the server.
-Each record includes `key`, `value`, `scope`, and `value_kind` (`string` or `expandable`).
+Each record includes `key`, `value`, `masked`, `scope`, and `value_kind`
+(`string` or `expandable`). Sensitive-looking keys return
+`masked=true` and `value="************"`; ordinary list and save responses never
+return their plaintext secret value.
 
 ### `PUT /system/configs/environment-variables/{scope}/{key}`
 
 Upserts one environment variable in the target `scope`.
 Request body fields:
 - `value`: raw variable value
+- optional `preserve_existing`: when `true`, retain the existing stored value
+  while applying edits such as a key rename; this requires an existing source key
 - optional `source_key`: rename from an existing key before saving the new key
 
 `app` writes preserve unrelated `.env` lines and comments where possible.
@@ -1472,6 +1529,7 @@ Deleting a missing key returns a user-facing validation error.
 
 Tests whether a target `http` or `https` URL is reachable under the current proxy and global SSL settings.
 The request may also include `proxy_override` with `http_proxy`, `https_proxy`, `all_proxy`, `no_proxy`, `proxy_username`, `proxy_password`, and `ssl_verify` to run a one-shot probe against unsaved form values.
+When the settings form is reusing saved proxy credentials without exposing them to the browser, it sends `preserve_saved_proxy_password: true`; the backend hydrates the saved shared password or the matching unchanged legacy per-URL credentials only for the one-shot probe and does not include them in the response.
 The backend uses `HEAD` first and falls back to `GET` when the target does not support `HEAD`.
 Any HTTP response (`2xx` through `5xx`) counts as reachable.
 Only transport-level failures such as timeout, DNS, TLS, or proxy handshake errors return `ok=false`.
@@ -1858,6 +1916,7 @@ Response fields include:
 - `instance_id`
 - `role_id`
 - `run_id`
+- `task_id`: stable task identity used to bind task-authored messages without comparing message text
 - `status`
 - `run_status`
 - `run_phase`
@@ -1899,6 +1958,31 @@ Response fields:
   - `generated_at`
   - `refresh_error`
 
+### `GET /sessions/{session_id}/subagents/events`
+
+Streams normal-mode subagent run events for one parent session over SSE.
+
+Replay cursor:
+- `after_event_id`: optional non-negative query cursor.
+- `Last-Event-ID`: optional SSE reconnect header.
+- When both are present, the backend resumes after the newer value.
+- Events with a persisted `event_id` emit a matching SSE `id:` line, allowing native browser `EventSource` reconnects to send `Last-Event-ID` without replaying from zero.
+
+The `data:` payload uses the normal `RunEvent` JSON shape. Clients still deduplicate by event identity because a manual reconnect can overlap a native browser reconnect during transport recovery.
+
+### `GET /sessions/{session_id}/activity/events`
+
+Streams lightweight session-level invalidation events over SSE. The stream includes
+run lifecycle, approval, user-question, background-task, and subagent lifecycle
+changes, but excludes high-volume text and thinking deltas.
+
+The server emits an `event: ready` marker after the session subscription is active.
+Clients should refresh recovery state when this marker arrives, which closes the race
+between the initial snapshot read and listener registration. Events with persisted ids
+emit an SSE `id:` line. Native `EventSource` reconnects provide `Last-Event-ID`; the
+server replays relevant events after that cursor before continuing with live delivery.
+Clients may use low-frequency snapshot polling only while this stream is disconnected.
+
 ### `DELETE /sessions/{session_id}/subagents/{instance_id}`
 
 Deletes one normal-mode child-session subagent projection and its persisted instance/run history.
@@ -1916,6 +2000,10 @@ Lists persisted business events in the session.
 
 Lists persisted messages in the active session segment only. Rows before the latest logical `clear` marker are excluded from this endpoint, and rows marked hidden-from-context by automatic compaction are also excluded.
 
+Persisted `tool-call`, `tool-return`, and `retry-prompt` parts are projected at
+read time with the current tool registry's `semantic_category` and
+`action_family`. The projection does not rewrite stored provider messages.
+
 ### `GET /sessions/{session_id}/agents/{instance_id}/messages`
 
 Lists the raw history timeline for one agent instance, including:
@@ -1923,9 +2011,20 @@ Lists the raw history timeline for one agent instance, including:
 - session `clear` dividers
 - conversation-local `compaction` dividers
 
+Query:
+- `task_id`: optional task identifier. When provided, message rows are filtered by
+  `session_id`, `instance_id`, and `task_id` in the persistence query. Clients opening
+  an orchestration child task should provide this value because one orchestration
+  instance may execute multiple tasks over its lifetime.
+
 Notes:
 - History markers are resolved against the instance's persisted `conversation_id`.
+- Persisted tool parts use the same read-time registry semantics projection as the
+  session message endpoint.
 - This matters for normal-mode subagent child sessions, whose instance conversation may differ from the legacy `session_id + role_id` conversation id.
+- A synthesized terminal task result is scoped to `task_id` when the query provides
+  one; results from another task assigned to the same reused instance are never
+  appended to the response.
 
 Response entries are ordered oldest to newest and use `entry_type`:
 - `message`: original persisted message row. Includes `hidden_from_context`, `hidden_reason`, `hidden_at`, and `hidden_marker_id`.
@@ -2102,6 +2201,16 @@ Thinking events:
 - `thinking_delta`: payload includes `part_index`, `text`, `role_id`, `instance_id`.
 - `thinking_finished`: payload includes `part_index`, `role_id`, `instance_id`.
 
+Model concurrency events:
+- `model_request_waiting`: emitted only when a model request has remained blocked
+  waiting for the shared outbound-request concurrency limiter long enough to be
+  user-visible. Payload is the strict `ModelRequestPhasePayload` contract with
+  `phase="waiting_for_slot"`, `role_id`, and `instance_id`.
+- `model_request_acquired`: emitted after a previously reported wait obtains its
+  limiter slot and begins opening the provider stream. The same payload contract
+  uses `phase="opening_stream"`. Immediate acquisitions do not emit either event,
+  avoiding transient queue indicators when no meaningful wait occurred.
+
 Spec checkpoint events:
 - `spec_checkpoint_applied`: emitted at a safe model boundary when a non-coordinator task with a `TaskSpec` crosses its `lifecycle.spec_checkpoint` refresh threshold. The backend persists an internal system prompt containing the current task spec before rebuilding the next model request. Payload includes `task_id`, `role_id`, `instance_id`, `sequence`, `reason`, `tool_calls_since_last_checkpoint`, `messages_since_last_checkpoint`, and `history_tokens_since_last_checkpoint`.
 
@@ -2126,6 +2235,10 @@ Retry events:
   `monitor_created` and `monitor_stopped` payloads include `monitor_id`. `monitor_triggered` also includes `monitor_trigger_id`, `event_name`, `source_kind`, `source_key`, and `action_type`.
 
 Frontend behavior:
+- The web UI renders model concurrency events as a local, non-blocking status near
+  the affected session timeline. It replaces the waiting label when the slot is
+  acquired and removes it on the first streamed thinking/text/tool event or when
+  the model step/run terminates. Replayed events follow the same reducer path.
 - The web UI uses `llm_retry_scheduled` to render one active retry card in the round timeline and keep its countdown live while the retry backoff window is active.
 - Retry countdowns are computed from the SSE event `occurred_at` timestamp plus `retry_in_ms`, so delayed delivery or page refresh does not restart the timer.
 - Later retry events replace the same card instead of stacking multiple historical cards.
@@ -2193,6 +2306,35 @@ tool-call UI that has not yet received a tool result for that run turn.
 
 Session round projections expose public user/subagent injections as
 `injection_messages`. Internal system reminders remain hidden or redacted.
+
+### Tool presentation semantics
+
+`tool_call`, `tool_result`, `tool_input_validation_failed`,
+`tool_approval_requested`, and `tool_approval_resolved` event payloads include
+registry-owned presentation semantics when a tool is known:
+
+- `semantic_category`: `execution | file-edit | file-read | interactive |
+  memory-artifact | orchestration | planning | unknown | web`
+- `action_family`: `edit | generic | orchestration | read | run | search |
+  subagent`
+
+The same fields are preserved on `tool-call`, `tool-return`, and
+`retry-prompt` parts in session message and round replay projections. Clients
+must use these fields instead of inferring behavior from `tool_name`. Unknown
+or plugin-provided tools without declared semantics use
+`semantic_category="unknown"` and `action_family="generic"`. Tool display
+semantics therefore remain stable when a registered tool is renamed.
+
+Workspace file-read results additionally expose `data.presentation` for UI
+rendering without parsing the provider-facing text payload. The projection is
+discriminated by `kind="workspace-read"` and contains `path`, `resource_type`
+(`file | directory | image | notebook`), plus either `content` or `entries`.
+Resolved workspace instructions, when present, are carried in `instructions`
+for the model but omitted from the primary UI body. The legacy protocol text is
+kept only in the internal tool projection, avoiding a duplicate large payload
+in model context and browser events. Clients must prefer the structured
+presentation when it is present and treat older or third-party string results
+as plain text.
 
 ### `GET /runs/{run_id}/tool-approvals`
 
@@ -3142,6 +3284,7 @@ Response fields:
 - `main_agent_role_id`
 - `coordinator_role`
   - `role_id`
+  - `system_role`: `coordinator`
   - `name`
   - `description`
   - `model_profile`
@@ -3149,6 +3292,7 @@ Response fields:
   - `input_modalities[]`
 - `main_agent_role`
   - `role_id`
+  - `system_role`: `main_agent`
   - `name`
   - `description`
   - `model_profile`
@@ -3156,6 +3300,7 @@ Response fields:
   - `input_modalities[]`
 - `normal_mode_roles[]`
   - `role_id`
+  - `system_role`: `main_agent` for the explicit main-agent option, otherwise `null`
   - `name`
   - `description`
   - `model_profile`
@@ -3163,6 +3308,7 @@ Response fields:
   - `input_modalities[]`
 - `subagent_roles[]`
   - `role_id`
+  - `system_role`: `null`
   - `name`
   - `description`
   - `model_profile`
@@ -3203,8 +3349,13 @@ Notes:
   This grants all currently configured MCP servers or all currently discovered
   skills at runtime, including entries added after config reload. Partial glob
   patterns such as `docs-*` or `builtin:*` are not supported.
-- `normal_mode_roles[]` contains non-system roles whose `mode` is `primary` or `all`.
+- `normal_mode_roles[]` starts with the explicit `main_agent` role and then
+  contains non-system roles whose `mode` is `primary` or `all`.
 - `subagent_roles[]` contains non-system roles whose `mode` is `subagent` or `all`.
+- During startup hydration, the bootstrap response resolves `coordinator_role`
+  and `main_agent_role` only from explicit `system_role` manifest metadata. Role
+  IDs, names, and tool combinations never imply system identity. Missing or
+  duplicate required identities return `503`; placeholder roles are not emitted.
 - Returns `503` when required builtin/system roles such as `Coordinator` or
   `MainAgent` are unavailable in the current runtime.
 
@@ -3222,6 +3373,7 @@ role files exist, the response contains the app-backed documents only.
 
 Response fields:
 - `role_id`
+- `system_role`: `main_agent`, `coordinator`, or `null`
 - `name`
 - `description`
 - `version`
@@ -3248,6 +3400,7 @@ Response fields:
 - `contract`
 - `bound_agent_id`
 - `mode`
+- `system_role`: `main_agent`, `coordinator`, or `null`
 - `source`
 - `system_prompt`
 - `file_name`
@@ -3277,6 +3430,7 @@ Request:
   "model_profile": "default",
   "bound_agent_id": "codex_local",
   "mode": "subagent",
+  "system_role": null,
   "memory_profile": {
     "enabled": true
   },
@@ -3312,7 +3466,13 @@ Rules:
 - Renaming a role writes a new file and removes the previous file when validation succeeds.
 - When `bound_agent_id` is set, that role executes through the configured agent runtime provider instead of the local model provider chain.
 - `mode` controls where the role can be selected: `primary` for normal-mode root roles, `subagent` for background/delegated subagent roles, `all` for both.
-- Reserved system roles keep fixed identity fields (`role_id`, `name`, `description`, `version`), fixed `mode`, and fixed `system_prompt` through this API.
+- `system_role` is explicit role identity metadata. Only builtin manifests may
+  assign `main_agent` or `coordinator`; names and tool combinations never imply
+  system identity, so user roles may reuse those names without becoming
+  reserved roles.
+- Reserved system roles keep fixed identity fields (`role_id`, `name`,
+  `description`, `version`, `mode`, and `system_role`) through this API. Their
+  prompt and capability configuration remains editable.
 - `contract` is serialized into role YAML front matter and is included in the
   runtime system prompt as `## Role Contract` when non-empty; enforcement does
   not rely on model compliance with that prompt section.
@@ -3433,6 +3593,11 @@ Response:
   (`workspace created_at DESC, workspace_id DESC`).
 - `next_cursor`: cursor for the next page, or `null` when no further page exists.
 - `has_more`: `true` when another page is available.
+
+Workspace records expose optional `display_name` and `system_workspace`. Clients
+must not treat a particular `workspace_id` or user-defined name such as
+`default` as a system workspace. The built-in workspace carries its product
+display name explicitly.
 
 Clients that need the complete workspace set must follow `next_cursor` until
 `has_more` is `false`. Sidebar callers should render the first page immediately
@@ -3687,10 +3852,13 @@ Query:
 - `remove_worktree`: `true|false` (deprecated alias for `remove_directory`)
 
 Request body:
-- optional `force`: required when `remove_directory=true` or `remove_worktree=true`
+- optional `cascade`: required when the workspace owns sessions
+- optional `force`: required when deleting running sessions or when `remove_directory=true` or `remove_worktree=true`
 
 Rules:
-- When `remove_directory=false`, the backend deletes only the workspace record.
+- The backend deletes the workspace's sessions through the session service before deleting the workspace record. This preserves the normal session cleanup semantics for runs, messages, subagents, and artifacts.
+- When the workspace owns sessions and `cascade` is omitted or `false`, the backend returns `409` without deleting the workspace or its sessions.
+- When `remove_directory=false`, local workspace files remain on disk.
 - When `remove_directory=true` and `force` is omitted or `false`, the backend returns `409` instead of removing the directory.
 - When `remove_directory=true` for `file_scope.backend = "git_worktree"`, the backend runs `git worktree remove --force` before deleting the workspace record.
 - When `remove_directory=true` for other workspace types, the backend deletes `root_path` before deleting the workspace record.
@@ -4480,7 +4648,10 @@ Returns tool-level breakdown rows for `scope=global|session|run`. Non-global sco
 
 Breakdown payload includes:
 - `rows`: tool-level call/failure/latency breakdown
-- `role_rows`: role-level token/cache/tool-failure breakdown
+- `role_rows`: role-level token/cache/tool-failure breakdown. Each row includes
+  `attribution=recorded|missing_metric_tag`; legacy metric points without a
+  `role_id` return an empty `role_id` with `missing_metric_tag` instead of the
+  ambiguous literal `unknown`.
 - `gateway_rows`: gateway ACP and MCP operation call/failure/latency breakdown grouped by operation, phase, and transport
 
 ## Automation APIs

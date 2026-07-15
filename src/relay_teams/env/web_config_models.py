@@ -30,6 +30,22 @@ class WebFallbackProvider(str, Enum):
     SEARXNG = "searxng"
 
 
+class WebProviderDescriptor(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    display_name: str
+    provider: WebProvider
+    website_url: str | None = None
+
+
+class WebFallbackProviderDescriptor(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    display_name: str
+    provider: WebFallbackProvider
+    uses_instance_url: bool = False
+
+
 class WebConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -88,6 +104,62 @@ class WebConfig(BaseModel):
         if provider == WebProvider.EXA:
             return self.exa_api_key
         return None
+
+
+class WebConfigView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider: WebProvider
+    exa_api_key_configured: bool
+    fallback_provider: WebFallbackProvider | None
+    fallback_provider_options: tuple[WebFallbackProviderDescriptor, ...]
+    searxng_instance_url: str | None
+    searxng_instance_seeds: tuple[str, ...] = DEFAULT_SEARXNG_INSTANCE_SEEDS
+    provider_options: tuple[WebProviderDescriptor, ...]
+
+    @classmethod
+    def from_config(cls, config: WebConfig) -> WebConfigView:
+        return cls(
+            provider=config.provider,
+            exa_api_key_configured=config.exa_api_key is not None,
+            fallback_provider=config.fallback_provider,
+            fallback_provider_options=(
+                WebFallbackProviderDescriptor(
+                    display_name="SearXNG",
+                    provider=WebFallbackProvider.SEARXNG,
+                    uses_instance_url=True,
+                ),
+                WebFallbackProviderDescriptor(
+                    display_name="Disabled",
+                    provider=WebFallbackProvider.DISABLED,
+                ),
+            ),
+            searxng_instance_url=config.searxng_instance_url,
+            provider_options=(
+                WebProviderDescriptor(
+                    display_name="Exa",
+                    provider=WebProvider.EXA,
+                    website_url="https://exa.ai",
+                ),
+            ),
+        )
+
+
+class WebConfigUpdate(WebConfig):
+    preserve_exa_api_key: bool = False
+
+    def to_config(self, *, preserved_api_key: str | None) -> WebConfig:
+        api_key = (
+            preserved_api_key
+            if self.preserve_exa_api_key and self.exa_api_key is None
+            else self.exa_api_key
+        )
+        return WebConfig(
+            provider=self.provider,
+            exa_api_key=api_key,
+            fallback_provider=self.fallback_provider,
+            searxng_instance_url=self.searxng_instance_url,
+        )
 
 
 def _normalize_optional_text(value: str | None) -> str | None:

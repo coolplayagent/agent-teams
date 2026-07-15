@@ -138,7 +138,6 @@ def integration_env(
     if existing_pythonpath:
         python_paths.append(existing_pythonpath)
     shared_env["PYTHONPATH"] = _PYTHONPATH_SEPARATOR.join(python_paths)
-    shared_env["AGENT_TEAMS_COMPUTER_RUNTIME"] = "fake"
     shared_env["RELAY_TEAMS_LLM_HTTP_MAX_CONCURRENCY"] = "4"
     shared_env["PYTHON_KEYRING_BACKEND"] = "keyring.backends.null.Keyring"
 
@@ -177,7 +176,7 @@ def integration_env(
                 sys.executable,
                 "-m",
                 "uvicorn",
-                "relay_teams.interfaces.server.app:app",
+                "integration_tests.support.server_app:app",
                 "--host",
                 "127.0.0.1",
                 "--port",

@@ -21,11 +21,11 @@ class _FakeSpeechConfigService:
         self.saved_config: SpeechConfigUpdate | None = None
 
     def get_config_payload(self) -> dict[str, object]:
+        config = self.saved_config or SpeechConfigUpdate()
         return {
+            **config.model_dump(mode="json"),
             "configured": self.saved_config is not None,
-            "stt_profile_name": self.saved_config.stt_profile_name
-            if self.saved_config
-            else None,
+            "profile_eligibility": [],
         }
 
     def save_config(self, config: SpeechConfigUpdate) -> None:
@@ -118,7 +118,14 @@ def test_speech_config_routes_read_and_save_config() -> None:
 
     assert client.get("/api/speech/config").json() == {
         "configured": False,
+        "language": None,
+        "noise_reduction": "near_field",
+        "profile_eligibility": [],
+        "prompt": None,
         "stt_profile_name": None,
+        "vad_prefix_padding_ms": 300,
+        "vad_silence_duration_ms": 500,
+        "vad_threshold": 0.5,
     }
 
     response = client.put(
@@ -127,7 +134,17 @@ def test_speech_config_routes_read_and_save_config() -> None:
     )
 
     assert response.status_code == 200
-    assert response.json() == {"configured": True, "stt_profile_name": "stt"}
+    assert response.json() == {
+        "configured": True,
+        "language": "zh-CN",
+        "noise_reduction": "near_field",
+        "profile_eligibility": [],
+        "prompt": None,
+        "stt_profile_name": "stt",
+        "vad_prefix_padding_ms": 300,
+        "vad_silence_duration_ms": 500,
+        "vad_threshold": 0.5,
+    }
     assert speech_service.saved_config is not None
     assert speech_service.saved_config.language == "zh-CN"
 

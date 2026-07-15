@@ -55,8 +55,10 @@ from relay_teams.sessions.runs.event_stream import RunEventHub
 from relay_teams.sessions.session_models import SessionMode
 from relay_teams.workspace import (
     WorkspaceHandle,
+    WorkspaceLocalMountConfig,
     WorkspaceMountCapabilities,
     WorkspaceMountProvider,
+    WorkspaceMountRecord,
     WorkspaceRemoteMountRoot,
     WorkspaceSshMountConfig,
 )
@@ -256,7 +258,7 @@ def build_workspace_environments_prompt(
         f"- Workspace ID: {workspace.ref.workspace_id}",
         f"- Default Mount: {workspace.default_mount_name}",
         f"- Active Execution Mount: {workspace.locations.mount_name}",
-        f"- Workspace Temp Root: {workspace.tmp_root.resolve()}",
+        f"- Workspace Temp Root: {_format_workspace_prompt_path(workspace.tmp_root)}",
         (
             "- Path Syntax: unprefixed paths use the default mount; use "
             "`<mount_name>:/path` for non-default mounts; use `tmp/...` for "
@@ -372,7 +374,7 @@ def _build_workspace_mount_environment_lines(
     lines = [
         f"### Mount: {mount.mount_name}{default_suffix}",
         f"- Provider: {mount.provider.value}",
-        f"- Root: {mount.root_reference}",
+        f"- Root: {_workspace_mount_prompt_root(mount)}",
         f"- Working Directory: {mount.working_directory}",
         "- Readable Paths: " + _format_scope_paths(mount.readable_paths),
         "- Writable Paths: " + _format_scope_paths(mount.writable_paths),
@@ -436,9 +438,23 @@ def _build_ssh_mount_environment_lines(
         lines.append("- Materialized Local Root: not materialized in this run")
     else:
         lines.append(
-            f"- Materialized Local Root: {remote_mount_root.local_root.resolve()}"
+            "- Materialized Local Root: "
+            + _format_workspace_prompt_path(remote_mount_root.local_root)
         )
     return lines
+
+
+def _workspace_mount_prompt_root(mount: WorkspaceMountRecord) -> str:
+    provider_config = mount.provider_config
+    if isinstance(provider_config, WorkspaceLocalMountConfig):
+        return _format_workspace_prompt_path(provider_config.root_path)
+    return provider_config.remote_root
+
+
+def _format_workspace_prompt_path(path: Path) -> str:
+    if path.is_absolute():
+        return str(path)
+    return str(path.absolute())
 
 
 def _remote_mount_root_for(

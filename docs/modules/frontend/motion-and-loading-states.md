@@ -1,6 +1,10 @@
 # 动效与加载状态设计
 
-本文档描述当前 `frontend/dist` 中已经实现的动画、过渡和加载状态。动效主要由 CSS class、DOM 插入、运行态 class 和 hover/focus/disabled 状态触发；JavaScript 负责切换状态，CSS 负责表达动效。
+本文档原本描述 V1 `frontend/dist` 中的动画、过渡和加载状态。当前 V2 React
+前端的运行态样式主要由 `frontend/app/src/styles/theme.css`、组件 class、
+React state、TanStack Query loading state 和 stream runtime state 驱动。
+下面的 V1 模块名只作为历史对照；新增或修复 V2 UI 时应以 React 组件和
+TS/browser 测试为准。
 
 ## 设计目标
 
@@ -16,7 +20,7 @@
 
 ### 全局基础动画
 
-来源：`frontend/dist/css/base.css`
+当前 V2 来源：`frontend/app/src/styles/theme.css`。
 
 - `fadeIn`：通用淡入。
 - `slideUp`：轻微上移动画，用于提示或块级内容进入。
@@ -26,7 +30,7 @@
 
 ### 会话与切换动画
 
-来源：`frontend/dist/css/components/interface.css`
+V1 来源：`frontend/dist/css/components/interface.css`。
 
 - `sessionItemEnter`：session item 插入时淡入并轻微位移。
 - `sessionItemRemove`：session item 删除时收起和淡出。
@@ -34,23 +38,23 @@
 - `sessionSwitchContentReady`：会话内容 ready 后的轻微进入反馈。
 - `sessionItemSwitchTarget`：目标 session item 被切换选中时的状态反馈。
 
-来源：`frontend/dist/css/components/projects.css`
+V1 来源：`frontend/dist/css/components/projects.css`。
 
 - `sessionItemTargetOverlay`：session item target overlay 的视觉反馈。
 
-来源：`frontend/dist/css/components/session-search.css`
+V1 来源：`frontend/dist/css/components/session-search.css`。
 
 - `sessionSearchResultEnter`：会话搜索结果进入时淡入。
 
 ### 新会话草稿动画
 
-来源：`frontend/dist/css/components/new-session-draft.css`
+V1 来源：`frontend/dist/css/components/new-session-draft.css`。
 
 - `newSessionDraftEnter`：新会话草稿页进入时淡入和轻微位移。
 
 ### 设置弹窗动画
 
-来源：`frontend/dist/css/components/settings.css`
+V1 来源：`frontend/dist/css/components/settings.css`。
 
 - `settingsModalEnter`：设置弹窗打开时的 shell 进入。
 - `settingsPanelEnter`：设置 tab panel 切换进入。
@@ -58,7 +62,7 @@
 
 ### Subagent 与项目会话动画
 
-来源：`frontend/dist/css/components/subagent.css`
+V1 来源：`frontend/dist/css/components/subagent.css`。
 
 - `sessionRunIndicatorSpin`：session run indicator 的运行中旋转。
 - `sessionRunTimeFadeIn`：运行时间信息淡入。
@@ -69,7 +73,7 @@
 
 ### Tool 详情动画
 
-来源：`frontend/dist/css/components/tools.css`
+V1 来源：`frontend/dist/css/components/tools.css`。
 
 - `tool-detail-in`：tool detail 展开或插入时进入。
 

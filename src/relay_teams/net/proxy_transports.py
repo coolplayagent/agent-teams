@@ -8,6 +8,10 @@ from typing import Protocol
 import httpx
 
 from relay_teams.env.proxy_env import ProxyEnvConfig, proxy_applies_to_url
+from relay_teams.net.async_request_limit_phase import (
+    mark_async_request_limit_acquired,
+    mark_async_request_limit_waiting,
+)
 
 _TERMINAL_SSE_SCAN_BUFFER_BYTES = 64 * 1024
 
@@ -56,7 +60,9 @@ class AsyncProxyRoutingTransport(httpx.AsyncBaseTransport):
         transport = self._select_transport(str(request.url))
         if self._request_limiter is None:
             return await transport.handle_async_request(request)
+        mark_async_request_limit_waiting()
         lease = await self._request_limiter.acquire(str(request.url))
+        mark_async_request_limit_acquired()
         try:
             response = await transport.handle_async_request(request)
         except BaseException:

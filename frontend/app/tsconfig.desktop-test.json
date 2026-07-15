@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.desktop.json",
+  "compilerOptions": {
+    "outDir": "dist-desktop-test"
+  },
+  "include": ["src/desktop/testMain.ts"],
+  "exclude": []
+}

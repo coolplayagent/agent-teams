@@ -301,6 +301,7 @@ class AsyncAgentTeamsClient:
         no_proxy: str | None = None,
         proxy_username: str | None = None,
         proxy_password: str | None = None,
+        preserve_password: bool = True,
         ssl_verify: bool | None = None,
     ) -> dict[str, JsonValue]:
         payload: dict[str, JsonValue] = {
@@ -310,6 +311,7 @@ class AsyncAgentTeamsClient:
             "no_proxy": no_proxy,
             "proxy_username": proxy_username,
             "proxy_password": proxy_password,
+            "preserve_password": preserve_password,
             "ssl_verify": ssl_verify,
         }
         return await self._request_json("PUT", "/api/system/configs/proxy", payload)
@@ -319,12 +321,14 @@ class AsyncAgentTeamsClient:
         *,
         provider: str = "exa",
         exa_api_key: str | None = None,
+        preserve_exa_api_key: bool = True,
         fallback_provider: str | None = "searxng",
         searxng_instance_url: str | None = None,
     ) -> dict[str, JsonValue]:
         payload: dict[str, JsonValue] = {
             "provider": provider,
             "exa_api_key": exa_api_key,
+            "preserve_exa_api_key": preserve_exa_api_key,
             "fallback_provider": fallback_provider,
             "searxng_instance_url": searxng_instance_url,
         }
@@ -342,8 +346,12 @@ class AsyncAgentTeamsClient:
         self,
         *,
         token: str | None = None,
+        preserve_token: bool = True,
     ) -> dict[str, JsonValue]:
-        payload: dict[str, JsonValue] = {"token": token}
+        payload: dict[str, JsonValue] = {
+            "preserve_token": preserve_token,
+            "token": token,
+        }
         return await self._request_json("PUT", "/api/system/configs/clawhub", payload)
 
     async def save_clawhub_skill(

@@ -182,5 +182,22 @@ def build_tool_error_result(
     }
 
 
-def build_assistant_error_response(content: str) -> ModelResponse:
-    return ModelResponse(parts=[TextPart(content=content)])
+RUN_ERROR_PRESENTATION_KIND = "run_error"
+VERIFICATION_FAILURE_PRESENTATION_KIND = "verification_failure"
+
+
+def build_assistant_error_response(
+    content: str,
+    *,
+    error_code: str | None,
+) -> ModelResponse:
+    normalized_error_code = str(error_code or "").strip().lower()
+    presentation_kind = (
+        VERIFICATION_FAILURE_PRESENTATION_KIND
+        if normalized_error_code == "verification_failed"
+        else RUN_ERROR_PRESENTATION_KIND
+    )
+    return ModelResponse(
+        parts=[TextPart(content=content)],
+        metadata={"presentation_kind": presentation_kind},
+    )

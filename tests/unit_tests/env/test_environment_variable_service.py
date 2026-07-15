@@ -213,11 +213,14 @@ def test_save_sensitive_app_environment_variable_uses_secret_store(
     )
 
     assert saved.key == "OPENAI_API_KEY"
+    assert saved.masked is True
+    assert saved.value == "************"
     assert "OPENAI_API_KEY" not in app_env_file_path.read_text(encoding="utf-8")
     assert service.list_environment_variables().app == (
         EnvironmentVariableRecord(
             key="OPENAI_API_KEY",
-            value="secret-key",
+            masked=True,
+            value="************",
             scope=EnvironmentVariableScope.APP,
             value_kind=EnvironmentVariableValueKind.STRING,
         ),
@@ -228,6 +231,55 @@ def test_save_sensitive_app_environment_variable_uses_secret_store(
             value_kind=EnvironmentVariableValueKind.STRING,
         ),
     )
+
+
+def test_save_sensitive_app_environment_variable_can_preserve_existing_value(
+    tmp_path: Path,
+) -> None:
+    backend = _FakeEnvironmentVariableBackend()
+    app_env_file_path = tmp_path / ".agent-teams" / ".env"
+    service = EnvironmentVariableService(
+        backend=backend,
+        app_env_file_path=app_env_file_path,
+    )
+    service.save_environment_variable(
+        scope=EnvironmentVariableScope.APP,
+        key="OPENAI_API_KEY",
+        request=EnvironmentVariableSaveRequest(value="secret-key"),
+    )
+
+    saved = service.save_environment_variable(
+        scope=EnvironmentVariableScope.APP,
+        key="RENAMED_API_KEY",
+        request=EnvironmentVariableSaveRequest(
+            preserve_existing=True,
+            source_key="OPENAI_API_KEY",
+            value="",
+        ),
+    )
+
+    assert saved.masked is True
+    assert saved.value == "************"
+    assert [record.key for record in service.list_environment_variables().app] == [
+        "RENAMED_API_KEY"
+    ]
+
+
+def test_preserve_environment_variable_requires_existing_source(tmp_path: Path) -> None:
+    service = EnvironmentVariableService(
+        backend=_FakeEnvironmentVariableBackend(),
+        app_env_file_path=tmp_path / ".agent-teams" / ".env",
+    )
+
+    with pytest.raises(ValueError, match="requires an existing key"):
+        service.save_environment_variable(
+            scope=EnvironmentVariableScope.APP,
+            key="MISSING_API_KEY",
+            request=EnvironmentVariableSaveRequest(
+                preserve_existing=True,
+                value="",
+            ),
+        )
 
 
 def test_environment_variable_service_notifies_changed_keys_for_rename_and_delete(

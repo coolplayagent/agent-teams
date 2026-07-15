@@ -33,6 +33,23 @@ from relay_teams.plugins.plugin_models import PluginComponentSource
 from relay_teams.plugins.substitution import substitute_plugin_vars
 
 LOGGER = get_logger(__name__)
+
+
+class HookConfigReferenceError(ValueError):
+    def __init__(
+        self,
+        *,
+        code: str,
+        loc: tuple[str | int, ...],
+        message: str,
+        role_id: str,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.loc = loc
+        self.role_id = role_id
+
+
 _CAPABILITY_WILDCARD = "*"
 
 
@@ -131,10 +148,7 @@ class HookLoader:
 
     def validate_payload(self, payload: object) -> HooksConfig:
         normalized_payload = normalize_hooks_payload(payload)
-        try:
-            config = HooksConfig.model_validate(normalized_payload)
-        except ValidationError as exc:
-            raise ValueError(_format_validation_error(exc)) from exc
+        config = HooksConfig.model_validate(normalized_payload)
         validate_hook_event_capabilities(config=config)
         return self._validate_handler_references(config=config, tolerant=False)
 
@@ -393,14 +407,22 @@ class HookLoader:
         next_hooks: dict[HookEventName, tuple[HookMatcherGroup, ...]] = {}
         for event_name, groups in config.hooks.items():
             next_groups: list[HookMatcherGroup] = []
-            for group in groups:
+            for group_index, group in enumerate(groups):
                 next_handlers: list[HookHandlerConfig] = []
-                for handler in group.hooks:
+                for handler_index, handler in enumerate(group.hooks):
                     if self._handler_role_is_valid(
                         handler=handler,
                         known_role_ids=known_role_ids,
                         agent_hook_role_ids=agent_hook_role_ids,
                         tolerant=tolerant,
+                        loc=(
+                            "hooks",
+                            event_name.value,
+                            group_index,
+                            "hooks",
+                            handler_index,
+                            "role_id",
+                        ),
                     ):
                         next_handlers.append(handler)
                 if next_handlers:
@@ -433,21 +455,32 @@ class HookLoader:
         known_role_ids: frozenset[str],
         agent_hook_role_ids: frozenset[str],
         tolerant: bool,
+        loc: tuple[str | int, ...],
     ) -> bool:
         if handler.type != HookHandlerType.AGENT:
             return True
         role_id = str(handler.role_id or "").strip()
         if not role_id:
             if not tolerant:
-                raise ValueError("Agent hook role_id is required.")
+                raise HookConfigReferenceError(
+                    code="hook_agent_role_required",
+                    loc=loc,
+                    message="Agent hook role_id is required.",
+                    role_id="",
+                )
             LOGGER.warning("Ignoring agent hook handler with empty role_id")
             return False
         if role_id in agent_hook_role_ids:
             return True
         if role_id in known_role_ids:
             if not tolerant:
-                raise ValueError(
-                    f"Agent hook role_id must reference a subagent role: {role_id}"
+                raise HookConfigReferenceError(
+                    code="hook_agent_role_not_subagent",
+                    loc=loc,
+                    message=(
+                        f"Agent hook role_id must reference a subagent role: {role_id}"
+                    ),
+                    role_id=role_id,
                 )
             LOGGER.warning(
                 "Ignoring hook handler with non-subagent agent role",
@@ -455,7 +488,12 @@ class HookLoader:
             )
             return False
         if not tolerant:
-            raise ValueError(f"Unknown agent hook role_id: {role_id or '<empty>'}")
+            raise HookConfigReferenceError(
+                code="hook_agent_role_unknown",
+                loc=loc,
+                message=f"Unknown agent hook role_id: {role_id or '<empty>'}",
+                role_id=role_id,
+            )
         LOGGER.warning(
             "Ignoring hook handler with unknown agent role",
             extra={"role_id": role_id},

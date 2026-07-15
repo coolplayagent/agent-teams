@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
+from enum import StrEnum
 from json import dumps, loads
 from pathlib import Path
 from time import time
@@ -16,7 +17,13 @@ from relay_teams.logger import get_logger
 from relay_teams.media import MediaModality
 from relay_teams.net.clients import create_async_http_client
 from relay_teams.providers.model_capabilities import resolve_model_capabilities
-from relay_teams.providers.model_config import ModelCapabilities, ProviderType
+from relay_teams.providers.model_config import (
+    DEFAULT_ANTHROPIC_BASE_URL,
+    DEFAULT_CODEAGENT_BASE_URL,
+    DEFAULT_MAAS_BASE_URL,
+    ModelCapabilities,
+    ProviderType,
+)
 
 DEFAULT_MODEL_CATALOG_SOURCE_URL = "https://models.dev/api.json"
 DEFAULT_MODEL_CATALOG_TTL_SECONDS = 300
@@ -53,9 +60,62 @@ class ModelCatalogProvider(BaseModel):
     name: str = Field(min_length=1)
     runtime_provider: ProviderType = ProviderType.OPENAI_COMPATIBLE
     api: str | None = None
+    default_base_url: str | None = None
     doc: str | None = None
     env: tuple[str, ...] = ()
     models: tuple[ModelCatalogModel, ...] = ()
+
+
+class ModelProviderAuthKind(StrEnum):
+    API_KEY = "api_key"
+    PROFILE_PASSWORD = "profile_password"
+    SSO_OR_PASSWORD = "sso_or_password"
+
+
+class ModelProviderCredentialTarget(StrEnum):
+    API_KEY = "api_key"
+    MAAS_AUTH = "maas_auth"
+    CODEAGENT_AUTH = "codeagent_auth"
+
+
+class ModelRuntimeProvider(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: ProviderType
+    name: str = Field(min_length=1)
+    auth_kind: ModelProviderAuthKind
+    credential_target: ModelProviderCredentialTarget
+
+
+def model_runtime_provider_contracts() -> tuple[ModelRuntimeProvider, ...]:
+    password_providers = {
+        ProviderType.MAAS: (
+            ModelProviderAuthKind.PROFILE_PASSWORD,
+            ModelProviderCredentialTarget.MAAS_AUTH,
+        ),
+        ProviderType.CODEAGENT: (
+            ModelProviderAuthKind.SSO_OR_PASSWORD,
+            ModelProviderCredentialTarget.CODEAGENT_AUTH,
+        ),
+    }
+    providers: list[ModelRuntimeProvider] = []
+    for provider in ProviderType:
+        auth_kind, credential_target = password_providers.get(
+            provider,
+            (
+                ModelProviderAuthKind.API_KEY,
+                ModelProviderCredentialTarget.API_KEY,
+            ),
+        )
+        providers.append(
+            ModelRuntimeProvider(
+                id=provider,
+                name=provider.value.replace("_", " ").title(),
+                auth_kind=auth_kind,
+                credential_target=credential_target,
+            )
+        )
+    return tuple(providers)
 
 
 class ModelCatalogResult(BaseModel):
@@ -67,6 +127,9 @@ class ModelCatalogResult(BaseModel):
     cache_age_seconds: int | None = Field(default=None, ge=0)
     stale: bool = False
     providers: tuple[ModelCatalogProvider, ...] = ()
+    runtime_providers: tuple[ModelRuntimeProvider, ...] = Field(
+        default_factory=model_runtime_provider_contracts
+    )
     error_code: str | None = None
     error_message: str | None = None
 
@@ -313,10 +376,29 @@ def _parse_provider(
         name=name,
         runtime_provider=runtime_provider,
         api=_string_field(payload.get("api")),
+        default_base_url=_catalog_provider_default_base_url(
+            runtime_provider=runtime_provider,
+            catalog_api=_string_field(payload.get("api")),
+        ),
         doc=_string_field(payload.get("doc")),
         env=_string_tuple(payload.get("env")),
         models=tuple(models),
     )
+
+
+def _catalog_provider_default_base_url(
+    *,
+    runtime_provider: ProviderType,
+    catalog_api: str | None,
+) -> str | None:
+    if catalog_api is not None:
+        return catalog_api
+    defaults = {
+        ProviderType.ANTHROPIC: DEFAULT_ANTHROPIC_BASE_URL,
+        ProviderType.CODEAGENT: DEFAULT_CODEAGENT_BASE_URL,
+        ProviderType.MAAS: DEFAULT_MAAS_BASE_URL,
+    }
+    return defaults.get(runtime_provider)
 
 
 def _parse_model(

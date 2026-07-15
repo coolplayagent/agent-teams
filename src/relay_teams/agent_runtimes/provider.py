@@ -1374,6 +1374,9 @@ class AgentRuntimeSessionManager:
                     {
                         "tool_call_id": tool_call_id,
                         "tool_name": tool_name,
+                        **self._tool_registry.get_tool_semantics(tool_name).model_dump(
+                            mode="json"
+                        ),
                         "args": args,
                         "role_id": request.role_id,
                         "instance_id": request.instance_id,
@@ -1407,6 +1410,9 @@ class AgentRuntimeSessionManager:
                     {
                         "tool_call_id": tool_call_id,
                         "tool_name": tool_name,
+                        **self._tool_registry.get_tool_semantics(tool_name).model_dump(
+                            mode="json"
+                        ),
                         "args_preview": args_preview,
                         "instance_id": request.instance_id,
                         "role_id": request.role_id,
@@ -1618,6 +1624,9 @@ class AgentRuntimeSessionManager:
                     {
                         "tool_call_id": tool_call_id,
                         "tool_name": tool_name,
+                        **self._tool_registry.get_tool_semantics(tool_name).model_dump(
+                            mode="json"
+                        ),
                         "action": action,
                         "feedback": feedback,
                         "instance_id": request.instance_id,
@@ -1736,6 +1745,9 @@ class AgentRuntimeSessionManager:
                         {
                             "tool_call_id": tool_call_id or external_tool_call_id,
                             "tool_name": tool_title,
+                            **self._tool_registry.get_tool_semantics(
+                                tool_title
+                            ).model_dump(mode="json"),
                             "result": tool_result,
                             "error": _optional_str(update.get("status")) == "failed",
                         },

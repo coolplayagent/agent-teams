@@ -1,0 +1,1836 @@
+import { App as AntApp, ConfigProvider } from "antd";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import {
+  listAgentMessages,
+  listSessionMessages,
+  listSessionRounds,
+  listSessionSubagents,
+} from "../api/client";
+import type { TimelineMessage } from "../api/contracts";
+import { SubagentSessionView } from "../features/sessions/SubagentSessionView";
+import type { ActiveSubagentSession } from "../features/sessions/SessionsSidebar";
+import type { RunEventType } from "../runtime/events";
+import type { RuntimeState, TimelineEntry } from "../runtime/reducers";
+import { useRuntimeStore } from "../runtime/runtimeStore";
+import { openSessionSubagentRunStream } from "../runtime/streamClient";
+import type { RunStreamController } from "../runtime/useRunStreamController";
+
+vi.mock("../api/client", () => ({
+  listAgentMessages: vi.fn(),
+  listSessionMessages: vi.fn(),
+  listSessionRounds: vi.fn(),
+  listSessionSubagents: vi.fn(),
+}));
+
+vi.mock("../runtime/streamClient", () => ({
+  openSessionSubagentRunStream: vi.fn(),
+}));
+
+const listAgentMessagesMock = vi.mocked(listAgentMessages);
+const listSessionMessagesMock = vi.mocked(listSessionMessages);
+const listSessionRoundsMock = vi.mocked(listSessionRounds);
+const listSessionSubagentsMock = vi.mocked(listSessionSubagents);
+const openSessionSubagentRunStreamMock = vi.mocked(openSessionSubagentRunStream);
+
+beforeEach(() => {
+  listAgentMessagesMock.mockResolvedValue([]);
+  listSessionMessagesMock.mockResolvedValue([]);
+  listSessionRoundsMock.mockResolvedValue({
+    has_more: false,
+    items: [],
+    next_cursor: null,
+  });
+  listSessionSubagentsMock.mockResolvedValue([]);
+  openSessionSubagentRunStreamMock.mockReturnValue({ close: vi.fn() });
+});
+
+afterEach(() => {
+  cleanup();
+  useRuntimeStore.getState().resetRuntimeState();
+  vi.clearAllMocks();
+});
+
+describe("SubagentSessionView", () => {
+  it("lets the workbench tabs own closing without a duplicate back action", async () => {
+    renderSubagentSessionView({ showBackAction: false });
+
+    expect(await screen.findByText("Explorer review")).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Main session" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not retain inactive workbench timeline DOM", () => {
+    renderSubagentSessionView({
+      visible: false,
+    });
+
+    expect(document.querySelector(".at-subagent-session-view")).toBeNull();
+    expect(listAgentMessagesMock).not.toHaveBeenCalled();
+  });
+
+  it("releases runtime and query work while the panel is hidden", async () => {
+    renderSubagentSessionView({
+      subagent: createSubagent({
+        runId: "subagent_run_hidden",
+        runStatus: "running",
+        status: "running",
+      }),
+      visible: false,
+    });
+
+    act(() => {
+      setRuntimeEntries([
+        runtimeMessageEntry({
+          instanceId: "subagent-instance-1",
+          runId: "subagent_run_hidden",
+          text: "Hidden output from the shared stream",
+        }),
+      ]);
+    });
+
+    expect(screen.queryByText("Hidden output from the shared stream"))
+      .not.toBeInTheDocument();
+    expect(screen.queryByText("Explorer review")).not.toBeInTheDocument();
+    expect(listSessionSubagentsMock).not.toHaveBeenCalled();
+    expect(listAgentMessagesMock).not.toHaveBeenCalled();
+    expect(listSessionRoundsMock).not.toHaveBeenCalled();
+    expect(openSessionSubagentRunStreamMock).not.toHaveBeenCalled();
+  });
+
+  it("does not poll or stream a hidden completed panel", async () => {
+    renderSubagentSessionView({
+      subagent: createSubagent({
+        runStatus: "completed",
+        status: "completed",
+      }),
+      visible: false,
+    });
+
+    await act(async () => Promise.resolve());
+    expect(listSessionSubagentsMock).not.toHaveBeenCalled();
+    expect(listAgentMessagesMock).not.toHaveBeenCalled();
+    expect(listSessionRoundsMock).not.toHaveBeenCalled();
+    expect(openSessionSubagentRunStreamMock).not.toHaveBeenCalled();
+  });
+
+  it("virtualizes hundreds of records inside one panel-owned scroll container", async () => {
+    const startedAt = performance.now();
+    listAgentMessagesMock.mockResolvedValue(
+      Array.from({ length: 600 }, (_, index) => ({
+        content: `Subagent history item ${index + 1}`,
+        created_at: new Date(
+          Date.parse("2026-06-23T10:00:00Z") + index * 1000,
+        ).toISOString(),
+        message_id: `subagent-history-${index + 1}`,
+        role: "assistant",
+        run_id: "subagent_run_1",
+      })),
+    );
+    const mainTimeline = document.createElement("div");
+    mainTimeline.dataset.testid = "main-timeline-scroll-owner";
+    mainTimeline.scrollTop = 240;
+    document.body.append(mainTimeline);
+
+    const { container } = renderSubagentSessionView({
+      subagent: createSubagent({
+        runPhase: "completed",
+        runStatus: "completed",
+        status: "completed",
+      }),
+    });
+
+    const panelTimeline = await waitFor(() => {
+      const element = container.querySelector<HTMLElement>(
+        '.at-timeline[data-scroll-owner="subagent-panel"]',
+      );
+      expect(element).not.toBeNull();
+      expect(Number(element?.dataset.totalRowCount)).toBeGreaterThanOrEqual(500);
+      return element as HTMLElement;
+    });
+    expect(container.querySelector(".at-subagent-session-prompt")).toBeNull();
+    expect(container.querySelectorAll(".at-timeline-row").length).toBeLessThan(
+      100,
+    );
+
+    Object.defineProperties(panelTimeline, {
+      clientHeight: { configurable: true, value: 480 },
+      scrollHeight: { configurable: true, value: 9_600 },
+    });
+    panelTimeline.scrollTop = 320;
+    fireEvent.scroll(panelTimeline);
+    expect(panelTimeline.scrollTop).toBe(320);
+    expect(mainTimeline.scrollTop).toBe(240);
+    expect(performance.now() - startedAt).toBeLessThan(3000);
+    mainTimeline.remove();
+  });
+
+  it("requests only the selected orchestration task from a reused instance", async () => {
+    listAgentMessagesMock.mockResolvedValue([
+      {
+        content: "Output for the selected orchestration task",
+        message_id: "orchestration-task-message",
+        role: "assistant",
+        run_id: "orchestration-run-1",
+        task_id: "task-child-2",
+      },
+    ]);
+
+    renderSubagentSessionView({
+      subagent: createSubagent({
+        runId: "orchestration-run-1",
+        runPhase: "completed",
+        runStatus: "completed",
+        status: "completed",
+        subagentKind: "orchestration",
+        taskId: "task-child-2",
+      }),
+    });
+
+    expect(
+      await screen.findByText("Output for the selected orchestration task"),
+    ).toBeVisible();
+    expect(listAgentMessagesMock).toHaveBeenCalledWith(
+      "session-parent",
+      "subagent-instance-1",
+      { taskId: "task-child-2" },
+    );
+    expect(openSessionSubagentRunStreamMock).not.toHaveBeenCalled();
+  });
+
+  it("shows a startup state before a running subagent id is known", async () => {
+    const controller = createRunStreamController();
+
+    renderSubagentSessionView({
+      controller,
+      subagent: createSubagent({
+        instanceId: "",
+        lastEventId: null,
+        runId: "",
+        title: "Explore skills implementation",
+      }),
+    });
+
+    expect(await screen.findByText("Explore skills implementation")).toBeVisible();
+    expect(screen.getByText("Starting subagent...")).toBeVisible();
+    expect(listAgentMessagesMock).not.toHaveBeenCalled();
+    expect(openSessionSubagentRunStreamMock).not.toHaveBeenCalled();
+  });
+
+  it("streams a running subagent panel before its instance id is known", async () => {
+    setRuntimeEntries([
+      runtimeMessageEntry({
+        instanceId: "",
+        runId: "subagent_run_1",
+        text: "Live subagent output",
+      }),
+    ]);
+    const controller = createRunStreamController();
+
+    renderSubagentSessionView({
+      controller,
+      subagent: createSubagent({
+        instanceId: "",
+        lastEventId: null,
+        runId: "subagent_run_1",
+        title: "Explore skills implementation",
+      }),
+    });
+
+    expect(await screen.findByText("Live subagent output")).toBeVisible();
+    expect(listAgentMessagesMock).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expectSubagentSessionStreamStarted({
+        afterEventId: 42,
+        runId: "subagent_run_1",
+        sessionId: "session-parent",
+      }),
+    );
+  });
+
+  it("shows pending subagent output from the source parent run before child ids hydrate", async () => {
+    const runId = "parent-run-with-pending-subagent";
+    setRuntimeEntries([
+      {
+        eventId: 41,
+        id: `${runId}:41:0`,
+        instanceId: "main-instance",
+        kind: "text_delta",
+        occurredAt: "2026-06-23T10:02:00Z",
+        payload: { text: "Parent output should stay out of the subagent panel." },
+        roleId: "MainAgent",
+        runId,
+        sessionId: "session-parent",
+        text: "Parent output should stay out of the subagent panel.",
+      },
+      runtimeMessageEntry({
+        instanceId: "pending-child-instance",
+        runId,
+        text: "Live child output before backend ids hydrate.",
+      }),
+    ]);
+    const controller = createRunStreamController();
+
+    renderSubagentSessionView({
+      controller,
+      subagent: createSubagent({
+        instanceId: "",
+        lastEventId: null,
+        runId: "",
+        sourceRunId: runId,
+        title: "Explore skills implementation",
+      }),
+    });
+
+    expect(
+      await screen.findByText("Live child output before backend ids hydrate."),
+    ).toBeVisible();
+    expect(
+      screen.queryByText("Parent output should stay out of the subagent panel."),
+    ).not.toBeInTheDocument();
+    expect(listAgentMessagesMock).not.toHaveBeenCalled();
+    expect(openSessionSubagentRunStreamMock).not.toHaveBeenCalled();
+  });
+
+  it("hydrates a running subagent id from the latest record before streaming", async () => {
+    const controller = createRunStreamController();
+    listSessionSubagentsMock.mockResolvedValue([
+      {
+        created_at: "2026-06-23T10:02:00Z",
+        instance_id: "subagent-instance-hydrated",
+        last_event_id: 41,
+        role_id: "explorer",
+        run_id: "subagent_run_hydrated",
+        run_phase: "running",
+        run_status: "running",
+        session_id: "session-parent",
+        status: "running",
+        subagent_kind: "normal",
+        title: "Explore skills implementation",
+        updated_at: "2026-06-23T10:03:00Z",
+      },
+    ]);
+
+    renderSubagentSessionView({
+      controller,
+      subagent: createSubagent({
+        instanceId: "",
+        lastEventId: null,
+        runId: "",
+        title: "Explore skills implementation",
+      }),
+    });
+
+    expect(await screen.findByText("Explore skills implementation")).toBeVisible();
+    await waitFor(() =>
+      expect(listAgentMessagesMock).toHaveBeenCalledWith(
+        "session-parent",
+        "subagent-instance-hydrated",
+      ),
+    );
+    await waitFor(() =>
+      expectSubagentSessionStreamStarted({
+        afterEventId: 0,
+        runId: "subagent_run_hydrated",
+        sessionId: "session-parent",
+      }),
+    );
+  });
+
+  it("keeps the live subagent prompt after the latest record hydrates ids", async () => {
+    const controller = createRunStreamController();
+    listSessionSubagentsMock.mockResolvedValue([
+      {
+        created_at: "2026-06-23T10:02:00Z",
+        instance_id: "subagent-instance-hydrated",
+        last_event_id: 41,
+        role_id: "explorer",
+        run_id: "subagent_run_hydrated",
+        run_phase: "running",
+        run_status: "running",
+        session_id: "session-parent",
+        status: "running",
+        subagent_kind: "normal",
+        title: "Explore skills implementation",
+        updated_at: "2026-06-23T10:03:00Z",
+      },
+    ]);
+
+    renderSubagentSessionView({
+      controller,
+      subagent: createSubagent({
+        instanceId: "",
+        lastEventId: null,
+        promptText: "Read the project and report back without editing files.",
+        runId: "",
+        title: "Explore skills implementation",
+      }),
+    });
+
+    expect(
+      await screen.findByText("Read the project and report back without editing files."),
+    ).toBeVisible();
+    await waitFor(() =>
+      expect(listAgentMessagesMock).toHaveBeenCalledWith(
+        "session-parent",
+        "subagent-instance-hydrated",
+      ),
+    );
+    await waitFor(() =>
+      expectSubagentSessionStreamStarted({
+        afterEventId: 0,
+        runId: "subagent_run_hydrated",
+        sessionId: "session-parent",
+      }),
+    );
+  });
+
+  it("keeps a completed subagent prompt visible during replay", async () => {
+    listAgentMessagesMock.mockResolvedValue([
+      {
+        content: "Completed subagent replay answer.",
+        created_at: "2026-06-23T10:08:00Z",
+        message_id: "subagent-replay-message",
+        role_id: "explorer",
+        run_id: "subagent_run_1",
+      },
+    ]);
+    const controller = createRunStreamController();
+
+    renderSubagentSessionView({
+      controller,
+      subagent: createSubagent({
+        promptText: "Summarize the completed child work.",
+        runPhase: "completed",
+        runStatus: "completed",
+        status: "completed",
+      }),
+    });
+
+    expect(await screen.findByText("Summarize the completed child work."))
+      .toBeVisible();
+    expect(await screen.findByText("Completed subagent replay answer."))
+      .toBeVisible();
+    expect(openSessionSubagentRunStreamMock).not.toHaveBeenCalled();
+  });
+
+  it("does not duplicate the prompt when persisted subagent history contains it", async () => {
+    const prompt = "Execute the streaming verification command once.";
+    listAgentMessagesMock.mockResolvedValue([
+      {
+        created_at: "2026-06-23T10:01:00Z",
+        instance_id: "subagent-instance-1",
+        message: {
+          parts: [{ content: prompt, part_kind: "user-prompt" }],
+        },
+        message_id: "subagent-user-prompt",
+        role: "user",
+        role_id: "Crafter",
+        run_id: "subagent_run_1",
+        task_id: "subagent-task-1",
+      },
+      {
+        content: "Subagent answer after the command.",
+        created_at: "2026-06-23T10:02:00Z",
+        message_id: "subagent-answer",
+        role_id: "assistant",
+        run_id: "subagent_run_1",
+        task_id: "subagent-task-1",
+      },
+    ]);
+    const controller = createRunStreamController();
+
+    renderSubagentSessionView({
+      controller,
+      subagent: createSubagent({
+        promptText: prompt,
+        runPhase: "completed",
+        runStatus: "completed",
+        status: "completed",
+        taskId: "subagent-task-1",
+      }),
+    });
+
+    expect(await screen.findByText(prompt)).toBeVisible();
+    expect(await screen.findByText("Subagent answer after the command."))
+      .toBeVisible();
+    expect(document.body.textContent?.match(new RegExp(prompt, "g")) ?? [])
+      .toHaveLength(1);
+  });
+
+  it("keeps a later same-text user message distinct from the task prompt", async () => {
+    const prompt = "Repeat this exact instruction.";
+    listAgentMessagesMock.mockResolvedValue([
+      {
+        created_at: "2026-06-23T10:01:00Z",
+        instance_id: "subagent-instance-1",
+        message: {
+          parts: [{ content: prompt, part_kind: "user-prompt" }],
+        },
+        message_id: "persisted-task-prompt",
+        role: "user",
+        task_id: "subagent-task-1",
+        trace_id: "subagent_run_1",
+      },
+      {
+        created_at: "2026-06-23T10:02:00Z",
+        instance_id: "subagent-instance-1",
+        message: {
+          parts: [{ content: prompt, part_kind: "user-prompt" }],
+        },
+        message_id: "later-user-message",
+        role: "user",
+        task_id: "subagent-task-1",
+        trace_id: "subagent_run_1",
+      },
+    ]);
+
+    const { queryClient } = renderSubagentSessionView({
+      subagent: createSubagent({
+        promptText: prompt,
+        runPhase: "completed",
+        runStatus: "completed",
+        status: "completed",
+        taskId: "subagent-task-1",
+      }),
+    });
+
+    await waitFor(() =>
+      expect(
+        queryClient.getQueryData<TimelineMessage[]>([
+          "sessions",
+          "session-parent",
+          "agents",
+          "subagent-instance-1",
+          "messages",
+          "prompt",
+          prompt,
+        ]),
+      ).toHaveLength(2),
+    );
+  });
+
+  it("does not treat a same-text user message from another task as the prompt", async () => {
+    const prompt = "Inspect the current task.";
+    listAgentMessagesMock.mockResolvedValue([
+      {
+        created_at: "2026-06-23T09:01:00Z",
+        instance_id: "subagent-instance-1",
+        message: {
+          parts: [{ content: prompt, part_kind: "user-prompt" }],
+        },
+        message_id: "other-task-user-message",
+        role: "user",
+        task_id: "other-task",
+        trace_id: "older-run",
+      },
+    ]);
+
+    const { queryClient } = renderSubagentSessionView({
+      subagent: createSubagent({
+        promptText: prompt,
+        runPhase: "completed",
+        runStatus: "completed",
+        status: "completed",
+        taskId: "selected-task",
+      }),
+    });
+
+    await waitFor(() => expect(screen.getAllByText(prompt)).toHaveLength(2));
+    expect(
+      queryClient.getQueryData<TimelineMessage[]>([
+        "sessions",
+        "session-parent",
+        "agents",
+        "subagent-instance-1",
+        "messages",
+        "prompt",
+        prompt,
+      ])?.[0],
+    ).toMatchObject({
+      message_id:
+        "subagent-task-prompt:session-parent:selected-task:subagent-instance-1:subagent_run_1",
+      presentation_kind: "task_prompt",
+      source: "subagent_task_prompt",
+      task_id: "selected-task",
+    });
+  });
+
+  it("uses the structured orchestration task prompt instead of stale card text", async () => {
+    listAgentMessagesMock.mockResolvedValue([
+      {
+        created_at: "2026-06-23T10:00:00Z",
+        instance_id: "subagent-instance-1",
+        message: {
+          parts: [
+            {
+              content: "Authoritative persisted task prompt.",
+              part_kind: "user-prompt",
+            },
+          ],
+        },
+        message_id: "selected-task-prompt",
+        role: "user",
+        task_id: "selected-task",
+        trace_id: "parent-run",
+      },
+    ]);
+
+    renderSubagentSessionView({
+      subagent: createSubagent({
+        promptText: "Stale tool-card prompt.",
+        runId: "parent-run",
+        runPhase: "completed",
+        runStatus: "completed",
+        status: "completed",
+        subagentKind: "orchestration",
+        taskId: "selected-task",
+      }),
+    });
+
+    expect(await screen.findByText("Authoritative persisted task prompt."))
+      .toBeVisible();
+    expect(screen.queryByText("Stale tool-card prompt.")).not.toBeInTheDocument();
+    expect(listAgentMessagesMock).toHaveBeenCalledWith(
+      "session-parent",
+      "subagent-instance-1",
+      { taskId: "selected-task" },
+    );
+  });
+
+  it("loads only the selected task from a reused orchestration instance", async () => {
+    listAgentMessagesMock.mockResolvedValue([
+      {
+        content: "Old task output that must stay outside this panel.",
+        created_at: "2026-06-23T09:00:00Z",
+        message_id: "old-task-answer",
+        role: "assistant",
+        role_id: "Crafter",
+        run_id: "parent-run",
+        task_id: "old-task",
+      },
+      {
+        created_at: "2026-06-23T10:00:00Z",
+        instance_id: "subagent-instance-1",
+        message: {
+          parts: [
+            { content: "Current task prompt.", part_kind: "user-prompt" },
+          ],
+        },
+        message_id: "current-task-prompt",
+        role: "user",
+        role_id: "Crafter",
+        run_id: "parent-run",
+        task_id: "current-task",
+      },
+      {
+        content: "Current task output.",
+        created_at: "2026-06-23T10:01:00Z",
+        message_id: "current-task-answer",
+        role: "assistant",
+        role_id: "Crafter",
+        run_id: "parent-run",
+        task_id: "current-task",
+      },
+    ]);
+
+    renderSubagentSessionView({
+      subagent: createSubagent({
+        promptText: "Current task prompt.",
+        roleId: "Crafter",
+        runId: "parent-run",
+        runPhase: "completed",
+        runStatus: "completed",
+        status: "completed",
+        subagentKind: "orchestration",
+        taskId: "current-task",
+      }),
+    });
+
+    expect(await screen.findByText("Current task output.")).toBeVisible();
+    expect(
+      screen.queryByText("Old task output that must stay outside this panel."),
+    ).not.toBeInTheDocument();
+    expect(document.body.textContent?.match(/Current task prompt\./g) ?? [])
+      .toHaveLength(1);
+  });
+
+  it("hydrates the selected task record when an orchestration instance is reused", async () => {
+    listSessionSubagentsMock.mockResolvedValue([
+      {
+        instance_id: "shared-orchestration-instance",
+        role_id: "Crafter",
+        run_id: "shared-parent-run",
+        run_phase: "failed",
+        run_status: "failed",
+        session_id: "session-parent",
+        status: "failed",
+        subagent_kind: "orchestration",
+        task_id: "older-task",
+        title: "Older task record",
+      },
+      {
+        instance_id: "shared-orchestration-instance",
+        role_id: "Crafter",
+        run_id: "conflicting-parent-run",
+        run_phase: "paused",
+        run_status: "paused",
+        session_id: "session-parent",
+        status: "paused",
+        subagent_kind: "orchestration",
+        task_id: "selected-task",
+        title: "Conflicting selected task record",
+      },
+      {
+        instance_id: "shared-orchestration-instance",
+        role_id: "Crafter",
+        run_id: "shared-parent-run",
+        run_phase: "completed",
+        run_status: "completed",
+        session_id: "session-parent",
+        status: "completed",
+        subagent_kind: "orchestration",
+        task_id: "selected-task",
+        title: "Selected task record",
+      },
+    ]);
+
+    renderSubagentSessionView({
+      subagent: createSubagent({
+        instanceId: "shared-orchestration-instance",
+        roleId: "Crafter",
+        runId: "shared-parent-run",
+        subagentKind: "orchestration",
+        taskId: "selected-task",
+        title: "Pending task title",
+      }),
+    });
+
+    expect(await screen.findByText("Selected task record")).toBeVisible();
+    expect(screen.getByText("Completed")).toHaveAttribute(
+      "data-status",
+      "completed",
+    );
+    expect(screen.queryByText("Older task record")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Conflicting selected task record"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Failed")).not.toBeInTheDocument();
+    expect(screen.queryByText("Paused")).not.toBeInTheDocument();
+  });
+
+  it("does not attach the normal-mode event stream to a shared orchestration run", async () => {
+    const parentRunId = "shared-parent-run";
+    setRuntimeEntries([
+      runtimeMessageEntry({
+        instanceId: "subagent-instance-1",
+        runId: parentRunId,
+        text: "Current orchestration child output.",
+      }),
+    ]);
+
+    renderSubagentSessionView({
+      subagent: createSubagent({
+        runId: parentRunId,
+        runPhase: "running",
+        runStatus: "running",
+        status: "running",
+        subagentKind: "orchestration",
+      }),
+    });
+
+    expect(await screen.findByText("Current orchestration child output."))
+      .toBeVisible();
+    expect(openSessionSubagentRunStreamMock).not.toHaveBeenCalled();
+    expect(useRuntimeStore.getState().runtimeState.runs[parentRunId]?.scope)
+      .toBeUndefined();
+  });
+
+  it("replays a running subagent from the beginning when no live cursor exists", async () => {
+    const controller = createRunStreamController();
+
+    renderSubagentSessionView({
+      controller,
+      subagent: createSubagent({
+        instanceId: "subagent-instance-1",
+        lastEventId: 41,
+        runId: "subagent_run_1",
+        runPhase: "running",
+        runStatus: "running",
+        status: "running",
+        title: "Explore skills implementation",
+      }),
+    });
+
+    expect(await screen.findByText("Waiting for subagent output...")).toBeVisible();
+    expect(screen.queryByText("No subagent activity")).not.toBeInTheDocument();
+    expect(listAgentMessagesMock).toHaveBeenCalledWith(
+      "session-parent",
+      "subagent-instance-1",
+    );
+    await waitFor(() =>
+      expectSubagentSessionStreamStarted({
+        afterEventId: 0,
+        runId: "subagent_run_1",
+        sessionId: "session-parent",
+      }),
+    );
+  });
+
+  it("streams an active subagent run from the live runtime cursor", async () => {
+    setRuntimeEntries([
+      runtimeMessageEntry({
+        instanceId: "subagent-instance-1",
+        runId: "subagent_run_1",
+        text: "Live subagent output",
+      }),
+    ]);
+    const controller = createRunStreamController();
+
+    const { unmount } = renderSubagentSessionView({ controller });
+
+    expect(await screen.findByText("Explorer review")).toBeVisible();
+    expect(screen.getByText("Read-only subagent session")).toBeVisible();
+    expect(screen.getByText("explorer")).toBeVisible();
+    expect(screen.queryByText("subagent-instance-1")).not.toBeInTheDocument();
+    expect(await screen.findByText("Live subagent output")).toBeVisible();
+    expect(listAgentMessagesMock).toHaveBeenCalledWith(
+      "session-parent",
+      "subagent-instance-1",
+    );
+    expect(listSessionMessagesMock).not.toHaveBeenCalled();
+    expect(listSessionRoundsMock).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expectSubagentSessionStreamStarted({
+        afterEventId: 42,
+        runId: "subagent_run_1",
+        sessionId: "session-parent",
+      }),
+    );
+
+    unmount();
+
+    expect(latestSubagentStreamHandle().close).toHaveBeenCalledTimes(1);
+  });
+
+  it("reconnects a transport interruption from the latest subagent cursor", async () => {
+    setRuntimeEntries([
+      runtimeMessageEntry({
+        instanceId: "subagent-instance-1",
+        runId: "subagent_run_1",
+        text: "Live subagent output before interruption",
+      }),
+    ]);
+    renderSubagentSessionView();
+
+    await waitFor(() =>
+      expectSubagentSessionStreamStarted({
+        afterEventId: 42,
+        runId: "subagent_run_1",
+        sessionId: "session-parent",
+      }),
+    );
+    const interruptedHandle = latestSubagentStreamHandle();
+    const interruptedOptions = latestSubagentStreamOptions();
+    act(() => {
+      interruptedOptions.onState({
+        activeRunIds: ["subagent_run_1"],
+        runs: {
+          subagent_run_1: {
+            entries: [
+              runtimeMessageEntry({
+                instanceId: "subagent-instance-1",
+                runId: "subagent_run_1",
+                text: "Live subagent output at recovery cursor",
+              }),
+            ],
+            lastEventId: 77,
+            runId: "subagent_run_1",
+            scope: "subagent",
+            seenEventKeys: ["subagent_run_1:77"],
+            sessionId: "session-parent",
+            status: "open",
+            terminalEventType: null,
+          },
+        },
+      });
+      interruptedOptions.onError("Run stream disconnected.", "transport");
+    });
+
+    expect(interruptedHandle.close).toHaveBeenCalledTimes(1);
+    await waitFor(
+      () => {
+        expect(openSessionSubagentRunStreamMock).toHaveBeenCalledTimes(2);
+        expectSubagentSessionStreamStarted({
+          afterEventId: 77,
+          runId: "subagent_run_1",
+          sessionId: "session-parent",
+        });
+      },
+      { timeout: 2_500 },
+    );
+  });
+
+  it("marks opened subagent streams as subagent scoped before live events arrive", async () => {
+    renderSubagentSessionView();
+
+    await waitFor(() =>
+      expectSubagentSessionStreamStarted({
+        afterEventId: 0,
+        runId: "subagent_run_1",
+        sessionId: "session-parent",
+      }),
+    );
+
+    expect(
+      latestSubagentStreamOptions().initialState.runs["subagent_run_1"]?.scope,
+    ).toBe("subagent");
+    expect(
+      useRuntimeStore.getState().runtimeState.runs["subagent_run_1"]?.scope,
+    ).toBe("subagent");
+  });
+
+  it("keeps subagent scope when fresh live events arrive without scope metadata", async () => {
+    renderSubagentSessionView();
+
+    await waitFor(() => expect(openSessionSubagentRunStreamMock).toHaveBeenCalled());
+
+    pushLatestSubagentStreamState({
+      activeRunIds: ["subagent_run_1"],
+      runs: {
+        subagent_run_1: {
+          entries: [
+            runtimeMessageEntry({
+              instanceId: "",
+              runId: "subagent_run_1",
+              text: "Unscoped stream event from subagent transport",
+            }),
+          ],
+          lastEventId: 42,
+          runId: "subagent_run_1",
+          seenEventKeys: [],
+          sessionId: "session-parent",
+          status: "open",
+          targetRoleId: "explorer",
+          terminalEventType: null,
+        },
+      },
+    });
+
+    expect(
+      await screen.findByText("Unscoped stream event from subagent transport"),
+    ).toBeVisible();
+    expect(
+      useRuntimeStore.getState().runtimeState.runs["subagent_run_1"]?.scope,
+    ).toBe("subagent");
+  });
+
+  it("does not let subagent stream snapshots reopen a completed parent run", async () => {
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: [],
+        runs: {
+          "parent-run": {
+            entries: [],
+            lastEventId: 88,
+            runId: "parent-run",
+            seenEventKeys: [],
+            sessionId: "session-parent",
+            status: "closed",
+            terminalEventType: "run_completed",
+          },
+        },
+      },
+    });
+    renderSubagentSessionView();
+
+    await waitFor(() => expect(openSessionSubagentRunStreamMock).toHaveBeenCalled());
+
+    pushLatestSubagentStreamState({
+      activeRunIds: ["parent-run", "subagent_run_1"],
+      runs: {
+        "parent-run": {
+          entries: [],
+          lastEventId: 87,
+          runId: "parent-run",
+          seenEventKeys: [],
+          sessionId: "session-parent",
+          status: "open",
+          terminalEventType: null,
+        },
+        subagent_run_1: {
+          entries: [
+            runtimeMessageEntry({
+              instanceId: "subagent-instance-1",
+              runId: "subagent_run_1",
+              text: "Child update after parent completed",
+            }),
+          ],
+          lastEventId: 42,
+          runId: "subagent_run_1",
+          seenEventKeys: [],
+          sessionId: "session-parent",
+          status: "open",
+          targetRoleId: "explorer",
+          terminalEventType: null,
+        },
+      },
+    });
+
+    expect(await screen.findByText("Child update after parent completed"))
+      .toBeVisible();
+    expect(useRuntimeStore.getState().runtimeState.runs["parent-run"])
+      .toMatchObject({
+        status: "closed",
+        terminalEventType: "run_completed",
+      });
+    expect(useRuntimeStore.getState().runtimeState.activeRunIds)
+      .not.toContain("parent-run");
+
+    closeLatestSubagentStream({
+      activeRunIds: ["parent-run"],
+      runs: {
+        "parent-run": {
+          entries: [],
+          lastEventId: 87,
+          runId: "parent-run",
+          seenEventKeys: [],
+          sessionId: "session-parent",
+          status: "open",
+          terminalEventType: null,
+        },
+        subagent_run_1: {
+          entries: [
+            runtimeMessageEntry({
+              instanceId: "subagent-instance-1",
+              runId: "subagent_run_1",
+              text: "Child terminal text",
+            }),
+          ],
+          lastEventId: 43,
+          runId: "subagent_run_1",
+          seenEventKeys: [],
+          sessionId: "session-parent",
+          status: "closed",
+          targetRoleId: "explorer",
+          terminalEventType: "run_completed",
+        },
+      },
+    });
+
+    expect(useRuntimeStore.getState().runtimeState.runs["parent-run"])
+      .toMatchObject({
+        status: "closed",
+        terminalEventType: "run_completed",
+      });
+    expect(useRuntimeStore.getState().runtimeState.activeRunIds)
+      .not.toContain("parent-run");
+  });
+
+  it("keeps live subagent runtime rows visible while persisted history is loading", async () => {
+    const loadingHistory = deferredAgentMessages();
+    listAgentMessagesMock.mockReturnValueOnce(loadingHistory.promise);
+    setRuntimeEntries([
+      runtimeMessageEntry({
+        instanceId: "subagent-instance-1",
+        runId: "subagent_run_1",
+        text: "Live output while history loads",
+      }),
+    ]);
+
+    renderSubagentSessionView();
+
+    expect(await screen.findByText("Live output while history loads")).toBeVisible();
+    expect(screen.queryByText("No subagent activity")).not.toBeInTheDocument();
+
+    await act(async () => {
+      loadingHistory.resolve([
+        {
+          content: "Persisted subagent output",
+          message_id: "subagent-message-final",
+          role: "assistant",
+          run_id: "subagent_run_1",
+        },
+      ]);
+      await loadingHistory.promise;
+    });
+
+    expect(await screen.findByText("Persisted subagent output")).toBeVisible();
+  });
+
+  it("does not render parent round summary chrome in the subagent panel", async () => {
+    useRuntimeStore.setState({
+      runtimeState: {
+        activeRunIds: ["subagent_run_1"],
+        runs: {
+          subagent_run_1: {
+            createdAt: "2026-06-23T10:02:00Z",
+            entries: [
+              runtimeMessageEntry({
+                instanceId: "subagent-instance-1",
+                runId: "subagent_run_1",
+                text: "Subagent scoped output",
+              }),
+            ],
+            lastEventId: 42,
+            promptText: "Parent session prompt should not appear",
+            runId: "subagent_run_1",
+            seenEventKeys: [],
+            sessionId: "session-parent",
+            status: "open",
+            targetRoleId: "explorer",
+            terminalEventType: null,
+          },
+        },
+      },
+    });
+
+    renderSubagentSessionView();
+
+    expect(await screen.findByText("Subagent scoped output")).toBeVisible();
+    expect(
+      screen.queryByText("Parent session prompt should not appear"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Input")).not.toBeInTheDocument();
+  });
+
+  it("refreshes subagent history when the subagent stream closes", async () => {
+    listAgentMessagesMock
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          content: "Final subagent answer",
+          message_id: "subagent-message-final",
+          role: "assistant",
+          run_id: "subagent_run_1",
+        },
+      ]);
+    const { queryClient } = renderSubagentSessionView();
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    await waitFor(() => expect(listAgentMessagesMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(openSessionSubagentRunStreamMock).toHaveBeenCalled());
+
+    closeLatestSubagentStream(closedRuntimeState("subagent_run_1"));
+
+    await waitFor(() => expect(listAgentMessagesMock).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("Final subagent answer")).toBeVisible();
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "session-parent", "subagents"],
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["sessions", "sidebar"],
+    });
+  });
+
+  it("keeps existing subagent history visible while the terminal refresh is pending", async () => {
+    const refreshedMessages = deferredAgentMessages();
+    listAgentMessagesMock
+      .mockResolvedValueOnce([
+        {
+          content: "Existing subagent answer",
+          message_id: "subagent-message-existing",
+          role: "assistant",
+          run_id: "subagent_run_1",
+        },
+      ])
+      .mockReturnValueOnce(refreshedMessages.promise);
+    renderSubagentSessionView();
+
+    expect(await screen.findByText("Existing subagent answer")).toBeVisible();
+    await waitFor(() => expect(openSessionSubagentRunStreamMock).toHaveBeenCalled());
+
+    closeLatestSubagentStream(closedRuntimeState("subagent_run_1"));
+
+    await waitFor(() => expect(listAgentMessagesMock).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("Existing subagent answer")).toBeVisible();
+    expect(screen.queryByText("Final subagent answer")).not.toBeInTheDocument();
+
+    await act(async () => {
+      refreshedMessages.resolve([
+        {
+          content: "Final subagent answer",
+          message_id: "subagent-message-final",
+          role: "assistant",
+          run_id: "subagent_run_1",
+        },
+      ]);
+      await refreshedMessages.promise;
+    });
+
+    expect(await screen.findByText("Final subagent answer")).toBeVisible();
+    expect(screen.queryByText("Existing subagent answer")).not.toBeInTheDocument();
+  });
+
+  it("keeps live subagent runtime rows visible while terminal history is pending", async () => {
+    setRuntimeEntries([
+      runtimeMessageEntry({
+        instanceId: "subagent-instance-1",
+        runId: "subagent_run_1",
+        text: "Live runtime output before terminal history",
+      }),
+    ]);
+    const refreshedMessages = deferredAgentMessages();
+    listAgentMessagesMock
+      .mockResolvedValueOnce([])
+      .mockReturnValueOnce(refreshedMessages.promise);
+
+    renderSubagentSessionView();
+
+    expect(
+      await screen.findByText("Live runtime output before terminal history"),
+    ).toBeVisible();
+    await waitFor(() => expect(openSessionSubagentRunStreamMock).toHaveBeenCalled());
+
+    closeLatestSubagentStream(closedRuntimeState("subagent_run_1"));
+
+    await waitFor(() => expect(listAgentMessagesMock).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("Completed")).toBeVisible();
+    expect(screen.getByText("Completed")).toHaveAttribute("data-status", "completed");
+    expect(screen.queryByText("Running")).not.toBeInTheDocument();
+    expect(screen.getByText("Live runtime output before terminal history"))
+      .toBeVisible();
+    expect(screen.queryByText("Final subagent answer")).not.toBeInTheDocument();
+
+    await act(async () => {
+      refreshedMessages.resolve([
+        {
+          content: "Final subagent answer",
+          message_id: "subagent-message-final",
+          role: "assistant",
+          run_id: "subagent_run_1",
+        },
+      ]);
+      await refreshedMessages.promise;
+    });
+
+    expect(await screen.findByText("Final subagent answer")).toBeVisible();
+  });
+
+  it("does not replay terminal subagent text after a refreshed panel receives history", async () => {
+    const finalText = [
+      "SUBAGENT_STREAM_ALPHA",
+      "SUBAGENT_STREAM_BETA",
+      "SUBAGENT_STREAM_GAMMA",
+      "SUBAGENT_STREAM_DELTA",
+    ].join(" ");
+    setRuntimeEntries([
+      runtimeTextDeltaEntry({
+        instanceId: "subagent-instance-1",
+        runId: "subagent_run_1",
+        text: finalText,
+      }),
+    ]);
+    const refreshedMessages = deferredAgentMessages();
+    listAgentMessagesMock
+      .mockResolvedValueOnce([])
+      .mockReturnValueOnce(refreshedMessages.promise);
+
+    const { container } = renderSubagentSessionView();
+
+    await waitFor(() => expect(screen.getByText(finalText)).toBeVisible(), {
+      timeout: 3000,
+    });
+    await waitFor(() => expect(openSessionSubagentRunStreamMock).toHaveBeenCalled());
+
+    closeLatestSubagentStream(closedRuntimeState("subagent_run_1"));
+
+    await waitFor(() => expect(listAgentMessagesMock).toHaveBeenCalledTimes(2));
+    expect(screen.getByText(finalText)).toBeVisible();
+    expect(container.querySelector(".at-message-streaming-text")).toBeNull();
+    expect(container.querySelector(".streaming-cursor")).toBeNull();
+
+    await act(async () => {
+      refreshedMessages.resolve([
+        {
+          content: finalText,
+          message_id: "subagent-message-final",
+          role: "assistant",
+          run_id: "subagent_run_1",
+        },
+      ]);
+      await refreshedMessages.promise;
+    });
+
+    expect(container.textContent).toContain(finalText);
+    expect(container.querySelector(".at-message-streaming-text")).toBeNull();
+    expect(container.querySelector(".streaming-cursor")).toBeNull();
+  }, 10000);
+
+  it("closes stale open runtime text when the subagent record is terminal", async () => {
+    const finalText = [
+      "SUBAGENT_STREAM_ALPHA",
+      "SUBAGENT_STREAM_BETA",
+      "SUBAGENT_STREAM_GAMMA",
+      "SUBAGENT_STREAM_DELTA",
+    ].join(" ");
+    setRuntimeEntries([
+      runtimeTextDeltaEntry({
+        instanceId: "subagent-instance-1",
+        runId: "subagent_run_1",
+        text: finalText,
+      }),
+    ]);
+    listAgentMessagesMock.mockResolvedValue([]);
+
+    const { container } = renderSubagentSessionView({
+      subagent: createSubagent({
+        runPhase: "completed",
+        runStatus: "completed",
+        status: "completed",
+      }),
+    });
+
+    expect(await screen.findByText("Completed")).toBeVisible();
+    expect(screen.getByText("Completed")).toHaveAttribute("data-status", "completed");
+    expect(container.textContent).toContain(finalText);
+    expect(container.querySelector(".at-message-streaming-text")).toBeNull();
+    expect(container.querySelector(".streaming-cursor")).toBeNull();
+    expect(openSessionSubagentRunStreamMock).not.toHaveBeenCalled();
+  });
+
+  it("renders closed stream state immediately before terminal history refresh runs", async () => {
+    listAgentMessagesMock.mockResolvedValue([]);
+    renderSubagentSessionView();
+
+    await waitFor(() => expect(openSessionSubagentRunStreamMock).toHaveBeenCalled());
+
+    pushLatestSubagentStreamState(
+      closedRuntimeState("subagent_run_1", [
+        runtimeTextDeltaEntry({
+          instanceId: "subagent-instance-1",
+          runId: "subagent_run_1",
+          text: "Closed stream output should render before history refresh.",
+        }),
+      ]),
+    );
+
+    expect(
+      await screen.findByText("Closed stream output should render before history refresh."),
+    ).toBeVisible();
+    expect(await screen.findByText("Completed")).toBeVisible();
+    expect(screen.getByText("Completed")).toHaveAttribute("data-status", "completed");
+    expect(screen.queryByText("Running")).not.toBeInTheDocument();
+    expect(listAgentMessagesMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps streamed text visible when terminal refresh still has older history", async () => {
+    setRuntimeEntries([
+      runtimeTextDeltaEntry({
+        instanceId: "subagent-instance-1",
+        runId: "subagent_run_1",
+        text: "Live text delta before terminal history",
+      }),
+    ]);
+    const refreshedMessages = deferredAgentMessages();
+    listAgentMessagesMock
+      .mockResolvedValueOnce([
+        {
+          content: "Persisted subagent checkpoint",
+          message_id: "subagent-message-checkpoint",
+          role: "assistant",
+          run_id: "subagent_run_1",
+        },
+      ])
+      .mockReturnValueOnce(refreshedMessages.promise);
+
+    renderSubagentSessionView();
+
+    expect(await screen.findByText("Persisted subagent checkpoint")).toBeVisible();
+    expect(
+      await screen.findByText("Live text delta before terminal history"),
+    ).toBeVisible();
+    await waitFor(() => expect(openSessionSubagentRunStreamMock).toHaveBeenCalled());
+
+    closeLatestSubagentStream(closedRuntimeState("subagent_run_1"));
+
+    await waitFor(() => expect(listAgentMessagesMock).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("Completed")).toBeVisible();
+    expect(screen.getByText("Completed")).toHaveAttribute("data-status", "completed");
+    expect(screen.getByText("Persisted subagent checkpoint")).toBeVisible();
+    expect(screen.getByText("Live text delta before terminal history"))
+      .toBeVisible();
+    expect(screen.queryByText("Final subagent answer")).not.toBeInTheDocument();
+
+    await act(async () => {
+      refreshedMessages.resolve([
+        {
+          content: "Final subagent answer",
+          message_id: "subagent-message-final",
+          role: "assistant",
+          run_id: "subagent_run_1",
+        },
+      ]);
+      await refreshedMessages.promise;
+    });
+
+    expect(await screen.findByText("Final subagent answer")).toBeVisible();
+  });
+
+  it("reads terminal history once and keeps live history when persistence is incomplete", async () => {
+    const terminalEntries = [
+      runtimeToolCallEntry({
+        runId: "subagent_run_1",
+        toolCallId: "call-terminal-subagent",
+      }),
+    ];
+    listAgentMessagesMock
+      .mockResolvedValueOnce([
+        {
+          content: "Existing subagent answer",
+          message_id: "subagent-message-existing",
+          role: "assistant",
+          run_id: "subagent_run_1",
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          content: "Incomplete persisted subagent answer",
+          message_id: "subagent-message-incomplete",
+          role: "assistant",
+          run_id: "subagent_run_1",
+        },
+      ]);
+    renderSubagentSessionView();
+
+    expect(await screen.findByText("Existing subagent answer")).toBeVisible();
+    await waitFor(() => expect(openSessionSubagentRunStreamMock).toHaveBeenCalled());
+
+    closeLatestSubagentStream(
+      closedRuntimeState("subagent_run_1", terminalEntries),
+    );
+
+    await waitFor(() => expect(listAgentMessagesMock).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("Existing subagent answer")).toBeVisible();
+    expect(
+      screen.queryByText("Incomplete persisted subagent answer"),
+    ).not.toBeInTheDocument();
+
+    await new Promise((resolve) => window.setTimeout(resolve, 100));
+    expect(listAgentMessagesMock).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("Existing subagent answer")).toBeVisible();
+    expect(screen.getByText("Ran: shell")).toBeInTheDocument();
+  });
+
+  it.each(["paused", "failed", "stopped"])(
+    "does not stream %s subagent sessions",
+    async (terminalStatus) => {
+      const controller = createRunStreamController();
+      listAgentMessagesMock.mockResolvedValue([
+        {
+          content: `Persisted ${terminalStatus} output`,
+          message_id: "subagent-message-stopped",
+          role: "assistant",
+          run_id: "subagent_run_1",
+        },
+      ]);
+
+      renderSubagentSessionView({
+        controller,
+        subagent: createSubagent({
+          runPhase: terminalStatus,
+          runStatus: terminalStatus,
+          status: terminalStatus,
+        }),
+      });
+
+      expect(await screen.findByText(`Persisted ${terminalStatus} output`))
+        .toBeVisible();
+      expect(openSessionSubagentRunStreamMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it("treats a waiting-for-input subagent as paused instead of streaming", async () => {
+    renderSubagentSessionView({
+      subagent: createSubagent({
+        runPhase: "awaiting_manual_action",
+        runStatus: "paused",
+        status: "paused",
+      }),
+    });
+
+    expect(await screen.findByText("Paused")).toHaveAttribute(
+      "data-status",
+      "paused",
+    );
+    expect(screen.queryByText("Waiting for subagent output...")).not
+      .toBeInTheDocument();
+    expect(openSessionSubagentRunStreamMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["run_completed", "Completed", "completed"],
+    ["run_failed", "Failed", "failed"],
+    ["run_paused", "Paused", "paused"],
+    ["run_stopped", "Stopped", "stopped"],
+  ] satisfies Array<[RunEventType, string, string]>)(
+    "uses runtime %s state for the subagent badge",
+    async (terminalEventType, expectedLabel, expectedStatus) => {
+      const controller = createRunStreamController();
+      setRuntimeTerminalRun("subagent_run_1", terminalEventType);
+
+      renderSubagentSessionView({
+        controller,
+        subagent: createSubagent({ runStatus: "running", status: "running" }),
+      });
+
+      expect(await screen.findByText("Explorer review")).toBeVisible();
+      expect(screen.getByText(expectedLabel)).toHaveAttribute(
+        "data-status",
+        expectedStatus,
+      );
+      expect(openSessionSubagentRunStreamMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it("uses the latest subagent record to clear stale running badges", async () => {
+    const controller = createRunStreamController();
+    listSessionSubagentsMock.mockResolvedValue([
+      {
+        instance_id: "subagent-instance-1",
+        role_id: "explorer",
+        run_id: "subagent_run_1",
+        run_phase: "completed",
+        run_status: "completed",
+        session_id: "session-parent",
+        status: "completed",
+        title: "Explorer review",
+      },
+    ]);
+    listAgentMessagesMock.mockResolvedValue([
+      {
+        content: "Final subagent answer",
+        message_id: "subagent-message-final",
+        role: "assistant",
+        run_id: "subagent_run_1",
+      },
+    ]);
+
+    renderSubagentSessionView({
+      controller,
+      subagent: createSubagent({ runStatus: "running", status: "running" }),
+    });
+
+    expect(await screen.findByText("Final subagent answer")).toBeVisible();
+    expect(await screen.findByText("Completed")).toBeVisible();
+    expect(screen.getByText("Completed")).toHaveAttribute("data-status", "completed");
+    expect(screen.queryByText("Running")).not.toBeInTheDocument();
+    expect(listSessionSubagentsMock).toHaveBeenCalledWith(
+      "session-parent",
+      true,
+    );
+  });
+});
+
+function renderSubagentSessionView({
+  showBackAction = true,
+  subagent = createSubagent(),
+  visible = true,
+}: {
+  controller?: RunStreamController;
+  showBackAction?: boolean;
+  subagent?: ActiveSubagentSession;
+  visible?: boolean;
+} = {}) {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        staleTime: Number.POSITIVE_INFINITY,
+      },
+    },
+  });
+  const view = () => (
+    <QueryClientProvider client={queryClient}>
+      <ConfigProvider>
+        <AntApp>
+          <SubagentSessionView
+            onBack={vi.fn()}
+            showBackAction={showBackAction}
+            subagent={subagent}
+            visible={visible}
+          />
+        </AntApp>
+      </ConfigProvider>
+    </QueryClientProvider>
+  );
+  const result = render(view());
+  return {
+    ...result,
+    queryClient,
+  };
+}
+
+function deferredAgentMessages(): {
+  promise: ReturnType<typeof listAgentMessages>;
+  resolve: (messages: Awaited<ReturnType<typeof listAgentMessages>>) => void;
+} {
+  let resolveMessages: (
+    messages: Awaited<ReturnType<typeof listAgentMessages>>,
+  ) => void = () => {};
+  const promise = new Promise<Awaited<ReturnType<typeof listAgentMessages>>>(
+    (resolve) => {
+      resolveMessages = resolve;
+    },
+  );
+  return {
+    promise,
+    resolve: resolveMessages,
+  };
+}
+
+function expectSubagentSessionStreamStarted({
+  afterEventId,
+  runId,
+  sessionId,
+}: {
+  afterEventId: number;
+  runId: string;
+  sessionId: string;
+}): void {
+  expect(openSessionSubagentRunStreamMock).toHaveBeenCalledWith(
+    expect.objectContaining({
+      afterEventId,
+      initialState: expect.any(Object),
+      onClosed: expect.any(Function),
+      onError: expect.any(Function),
+      onState: expect.any(Function),
+      runId,
+      sessionId,
+    }),
+  );
+}
+
+function latestSubagentStreamOptions(): Parameters<
+  typeof openSessionSubagentRunStream
+>[0] {
+  const call = openSessionSubagentRunStreamMock.mock.calls.at(-1);
+  if (call === undefined) {
+    throw new Error("Subagent stream was not opened.");
+  }
+  return call[0];
+}
+
+function closeLatestSubagentStream(runtimeState: RuntimeState): void {
+  const onClosed = latestSubagentStreamOptions().onClosed;
+  if (onClosed === undefined) {
+    throw new Error("Subagent stream did not register an onClosed callback.");
+  }
+  onClosed(runtimeState);
+}
+
+function pushLatestSubagentStreamState(runtimeState: RuntimeState): void {
+  latestSubagentStreamOptions().onState(runtimeState);
+}
+
+function latestSubagentStreamHandle(): ReturnType<
+  typeof openSessionSubagentRunStream
+> {
+  const result = openSessionSubagentRunStreamMock.mock.results.at(-1);
+  if (result === undefined || result.type !== "return") {
+    throw new Error("Subagent stream handle was not returned.");
+  }
+  return result.value;
+}
+
+function closedRuntimeState(
+  runId: string,
+  entries: TimelineEntry[] = [],
+  terminalEventType: RunEventType = "run_completed",
+): RuntimeState {
+  const lastEventId = entries.reduce(
+    (latest, entry) => Math.max(latest, entry.eventId),
+    43,
+  );
+  return {
+    activeRunIds: [],
+    runs: {
+      [runId]: {
+        entries,
+        lastEventId,
+        runId,
+        seenEventKeys: [],
+        status: "closed",
+        terminalEventType,
+      },
+    },
+  };
+}
+
+function createSubagent(
+  overrides: Partial<ActiveSubagentSession> = {},
+): ActiveSubagentSession {
+  return {
+    createdAt: "2026-06-23T10:02:00Z",
+    instanceId: "subagent-instance-1",
+    interactive: false,
+    lastEventId: 41,
+    promptText: "",
+    roleId: "explorer",
+    runId: "subagent_run_1",
+    runPhase: "running",
+    runStatus: "running",
+    sessionId: "session-parent",
+    status: "running",
+    subagentKind: "normal",
+    title: "Explorer review",
+    updatedAt: "2026-06-23T10:03:00Z",
+    ...overrides,
+  };
+}
+
+function createRunStreamController(
+  overrides: Partial<RunStreamController> = {},
+): RunStreamController {
+  return {
+    activeRunId: null,
+    activeRunIds: [],
+    clearRunStream: vi.fn(),
+    setForegroundSessionId: vi.fn(),
+    settleTerminalRunStream: vi.fn(),
+    startRunStream: vi.fn(),
+    startRunStreams: vi.fn(),
+    suppressedRunIds: [],
+    trackedRunIds: [],
+    ...overrides,
+  };
+}
+
+function setRuntimeEntries(entries: TimelineEntry[]): void {
+  const runId = entries[0]?.runId ?? "subagent_run_1";
+  const lastEventId = entries.reduce(
+    (latest, entry) => Math.max(latest, entry.eventId),
+    0,
+  );
+  useRuntimeStore.setState({
+    runtimeState: {
+      activeRunIds: [runId],
+      runs: {
+        [runId]: {
+          entries,
+          lastEventId,
+          runId,
+          seenEventKeys: [],
+          status: "open",
+          terminalEventType: null,
+        },
+      },
+    },
+  });
+}
+
+function setRuntimeTerminalRun(
+  runId: string,
+  terminalEventType: RunEventType,
+): void {
+  setRuntimeTerminalEntries([], terminalEventType, runId);
+}
+
+function setRuntimeTerminalEntries(
+  entries: TimelineEntry[],
+  terminalEventType: RunEventType,
+  runId = entries[0]?.runId ?? "subagent_run_1",
+): void {
+  const lastEventId = entries.reduce(
+    (latest, entry) => Math.max(latest, entry.eventId),
+    43,
+  );
+  useRuntimeStore.setState({
+    runtimeState: {
+      activeRunIds: [],
+      runs: {
+        [runId]: {
+          entries,
+          lastEventId,
+          runId,
+          seenEventKeys: [],
+          status: "closed",
+          terminalEventType,
+        },
+      },
+    },
+  });
+}
+
+function runtimeToolCallEntry({
+  runId,
+  toolCallId,
+}: {
+  runId: string;
+  toolCallId: string;
+}): TimelineEntry {
+  return {
+    eventId: 44,
+    id: `${runId}:44:0`,
+    instanceId: "subagent-instance-1",
+    kind: "tool_call",
+    occurredAt: "2026-06-23T10:04:00Z",
+    payload: {
+      args: { command: "date" },
+      tool_call_id: toolCallId,
+            action_family: "run",
+            semantic_category: "execution",
+            tool_name: "shell",
+    },
+    roleId: "explorer",
+    runId,
+    sessionId: "session-parent",
+    text: "shell",
+  };
+}
+
+function runtimeMessageEntry({
+  instanceId,
+  runId,
+  text,
+}: {
+  instanceId: string;
+  runId: string;
+  text: string;
+}): TimelineEntry {
+  return {
+    eventId: 42,
+    id: `${runId}:42:0`,
+    instanceId,
+    kind: "message",
+    occurredAt: "2026-06-23T10:03:00Z",
+    payload: { text },
+    roleId: "explorer",
+    runId,
+    sessionId: "session-parent",
+    text,
+  };
+}
+
+function runtimeTextDeltaEntry({
+  instanceId,
+  runId,
+  text,
+}: {
+  instanceId: string;
+  runId: string;
+  text: string;
+}): TimelineEntry {
+  return {
+    eventId: 42,
+    id: `${runId}:42:0`,
+    instanceId,
+    kind: "text_delta",
+    occurredAt: "2026-06-23T10:03:00Z",
+    payload: { text },
+    roleId: "explorer",
+    runId,
+    sessionId: "session-parent",
+    text,
+  };
+}

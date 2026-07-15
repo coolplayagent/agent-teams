@@ -1,0 +1,98 @@
+.at-settings-modal {
+  max-width: calc(100vw - 32px);
+  padding-bottom: 0;
+}
+
+.at-settings-modal .ant-modal-content {
+  display: flex;
+  flex-direction: column;
+  height: min(860px, calc(100dvh - 48px));
+  max-height: calc(100dvh - 48px);
+  /* `hidden` still creates a programmatically scrollable ancestor. When a
+     control in the scrolled body receives focus, Chromium can scroll both the
+     body and this element. `clip` keeps the body as the sole scroll owner. */
+  overflow: clip;
+  padding: 0;
+}
+
+.at-settings-modal .ant-modal-header {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 18px 52px 16px 20px;
+  border-bottom: 1px solid var(--at-border);
+}
+
+.at-settings-modal .ant-modal-close {
+  inset-block-start: 11px;
+  inset-inline-end: 12px;
+}
+
+.at-settings-modal .ant-modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.at-settings-modal .at-settings-center {
+  height: auto;
+  min-height: 100%;
+  align-items: start;
+}
+
+.at-settings-modal .at-settings-nav {
+  position: sticky;
+  top: 0;
+  max-height: none;
+  overflow: visible;
+}
+
+.at-settings-modal .at-settings-mobile-navigation {
+  display: none;
+}
+
+.at-settings-modal .at-settings-content,
+.at-settings-modal .at-settings-section,
+.at-settings-modal .at-settings-section-body {
+  height: auto;
+  min-height: 0;
+  overflow: visible;
+}
+
+@media (max-width: 900px) {
+  .at-settings-modal .at-settings-desktop-nav {
+    display: none;
+  }
+
+  .at-settings-modal .at-settings-mobile-navigation {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    display: block;
+    min-width: 0;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--at-border);
+    background: var(--at-sidebar);
+  }
+
+  .at-settings-modal .at-settings-mobile-navigation .ant-select {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .at-settings-modal {
+    top: 0;
+    width: calc(100vw - 16px) !important;
+    max-width: calc(100vw - 16px);
+    margin: 8px auto;
+  }
+
+  .at-settings-modal .ant-modal-content {
+    height: calc(100dvh - 16px);
+    max-height: calc(100dvh - 16px);
+  }
+}

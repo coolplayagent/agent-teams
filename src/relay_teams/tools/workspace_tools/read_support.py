@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
-from pydantic import JsonValue
+from pydantic import BaseModel, ConfigDict, JsonValue
 
 from relay_teams.agents.execution.prompt_instruction_state import (
     filter_unloaded_prompt_instruction_paths_async,
@@ -18,6 +19,19 @@ MAX_LINE_LENGTH = 2000
 MAX_LINE_SUFFIX = "... (line truncated)"
 MAX_BYTES = 50 * 1024
 MAX_BYTES_LABEL = "50 KB"
+
+
+class WorkspaceReadPresentation(BaseModel):
+    """Structured UI projection for workspace read results."""
+
+    model_config = ConfigDict(frozen=True)
+
+    kind: Literal["workspace-read"] = "workspace-read"
+    path: str
+    resource_type: Literal["directory", "file", "image", "notebook"]
+    content: JsonValue | None = None
+    entries: tuple[str, ...] = ()
+    instructions: tuple[str, ...] = ()
 
 
 def validate_pagination_args(*, offset: int, limit: int) -> None:
@@ -73,17 +87,26 @@ def _project_read_result(
     truncated: bool,
     next_offset: int | None,
     metadata: dict[str, JsonValue] | None = None,
+    presentation: WorkspaceReadPresentation | None = None,
 ) -> ToolResultProjection:
-    visible_data: dict[str, JsonValue] = {
+    internal_data: dict[str, JsonValue] = {
         "output": output,
         "truncated": truncated,
         "next_offset": next_offset,
     }
     if metadata:
-        visible_data.update(metadata)
+        internal_data.update(metadata)
+    visible_data = dict(internal_data)
+    if presentation is not None:
+        visible_data = {
+            "truncated": truncated,
+            "next_offset": next_offset,
+            **(metadata or {}),
+            "presentation": presentation.model_dump(mode="json"),
+        }
     return ToolResultProjection(
         visible_data=visible_data,
-        internal_data=dict(visible_data),
+        internal_data=internal_data,
     )
 
 

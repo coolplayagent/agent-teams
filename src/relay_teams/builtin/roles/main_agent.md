@@ -5,6 +5,7 @@ description: Executes the full user request directly in normal mode.
 model_profile: default
 version: 1.0.0
 mode: primary
+system_role: main_agent
 mcp_servers:
   - '*'
 skills:
@@ -19,6 +20,8 @@ tools:
   - write
   - shell
   - ask_question
+  - todo_write
+  - todo_read
   - spawn_subagent
   - list_skill_roles
   - activate_skill_roles

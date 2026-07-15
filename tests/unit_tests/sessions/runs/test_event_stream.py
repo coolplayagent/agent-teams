@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
-from threading import Lock
+from threading import Event, Lock, Thread
+from time import monotonic
 from typing import cast
 
 import pytest
@@ -111,6 +112,66 @@ def _event(event_type: RunEventType) -> RunEvent:
         event_type=event_type,
         payload_json="{}",
     )
+
+
+@pytest.mark.asyncio
+async def test_run_event_hub_cross_loop_publish_many_wakes_subscribers_promptly() -> (
+    None
+):
+    hub = RunEventHub()
+    ready = Event()
+    received = Event()
+    delivered: list[tuple[RunEventType, ...]] = []
+    failures: list[BaseException] = []
+
+    def consume_on_subscriber_loop() -> None:
+        async def consume() -> None:
+            run_queue = hub.subscribe("run-1")
+            session_queue = hub.subscribe_session("session-1")
+            ready.set()
+            try:
+                run_events = await asyncio.wait_for(
+                    asyncio.gather(run_queue.get(), run_queue.get()),
+                    timeout=1,
+                )
+                session_events = await asyncio.wait_for(
+                    asyncio.gather(session_queue.get(), session_queue.get()),
+                    timeout=1,
+                )
+                delivered.extend(
+                    (
+                        tuple(event.event_type for event in run_events),
+                        tuple(event.event_type for event in session_events),
+                    )
+                )
+            except BaseException as exc:
+                failures.append(exc)
+            finally:
+                received.set()
+
+        asyncio.run(consume())
+
+    subscriber_thread = Thread(target=consume_on_subscriber_loop, daemon=True)
+    subscriber_thread.start()
+    assert ready.wait(timeout=1)
+
+    started = monotonic()
+    await hub.publish_many_async(
+        (
+            _event(RunEventType.MODEL_STEP_STARTED),
+            _event(RunEventType.RUN_COMPLETED),
+        )
+    )
+    assert received.wait(timeout=1)
+    elapsed = monotonic() - started
+    subscriber_thread.join(timeout=1)
+
+    assert failures == []
+    assert elapsed < 0.1
+    assert delivered == [
+        (RunEventType.MODEL_STEP_STARTED, RunEventType.RUN_COMPLETED),
+        (RunEventType.MODEL_STEP_STARTED, RunEventType.RUN_COMPLETED),
+    ]
 
 
 @pytest.mark.asyncio

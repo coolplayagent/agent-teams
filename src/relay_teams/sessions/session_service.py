@@ -9,7 +9,7 @@ import logging
 import shutil
 import sqlite3
 import uuid
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Mapping
 from typing import TYPE_CHECKING, NamedTuple, Protocol, cast
 
 from relay_teams.agent_runtimes.instances.models import AgentRuntimeRecord
@@ -31,6 +31,9 @@ from relay_teams.sessions.session_metadata import (
     SESSION_TITLE_SOURCE_MANUAL,
 )
 from relay_teams.sessions.session_list_cache import SessionListCache
+from relay_teams.sessions.message_tool_semantics_projection import (
+    project_message_tool_semantics,
+)
 from relay_teams.sessions.session_read_models import (
     CachedReadResult,
     SessionRoundsQueryKey,
@@ -54,6 +57,7 @@ from relay_teams.agent_runtimes.instances.instance_repository import (
     AgentInstanceRepository,
 )
 from relay_teams.tools.runtime.acp_approval import acp_options_projection
+from relay_teams.tools.registry import ToolRegistry
 from relay_teams.tools.runtime.approval_ticket_repo import ApprovalTicketRepository
 from relay_teams.sessions.runs.event_log import EventLog
 from relay_teams.agents.execution.message_repository import MessageRepository
@@ -142,12 +146,6 @@ TERMINAL_RUN_STATUSES = frozenset(
         RunRuntimeStatus.STOPPED,
     }
 )
-_LEGACY_COORDINATOR_IDENTIFIERS = (
-    "coordinator",
-    "coordinator agent",
-    "coordinator_agent",
-)
-_MAIN_AGENT_IDENTIFIERS = ("mainagent", "main agent", "main_agent")
 _AUTO_SESSION_TITLE_MAX_CHARS = 120
 _SESSION_SIDEBAR_DEFAULT_LIMIT = 50
 _SESSION_SIDEBAR_MAX_LIMIT = 200
@@ -239,19 +237,19 @@ _LIST_FRESH_READ_EVENT_TYPES = frozenset(
         RunEventType.USER_QUESTION_ANSWERED,
     }
 )
+_SESSION_ACTIVITY_EVENT_TYPES = frozenset(
+    (_LIST_DIRTY_EVENT_TYPES - {RunEventType.BACKGROUND_TASK_UPDATED})
+    | {
+        RunEventType.SUBAGENT_SESSION_STATUS_CHANGED,
+        RunEventType.SUBAGENT_STOPPED,
+        RunEventType.SUBAGENT_RESUMED,
+    }
+)
 
 
 class BoardTodoSessionLifecycleService(Protocol):
     def mark_session_deleted(self, *, session_id: str) -> None:
         raise NotImplementedError
-
-
-def _legacy_coordinator_identifiers() -> tuple[str, ...]:
-    return _LEGACY_COORDINATOR_IDENTIFIERS
-
-
-def _main_agent_identifiers() -> tuple[str, ...]:
-    return _MAIN_AGENT_IDENTIFIERS
 
 
 def _normalize_optional_identifier(value: str | None) -> str | None:
@@ -357,6 +355,7 @@ class SessionService:
         role_registry: RoleRegistry | None = None,
         skill_registry: SkillRegistry | None = None,
         mcp_registry: McpRegistry | None = None,
+        tool_registry: ToolRegistry | None = None,
         orchestration_settings_service: OrchestrationSettingsService | None = None,
         media_asset_service: MediaAssetService | None = None,
         run_intent_repo: RunIntentRepository | None = None,
@@ -388,6 +387,7 @@ class SessionService:
         self._role_registry = role_registry
         self._skill_registry = skill_registry
         self._mcp_registry = mcp_registry
+        self._tool_registry = tool_registry
         self._orchestration_settings_service = orchestration_settings_service
         self._media_asset_service = media_asset_service
         self._run_intent_repo = run_intent_repo
@@ -1326,6 +1326,31 @@ class SessionService:
         )
         await self._consolidate_session_memory_after_delete_async(delete_context)
 
+    async def delete_workspace_sessions_async(
+        self,
+        workspace_id: str,
+        *,
+        force: bool = False,
+        cascade: bool = False,
+    ) -> tuple[str, ...]:
+        sessions = await self._session_repo.list_by_workspace_async(workspace_id)
+        if sessions:
+            require_cascade_delete(
+                cascade,
+                message=(
+                    "Cannot delete workspace without cascading its related sessions"
+                ),
+            )
+        deleted_session_ids: list[str] = []
+        for session in sessions:
+            await self.delete_session_async(
+                session.session_id,
+                force=force,
+                cascade=True,
+            )
+            deleted_session_ids.append(session.session_id)
+        return tuple(deleted_session_ids)
+
     def _delete_session_with_prepared_context(
         self,
         session_id: str,
@@ -2093,6 +2118,62 @@ class SessionService:
             if queue is not None and self._run_event_hub is not None:
                 self._run_event_hub.unsubscribe_session(session_id, queue)
 
+    async def stream_session_activity_events(
+        self,
+        session_id: str,
+        *,
+        after_event_id: int | None = None,
+    ) -> AsyncGenerator[RunEvent | None, None]:
+        """Stream recovery-relevant session events, yielding ``None`` when ready."""
+        _ = self._session_repo.get(session_id)
+        queue = (
+            self._run_event_hub.subscribe_session(session_id)
+            if self._run_event_hub is not None
+            else None
+        )
+        replay_high_watermark = max(0, int(after_event_id or 0))
+        try:
+            # The ready marker is emitted only after subscription. Clients can now
+            # refresh their snapshot without a race between the read and listener.
+            yield None
+            if after_event_id is not None and self._event_log is not None:
+                rows = await self._event_log.list_by_session_after_id_async(
+                    session_id,
+                    replay_high_watermark,
+                )
+                for row in rows:
+                    event = self._run_event_from_log_row(row)
+                    if (
+                        event is None
+                        or event.event_type not in _SESSION_ACTIVITY_EVENT_TYPES
+                    ):
+                        continue
+                    if event.event_id is not None:
+                        replay_high_watermark = max(
+                            replay_high_watermark,
+                            event.event_id,
+                        )
+                    yield event
+
+            if queue is None:
+                return
+            while True:
+                event = await queue.get()
+                if (
+                    event.session_id != session_id
+                    or event.event_type not in _SESSION_ACTIVITY_EVENT_TYPES
+                ):
+                    continue
+                event_id = event.event_id
+                if event_id is not None and event_id <= replay_high_watermark:
+                    continue
+                if event_id is not None:
+                    replay_high_watermark = max(replay_high_watermark, event_id)
+                yield event
+        finally:
+            if queue is not None and self._run_event_hub is not None:
+                self._run_event_hub.unsubscribe_session(session_id, queue)
+
     def list_agents_in_session(self, session_id: str) -> tuple[dict[str, object], ...]:
         session = self._session_repo.get(session_id)
         latest_by_role: dict[str, AgentRuntimeRecord] = {}
@@ -2128,16 +2209,25 @@ class SessionService:
         return result.value
 
     def get_agent_messages(
-        self, session_id: str, instance_id: str
+        self,
+        session_id: str,
+        instance_id: str,
+        *,
+        task_id: str | None = None,
     ) -> list[dict[str, object]]:
         messages = cast(
             list[dict[str, object]],
             self._message_repo.get_messages_for_instance(
                 session_id,
                 instance_id,
+                task_id=task_id,
                 include_cleared=True,
                 include_hidden_from_context=True,
             ),
+        )
+        messages = project_message_tool_semantics(
+            messages,
+            tool_registry=self._tool_registry,
         )
         try:
             agent = self._agent_repo.get_instance(instance_id)
@@ -2160,12 +2250,53 @@ class SessionService:
             entries=entries,
             session_id=session_id,
             agent=agent,
+            task_id=task_id,
         )
 
     async def get_agent_messages_async(
-        self, session_id: str, instance_id: str
+        self,
+        session_id: str,
+        instance_id: str,
+        *,
+        task_id: str | None = None,
     ) -> list[dict[str, object]]:
-        return await asyncio.to_thread(self.get_agent_messages, session_id, instance_id)
+        messages = cast(
+            list[dict[str, object]],
+            await self._message_repo.get_messages_for_instance_async(
+                session_id,
+                instance_id,
+                task_id=task_id,
+                include_cleared=True,
+                include_hidden_from_context=True,
+            ),
+        )
+        messages = project_message_tool_semantics(
+            messages,
+            tool_registry=self._tool_registry,
+        )
+        try:
+            agent = await self._agent_repo.get_instance_async(instance_id)
+        except KeyError:
+            return [
+                self._project_message_timeline_entry(message) for message in messages
+            ]
+        for message in messages:
+            if "role_id" not in message or not message.get("role_id"):
+                message["role_id"] = agent.role_id
+        markers = await self._list_agent_history_markers_async(
+            session_id=session_id,
+            conversation_id=agent.conversation_id,
+        )
+        entries = self._build_agent_timeline_entries(
+            messages=messages,
+            markers=markers,
+        )
+        return await self._with_terminal_task_result_entry_async(
+            entries=entries,
+            session_id=session_id,
+            agent=agent,
+            task_id=task_id,
+        )
 
     def get_global_events(self, session_id: str) -> list[dict[str, object]]:
         if self._event_log is None:
@@ -2225,15 +2356,82 @@ class SessionService:
         return cast(list[dict[str, object]], list(events))
 
     def get_session_messages(self, session_id: str) -> list[dict[str, object]]:
-        return cast(
+        messages = cast(
             list[dict[str, object]],
             self._message_repo.get_messages_by_session(session_id),
+        )
+        return project_message_tool_semantics(
+            self._with_internal_provider_prompts(
+                session_id=session_id,
+                messages=messages,
+            ),
+            tool_registry=self._tool_registry,
         )
 
     async def get_session_messages_async(
         self, session_id: str
     ) -> list[dict[str, object]]:
         return await asyncio.to_thread(self.get_session_messages, session_id)
+
+    def _with_internal_provider_prompts(
+        self,
+        *,
+        session_id: str,
+        messages: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        if self._run_intent_repo is None:
+            return messages
+        intent_run_ids = set(self._run_intent_repo.list_by_session(session_id))
+        if not intent_run_ids:
+            return messages
+        root_task_ids_by_run = {
+            record.envelope.trace_id: record.envelope.task_id
+            for record in self._task_repo.list_by_session(session_id)
+            if record.envelope.parent_task_id is None
+            and record.envelope.trace_id in intent_run_ids
+        }
+        projected_messages: list[dict[str, object]] = []
+        projected_run_ids: set[str] = set()
+        for message in messages:
+            run_id = str(message.get("trace_id") or "").strip()
+            if not self._is_initial_provider_prompt(
+                message,
+                run_id=run_id,
+                root_task_id=root_task_ids_by_run.get(run_id),
+                projected_run_ids=projected_run_ids,
+            ):
+                projected_messages.append(message)
+                continue
+            projected_run_ids.add(run_id)
+            projected_messages.append({**message, "visibility": "internal"})
+        return projected_messages
+
+    @staticmethod
+    def _is_initial_provider_prompt(
+        message: dict[str, object],
+        *,
+        run_id: str,
+        root_task_id: str | None,
+        projected_run_ids: set[str],
+    ) -> bool:
+        if (
+            not run_id
+            or root_task_id is None
+            or run_id in projected_run_ids
+            or str(message.get("role") or "") != "user"
+            or str(message.get("task_id") or "") != root_task_id
+        ):
+            return False
+        raw_message = message.get("message")
+        if not isinstance(raw_message, dict):
+            return False
+        parts = raw_message.get("parts")
+        if not isinstance(parts, list):
+            return False
+        return any(
+            isinstance(part, dict) and str(part.get("part_kind") or "") == "user-prompt"
+            for part in parts
+        )
 
     def get_session_tasks(self, session_id: str) -> list[dict[str, object]]:
         records = self._task_repo.list_by_session(session_id)
@@ -2319,6 +2517,29 @@ class SessionService:
             for run_id, runtime in self._session_run_runtime_by_run(session_id).items()
             if included_run_ids is None or run_id in included_run_ids
         }
+
+        def get_projected_session_messages(
+            current_session_id: str,
+        ) -> list[dict[str, object]]:
+            persisted_messages = (
+                self._message_repo.get_messages_by_session(
+                    current_session_id,
+                    include_cleared=True,
+                    include_hidden_from_context=True,
+                )
+                if selected_run_ids is None
+                else self._message_repo.get_messages_by_session_run_ids(
+                    current_session_id,
+                    selected_run_ids,
+                    include_cleared=True,
+                    include_hidden_from_context=True,
+                )
+            )
+            return project_message_tool_semantics(
+                cast(list[dict[str, object]], persisted_messages),
+                tool_registry=self._tool_registry,
+            )
+
         rounds = build_session_rounds(
             session_id=session_id,
             agent_repo=self._agent_repo,
@@ -2333,23 +2554,7 @@ class SessionService:
                 ]
             ),
             run_runtime_repo=self._run_runtime_repo,
-            get_session_messages=lambda current_session_id: cast(
-                list[dict[str, object]],
-                (
-                    self._message_repo.get_messages_by_session(
-                        current_session_id,
-                        include_cleared=True,
-                        include_hidden_from_context=True,
-                    )
-                    if selected_run_ids is None
-                    else self._message_repo.get_messages_by_session_run_ids(
-                        current_session_id,
-                        selected_run_ids,
-                        include_cleared=True,
-                        include_hidden_from_context=True,
-                    )
-                ),
-            ),
+            get_session_messages=get_projected_session_messages,
             get_run_intent_input=intent_input_parts_by_run.get,
             get_session_history_markers=(
                 self._get_session_history_markers if include_history_markers else None
@@ -2380,6 +2585,7 @@ class SessionService:
             if runtime is None:
                 continue
             question_count = question_counts_by_run.get(runtime.run_id, 0)
+            round_item["pending_user_question_count"] = question_count
             round_item["run_status"] = runtime.status.value
             round_item["run_phase"] = self._public_phase(
                 runtime,
@@ -2448,6 +2654,7 @@ class SessionService:
             if runtime is None:
                 continue
             question_count = question_counts_by_run.get(runtime.run_id, 0)
+            round_item["pending_user_question_count"] = question_count
             round_item["run_status"] = runtime.status.value
             round_item["run_phase"] = self._public_phase(
                 runtime,
@@ -2846,6 +3053,13 @@ class SessionService:
         if self._session_history_marker_repo is None:
             return ()
         markers = self._session_history_marker_repo.list_by_session(session_id)
+        return self._filter_agent_history_markers(markers, conversation_id)
+
+    @staticmethod
+    def _filter_agent_history_markers(
+        markers: tuple[SessionHistoryMarkerRecord, ...],
+        conversation_id: str,
+    ) -> tuple[SessionHistoryMarkerRecord, ...]:
         return tuple(
             marker
             for marker in markers
@@ -2855,6 +3069,19 @@ class SessionService:
                 and marker.metadata.get("conversation_id") == conversation_id
             )
         )
+
+    async def _list_agent_history_markers_async(
+        self,
+        *,
+        session_id: str,
+        conversation_id: str,
+    ) -> tuple[SessionHistoryMarkerRecord, ...]:
+        if self._session_history_marker_repo is None:
+            return ()
+        markers = await self._session_history_marker_repo.list_by_session_async(
+            session_id
+        )
+        return self._filter_agent_history_markers(markers, conversation_id)
 
     @staticmethod
     def _project_message_timeline_entry(
@@ -2935,19 +3162,44 @@ class SessionService:
         entries: list[dict[str, object]],
         session_id: str,
         agent: AgentRuntimeRecord,
+        task_id: str | None = None,
     ) -> list[dict[str, object]]:
         if not agent.run_id.startswith("subagent_run_"):
             return entries
         terminal_task = self._terminal_task_result_for_agent(
             session_id=session_id,
             agent=agent,
+            task_id=task_id,
         )
+        return self._append_terminal_task_result_entry(entries, agent, terminal_task)
+
+    async def _with_terminal_task_result_entry_async(
+        self,
+        *,
+        entries: list[dict[str, object]],
+        session_id: str,
+        agent: AgentRuntimeRecord,
+        task_id: str | None = None,
+    ) -> list[dict[str, object]]:
+        if not agent.run_id.startswith("subagent_run_"):
+            return entries
+        terminal_task = await self._terminal_task_result_for_agent_async(
+            session_id=session_id,
+            agent=agent,
+            task_id=task_id,
+        )
+        return self._append_terminal_task_result_entry(entries, agent, terminal_task)
+
+    def _append_terminal_task_result_entry(
+        self,
+        entries: list[dict[str, object]],
+        agent: AgentRuntimeRecord,
+        terminal_task: TaskRecord | None,
+    ) -> list[dict[str, object]]:
         if terminal_task is None:
             return entries
         result_text = str(terminal_task.result or "").strip()
-        if not result_text:
-            return entries
-        if not self._should_append_terminal_task_result(entries):
+        if not result_text or not self._should_append_terminal_task_result(entries):
             return entries
         return [
             *entries,
@@ -2963,11 +3215,32 @@ class SessionService:
         *,
         session_id: str,
         agent: AgentRuntimeRecord,
+        task_id: str | None = None,
+    ) -> TaskRecord | None:
+        records = self._task_repo.list_by_session(session_id)
+        return self._select_terminal_task_result(records, agent, task_id)
+
+    async def _terminal_task_result_for_agent_async(
+        self,
+        *,
+        session_id: str,
+        agent: AgentRuntimeRecord,
+        task_id: str | None = None,
+    ) -> TaskRecord | None:
+        task_records = await self._task_repo.list_by_session_async(session_id)
+        return self._select_terminal_task_result(task_records, agent, task_id)
+
+    @staticmethod
+    def _select_terminal_task_result(
+        task_records: tuple[TaskRecord, ...],
+        agent: AgentRuntimeRecord,
+        task_id: str | None,
     ) -> TaskRecord | None:
         records = [
             record
-            for record in self._task_repo.list_by_session(session_id)
+            for record in task_records
             if record.assigned_instance_id == agent.instance_id
+            and (task_id is None or record.envelope.task_id == task_id)
             and record.status == TaskStatus.COMPLETED
             and str(record.result or "").strip()
         ]
@@ -3528,15 +3801,9 @@ class SessionService:
         safe_role_id = str(role_id or "").strip()
         if not safe_role_id:
             return False
-        if self._role_registry is not None and (
+        return self._role_registry is not None and (
             self._role_registry.is_coordinator_role(safe_role_id)
             or self._role_registry.is_main_agent_role(safe_role_id)
-        ):
-            return True
-        normalized = safe_role_id.casefold()
-        return (
-            normalized in _legacy_coordinator_identifiers()
-            or normalized in _main_agent_identifiers()
         )
 
     def _count_subagents_by_session(
@@ -3591,17 +3858,43 @@ class SessionService:
         self,
         session: SessionRecord,
     ) -> tuple[dict[str, object], ...]:
-        records = self._latest_orchestration_subagents_by_role(
-            self._agent_repo.list_by_session(session.session_id),
-            session=session,
+        agent_records = self._agent_repo.list_by_session(session.session_id)
+        records_by_instance = {
+            record.instance_id: record
+            for record in agent_records
+            if not self._is_normal_mode_subagent_record(record, session=session)
+            and not self._is_reserved_system_role(record.role_id)
+        }
+        task_rows = tuple(
+            (task, records_by_instance[task.assigned_instance_id])
+            for task in self._task_repo.list_by_session(session.session_id)
+            if task.envelope.parent_task_id is not None
+            and task.assigned_instance_id is not None
+            and task.assigned_instance_id in records_by_instance
         )
-        rows = tuple(records[role_id] for role_id in sorted(records.keys()))
+        if task_rows:
+            rows = tuple(record for _, record in task_rows)
+        else:
+            records = self._latest_orchestration_subagents_by_role(
+                agent_records,
+                session=session,
+            )
+            rows = tuple(records[role_id] for role_id in sorted(records.keys()))
         run_ids = tuple(dict.fromkeys(record.run_id for record in rows))
         runtime_by_run = {
             runtime.run_id: runtime
             for runtime in self._run_runtime_repo.list_by_session(session.session_id)
             if runtime.run_id in run_ids
         }
+        if task_rows:
+            return tuple(
+                self._orchestration_subagent_projection(
+                    record,
+                    task=task,
+                    runtime_by_run=runtime_by_run,
+                )
+                for task, record in task_rows
+            )
         return tuple(
             self._orchestration_subagent_projection(
                 record,
@@ -3655,18 +3948,25 @@ class SessionService:
 
     @staticmethod
     def _agent_projection(record: AgentRuntimeRecord) -> dict[str, object]:
-        return record.model_dump(mode="json")
+        return record.model_dump(
+            mode="json",
+            exclude={"runtime_system_prompt", "runtime_tools_json"},
+        )
 
     @staticmethod
     async def _agent_projection_async(
         record: AgentRuntimeRecord,
     ) -> dict[str, object]:
-        return record.model_dump(mode="json")
+        return record.model_dump(
+            mode="json",
+            exclude={"runtime_system_prompt", "runtime_tools_json"},
+        )
 
     def _orchestration_subagent_projection(
         self,
         record: AgentRuntimeRecord,
         *,
+        task: TaskRecord | None = None,
         runtime_by_run: Mapping[str, RunRuntimeRecord] | None = None,
     ) -> dict[str, object]:
         projected = self._agent_projection(record)
@@ -3675,12 +3975,18 @@ class SessionService:
             if runtime_by_run is not None
             else self._run_runtime_repo.get(record.run_id)
         )
-        projected["title"] = record.role_id
+        projected["title"] = (
+            str(task.envelope.title or task.envelope.objective).strip()
+            if task is not None
+            else record.role_id
+        )
         projected["subagent_kind"] = "orchestration"
         projected["interactive"] = True
         projected["deletable"] = False
         projected["run_status"] = (
-            runtime.status.value if runtime is not None else projected["status"]
+            task.status.value
+            if task is not None
+            else (runtime.status.value if runtime is not None else projected["status"])
         )
         projected["run_phase"] = (
             self._public_phase(runtime, 0, 0) if runtime is not None else ""
@@ -3688,6 +3994,12 @@ class SessionService:
         projected["last_event_id"] = 0
         projected["checkpoint_event_id"] = 0
         projected["stream_connected"] = False
+        if task is not None:
+            projected["status"] = task.status.value
+            projected["task_id"] = task.envelope.task_id
+            projected["subagent_task_id"] = task.envelope.task_id
+            projected["source_run_id"] = task.envelope.trace_id
+            projected["source_task_id"] = task.envelope.parent_task_id or ""
         return projected
 
     def _normal_mode_subagent_projection(

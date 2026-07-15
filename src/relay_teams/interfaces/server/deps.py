@@ -105,11 +105,14 @@ def get_task_service(request: Request) -> TaskOrchestrationService:
     return get_container(request).task_service
 
 
-def get_llm_evaluator(request: Request) -> object:
+def get_llm_evaluator(request: Request) -> LLMEvaluator:
     container = get_container(request)
     model_config = container.resolve_auxiliary_model_config()
-    model = model_config.model if model_config is not None else "gpt-4o"
     profile_name = container.resolve_auxiliary_model_profile_name()
+    if model_config is None or profile_name is None:
+        raise RuntimeError(
+            "No model profile is configured for auxiliary LLM evaluation."
+        )
     provider = container.create_provider(
         RoleDefinition(
             role_id="llm-evaluator",
@@ -117,11 +120,11 @@ def get_llm_evaluator(request: Request) -> object:
             description="LLM evaluator for spec quality assessment",
             version="1",
             system_prompt="internal",
-            model_profile=profile_name or "default",
+            model_profile=profile_name,
         ),
         None,
     )
-    return LLMEvaluator(provider=provider, model=model)
+    return LLMEvaluator(provider=provider, model=model_config.model)
 
 
 def get_audit_service(request: Request) -> AuditService:

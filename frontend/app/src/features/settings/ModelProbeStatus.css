@@ -1,0 +1,18 @@
+.at-model-profile-row-probe {
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding-top: 7px;
+  border-top: 1px solid var(--at-border);
+  color: var(--at-text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.at-model-profile-row-probe.is-success {
+  color: var(--at-success);
+}
+
+.at-model-profile-row-probe.is-error {
+  color: var(--at-danger);
+}

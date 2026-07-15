@@ -1,0 +1,44 @@
+.at-model-profile-detail .at-model-profile-form {
+  width: 100%;
+  max-width: none;
+}
+
+.at-model-profile-form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: end;
+}
+
+.at-model-profile-form-grid .at-model-field-short {
+  grid-column: span 1;
+}
+
+.at-model-profile-form-grid .at-model-field-wide {
+  grid-column: span 2;
+}
+
+.at-model-profile-switch-field {
+  grid-column: span 1;
+  align-self: end;
+  min-height: 32px;
+}
+
+.at-model-profile-switch-field .at-choice-control {
+  min-height: 32px;
+}
+
+.at-settings-detail-page.at-model-profile-detail {
+  width: 100%;
+  max-width: none;
+}
+
+@media (max-width: 720px) {
+  .at-model-profile-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .at-model-profile-form-grid .at-model-field-short,
+  .at-model-profile-form-grid .at-model-field-wide,
+  .at-model-profile-switch-field {
+    grid-column: auto;
+  }
+}

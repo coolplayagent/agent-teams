@@ -143,6 +143,134 @@ class ProxyEnvInput(BaseModel):
         )
 
 
+class ProxyEnvView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    http_proxy: str | None = None
+    https_proxy: str | None = None
+    all_proxy: str | None = None
+    no_proxy: str | None = None
+    proxy_username: str | None = None
+    has_password: bool = False
+    ssl_verify: bool | None = None
+
+    @classmethod
+    def from_input(cls, config: ProxyEnvInput) -> ProxyEnvView:
+        return cls(
+            http_proxy=_extract_proxy_url_components(config.http_proxy).sanitized_url,
+            https_proxy=_extract_proxy_url_components(config.https_proxy).sanitized_url,
+            all_proxy=_extract_proxy_url_components(config.all_proxy).sanitized_url,
+            no_proxy=config.no_proxy,
+            proxy_username=config.proxy_username,
+            has_password=config.proxy_password is not None
+            or any(
+                _proxy_url_has_password(value)
+                for value in (
+                    config.http_proxy,
+                    config.https_proxy,
+                    config.all_proxy,
+                )
+            ),
+            ssl_verify=config.ssl_verify,
+        )
+
+
+class ProxyEnvUpdate(ProxyEnvInput):
+    preserve_password: bool = False
+
+    def to_input(self, *, preserved_config: ProxyEnvInput | None) -> ProxyEnvInput:
+        candidate = ProxyEnvInput(
+            http_proxy=self.http_proxy,
+            https_proxy=self.https_proxy,
+            all_proxy=self.all_proxy,
+            no_proxy=self.no_proxy,
+            proxy_username=self.proxy_username,
+            proxy_password=self.proxy_password,
+            ssl_verify=self.ssl_verify,
+        )
+        if not self.preserve_password or preserved_config is None:
+            return candidate
+        return preserve_proxy_auth(candidate, existing=preserved_config)
+
+
+def preserve_proxy_auth(
+    candidate: ProxyEnvInput,
+    *,
+    existing: ProxyEnvInput,
+) -> ProxyEnvInput:
+    if candidate.proxy_password is not None:
+        return candidate
+    if proxy_input_has_distinct_url_auth(
+        existing
+    ) and not _proxy_inputs_have_same_sanitized_urls(candidate, existing):
+        raise ValueError(
+            "Legacy per-proxy credentials can only be preserved while all proxy URLs remain unchanged. "
+            "Enter one new shared username/password pair or clear the saved credentials before changing a proxy URL."
+        )
+    return candidate.model_copy(
+        update={
+            "http_proxy": _preserve_proxy_url_auth(
+                candidate.http_proxy,
+                existing.http_proxy,
+            ),
+            "https_proxy": _preserve_proxy_url_auth(
+                candidate.https_proxy,
+                existing.https_proxy,
+            ),
+            "all_proxy": _preserve_proxy_url_auth(
+                candidate.all_proxy,
+                existing.all_proxy,
+            ),
+            "proxy_password": existing.proxy_password,
+        }
+    )
+
+
+def proxy_configs_have_same_proxy_urls(
+    left: ProxyEnvConfig,
+    right: ProxyEnvConfig,
+) -> bool:
+    return all(
+        _normalize_proxy_value(left_value) == _normalize_proxy_value(right_value)
+        for left_value, right_value in (
+            (left.http_proxy, right.http_proxy),
+            (left.https_proxy, right.https_proxy),
+            (left.all_proxy, right.all_proxy),
+        )
+    )
+
+
+def proxy_input_has_distinct_url_auth(config: ProxyEnvInput) -> bool:
+    proxy_urls = (
+        _extract_proxy_url_components(config.http_proxy),
+        _extract_proxy_url_components(config.https_proxy),
+        _extract_proxy_url_components(config.all_proxy),
+    )
+    auth_values = [
+        proxy_url.auth
+        for proxy_url in proxy_urls
+        if proxy_url.auth.username is not None or proxy_url.auth.password is not None
+    ]
+    return len(auth_values) > 1 and any(
+        auth != auth_values[0] for auth in auth_values[1:]
+    )
+
+
+def _proxy_inputs_have_same_sanitized_urls(
+    left: ProxyEnvInput,
+    right: ProxyEnvInput,
+) -> bool:
+    return all(
+        _extract_proxy_url_components(left_value).sanitized_url
+        == _extract_proxy_url_components(right_value).sanitized_url
+        for left_value, right_value in (
+            (left.http_proxy, right.http_proxy),
+            (left.https_proxy, right.https_proxy),
+            (left.all_proxy, right.all_proxy),
+        )
+    )
+
+
 class ProxyAuthParts(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -575,6 +703,21 @@ def _extract_proxy_url_components(proxy_url: str | None) -> ProxyUrlComponents:
             password=(None if parsed.password is None else unquote(parsed.password)),
         ),
     )
+
+
+def _preserve_proxy_url_auth(
+    candidate_url: str | None,
+    existing_url: str | None,
+) -> str | None:
+    candidate = _extract_proxy_url_components(candidate_url)
+    existing = _extract_proxy_url_components(existing_url)
+    if candidate.auth.password is not None:
+        return candidate_url
+    if candidate.sanitized_url != existing.sanitized_url:
+        return candidate_url
+    if existing.auth.password is None:
+        return candidate_url
+    return existing_url
 
 
 def _apply_password_to_proxy_url(proxy_url: str | None, *, password: str) -> str | None:

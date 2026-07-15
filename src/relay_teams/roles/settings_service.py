@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 import yaml
 
 from relay_teams.mcp.mcp_registry import McpRegistry
-from relay_teams.roles.default_role_tools import apply_default_role_tools
 from relay_teams.roles.role_models import (
     RoleConfigSource,
     RoleDefinition,
@@ -129,6 +128,7 @@ class RoleSettingsService:
         draft: RoleDocumentDraft,
     ) -> RoleValidationResult:
         normalized = self._normalize_draft(draft)
+        self._validate_system_role_identity(normalized)
         content = self._serialize_role_document(normalized)
         role = self._loader.load_from_text(
             content,
@@ -182,9 +182,21 @@ class RoleSettingsService:
         source_path = None if source_record is None else source_record[0]
         if source_path is not None:
             source_definition = self._loader.load_one(source_path)
+            if (
+                normalized.system_role is not None
+                and normalized.system_role != source_definition.system_role
+            ):
+                raise ValueError("system_role is locked for existing roles")
+            normalized = normalized.model_copy(
+                update={"system_role": source_definition.system_role}
+            )
             self._validate_reserved_role_mutation(
                 source_definition=source_definition,
                 draft=normalized,
+            )
+        elif normalized.system_role is not None:
+            raise ValueError(
+                "system_role may only be defined by builtin role manifests"
             )
         validation_result = self.validate_role_document(normalized)
         diet_report = getattr(validation_result, "diet_report", None)
@@ -294,6 +306,7 @@ class RoleSettingsService:
             bound_agent_id=definition.bound_agent_id,
             execution_surface=definition.execution_surface,
             mode=definition.mode,
+            system_role=definition.system_role,
             source=source,
             deletable=self._is_role_deletable(
                 role_id=definition.role_id,
@@ -324,6 +337,7 @@ class RoleSettingsService:
             bound_agent_id=definition.bound_agent_id,
             execution_surface=definition.execution_surface,
             mode=definition.mode,
+            system_role=definition.system_role,
             memory_profile=definition.memory_profile,
             contract=definition.contract,
             system_prompt=definition.system_prompt,
@@ -344,12 +358,7 @@ class RoleSettingsService:
                 "model_profile": draft.model_profile.strip(),
                 "bound_agent_id": _normalize_optional_text(draft.bound_agent_id),
                 "system_prompt": draft.system_prompt.strip(),
-                "tools": apply_default_role_tools(
-                    role_id=normalized_role_id,
-                    role_name=draft.name,
-                    mode=draft.mode.value,
-                    tools=tuple(item.strip() for item in draft.tools if item.strip()),
-                ),
+                "tools": _normalize_capability_references(draft.tools),
                 "mcp_servers": _normalize_capability_references(draft.mcp_servers),
                 "skills": _normalize_capability_references(draft.skills),
             }
@@ -367,6 +376,8 @@ class RoleSettingsService:
             "execution_surface": draft.execution_surface.value,
             "mode": draft.mode.value,
         }
+        if draft.system_role is not None:
+            front_matter["system_role"] = draft.system_role.value
         if draft.bound_agent_id:
             front_matter["bound_agent_id"] = draft.bound_agent_id
         if draft.mcp_servers:
@@ -650,12 +661,26 @@ class RoleSettingsService:
             ("description", source_definition.description, draft.description),
             ("version", source_definition.version, draft.version),
             ("mode", source_definition.mode.value, draft.mode.value),
+            ("system_role", source_definition.system_role, draft.system_role),
         )
         for field_name, source_value, next_value in locked_pairs:
             if str(source_value) != str(next_value):
                 raise ValueError(
                     f"{field_name} is locked for reserved system role {source_definition.role_id}"
                 )
+
+    def _validate_system_role_identity(self, draft: RoleDocumentDraft) -> None:
+        if draft.system_role is None:
+            return
+        source_role_id = draft.source_role_id or draft.role_id
+        for role_path in sorted(self._builtin_roles_dir.glob("*.md")):
+            builtin_role = self._loader.load_one(role_path)
+            if (
+                builtin_role.role_id == source_role_id
+                and builtin_role.system_role == draft.system_role
+            ):
+                return
+        raise ValueError("system_role may only be defined by builtin role manifests")
 
     def _find_role_record(self, role_id: str) -> tuple[Path, RoleConfigSource]:
         role_record = self._find_role_record_optional(role_id)

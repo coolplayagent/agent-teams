@@ -9,7 +9,12 @@ import pytest
 from relay_teams.env.proxy_env import ProxyEnvConfig
 from relay_teams.providers import model_catalog
 from relay_teams.providers.model_config import ProviderType
-from relay_teams.providers.model_catalog import ModelCatalogService
+from relay_teams.providers.model_catalog import (
+    ModelCatalogService,
+    ModelProviderAuthKind,
+    ModelProviderCredentialTarget,
+    model_runtime_provider_contracts,
+)
 
 
 class _FakeCatalogClient:
@@ -33,6 +38,22 @@ class _FakeCatalogClient:
         if isinstance(self._response, Exception):
             raise self._response
         return self._response
+
+
+def test_runtime_provider_contracts_cover_provider_enum_and_auth_shapes() -> None:
+    contracts = model_runtime_provider_contracts()
+
+    assert {contract.id for contract in contracts} == set(ProviderType)
+    by_provider = {contract.id: contract for contract in contracts}
+    assert by_provider[ProviderType.OPENAI_COMPATIBLE].auth_kind == (
+        ModelProviderAuthKind.API_KEY
+    )
+    assert by_provider[ProviderType.MAAS].credential_target == (
+        ModelProviderCredentialTarget.MAAS_AUTH
+    )
+    assert by_provider[ProviderType.CODEAGENT].auth_kind == (
+        ModelProviderAuthKind.SSO_OR_PASSWORD
+    )
 
 
 @pytest.mark.asyncio

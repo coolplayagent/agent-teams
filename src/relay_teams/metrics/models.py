@@ -19,6 +19,11 @@ class MetricScope(str, Enum):
     RUN = "run"
 
 
+class MetricDimensionAttribution(str, Enum):
+    RECORDED = "recorded"
+    MISSING_METRIC_TAG = "missing_metric_tag"
+
+
 class MetricTagSet(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -142,7 +147,8 @@ class ObservabilityBreakdownRow(BaseModel):
 class ObservabilityRoleBreakdownRow(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    role_id: str = Field(min_length=1)
+    role_id: str = ""
+    attribution: MetricDimensionAttribution = MetricDimensionAttribution.RECORDED
     input_tokens: float = 0
     cached_input_tokens: float = 0
     uncached_input_tokens: float = 0

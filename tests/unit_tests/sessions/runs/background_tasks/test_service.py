@@ -1513,7 +1513,7 @@ async def test_background_task_service_clones_temporary_subagent_role(
     )
     assert cloned_role.role_id == role.role_id
     assert cloned_role.system_prompt == "Analyze."
-    assert cloned_role.tools == ("read", "office_read_markdown")
+    assert cloned_role.tools == ("read",)
     _, completed = await service.wait_for_run(
         run_id="run-1",
         background_task_id=started.background_task_id,

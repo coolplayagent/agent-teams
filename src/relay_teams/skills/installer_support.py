@@ -745,7 +745,9 @@ def _resolve_role_mount_targets(role_ids: tuple[str, ...]) -> tuple[str, ...]:
     current_role_id = os.environ.get(_CURRENT_ROLE_ENV_KEY, "").strip()
     if current_role_id:
         return (current_role_id,)
-    return ("MainAgent",)
+    raise SkillInstallerError(
+        "No role target is available; provide at least one --role value"
+    )
 
 
 def _dedupe_non_empty(items: tuple[str, ...]) -> tuple[str, ...]:

@@ -53,6 +53,8 @@ from relay_teams.sessions.runs.todo_service import TodoService
 from relay_teams.sessions.session_repository import SessionRepository
 from relay_teams.agents.tasks.task_repository import TaskRepository
 from relay_teams.providers.token_usage_repo import TokenUsageRepository
+from relay_teams.roles.role_models import RoleDefinition, SystemRoleIdentity
+from relay_teams.roles.role_registry import RoleRegistry
 from relay_teams.agents.tasks.models import TaskEnvelope, VerificationPlan
 
 
@@ -62,6 +64,36 @@ def _build_service(
     run_event_hub: RunEventHub | None = None,
     active_run_registry: ActiveSessionRunRegistry | None = None,
 ) -> SessionService:
+    role_registry = RoleRegistry()
+    role_registry.register(
+        RoleDefinition(
+            role_id="Coordinator",
+            name="Coordinator",
+            description="Coordinates delegated work.",
+            version="1.0.0",
+            system_role=SystemRoleIdentity.COORDINATOR,
+            system_prompt="Coordinate work.",
+        )
+    )
+    role_registry.register(
+        RoleDefinition(
+            role_id="MainAgent",
+            name="Main Agent",
+            description="Handles direct work.",
+            version="1.0.0",
+            system_role=SystemRoleIdentity.MAIN_AGENT,
+            system_prompt="Handle work.",
+        )
+    )
+    role_registry.register(
+        RoleDefinition(
+            role_id="custom-main",
+            name="Main Agent",
+            description="User-defined role with an overlapping display name.",
+            version="1.0.0",
+            system_prompt="Handle custom work.",
+        )
+    )
     return SessionService(
         session_repo=SessionRepository(db_path),
         task_repo=TaskRepository(db_path),
@@ -81,6 +113,7 @@ def _build_service(
         run_event_hub=run_event_hub,
         active_run_registry=active_run_registry,
         event_log=EventLog(db_path),
+        role_registry=role_registry,
     )
 
 
@@ -1217,6 +1250,39 @@ def test_get_recovery_snapshot_ignores_main_agent_paused_subagent(
     snapshot = service.get_recovery_snapshot("session-1")
 
     assert snapshot.get("paused_subagent") is None
+
+
+def test_get_recovery_snapshot_keeps_custom_main_agent_named_subagent(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "recovery_custom_main_agent_name.db"
+    service = _build_service(db_path)
+
+    _ = service.create_session(session_id="session-1", workspace_id="default")
+    _seed_root_task(db_path, run_id="run-active", session_id="session-1")
+    runtime_repo = RunRuntimeRepository(db_path)
+    runtime_repo.ensure(
+        run_id="run-active",
+        session_id="session-1",
+        root_task_id="task-root-1",
+    )
+    runtime_repo.update(
+        "run-active",
+        status=RunRuntimeStatus.PAUSED,
+        phase=RunRuntimePhase.AWAITING_SUBAGENT_FOLLOWUP,
+        active_instance_id="inst-custom",
+        active_task_id="task-custom",
+        active_role_id="custom-main",
+        active_subagent_instance_id="inst-custom",
+    )
+
+    snapshot = service.get_recovery_snapshot("session-1")
+
+    assert snapshot.get("paused_subagent") == {
+        "instance_id": "inst-custom",
+        "role_id": "custom-main",
+        "task_id": "task-custom",
+    }
 
 
 def test_get_recovery_snapshot_round_snapshot_keeps_tool_results(

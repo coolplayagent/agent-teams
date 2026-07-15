@@ -1,0 +1,75 @@
+.at-round-marker-intent {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.at-round-prompt-body {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--at-text);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.at-round-prompt-body.is-collapsed {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.at-round-prompt-body.is-expanded {
+  animation: at-round-prompt-reveal 120ms ease-out;
+}
+
+.at-round-prompt-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-self: end;
+  gap: 3px;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--at-text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.at-round-prompt-toggle:hover,
+.at-round-prompt-toggle:focus-visible {
+  color: var(--at-text);
+}
+
+.at-round-prompt-toggle:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--at-focus-ring);
+  outline-offset: 2px;
+}
+
+.at-round-prompt-toggle .at-round-marker-intent-action {
+  margin: 0;
+  padding: 0;
+  color: inherit;
+  line-height: inherit;
+}
+
+@keyframes at-round-prompt-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .at-round-prompt-body.is-expanded {
+    animation: none;
+  }
+}

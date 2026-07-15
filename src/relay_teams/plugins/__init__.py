@@ -19,6 +19,12 @@ from relay_teams.plugins.plugin_models import (
     PluginStateFile,
     PluginStateRecord,
 )
+from relay_teams.plugins.marketplace_models import (
+    PluginMarketplaceProviderCatalog,
+    PluginMarketplaceProviderDefaults,
+    PluginMarketplaceProviderDescriptor,
+    PluginMarketplaceProviderKind,
+)
 
 __all__ = [
     "PluginComponentCounts",
@@ -29,6 +35,10 @@ __all__ = [
     "PluginInstallSource",
     "PluginInstallSourceKind",
     "PluginManifest",
+    "PluginMarketplaceProviderCatalog",
+    "PluginMarketplaceProviderDefaults",
+    "PluginMarketplaceProviderDescriptor",
+    "PluginMarketplaceProviderKind",
     "PluginMonitorDefinition",
     "PluginRecord",
     "PluginRegistry",

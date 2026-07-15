@@ -27,7 +27,7 @@ from relay_teams.hooks.hook_normalization import (
     parse_tolerant_hooks_payload,
     validate_hook_event_capabilities,
 )
-from relay_teams.hooks.hook_loader import HookLoader
+from relay_teams.hooks.hook_loader import HookConfigReferenceError, HookLoader
 from relay_teams.hooks.hook_models import (
     HookRuntimeView,
     HookDecision,
@@ -49,6 +49,7 @@ from relay_teams.hooks.hook_service import HookService
 
 __all__ = [
     "HookDecision",
+    "HookConfigReferenceError",
     "HookDecisionBundle",
     "HookDecisionType",
     "HookEventInput",

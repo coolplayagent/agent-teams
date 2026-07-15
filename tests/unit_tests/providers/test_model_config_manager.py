@@ -208,7 +208,7 @@ def test_save_model_profile_and_get_model_profiles(tmp_path: Path) -> None:
     profiles = manager.get_model_profiles()
 
     assert profiles["default"]["provider"] == "openai_compatible"
-    assert profiles["default"]["api_key"] == "secret-key"
+    assert profiles["default"]["api_key"] is None
     assert profiles["default"]["has_api_key"] is True
     assert profiles["default"]["is_default"] is True
     assert profiles["default"]["temperature"] == 0.25
@@ -297,11 +297,12 @@ def test_save_model_profile_and_get_model_profiles_with_secret_headers(
 
     profiles = manager.get_model_profiles()
 
-    assert profiles["default"]["api_key"] == ""
+    assert profiles["default"]["api_key"] is None
     assert profiles["default"]["has_api_key"] is False
     headers = cast(list[dict[str, JsonValue]], profiles["default"]["headers"])
     assert headers[0]["name"] == "Authorization"
-    assert headers[0]["value"] == "Bearer header-secret"
+    assert headers[0]["value"] is None
+    assert headers[0]["configured"] is True
     model_payload = json.loads((tmp_path / "model.json").read_text(encoding="utf-8"))
     assert model_payload["default"]["headers"] == [
         {
@@ -801,7 +802,8 @@ def test_get_model_profiles_migrates_legacy_api_key_out_of_model_json(
 
     profiles = manager.get_model_profiles()
 
-    assert profiles["default"]["api_key"] == "legacy-secret"
+    assert profiles["default"]["api_key"] is None
+    assert profiles["default"]["has_api_key"] is True
     stored_model_payload = json.loads(model_file.read_text(encoding="utf-8"))
     assert "api_key" not in stored_model_payload["default"]
     secrets_payload = json.loads(
@@ -1585,6 +1587,8 @@ def test_save_model_profile_stores_codeagent_tokens_from_oauth_session(
 
     assert codeagent_auth["has_access_token"] is True
     assert codeagent_auth["has_refresh_token"] is True
+    assert "access_token" not in codeagent_auth
+    assert "refresh_token" not in codeagent_auth
     assert model_payload["codeagent-profile"]["base_url"] == DEFAULT_CODEAGENT_BASE_URL
     assert model_payload["codeagent-profile"]["codeagent_auth"] == {
         "auth_method": "sso",

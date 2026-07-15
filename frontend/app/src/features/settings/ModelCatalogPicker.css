@@ -1,0 +1,35 @@
+.at-model-profile-detail .at-model-catalog-panel {
+  width: 100%;
+  max-width: none;
+}
+
+.at-model-catalog-controls {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.7fr) minmax(280px, 1.3fr);
+  gap: 10px;
+  min-width: 0;
+}
+
+.at-model-catalog-model-option {
+  display: grid;
+  min-width: 0;
+  padding: 2px 0;
+}
+
+.at-model-catalog-model-option > span,
+.at-model-catalog-model-option > small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.at-model-catalog-model-option > small {
+  color: var(--at-muted);
+  font-size: 11px;
+}
+
+@media (max-width: 640px) {
+  .at-model-catalog-controls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

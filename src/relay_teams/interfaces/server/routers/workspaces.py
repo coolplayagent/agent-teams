@@ -348,6 +348,7 @@ async def delete_workspace(
     remove_worktree: Annotated[bool, Query()] = False,
     req: DeleteRequest | None = Body(default=None),
     service: WorkspaceService = Depends(get_workspace_service),
+    session_service: SessionService = Depends(get_session_service),
 ) -> dict[str, str]:
     try:
         should_remove_directory = remove_directory or remove_worktree
@@ -357,6 +358,11 @@ async def delete_workspace(
                 message="Cannot remove workspace directory without force",
             )
 
+        await session_service.delete_workspace_sessions_async(
+            workspace_id,
+            force=req.force if req is not None else False,
+            cascade=req.cascade if req is not None else False,
+        )
         await service.delete_workspace_with_options_async(
             workspace_id=workspace_id,
             remove_directory=should_remove_directory,

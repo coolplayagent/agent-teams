@@ -8,6 +8,7 @@ from relay_teams.env.proxy_config_service import ProxyConfigService
 from relay_teams.env.proxy_env import (
     ProxyEnvConfig,
     ProxyEnvInput,
+    ProxyEnvUpdate,
     sync_proxy_env_to_process_env,
 )
 from relay_teams.env.proxy_secret_store import ProxySecretStore
@@ -305,6 +306,83 @@ def test_save_proxy_config_rejects_multiple_distinct_proxy_passwords(
         raise AssertionError(
             "Expected save to fail for distinct embedded proxy passwords."
         )
+
+
+def test_save_proxy_config_preserves_existing_distinct_legacy_url_auth(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _clear_proxy_env(monkeypatch)
+    config_dir = tmp_path / ".agent-teams"
+    config_dir.mkdir(parents=True)
+    env_file = config_dir / ".env"
+    env_file.write_text(
+        "HTTP_PROXY=http://alice:first@proxy-one.example:8080\n"
+        "HTTPS_PROXY=http://bob:second@proxy-two.example:8443\n"
+        "NO_PROXY=localhost\n",
+        encoding="utf-8",
+    )
+    secret_store = _FakeProxySecretStore()
+    secret_store.set_password(config_dir, "unrelated-shared-secret")
+    reloaded: list[ProxyEnvConfig] = []
+    service = ProxyConfigService(
+        config_dir=config_dir,
+        on_proxy_reloaded=reloaded.append,
+        secret_store=secret_store,
+    )
+    existing = service.get_saved_proxy_config()
+    update = ProxyEnvUpdate(
+        http_proxy="http://proxy-one.example:8080",
+        https_proxy="http://proxy-two.example:8443",
+        no_proxy="localhost,127.0.0.1",
+        preserve_password=True,
+        ssl_verify=False,
+    )
+
+    service.save_proxy_config(update.to_input(preserved_config=existing))
+
+    saved_text = env_file.read_text(encoding="utf-8")
+    assert "HTTP_PROXY=http://alice:first@proxy-one.example:8080" in saved_text
+    assert "HTTPS_PROXY=http://bob:second@proxy-two.example:8443" in saved_text
+    assert "NO_PROXY=localhost,127.0.0.1" in saved_text
+    assert "SSL_VERIFY=false" in saved_text
+    assert secret_store.get_password(config_dir) == "unrelated-shared-secret"
+    assert reloaded[-1].http_proxy == "http://alice:first@proxy-one.example:8080"
+    assert reloaded[-1].https_proxy == "http://bob:second@proxy-two.example:8443"
+
+
+def test_save_proxy_config_rejects_moving_one_preserved_legacy_credential(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _clear_proxy_env(monkeypatch)
+    config_dir = tmp_path / ".agent-teams"
+    config_dir.mkdir(parents=True)
+    env_file = config_dir / ".env"
+    original_text = (
+        "HTTP_PROXY=http://alice:first@proxy-one.example:8080\n"
+        "HTTPS_PROXY=http://bob:second@proxy-two.example:8443\n"
+    )
+    env_file.write_text(original_text, encoding="utf-8")
+    service = ProxyConfigService(
+        config_dir=config_dir,
+        on_proxy_reloaded=lambda _config: None,
+        secret_store=_FakeProxySecretStore(),
+    )
+
+    try:
+        service.save_proxy_config(
+            ProxyEnvInput(
+                http_proxy="http://alice:first@proxy-one.example:8080",
+                https_proxy="http://proxy-three.example:8443",
+            )
+        )
+    except ValueError as exc:
+        assert "all proxy URLs remain unchanged" in str(exc)
+    else:
+        raise AssertionError("Expected partial legacy credential movement to fail.")
+
+    assert env_file.read_text(encoding="utf-8") == original_text
 
 
 def test_save_proxy_config_clears_runtime_proxy_env_when_proxy_removed(

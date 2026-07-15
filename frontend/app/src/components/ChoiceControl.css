@@ -1,0 +1,214 @@
+.at-choice-control {
+  --at-choice-size: 18px;
+  position: relative;
+  display: inline-grid;
+  grid-template-columns: var(--at-choice-size) minmax(0, auto);
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  min-height: 32px;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--at-text);
+  cursor: pointer;
+  font: inherit;
+  line-height: 1.25;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.at-choice-control:hover {
+  background: var(--at-surface-hover);
+}
+
+.at-choice-control.is-chip {
+  border-color: var(--at-control-border);
+  background: var(--at-control-bg);
+}
+
+.at-choice-control.is-chip:hover,
+.at-choice-control.is-chip.is-checked {
+  border-color: color-mix(in srgb, var(--at-primary) 55%, var(--at-control-border));
+  background: color-mix(in srgb, var(--at-primary) 8%, var(--at-control-bg));
+}
+
+.at-choice-control.is-row {
+  width: 100%;
+  min-height: 44px;
+  grid-template-columns: minmax(0, 1fr) var(--at-choice-size);
+  padding: 8px 10px;
+  border-color: transparent;
+  background: transparent;
+}
+
+.at-choice-control.is-row .at-choice-control-indicator {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.at-choice-control.is-row .at-choice-control-copy {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.at-choice-control.is-row:hover {
+  background: var(--at-surface-hover);
+}
+
+.at-choice-control-input {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.at-choice-control-input:focus-visible {
+  outline: none;
+}
+
+.at-choice-control-input:focus-visible + .at-choice-control-indicator {
+  box-shadow: 0 0 0 3px var(--at-focus-ring);
+}
+
+.at-choice-control-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--at-choice-size);
+  height: var(--at-choice-size);
+  border: 1px solid var(--at-control-border);
+  border-radius: 5px;
+  background: var(--at-control-bg);
+  color: #ffffff;
+  transition: background-color 120ms ease, border-color 120ms ease, transform 120ms ease;
+}
+
+.at-choice-control.is-checked .at-choice-control-indicator,
+.at-choice-control.is-indeterminate .at-choice-control-indicator {
+  border-color: var(--at-primary);
+  background: var(--at-primary);
+}
+
+.at-choice-control.is-checkbox.is-checked:not(.is-loading) .at-choice-control-indicator::after {
+  width: 4px;
+  height: 8px;
+  border: solid currentcolor;
+  border-width: 0 2px 2px 0;
+  content: "";
+  transform: translateY(-1px) rotate(45deg);
+}
+
+.at-choice-control.is-checkbox.is-indeterminate:not(.is-loading) .at-choice-control-indicator::after {
+  width: 9px;
+  height: 2px;
+  border-radius: 1px;
+  background: currentcolor;
+  content: "";
+}
+
+.at-choice-control.is-radio .at-choice-control-indicator {
+  border-radius: 50%;
+}
+
+.at-choice-control.is-radio.is-checked:not(.is-loading) .at-choice-control-indicator::after {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentcolor;
+  content: "";
+}
+
+.at-choice-control.is-switch {
+  --at-choice-size: 30px;
+  grid-template-columns: var(--at-choice-size) minmax(0, auto);
+}
+
+.at-choice-control.is-switch.is-row {
+  grid-template-columns: minmax(0, 1fr) var(--at-choice-size);
+}
+
+.at-choice-control.is-switch .at-choice-control-indicator {
+  position: relative;
+  height: 18px;
+  border-radius: 999px;
+}
+
+.at-choice-control.is-switch .at-choice-control-indicator::after {
+  position: absolute;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--at-text-subtle);
+  content: "";
+  transition: background-color 120ms ease, transform 120ms ease;
+}
+
+.at-choice-control.is-switch.is-checked .at-choice-control-indicator::after {
+  background: #ffffff;
+  transform: translateX(12px);
+}
+
+.at-choice-control-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.at-choice-control-label {
+  min-width: 0;
+  color: inherit;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.at-choice-control-description {
+  color: var(--at-text-muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.at-choice-control.is-invalid {
+  border-color: color-mix(in srgb, var(--at-danger) 60%, var(--at-control-border));
+}
+
+.at-choice-control:has(.at-choice-control-input:disabled) {
+  color: var(--at-control-text-disabled);
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.at-choice-control:has(.at-choice-control-input:disabled):hover {
+  background: transparent;
+}
+
+.at-choice-control-spinner {
+  animation: at-choice-spin 700ms linear infinite;
+}
+
+.at-choice-control-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+@keyframes at-choice-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .at-choice-control,
+  .at-choice-control-indicator,
+  .at-choice-control-indicator::after {
+    transition: none;
+  }
+}

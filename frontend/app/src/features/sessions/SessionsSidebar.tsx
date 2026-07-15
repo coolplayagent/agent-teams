@@ -1,0 +1,1979 @@
+import {
+  App,
+  Button,
+  Checkbox,
+  Dropdown,
+  Empty,
+  Input,
+  Skeleton,
+  Tooltip,
+  Typography,
+} from "antd";
+import type { InputRef, MenuProps } from "antd";
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query";
+import {
+  ArrowDownUp,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  FolderClosed,
+  FolderSearch,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react";
+import type { ReactNode } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
+
+import {
+  createSession,
+  deleteWorkspace,
+  deleteSession,
+  listSidebarSessions,
+  listSessionSubagents,
+  listWorkspaces,
+  pickWorkspace,
+  updateSession,
+} from "../../api/client";
+import type {
+  SessionCreateRequest,
+  SessionRecord,
+  SessionSidebarRecord,
+  SessionSubagentRecord,
+  WorkspaceRecord,
+} from "../../api/contracts";
+import {
+  workspaceDisplayLabel,
+  workspaceFallbackLabel,
+} from "../workspaces/workspaceLabels";
+import { useUiStore, type Language } from "../../runtime/uiStore";
+import { useTranslations, type Translate } from "../../i18n";
+import { DisclosureMotion } from "../../components/AsyncFeedback";
+import { sessionDisplayLabel } from "./sessionLabels";
+
+const initialVisibleSessionsPerGroup = 10;
+const visibleSessionIncrement = 20;
+const activeRunIndicatorStatuses = new Set(["queued", "running", "stopping"]);
+const maxConcurrentSessionSubagentLoads = 2;
+const chronologicalSessionGroupId = "__chronological_sessions__";
+let activeSessionSubagentLoads = 0;
+const queuedSessionSubagentLoads: SessionSubagentLoadTask[] = [];
+
+type SessionRunIndicatorType = "failed" | "running" | "stopped" | "unread";
+type WorkspaceSortMode = "project_updated" | "project_created" | "time";
+
+interface SessionSubagentLoadTask {
+  run: () => void;
+}
+
+export interface SidebarNavigationItem {
+  active?: boolean;
+  icon?: ReactNode;
+  key: string;
+  label: string;
+  onSelect: () => void;
+  shortcut?: string;
+}
+
+export type SidebarBackendStatusTone =
+  "busy" | "checking" | "offline" | "online";
+
+export interface SidebarBackendStatus {
+  label: string;
+  tone: SidebarBackendStatusTone;
+}
+
+export interface ActiveSubagentSession {
+  createdAt: string;
+  instanceId: string;
+  interactive: boolean;
+  lastEventId: number | null;
+  promptText: string;
+  roleId: string;
+  runId: string;
+  runPhase: string;
+  runStatus: string;
+  sessionId: string;
+  sourceRunId?: string;
+  sourceToolCallId?: string;
+  status: string;
+  subagentKind: string;
+  taskId?: string;
+  title: string;
+  updatedAt: string;
+}
+
+interface SessionsSidebarProps {
+  activeSubagent?: ActiveSubagentSession | null;
+  backendStatus?: SidebarBackendStatus;
+  navigationItems?: SidebarNavigationItem[];
+  onOpenNewSession?: () => void;
+  onOpenSessionSearch?: () => void;
+  onOpenWorkspaceView?: () => void;
+  onSessionSelected?: () => void;
+  onSubagentSelected?: (subagent: ActiveSubagentSession) => void;
+  visuallySelectedSessionId?: string | null;
+  workspaceViewActive?: boolean;
+}
+
+interface RenameSessionPayload {
+  sessionId: string;
+  title: string;
+}
+
+interface DeleteWorkspacePayload {
+  removeDirectory: boolean;
+  workspaceId: string;
+}
+
+interface InlineActionFocusTarget {
+  ariaLabel: string;
+  ownerId: string;
+  ownerKind: "session" | "workspace";
+}
+
+function sessionDetailQueryKey(sessionId: string) {
+  return ["sessions", "detail", sessionId] as const;
+}
+
+function normalModelProfileForNewSession(
+  queryClient: QueryClient,
+  selectedSessionId: string | null,
+): string | null {
+  if (selectedSessionId === null) {
+    return null;
+  }
+  const selectedSession = queryClient.getQueryData<SessionRecord>(
+    sessionDetailQueryKey(selectedSessionId),
+  );
+  const normalModelProfile =
+    selectedSession?.normal_model_profile?.trim() ?? "";
+  return normalModelProfile.length > 0 ? normalModelProfile : null;
+}
+
+function sessionCreateRequest(
+  queryClient: QueryClient,
+  selectedSessionId: string | null,
+  workspaceId: string,
+): SessionCreateRequest {
+  const normalModelProfile = normalModelProfileForNewSession(
+    queryClient,
+    selectedSessionId,
+  );
+  if (normalModelProfile === null) {
+    return { workspace_id: workspaceId };
+  }
+  return {
+    normal_model_profile: normalModelProfile,
+    workspace_id: workspaceId,
+  };
+}
+
+function SessionsSidebarView({
+  activeSubagent = null,
+  backendStatus,
+  navigationItems = [],
+  onOpenNewSession,
+  onOpenSessionSearch,
+  onOpenWorkspaceView,
+  onSessionSelected,
+  onSubagentSelected,
+  visuallySelectedSessionId,
+  workspaceViewActive = false,
+}: SessionsSidebarProps) {
+  const { message } = App.useApp();
+  const queryClient = useQueryClient();
+  const t = useTranslations();
+  const language = useUiStore((state) => state.language);
+  const selectedSessionId = useUiStore((state) => state.selectedSessionId);
+  const effectiveVisuallySelectedSessionId =
+    visuallySelectedSessionId === undefined
+      ? selectedSessionId
+      : visuallySelectedSessionId;
+  const selectedWorkspaceId = useUiStore((state) => state.selectedWorkspaceId);
+  const setSelectedSessionId = useUiStore(
+    (state) => state.setSelectedSessionId,
+  );
+  const setSelectedWorkspaceId = useUiStore(
+    (state) => state.setSelectedWorkspaceId,
+  );
+  const [filter, setFilter] = useState("");
+  const [searchExpanded, setSearchExpanded] = useState(false);
+  const [workspaceSortMode, setWorkspaceSortMode] =
+    useState<WorkspaceSortMode>("project_updated");
+  const [visibleSessionLimits, setVisibleSessionLimits] = useState<
+    Record<string, number>
+  >({});
+  const [workspaceExpanded, setWorkspaceExpanded] = useState<
+    Record<string, boolean>
+  >({});
+  const [expandedSubagentSessions, setExpandedSubagentSessions] = useState<
+    Record<string, boolean>
+  >({});
+  const [renameTarget, setRenameTarget] = useState<SessionSidebarRecord | null>(
+    null,
+  );
+  const [renameValue, setRenameValue] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<SessionSidebarRecord | null>(
+    null,
+  );
+  const [deleteWorkspaceTarget, setDeleteWorkspaceTarget] =
+    useState<WorkspaceRecord | null>(null);
+  const [deleteWorkspaceRemoveDirectory, setDeleteWorkspaceRemoveDirectory] =
+    useState(false);
+  const [inlineActionFocusTarget, setInlineActionFocusTarget] =
+    useState<InlineActionFocusTarget | null>(null);
+  const renameFocusSessionIdRef = useRef<string | null>(null);
+  const deleteFocusSessionIdRef = useRef<string | null>(null);
+  const deleteFocusWorkspaceIdRef = useRef<string | null>(null);
+  const searchInputRef = useRef<InputRef>(null);
+  const focusSearchOnExpandRef = useRef(false);
+  const selectedSessionItemRef = useRef<HTMLDivElement | null>(null);
+  const scrolledSelectedSessionIdRef = useRef<string | null>(null);
+
+  const sessionsQuery = useQuery({
+    queryKey: ["sessions", "sidebar"],
+    queryFn: () => listSidebarSessions(false),
+  });
+  const workspacesQuery = useQuery({
+    queryKey: ["workspaces"],
+    queryFn: listWorkspaces,
+  });
+  const sidebarQueryError = sessionsQuery.isError
+    ? t("sidebarSessionsLoadError")
+    : workspacesQuery.isError
+      ? t("sidebarWorkspacesLoadError")
+      : null;
+  const retrySidebarQueries = () => {
+    void Promise.all([sessionsQuery.refetch(), workspacesQuery.refetch()]);
+  };
+
+  const workspaceOptions = useMemo(
+    () => workspacesQuery.data ?? [],
+    [workspacesQuery.data],
+  );
+  const workspaceById = useMemo(
+    () =>
+      new Map(
+        workspaceOptions.map((workspace) => [
+          workspace.workspace_id,
+          workspace,
+        ]),
+      ),
+    [workspaceOptions],
+  );
+  const loadedWorkspaceIds = useMemo(
+    () =>
+      new Set((workspacesQuery.data ?? []).map((item) => item.workspace_id)),
+    [workspacesQuery.data],
+  );
+  const selectedLoadedWorkspaceId =
+    selectedWorkspaceId !== null && loadedWorkspaceIds.has(selectedWorkspaceId)
+      ? selectedWorkspaceId
+      : null;
+  const effectiveWorkspaceId =
+    selectedLoadedWorkspaceId ?? workspaceOptions[0]?.workspace_id ?? "";
+
+  useEffect(() => {
+    const firstWorkspaceId = workspacesQuery.data?.[0]?.workspace_id;
+    if (firstWorkspaceId === undefined) {
+      return;
+    }
+    if (
+      selectedWorkspaceId === null ||
+      !loadedWorkspaceIds.has(selectedWorkspaceId)
+    ) {
+      setSelectedWorkspaceId(firstWorkspaceId);
+    }
+  }, [
+    loadedWorkspaceIds,
+    selectedWorkspaceId,
+    setSelectedWorkspaceId,
+    workspacesQuery.data,
+  ]);
+  useEffect(() => {
+    const focusSearch = () => {
+      if (searchExpanded) {
+        searchInputRef.current?.focus();
+        return;
+      }
+      focusSearchOnExpandRef.current = true;
+      setSearchExpanded(true);
+    };
+    window.addEventListener("agent-teams-focus-session-search", focusSearch);
+    return () => {
+      window.removeEventListener(
+        "agent-teams-focus-session-search",
+        focusSearch,
+      );
+    };
+  }, [searchExpanded]);
+  useEffect(() => {
+    if (inlineActionFocusTarget === null) {
+      return;
+    }
+    const owners = document.querySelectorAll<HTMLElement>(
+      ".at-session-item, .at-workspace-group-header",
+    );
+    const restoredOwner = Array.from(owners).find((candidate) =>
+      inlineActionFocusTarget.ownerKind === "session"
+        ? candidate.dataset.sessionId === inlineActionFocusTarget.ownerId
+        : candidate.dataset.workspaceId === inlineActionFocusTarget.ownerId,
+    );
+    const button = Array.from(
+      restoredOwner?.querySelectorAll<HTMLButtonElement>("button") ?? [],
+    ).find(
+      (candidate) =>
+        candidate.getAttribute("aria-label") ===
+        inlineActionFocusTarget.ariaLabel,
+    );
+    button?.focus();
+    setInlineActionFocusTarget(null);
+  }, [inlineActionFocusTarget]);
+  useEffect(() => {
+    if (!searchExpanded || !focusSearchOnExpandRef.current) {
+      return;
+    }
+    focusSearchOnExpandRef.current = false;
+    searchInputRef.current?.focus();
+  }, [searchExpanded]);
+
+  const createSessionMutation = useMutation({
+    mutationFn: (workspaceId: string) =>
+      createSession(
+        sessionCreateRequest(queryClient, selectedSessionId, workspaceId),
+      ),
+    onSuccess: (session) => {
+      setSelectedWorkspaceId(session.workspace_id);
+      setSelectedSessionId(session.session_id);
+      onSessionSelected?.();
+      void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["sessions", session.session_id],
+      });
+      void message.success(t("sidebarCreated"));
+    },
+    onError: (error) => {
+      void message.error(
+        error instanceof Error ? error.message : t("sidebarCreateFailed"),
+      );
+    },
+  });
+  const pickWorkspaceMutation = useMutation({
+    mutationFn: () => pickWorkspace(),
+    onSuccess: (response) => {
+      const workspace = response.workspace;
+      if (workspace === null) {
+        return;
+      }
+      setSelectedWorkspaceId(workspace.workspace_id);
+      queryClient.setQueryData<WorkspaceRecord[]>(["workspaces"], (current) =>
+        upsertWorkspace(current ?? [], workspace),
+      );
+      void queryClient.invalidateQueries({ queryKey: ["workspaces"] });
+      void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
+      void message.success(t("sidebarNewProjectSaved"));
+    },
+    onError: (error) => {
+      void message.error(
+        error instanceof Error ? error.message : t("sidebarNewProjectFailed"),
+      );
+    },
+  });
+  const renameSessionMutation = useMutation({
+    mutationFn: ({ sessionId, title }: RenameSessionPayload) =>
+      updateSession(sessionId, { title }),
+    onSuccess: (_result, payload) => {
+      resetRenameSession();
+      invalidateSessionCaches(payload.sessionId);
+      void message.success(t("sidebarRenameSaved"));
+    },
+    onError: (error) => {
+      void message.error(
+        error instanceof Error ? error.message : t("sidebarRenameFailed"),
+      );
+    },
+  });
+  const deleteSessionMutation = useMutation({
+    mutationFn: (sessionId: string) =>
+      deleteSession(sessionId, { cascade: true, force: true }),
+    onSuccess: (_result, sessionId) => {
+      resetDeleteSession();
+      if (selectedSessionId === sessionId) {
+        setSelectedSessionId(null);
+      }
+      invalidateSessionCaches(sessionId);
+      void message.success(t("sidebarDeleteSaved"));
+    },
+    onError: (error) => {
+      void message.error(
+        error instanceof Error ? error.message : t("sidebarDeleteFailed"),
+      );
+    },
+  });
+  const deleteWorkspaceMutation = useMutation({
+    mutationFn: ({ removeDirectory, workspaceId }: DeleteWorkspacePayload) =>
+      deleteWorkspace(workspaceId, { removeDirectory }),
+    onSuccess: (_result, payload) => {
+      const deletedSessions = (
+        queryClient.getQueryData<SessionSidebarRecord[]>([
+          "sessions",
+          "sidebar",
+        ]) ?? []
+      ).filter((session) => session.workspace_id === payload.workspaceId);
+      const remainingWorkspaces = workspaceOptions.filter(
+        (workspace) => workspace.workspace_id !== payload.workspaceId,
+      );
+      resetDeleteWorkspace();
+      queryClient.setQueryData<WorkspaceRecord[]>(["workspaces"], (current) =>
+        (current ?? []).filter(
+          (workspace) => workspace.workspace_id !== payload.workspaceId,
+        ),
+      );
+      queryClient.setQueryData<SessionSidebarRecord[]>(
+        ["sessions", "sidebar"],
+        (current) =>
+          (current ?? []).filter(
+            (session) => session.workspace_id !== payload.workspaceId,
+          ),
+      );
+      deletedSessions.forEach((session) => {
+        queryClient.removeQueries({
+          queryKey: ["sessions", session.session_id],
+        });
+        queryClient.removeQueries({
+          queryKey: ["sessions", "detail", session.session_id],
+        });
+        queryClient.removeQueries({
+          queryKey: ["sessions", "topology-lock", session.session_id],
+        });
+      });
+      if (selectedWorkspaceId === payload.workspaceId) {
+        setSelectedWorkspaceId(remainingWorkspaces[0]?.workspace_id ?? null);
+        setSelectedSessionId(null);
+      }
+      void queryClient.invalidateQueries({ queryKey: ["workspaces"] });
+      void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
+      void message.success(t("sidebarDeleteWorkspaceSaved"));
+    },
+    onError: (error) => {
+      void message.error(
+        error instanceof Error
+          ? error.message
+          : t("sidebarDeleteWorkspaceFailed"),
+      );
+    },
+  });
+
+  const filteredSessions = useMemo(() => {
+    const records = sessionsQuery.data ?? [];
+    const normalizedFilter = filter.trim().toLowerCase();
+    if (!normalizedFilter) {
+      return records;
+    }
+    const workspaceLabels = new Map(
+      workspaceOptions.map((workspace) => [
+        workspace.workspace_id,
+        workspaceLabel(workspace).toLowerCase(),
+      ]),
+    );
+    return records.filter((session) => {
+      const workspaceId = session.workspace_id ?? "";
+      const workspaceSearch =
+        workspaceLabels.get(workspaceId) ?? workspaceFallbackLabel(workspaceId);
+      return (
+        sessionLabel(session).toLowerCase().includes(normalizedFilter) ||
+        workspaceSearch.includes(normalizedFilter)
+      );
+    });
+  }, [filter, sessionsQuery.data, workspaceOptions]);
+  const isFiltering = filter.trim().length > 0;
+  const isChronologicalMode = workspaceSortMode === "time";
+  const includeEmptyWorkspaces = !isFiltering && !isChronologicalMode;
+  const chronologicalSessions = useMemo(
+    () => sortSessions(filteredSessions),
+    [filteredSessions],
+  );
+  const visibleChronologicalSessions = visibleSessionsForList(
+    chronologicalSessions,
+    selectedSessionId,
+    visibleSessionLimits[chronologicalSessionGroupId],
+    isFiltering,
+  );
+  const hiddenChronologicalSessionCount =
+    chronologicalSessions.length - visibleChronologicalSessions.length;
+  const sessionGroups = useMemo(
+    () =>
+      buildSessionGroups(
+        workspaceOptions,
+        filteredSessions,
+        includeEmptyWorkspaces,
+        workspacesQuery.data !== undefined,
+        workspaceSortMode,
+        t("sidebarUnassignedWorkspace"),
+      ),
+    [
+      filteredSessions,
+      includeEmptyWorkspaces,
+      workspacesQuery.data,
+      workspaceOptions,
+      workspaceSortMode,
+      t,
+    ],
+  );
+  const totalVisibleSessions = sessionGroups.reduce(
+    (total, group) => total + group.sessions.length,
+    0,
+  );
+  const totalAvailableSessions = isChronologicalMode
+    ? chronologicalSessions.length
+    : totalVisibleSessions;
+  const showSearchRow = searchExpanded || isFiltering;
+  const sortLabel = workspaceSortLabel(workspaceSortMode, t);
+  const sortMenuItems: MenuProps["items"] = [
+    {
+      key: "project_created",
+      label: t("sidebarSortProjectCreated"),
+    },
+    {
+      key: "project_updated",
+      label: t("sidebarSortProjectUpdated"),
+    },
+    {
+      key: "time",
+      label: t("sidebarSortChronologicalSessions"),
+    },
+  ];
+
+  useEffect(() => {
+    if (selectedSessionId === null) {
+      scrolledSelectedSessionIdRef.current = null;
+      return;
+    }
+    const selectedSessionItem = selectedSessionItemRef.current;
+    if (selectedSessionItem === null) {
+      return;
+    }
+    if (typeof selectedSessionItem.scrollIntoView !== "function") {
+      return;
+    }
+    if (scrolledSelectedSessionIdRef.current === selectedSessionId) {
+      return;
+    }
+    scrolledSelectedSessionIdRef.current = selectedSessionId;
+    selectedSessionItem.scrollIntoView({ block: "nearest" });
+  }, [selectedSessionId, totalAvailableSessions]);
+
+  function renderSessionStack(session: SessionSidebarRecord) {
+    const selected = session.session_id === effectiveVisuallySelectedSessionId;
+    const rawIndicatorType = sessionRunIndicatorType(session);
+    const indicatorType =
+      selected && rawIndicatorType === "unread" ? null : rawIndicatorType;
+    const editing = renameTarget?.session_id === session.session_id;
+    const confirmingDelete = deleteTarget?.session_id === session.session_id;
+    return (
+      <div className="at-session-stack" key={session.session_id}>
+        <div
+          className={[
+            sessionItemClassName(selected, indicatorType),
+            editing ? "is-editing" : "",
+            confirmingDelete ? "is-confirming" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          data-session-id={session.session_id}
+          onKeyDown={(event) => {
+            if (event.key !== "Escape" || !confirmingDelete) {
+              return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            resetDeleteSession();
+          }}
+          ref={selected ? selectedSessionItemRef : undefined}
+        >
+          <div className="at-session-copy">
+            {editing ? (
+              <Input
+                aria-label={t("sidebarRenameInput")}
+                autoFocus
+                className="at-session-inline-rename"
+                disabled={renameSessionMutation.isPending}
+                onChange={(event) => setRenameValue(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    closeRenameSession();
+                  }
+                }}
+                onPressEnter={submitRenameSession}
+                size="small"
+                value={renameValue}
+              />
+            ) : (
+              <button
+                aria-current={selected ? "page" : undefined}
+                className="at-session-select"
+                onClick={() => selectSession(session)}
+                title={sessionLabel(session)}
+                type="button"
+              >
+                <Typography.Text
+                  className="at-session-label"
+                  ellipsis
+                  title={sessionLabel(session)}
+                >
+                  {sessionLabel(session)}
+                </Typography.Text>
+              </button>
+            )}
+            <div className="at-session-meta-slot">
+              {sessionMeta(session, t, language, indicatorType)}
+              <div className="at-session-actions">
+                {editing ? (
+                  <>
+                    <Button
+                      aria-label={t("sidebarRenameCancel")}
+                      className="at-session-action-button"
+                      disabled={renameSessionMutation.isPending}
+                      icon={<X size={13} />}
+                      onClick={closeRenameSession}
+                      size="small"
+                      type="text"
+                    />
+                    <Button
+                      aria-label={t("sidebarRenameSave")}
+                      className="at-session-action-button"
+                      disabled={
+                        !renameValue.trim() || renameSessionMutation.isPending
+                      }
+                      icon={<Check size={13} />}
+                      loading={renameSessionMutation.isPending}
+                      onClick={submitRenameSession}
+                      size="small"
+                      type="text"
+                    />
+                  </>
+                ) : confirmingDelete ? (
+                  <>
+                    <Button
+                      aria-label={t("sidebarDeleteCancel")}
+                      autoFocus
+                      className="at-session-action-button"
+                      disabled={deleteSessionMutation.isPending}
+                      icon={<X size={13} />}
+                      onClick={resetDeleteSession}
+                      size="small"
+                      type="text"
+                    />
+                    <Button
+                      aria-label={t("sidebarDeleteConfirmAction")}
+                      className="at-session-action-button at-session-confirm-button"
+                      danger
+                      disabled={deleteSessionMutation.isPending}
+                      loading={deleteSessionMutation.isPending}
+                      onClick={submitDeleteSession}
+                      size="small"
+                      type="text"
+                    >
+                      {t("sidebarDeleteConfirmAction")}
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Tooltip title={t("sidebarRenameSession")}>
+                      <Button
+                        aria-label={t("sidebarRenameSession")}
+                        className="at-session-action-button"
+                        icon={<Pencil size={13} />}
+                        onClick={(event) =>
+                          openRenameSession(session, event.currentTarget)
+                        }
+                        size="small"
+                        type="text"
+                      />
+                    </Tooltip>
+                    <Tooltip title={t("sidebarDeleteSession")}>
+                      <Button
+                        aria-label={t("sidebarDeleteSession")}
+                        className="at-session-action-button"
+                        danger
+                        icon={<Trash2 size={13} />}
+                        onClick={(event) =>
+                          openDeleteSession(session, event.currentTarget)
+                        }
+                        size="small"
+                        type="text"
+                      />
+                    </Tooltip>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="at-sidebar-inner">
+      <div className="at-sidebar-primary-actions">
+        <Button
+          block
+          className="at-sidebar-new-session"
+          disabled={
+            workspaceOptions.length === 0 || !effectiveWorkspaceId.trim()
+          }
+          icon={<Plus size={15} />}
+          loading={createSessionMutation.isPending}
+          onClick={() => {
+            if (onOpenNewSession !== undefined) {
+              onOpenNewSession();
+              return;
+            }
+            createSessionMutation.mutate(effectiveWorkspaceId);
+          }}
+          type="primary"
+        >
+          {t("sidebarNewSession")}
+        </Button>
+        {onOpenSessionSearch !== undefined ? (
+          <Tooltip title={`${t("sidebarSearchSessions")} (Ctrl+K)`}>
+            <Button
+              aria-label={t("sidebarSearchSessions")}
+              className="at-sidebar-open-search"
+              icon={<Search size={16} />}
+              onClick={onOpenSessionSearch}
+              type="default"
+            />
+          </Tooltip>
+        ) : null}
+      </div>
+      {navigationItems.length > 0 ? (
+        <nav
+          aria-label={t("sidebarPrimaryNavigation")}
+          className="at-sidebar-nav"
+        >
+          {navigationItems.map((item) => (
+            <button
+              aria-current={item.active ? "page" : undefined}
+              aria-label={item.label}
+              className={
+                item.active
+                  ? "at-sidebar-nav-item is-active"
+                  : "at-sidebar-nav-item"
+              }
+              key={item.key}
+              onClick={item.onSelect}
+              type="button"
+            >
+              <span aria-hidden="true" className="at-sidebar-nav-icon">
+                {item.icon}
+              </span>
+              <span className="at-sidebar-nav-label">{item.label}</span>
+              {item.shortcut !== undefined ? (
+                <span aria-hidden="true" className="at-sidebar-nav-shortcut">
+                  {item.shortcut}
+                </span>
+              ) : null}
+            </button>
+          ))}
+        </nav>
+      ) : null}
+      <div className="at-sidebar-section-header">
+        <span>{t("sidebarWorkspaces")}</span>
+        <div className="at-sidebar-section-actions">
+          <Tooltip title={t("sidebarNewProject")}>
+            <Button
+              aria-label={t("sidebarNewProject")}
+              icon={<Plus size={14} />}
+              loading={pickWorkspaceMutation.isPending}
+              onClick={() => pickWorkspaceMutation.mutate()}
+              size="small"
+              type="text"
+            />
+          </Tooltip>
+          <Dropdown
+            menu={{
+              items: sortMenuItems,
+              onClick: ({ key }) => {
+                if (
+                  key === "project_created" ||
+                  key === "project_updated" ||
+                  key === "time"
+                ) {
+                  setWorkspaceSortMode(key);
+                }
+              },
+              selectedKeys: [workspaceSortMode],
+            }}
+            placement="bottomRight"
+            trigger={["click"]}
+          >
+            <Button
+              aria-haspopup="menu"
+              aria-label={sortLabel}
+              icon={<ArrowDownUp size={14} />}
+              size="small"
+              title={sortLabel}
+              type="text"
+            />
+          </Dropdown>
+        </div>
+      </div>
+      {showSearchRow ? (
+        <div className="at-sidebar-search-row">
+          <Input.Search
+            allowClear
+            aria-label={t("sidebarSearchSessions")}
+            onChange={(event) => setFilter(event.target.value)}
+            placeholder={t("sidebarSearchSessions")}
+            ref={searchInputRef}
+            size="small"
+            value={filter}
+          />
+        </div>
+      ) : null}
+      {sessionsQuery.isLoading ? (
+        <Skeleton active paragraph={{ rows: 8 }} />
+      ) : null}
+      {sidebarQueryError !== null ? (
+        <Empty
+          className="at-sidebar-query-error"
+          description={sidebarQueryError}
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+        >
+          <Button
+            icon={<RefreshCw aria-hidden="true" size={13} />}
+            loading={sessionsQuery.isFetching || workspacesQuery.isFetching}
+            onClick={retrySidebarQueries}
+            size="small"
+          >
+            {t("sidebarRetryLoad")}
+          </Button>
+        </Empty>
+      ) : null}
+      {!sessionsQuery.isLoading &&
+      !sessionsQuery.isError &&
+      totalAvailableSessions === 0 &&
+      sessionGroups.length === 0 ? (
+        <Empty
+          description={t("sidebarNoSessions")}
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+        />
+      ) : null}
+      <div className="at-session-list">
+        {isChronologicalMode && chronologicalSessions.length > 0 ? (
+          <section
+            aria-label={t("sidebarSortChronologicalSessions")}
+            className="at-workspace-group at-session-flat-group"
+          >
+            <div className="at-workspace-group-header at-session-flat-header">
+              <span className="at-workspace-group-title">
+                {t("workspaceSessions")}
+              </span>
+              <span className="at-workspace-group-path">
+                {visibleChronologicalSessions.length}/
+                {chronologicalSessions.length}
+              </span>
+            </div>
+            <div className="at-workspace-group-sessions">
+              {visibleChronologicalSessions.map(renderSessionStack)}
+              {hiddenChronologicalSessionCount > 0 ? (
+                <button
+                  aria-label={t("sidebarShowMoreSessions")}
+                  className="at-workspace-group-more"
+                  onClick={() => showMoreSessions(chronologicalSessionGroupId)}
+                  type="button"
+                >
+                  <ChevronDown aria-hidden="true" size={14} />
+                  <span>{t("sidebarShowMore")}</span>
+                  <span className="at-workspace-group-more-count">
+                    {visibleChronologicalSessions.length}/
+                    {chronologicalSessions.length}
+                  </span>
+                </button>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
+        {!isChronologicalMode
+          ? sessionGroups.map((group) => {
+              const workspaceId =
+                group.identity.kind === "workspace"
+                  ? group.identity.workspaceId
+                  : null;
+              const workspaceRecord =
+                workspaceId === null
+                  ? undefined
+                  : workspaceById.get(workspaceId);
+              const groupExpanded =
+                isFiltering || workspaceExpanded[group.stateKey] !== false;
+              const visibleSessions = visibleSessionsForGroup(
+                group,
+                selectedSessionId,
+                visibleSessionLimits[group.stateKey],
+                isFiltering,
+              );
+              const hiddenSessionCount =
+                group.sessions.length - visibleSessions.length;
+              return (
+                <section className="at-workspace-group" key={group.stateKey}>
+                  <div
+                    aria-expanded={groupExpanded}
+                    aria-description={group.pathHint || undefined}
+                    aria-label={t(
+                      groupExpanded ? "sidebarCollapse" : "sidebarExpand",
+                      { label: group.label },
+                    )}
+                    className="at-workspace-group-header"
+                    data-workspace-id={workspaceId ?? undefined}
+                    onClick={(event) => {
+                      if (
+                        (event.target as HTMLElement).closest(
+                          ".at-workspace-group-actions",
+                        )
+                      ) {
+                        return;
+                      }
+                      toggleWorkspaceGroup(group.stateKey);
+                    }}
+                    onKeyDown={(event) => {
+                      if (
+                        event.key === "Escape" &&
+                        deleteWorkspaceTarget?.workspace_id ===
+                          workspaceId
+                      ) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        resetDeleteWorkspace();
+                        return;
+                      }
+                      if (
+                        (event.target as HTMLElement).closest(
+                          ".at-workspace-group-actions",
+                        )
+                      ) {
+                        return;
+                      }
+                      if (event.key !== "Enter" && event.key !== " ") {
+                        return;
+                      }
+                      event.preventDefault();
+                      toggleWorkspaceGroup(group.stateKey);
+                    }}
+                    role="button"
+                    tabIndex={0}
+                  >
+                    <span
+                      className="at-workspace-group-toggle"
+                      aria-hidden="true"
+                    >
+                      <FolderClosed aria-hidden="true" size={15} />
+                      {groupExpanded ? (
+                        <ChevronDown aria-hidden="true" size={13} />
+                      ) : (
+                        <ChevronRight aria-hidden="true" size={13} />
+                      )}
+                    </span>
+                    <Tooltip title={group.pathHint || group.label}>
+                      <span className="at-workspace-group-title">
+                        {group.label}
+                      </span>
+                    </Tooltip>
+                    <div className="at-workspace-group-actions">
+                      {deleteWorkspaceTarget?.workspace_id ===
+                      workspaceId ? (
+                        <>
+                          <Tooltip
+                            title={t(
+                              "sidebarDeleteWorkspaceRemoveDirectoryHelp",
+                            )}
+                          >
+                            <Checkbox
+                              aria-label={t(
+                                "sidebarDeleteWorkspaceRemoveDirectory",
+                              )}
+                              checked={deleteWorkspaceRemoveDirectory}
+                              disabled={deleteWorkspaceMutation.isPending}
+                              onChange={(event) =>
+                                setDeleteWorkspaceRemoveDirectory(
+                                  event.target.checked,
+                                )
+                              }
+                            />
+                          </Tooltip>
+                          <Button
+                            aria-label={t("sidebarDeleteCancel")}
+                            autoFocus
+                            disabled={deleteWorkspaceMutation.isPending}
+                            icon={<X size={14} />}
+                            onClick={resetDeleteWorkspace}
+                            size="small"
+                            type="text"
+                          />
+                          <Button
+                            aria-label={t("sidebarDeleteConfirmAction")}
+                            className="at-workspace-inline-confirm"
+                            danger
+                            disabled={deleteWorkspaceMutation.isPending}
+                            loading={deleteWorkspaceMutation.isPending}
+                            onClick={submitDeleteWorkspace}
+                            size="small"
+                            type="text"
+                          >
+                            {t("sidebarDeleteConfirmAction")}
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          {workspaceId !== null &&
+                          onOpenWorkspaceView !== undefined ? (
+                            <Tooltip
+                              title={t("sidebarOpenWorkspaceViewFor", {
+                                label: group.label,
+                              })}
+                            >
+                              <Button
+                                aria-label={t("sidebarOpenWorkspaceViewFor", {
+                                  label: group.label,
+                                })}
+                                aria-pressed={
+                                  workspaceViewActive &&
+                                  workspaceId === selectedWorkspaceId
+                                }
+                                className={
+                                  workspaceViewActive &&
+                                  workspaceId === selectedWorkspaceId
+                                    ? "is-active"
+                                    : undefined
+                                }
+                                icon={<FolderSearch size={14} />}
+                                onClick={() => {
+                                  setSelectedWorkspaceId(workspaceId);
+                                  onOpenWorkspaceView();
+                                }}
+                                size="small"
+                                type="text"
+                              />
+                            </Tooltip>
+                          ) : null}
+                          {workspaceId !== null ? (
+                            <Tooltip
+                              title={t("sidebarNewSessionInWorkspace", {
+                                label: group.label,
+                              })}
+                            >
+                              <Button
+                                aria-label={t("sidebarNewSessionInWorkspace", {
+                                  label: group.label,
+                                })}
+                                icon={<Plus size={14} />}
+                                loading={createSessionMutation.isPending}
+                                onClick={() =>
+                                  createSessionMutation.mutate(workspaceId)
+                                }
+                                size="small"
+                                type="text"
+                              />
+                            </Tooltip>
+                          ) : null}
+                          {workspaceRecord !== undefined ? (
+                            <Tooltip
+                              title={t("sidebarDeleteWorkspaceFor", {
+                                label: group.label,
+                              })}
+                            >
+                              <Button
+                                aria-label={t("sidebarDeleteWorkspaceFor", {
+                                  label: group.label,
+                                })}
+                                danger
+                                icon={<Trash2 size={14} />}
+                                onClick={(event) =>
+                                  openDeleteWorkspace(
+                                    workspaceRecord,
+                                    event.currentTarget,
+                                  )
+                                }
+                                size="small"
+                                type="text"
+                              />
+                            </Tooltip>
+                          ) : null}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  {deleteWorkspaceTarget?.workspace_id === workspaceId ? (
+                    <div className="at-workspace-delete-message" role="note">
+                      {t("sidebarDeleteWorkspaceMessage", {
+                        count: group.sessions.length,
+                        label: group.label,
+                      })}
+                    </div>
+                  ) : null}
+                  <DisclosureMotion
+                    className="at-workspace-group-disclosure"
+                    open={groupExpanded}
+                  >
+                    {group.sessions.length === 0 ? (
+                      <div className="at-workspace-group-empty">
+                        {t("sidebarNoSessions")}
+                      </div>
+                    ) : null}
+                    {group.sessions.length > 0 ? (
+                      <div className="at-workspace-group-sessions">
+                        {visibleSessions.map(renderSessionStack)}
+                        {hiddenSessionCount > 0 ? (
+                          <button
+                            aria-label={t("sidebarShowMoreInWorkspace", {
+                              label: group.label,
+                            })}
+                            className="at-workspace-group-more"
+                            onClick={() => showMoreSessions(group.stateKey)}
+                            type="button"
+                          >
+                            <ChevronDown aria-hidden="true" size={14} />
+                            <span>{t("sidebarShowMore")}</span>
+                            <span className="at-workspace-group-more-count">
+                              {visibleSessions.length}/{group.sessions.length}
+                            </span>
+                          </button>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </DisclosureMotion>
+                </section>
+              );
+            })
+          : null}
+      </div>
+      {backendStatus !== undefined ? (
+        <div className="at-sidebar-footer">
+          <div
+            aria-busy={backendStatus.tone === "checking" ? "true" : "false"}
+            className={`at-sidebar-backend-status is-${backendStatus.tone}`}
+            role="status"
+            title={backendStatus.label}
+          >
+            <span aria-hidden="true" className="at-sidebar-backend-dot" />
+            <span className="at-sidebar-backend-label">
+              {backendStatus.label}
+            </span>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+
+  function selectSession(session: SessionSidebarRecord) {
+    if (session.workspace_id) {
+      setSelectedWorkspaceId(session.workspace_id);
+    }
+    setSelectedSessionId(session.session_id);
+    onSessionSelected?.();
+  }
+
+  function selectSubagent(subagent: ActiveSubagentSession) {
+    const parent = sessionsQuery.data?.find(
+      (session) => session.session_id === subagent.sessionId,
+    );
+    if (parent?.workspace_id) {
+      setSelectedWorkspaceId(parent.workspace_id);
+    }
+    setSelectedSessionId(subagent.sessionId);
+    onSubagentSelected?.(subagent);
+  }
+
+  function openRenameSession(
+    session: SessionSidebarRecord,
+    _trigger: HTMLElement,
+  ) {
+    setDeleteTarget(null);
+    setDeleteWorkspaceTarget(null);
+    setDeleteWorkspaceRemoveDirectory(false);
+    renameFocusSessionIdRef.current = session.session_id;
+    setRenameTarget(session);
+    setRenameValue(sessionLabel(session));
+  }
+
+  function closeRenameSession() {
+    if (renameSessionMutation.isPending) {
+      return;
+    }
+    resetRenameSession();
+  }
+
+  function resetRenameSession() {
+    const sessionId = renameFocusSessionIdRef.current;
+    setRenameTarget(null);
+    setRenameValue("");
+    restoreInlineActionFocus("session", sessionId, t("sidebarRenameSession"));
+  }
+
+  function submitRenameSession() {
+    const title = renameValue.trim();
+    if (renameTarget === null || !title || renameSessionMutation.isPending) {
+      return;
+    }
+    if (title === sessionLabel(renameTarget)) {
+      closeRenameSession();
+      return;
+    }
+    renameSessionMutation.mutate({
+      sessionId: renameTarget.session_id,
+      title,
+    });
+  }
+
+  function resetDeleteSession() {
+    const sessionId = deleteFocusSessionIdRef.current;
+    setDeleteTarget(null);
+    restoreInlineActionFocus("session", sessionId, t("sidebarDeleteSession"));
+  }
+
+  function openDeleteSession(
+    session: SessionSidebarRecord,
+    _trigger: HTMLElement,
+  ) {
+    setRenameTarget(null);
+    setRenameValue("");
+    setDeleteWorkspaceTarget(null);
+    setDeleteWorkspaceRemoveDirectory(false);
+    deleteFocusSessionIdRef.current = session.session_id;
+    setDeleteTarget(session);
+  }
+
+  function openDeleteWorkspace(
+    workspace: WorkspaceRecord,
+    _trigger: HTMLElement,
+  ) {
+    setRenameTarget(null);
+    setRenameValue("");
+    setDeleteTarget(null);
+    deleteFocusWorkspaceIdRef.current = workspace.workspace_id;
+    setDeleteWorkspaceTarget(workspace);
+    setDeleteWorkspaceRemoveDirectory(false);
+  }
+
+  function submitDeleteSession() {
+    if (deleteTarget === null || deleteSessionMutation.isPending) {
+      return;
+    }
+    deleteSessionMutation.mutate(deleteTarget.session_id);
+  }
+
+  function resetDeleteWorkspace() {
+    const workspaceId = deleteFocusWorkspaceIdRef.current;
+    const label =
+      deleteWorkspaceTarget === null
+        ? t("sidebarDeleteWorkspaceTitle")
+        : t("sidebarDeleteWorkspaceFor", {
+            label: workspaceLabel(deleteWorkspaceTarget),
+          });
+    setDeleteWorkspaceTarget(null);
+    setDeleteWorkspaceRemoveDirectory(false);
+    restoreInlineActionFocus("workspace", workspaceId, label);
+  }
+
+  function restoreInlineActionFocus(
+    ownerKind: "session" | "workspace",
+    ownerId: string | null,
+    ariaLabel: string,
+  ) {
+    if (ownerId === null) {
+      return;
+    }
+    setInlineActionFocusTarget({ ariaLabel, ownerId, ownerKind });
+  }
+
+  function submitDeleteWorkspace() {
+    if (deleteWorkspaceTarget === null || deleteWorkspaceMutation.isPending) {
+      return;
+    }
+    deleteWorkspaceMutation.mutate({
+      removeDirectory: deleteWorkspaceRemoveDirectory,
+      workspaceId: deleteWorkspaceTarget.workspace_id,
+    });
+  }
+
+  function invalidateSessionCaches(sessionId: string) {
+    void queryClient.invalidateQueries({ queryKey: ["sessions", "sidebar"] });
+    void queryClient.invalidateQueries({ queryKey: ["sessions", sessionId] });
+    void queryClient.invalidateQueries({
+      queryKey: ["sessions", "detail", sessionId],
+    });
+  }
+
+  function showMoreSessions(groupId: string) {
+    setVisibleSessionLimits((current) => ({
+      ...current,
+      [groupId]:
+        (current[groupId] ?? initialVisibleSessionsPerGroup) +
+        visibleSessionIncrement,
+    }));
+  }
+
+  function toggleWorkspaceGroup(groupId: string) {
+    setWorkspaceExpanded((current) => ({
+      ...current,
+      [groupId]: current[groupId] === false,
+    }));
+  }
+
+  function toggleSessionSubagents(sessionId: string) {
+    setExpandedSubagentSessions((current) => ({
+      ...current,
+      [sessionId]: current[sessionId] !== true,
+    }));
+  }
+}
+
+export const SessionsSidebar = memo(SessionsSidebarView);
+SessionsSidebar.displayName = "SessionsSidebar";
+
+interface SessionSubagentListProps {
+  activeSubagent: ActiveSubagentSession | null;
+  onSubagentSelected: (subagent: ActiveSubagentSession) => void;
+  parentSession: SessionSidebarRecord;
+}
+
+function SessionSubagentList({
+  activeSubagent,
+  onSubagentSelected,
+  parentSession,
+}: SessionSubagentListProps) {
+  const queryClient = useQueryClient();
+  const t = useTranslations();
+  const language = useUiStore((state) => state.language);
+  const subagentQueryKey = useMemo(
+    () => ["sessions", parentSession.session_id, "subagents"] as const,
+    [parentSession.session_id],
+  );
+  const subagentsQuery = useQuery({
+    queryKey: subagentQueryKey,
+    queryFn: () =>
+      listSessionSubagentsWithLimit(
+        parentSession.session_id,
+        queryClient.getQueryState(subagentQueryKey)?.isInvalidated === true,
+      ),
+    staleTime: 5000,
+  });
+  const subagents = useMemo(
+    () =>
+      (subagentsQuery.data ?? [])
+        .map((record) =>
+          normalizeSessionSubagent(record, parentSession.session_id),
+        )
+        .filter((record): record is ActiveSubagentSession => record !== null)
+        .sort((left, right) =>
+          String(right.updatedAt || "").localeCompare(
+            String(left.updatedAt || ""),
+          ),
+        ),
+    [parentSession.session_id, subagentsQuery.data],
+  );
+
+  if (subagentsQuery.isLoading) {
+    return (
+      <div className="at-session-subagent-list" role="status">
+        <div className="at-session-subagent-empty">
+          {t("sidebarSubagentSessionsLoading")}
+        </div>
+      </div>
+    );
+  }
+  if (subagentsQuery.isError) {
+    return (
+      <div className="at-session-subagent-list" role="status">
+        <div className="at-session-subagent-empty is-error">
+          {t("sidebarSubagentSessionsLoadError")}
+        </div>
+      </div>
+    );
+  }
+  if (subagents.length === 0) {
+    return (
+      <div className="at-session-subagent-list">
+        <div className="at-session-subagent-empty">
+          {t("sidebarSubagentSessionsEmpty")}
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div
+      aria-label={t("sidebarSubagentSessionsList", {
+        label: sessionLabel(parentSession),
+      })}
+      className="at-session-subagent-list"
+      role="group"
+    >
+      {subagents.map((subagent) => {
+        const label = subagentSessionLabel(subagent);
+        const active =
+          activeSubagent?.sessionId === subagent.sessionId &&
+          activeSubagent.instanceId === subagent.instanceId;
+        return (
+          <button
+            aria-current={active ? "page" : undefined}
+            aria-label={t("sidebarOpenSubagentSession", { label })}
+            className={
+              active
+                ? "at-session-subagent-item is-active"
+                : "at-session-subagent-item"
+            }
+            key={subagent.instanceId}
+            onClick={() => onSubagentSelected(subagent)}
+            title={label}
+            type="button"
+          >
+            <span className="at-session-subagent-label">{label}</span>
+            <span className="at-session-subagent-meta">
+              <span className={subagentStatusClassName(subagent)}>
+                {subagentStatusLabel(subagent)}
+              </span>
+              {subagent.updatedAt ? (
+                <span title={subagent.updatedAt}>
+                  {formatRelativeTime(subagent.updatedAt, language)}
+                </span>
+              ) : null}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+interface SessionGroup {
+  createdAt: number;
+  identity: SessionGroupIdentity;
+  label: string;
+  pathHint: string;
+  sessions: SessionSidebarRecord[];
+  stateKey: string;
+  updatedAt: number;
+}
+
+type SessionGroupIdentity =
+  | { kind: "unassigned" }
+  | { kind: "workspace"; workspaceId: string };
+
+function sessionLabel(session: SessionSidebarRecord): string {
+  return sessionDisplayLabel(session, session.session_id);
+}
+
+function listSessionSubagentsWithLimit(
+  sessionId: string,
+  forceRefresh: boolean,
+): Promise<SessionSubagentRecord[]> {
+  return new Promise<SessionSubagentRecord[]>((resolve, reject) => {
+    queuedSessionSubagentLoads.push({
+      run: () => {
+        activeSessionSubagentLoads += 1;
+        void Promise.resolve()
+          .then(() => listSessionSubagents(sessionId, forceRefresh))
+          .then(resolve, reject)
+          .finally(() => {
+            activeSessionSubagentLoads -= 1;
+            drainSessionSubagentLoadQueue();
+          });
+      },
+    });
+    drainSessionSubagentLoadQueue();
+  });
+}
+
+function drainSessionSubagentLoadQueue(): void {
+  while (
+    activeSessionSubagentLoads < maxConcurrentSessionSubagentLoads &&
+    queuedSessionSubagentLoads.length > 0
+  ) {
+    queuedSessionSubagentLoads.shift()?.run();
+  }
+}
+
+export function normalizeSessionSubagent(
+  record: SessionSubagentRecord,
+  fallbackSessionId: string,
+): ActiveSubagentSession | null {
+  const sessionId = firstTrimmed(record.session_id, fallbackSessionId);
+  const instanceId = firstTrimmed(
+    record.subagent_instance_id,
+    record.instance_id,
+  );
+  const roleId = firstTrimmed(record.subagent_role_id, record.role_id);
+  const runId = firstTrimmed(record.subagent_run_id, record.run_id);
+  const subagentKind = normalizeSubagentKind(record);
+  if (!sessionId || !instanceId || !roleId || !runId) {
+    return null;
+  }
+  const status = normalizeSubagentStatus(record.status);
+  return {
+    createdAt: firstTrimmed(record.created_at),
+    instanceId,
+    interactive:
+      record.interactive === true || subagentKind === "orchestration",
+    lastEventId: normalizedPositiveInteger(record.last_event_id),
+    promptText: "",
+    roleId,
+    runId,
+    runPhase: firstTrimmed(record.run_phase),
+    runStatus: normalizeSubagentStatus(record.run_status, status),
+    sessionId,
+    status,
+    subagentKind,
+    taskId: firstTrimmed(record.subagent_task_id, record.task_id),
+    title: firstTrimmed(record.title),
+    updatedAt: firstTrimmed(record.updated_at, record.created_at),
+  };
+}
+
+function normalizedPositiveInteger(value: number | undefined): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return null;
+  }
+  return Math.floor(value);
+}
+
+function normalizeSubagentKind(record: SessionSubagentRecord): string {
+  const explicit = firstTrimmed(record.subagent_kind).toLowerCase();
+  if (explicit === "orchestration" || explicit === "live") {
+    return "orchestration";
+  }
+  if (explicit === "normal" || explicit === "session") {
+    return "normal";
+  }
+  return record.interactive === true ? "orchestration" : "normal";
+}
+
+function normalizeSubagentStatus(
+  status: string | undefined,
+  fallback = "idle",
+): string {
+  const safeStatus = firstTrimmed(status, fallback).toLowerCase();
+  if (safeStatus === "started" || safeStatus === "pending") {
+    return "running";
+  }
+  return safeStatus || "idle";
+}
+
+function subagentSessionLabel(subagent: ActiveSubagentSession): string {
+  return (
+    subagent.title ||
+    humanizeRoleId(subagent.roleId) ||
+    shortIdentifier(subagent.instanceId)
+  );
+}
+
+function humanizeRoleId(roleId: string): string {
+  const safeRoleId = roleId.trim();
+  if (!safeRoleId) {
+    return "";
+  }
+  return safeRoleId
+    .replaceAll("_", " ")
+    .replaceAll("-", " ")
+    .replace(/\b\w/g, (match) => match.toUpperCase());
+}
+
+function subagentStatusLabel(subagent: ActiveSubagentSession): string {
+  return subagent.runStatus || subagent.status || "idle";
+}
+
+function subagentStatusClassName(subagent: ActiveSubagentSession): string {
+  const status = subagentStatusLabel(subagent).toLowerCase();
+  if (activeRunIndicatorStatuses.has(status)) {
+    return "at-session-subagent-status is-running";
+  }
+  if (status === "failed" || status === "error") {
+    return "at-session-subagent-status is-failed";
+  }
+  if (status === "stopped" || status === "cancelled" || status === "canceled") {
+    return "at-session-subagent-status is-stopped";
+  }
+  return "at-session-subagent-status";
+}
+
+function firstTrimmed(...values: Array<string | undefined>): string {
+  for (const value of values) {
+    const trimmed = value?.trim() ?? "";
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+  return "";
+}
+
+function shortIdentifier(value: string): string {
+  const safeValue = value.trim();
+  if (!safeValue) {
+    return "unknown";
+  }
+  return safeValue.length > 8 ? safeValue.slice(0, 8) : safeValue;
+}
+
+function workspaceLabel(workspace: WorkspaceRecord): string {
+  return workspaceDisplayLabel(workspace);
+}
+
+function workspaceSortLabel(sortMode: WorkspaceSortMode, t: Translate): string {
+  if (sortMode === "project_created") {
+    return t("sidebarSortProjectCreated");
+  }
+  if (sortMode === "time") {
+    return t("sidebarSortChronologicalSessions");
+  }
+  return t("sidebarSortProjectUpdated");
+}
+
+function upsertWorkspace(
+  workspaces: WorkspaceRecord[],
+  workspace: WorkspaceRecord,
+): WorkspaceRecord[] {
+  const existingIndex = workspaces.findIndex(
+    (item) => item.workspace_id === workspace.workspace_id,
+  );
+  if (existingIndex === -1) {
+    return [workspace, ...workspaces];
+  }
+  return workspaces.map((item, index) =>
+    index === existingIndex ? workspace : item,
+  );
+}
+
+function workspaceCreatedTimestampValue(workspace: WorkspaceRecord): number {
+  return (
+    timestampValue(workspace.created_at) ||
+    workspaceUpdatedTimestampValue(workspace)
+  );
+}
+
+function workspaceUpdatedTimestampValue(workspace: WorkspaceRecord): number {
+  return (
+    timestampValue(workspace.updated_at) || timestampValue(workspace.created_at)
+  );
+}
+
+function buildSessionGroups(
+  workspaces: WorkspaceRecord[],
+  sessions: SessionSidebarRecord[],
+  includeEmptyWorkspaces: boolean,
+  workspaceInventoryLoaded: boolean,
+  sortMode: WorkspaceSortMode,
+  unassignedWorkspaceLabel: string,
+): SessionGroup[] {
+  const groups = new Map<string, SessionGroup>();
+  const workspaceById = new Map(
+    workspaces.map((workspace) => [workspace.workspace_id, workspace]),
+  );
+  if (includeEmptyWorkspaces) {
+    workspaces.forEach((workspace) => {
+      const identity: SessionGroupIdentity = {
+        kind: "workspace",
+        workspaceId: workspace.workspace_id,
+      };
+      const stateKey = sessionGroupStateKey(identity);
+      groups.set(stateKey, {
+        createdAt: workspaceCreatedTimestampValue(workspace),
+        identity,
+        label: workspaceLabel(workspace),
+        pathHint: workspace.root_path,
+        sessions: [],
+        stateKey,
+        updatedAt: workspaceUpdatedTimestampValue(workspace),
+      });
+    });
+  }
+  sessions.forEach((session) => {
+    const workspaceId = session.workspace_id?.trim() || null;
+    const identity: SessionGroupIdentity =
+      workspaceId === null
+        ? { kind: "unassigned" }
+        : { kind: "workspace", workspaceId };
+    const stateKey = sessionGroupStateKey(identity);
+    const existing = groups.get(stateKey);
+    const workspace =
+      workspaceId === null ? undefined : workspaceById.get(workspaceId);
+    const group = existing ?? {
+      createdAt:
+        workspace === undefined ? 0 : workspaceCreatedTimestampValue(workspace),
+      identity,
+      label:
+        workspaceId === null
+          ? unassignedWorkspaceLabel
+          : workspace === undefined
+          ? workspaceFallbackLabel(workspaceInventoryLoaded ? workspaceId : null)
+          : workspaceLabel(workspace),
+      pathHint: workspace?.root_path ?? "",
+      sessions: [],
+      stateKey,
+      updatedAt:
+        workspace === undefined ? 0 : workspaceUpdatedTimestampValue(workspace),
+    };
+    group.sessions.push(session);
+    group.updatedAt = Math.max(group.updatedAt, sessionTimestampValue(session));
+    groups.set(stateKey, group);
+  });
+  return Array.from(groups.values())
+    .map((group) => {
+      const sortedSessions = sortSessions(group.sessions);
+      return {
+        ...group,
+        sessions: sortedSessions,
+        updatedAt: group.updatedAt,
+      };
+    })
+    .sort(
+      (left, right) =>
+        groupSortValue(right, sortMode) - groupSortValue(left, sortMode) ||
+        left.label.localeCompare(right.label) ||
+        left.stateKey.localeCompare(right.stateKey),
+    );
+}
+
+function sessionGroupStateKey(identity: SessionGroupIdentity): string {
+  return JSON.stringify(identity);
+}
+
+function groupSortValue(
+  group: SessionGroup,
+  sortMode: WorkspaceSortMode,
+): number {
+  return sortMode === "project_created" ? group.createdAt : group.updatedAt;
+}
+
+function sortSessions(
+  sessions: SessionSidebarRecord[],
+): SessionSidebarRecord[] {
+  return [...sessions].sort(
+    (left, right) =>
+      sessionTimestampValue(right) - sessionTimestampValue(left) ||
+      sessionLabel(left).localeCompare(sessionLabel(right)) ||
+      left.session_id.localeCompare(right.session_id),
+  );
+}
+
+function visibleSessionsForGroup(
+  group: SessionGroup,
+  selectedSessionId: string | null,
+  visibleLimit: number | undefined,
+  isFiltering: boolean,
+): SessionSidebarRecord[] {
+  return visibleSessionsForList(
+    group.sessions,
+    selectedSessionId,
+    visibleLimit,
+    isFiltering,
+  );
+}
+
+function visibleSessionsForList(
+  sessions: SessionSidebarRecord[],
+  selectedSessionId: string | null,
+  visibleLimit: number | undefined,
+  isFiltering: boolean,
+): SessionSidebarRecord[] {
+  if (isFiltering) {
+    return sessions;
+  }
+  const limit = Math.max(
+    initialVisibleSessionsPerGroup,
+    visibleLimit ?? initialVisibleSessionsPerGroup,
+  );
+  if (sessions.length <= limit) {
+    return sessions;
+  }
+  const selectedIndex = sessions.findIndex(
+    (session) => session.session_id === selectedSessionId,
+  );
+  if (selectedIndex >= limit && limit > 1) {
+    return [...sessions.slice(0, limit - 1), sessions[selectedIndex]];
+  }
+  return sessions.slice(0, limit);
+}
+
+function sessionTimestampValue(session: SessionSidebarRecord): number {
+  return timestampValue(session.updated_at);
+}
+
+function timestampValue(value: string | undefined): number {
+  if (value === undefined || !value.trim()) {
+    return 0;
+  }
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function sessionItemClassName(
+  selected: boolean,
+  indicatorType: SessionRunIndicatorType | null,
+): string {
+  return [
+    "at-session-item",
+    selected ? "is-selected" : "",
+    indicatorType === null ? "" : "has-run-indicator",
+    indicatorType === null ? "" : `has-run-indicator-${indicatorType}`,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function sessionRunIndicatorType(
+  session: SessionSidebarRecord,
+): SessionRunIndicatorType | null {
+  const status = (session.active_run_status ?? "").trim().toLowerCase();
+  if (activeRunIndicatorStatuses.has(status)) {
+    return "running";
+  }
+  if (status === "failed") {
+    return "failed";
+  }
+  if (status === "stopped") {
+    return "stopped";
+  }
+  if (session.has_unread_terminal_run === true) {
+    return "unread";
+  }
+  return null;
+}
+
+function sessionRunIndicatorLabel(
+  indicatorType: SessionRunIndicatorType,
+  t: Translate,
+): string {
+  if (indicatorType === "running") {
+    return t("sidebarSessionRunning");
+  }
+  if (indicatorType === "failed") {
+    return t("sidebarSessionFailed");
+  }
+  if (indicatorType === "unread") {
+    return t("sidebarSessionUnread");
+  }
+  return t("sidebarSessionStopped");
+}
+
+function sessionMeta(
+  session: SessionSidebarRecord,
+  t: Translate,
+  language: Language,
+  indicatorType: SessionRunIndicatorType | null,
+) {
+  const updatedAt = formatRelativeTime(session.updated_at, language);
+  const backgroundTaskCount = positiveCount(session.background_task_count);
+  const pendingApprovalCount = positiveCount(
+    session.pending_tool_approval_count,
+  );
+  const pendingQuestionCount = positiveCount(
+    session.pending_user_question_count,
+  );
+  if (
+    indicatorType === null &&
+    !updatedAt &&
+    backgroundTaskCount === 0 &&
+    pendingApprovalCount === 0 &&
+    pendingQuestionCount === 0
+  ) {
+    return null;
+  }
+  return (
+    <span className="at-session-meta">
+      {backgroundTaskCount > 0 ? (
+        <span
+          className="at-session-background"
+          title={t("sidebarBackgroundTasks", { count: backgroundTaskCount })}
+        >
+          bg {backgroundTaskCount}
+        </span>
+      ) : null}
+      {pendingApprovalCount > 0 ? (
+        <span
+          className="at-session-background"
+          title={t("sidebarPendingApprovals", { count: pendingApprovalCount })}
+        >
+          ap {pendingApprovalCount}
+        </span>
+      ) : null}
+      {pendingQuestionCount > 0 ? (
+        <span
+          className="at-session-background"
+          title={t("sidebarPendingQuestions", { count: pendingQuestionCount })}
+        >
+          q {pendingQuestionCount}
+        </span>
+      ) : null}
+      {indicatorType !== null ? (
+        <span
+          aria-label={sessionRunIndicatorLabel(indicatorType, t)}
+          className={`at-session-run-indicator is-${indicatorType}`}
+          title={sessionRunIndicatorLabel(indicatorType, t)}
+        >
+          <span aria-hidden="true" className="at-session-run-indicator-glyph" />
+        </span>
+      ) : null}
+      {updatedAt ? (
+        <span className="at-session-time" title={session.updated_at}>
+          {updatedAt}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+function positiveCount(value: number | undefined): number {
+  if (value === undefined || !Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.max(0, Math.floor(value));
+}
+
+function formatRelativeTime(
+  value: string | undefined,
+  language: Language,
+): string {
+  if (value === undefined || !value.trim()) {
+    return "";
+  }
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return "";
+  }
+  const elapsedMs = Math.max(0, Date.now() - timestamp);
+  const minuteMs = 60 * 1000;
+  const hourMs = 60 * minuteMs;
+  const dayMs = 24 * hourMs;
+  if (elapsedMs < minuteMs) {
+    return language === "zh-CN" ? "现在" : "now";
+  }
+  if (elapsedMs < hourMs) {
+    return language === "zh-CN"
+      ? `${Math.floor(elapsedMs / minuteMs)}分`
+      : `${Math.floor(elapsedMs / minuteMs)}m`;
+  }
+  if (elapsedMs < dayMs) {
+    return language === "zh-CN"
+      ? `${Math.floor(elapsedMs / hourMs)}时`
+      : `${Math.floor(elapsedMs / hourMs)}h`;
+  }
+  if (elapsedMs < 7 * dayMs) {
+    return language === "zh-CN"
+      ? `${Math.floor(elapsedMs / dayMs)}天`
+      : `${Math.floor(elapsedMs / dayMs)}d`;
+  }
+  return new Intl.DateTimeFormat(language, {
+    day: "numeric",
+    month: "short",
+  }).format(new Date(timestamp));
+}

@@ -11,6 +11,9 @@ from relay_teams.plugins.claude_marketplace_provider import ClaudeMarketplacePro
 from relay_teams.plugins.marketplace_models import PluginMarketplaceIndex
 from relay_teams.plugins.marketplace_models import (
     PluginMarketplaceEntry,
+    PluginMarketplaceProviderCatalog,
+    PluginMarketplaceProviderDefaults,
+    PluginMarketplaceProviderDescriptor,
     PluginMarketplaceProviderKind,
     PluginMarketplaceSource,
 )
@@ -23,6 +26,36 @@ from relay_teams.plugins.marketplace_policy import (
 
 
 class PluginMarketplaceService:
+    @staticmethod
+    def provider_catalog() -> PluginMarketplaceProviderCatalog:
+        return PluginMarketplaceProviderCatalog(
+            default_provider=PluginMarketplaceProviderKind.LOCAL_JSON,
+            providers=(
+                PluginMarketplaceProviderDescriptor(
+                    provider=PluginMarketplaceProviderKind.LOCAL_JSON,
+                    display_name="Local JSON",
+                ),
+                PluginMarketplaceProviderDescriptor(
+                    provider=PluginMarketplaceProviderKind.CLAUDE,
+                    display_name="Claude",
+                    defaults=PluginMarketplaceProviderDefaults(
+                        marketplace="claude-plugins-official",
+                        marketplace_source="anthropics/claude-plugins-official",
+                    ),
+                ),
+                PluginMarketplaceProviderDescriptor(
+                    provider=PluginMarketplaceProviderKind.CLAWHUB,
+                    display_name="ClawHub",
+                    defaults=PluginMarketplaceProviderDefaults(
+                        marketplace="clawhub",
+                        marketplace_source="https://clawhub.ai",
+                        allow_missing_digest=True,
+                    ),
+                    include_details=True,
+                ),
+            ),
+        )
+
     @staticmethod
     def load_index(source: Path) -> PluginMarketplaceIndex:
         resolved_source = source.expanduser().resolve()

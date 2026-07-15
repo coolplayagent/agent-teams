@@ -278,7 +278,7 @@ async def _search_memory_async(
     role_id_is_null: bool = False,
 ) -> tuple[MemoryEntrySummary, ...]:
     try:
-        result = await memory_bank_service.search_async(
+        hits = await memory_bank_service.search_limited_async(
             MemorySearchRequest(
                 workspace_id=workspace_id,
                 text_query=objective,
@@ -294,7 +294,7 @@ async def _search_memory_async(
         )
     except (ValueError, OSError, RuntimeError, sqlite3.Error):
         return ()
-    return tuple(hit.entry for hit in result.items)
+    return tuple(hit.entry for hit in hits)
 
 
 def format_memory_section(

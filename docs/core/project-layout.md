@@ -44,7 +44,11 @@
 
 ## Frontend
 
-- Frontend assets: `frontend/dist/`
+- V2 frontend source: `frontend/app/` (React, TypeScript, Vite, Playwright, Electron)
+- V1 frontend source: `frontend/legacy/src/` (maintained legacy HTML, CSS, and JavaScript)
+- Generated web assets: `frontend/dist/` (V2 at `/`, V1 at `/v1/`; do not hand-edit)
+- Electron source: `frontend/app/src/desktop/`
+- Browser and desktop flows: `frontend/app/browser-tests/`
 
 ## Tests
 

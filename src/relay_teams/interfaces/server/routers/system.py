@@ -8,13 +8,16 @@ from typing import Annotated, NoReturn
 
 import httpx
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, ConfigDict, JsonValue
+from pydantic import BaseModel, ConfigDict, JsonValue, ValidationError
 
 from relay_teams.interfaces.server.async_call import (
     call_maybe_async_in_isolated_thread,
     call_maybe_async_in_network_probe_thread,
 )
-from relay_teams.env.clawhub_config_models import ClawHubConfig
+from relay_teams.env.clawhub_config_models import (
+    ClawHubConfigUpdate,
+    ClawHubConfigView,
+)
 from relay_teams.env.clawhub_config_service import ClawHubConfigService
 from relay_teams.net.clawhub_connectivity import (
     ClawHubConnectivityProbeRequest,
@@ -63,8 +66,12 @@ from relay_teams.agent_runtimes import (
 )
 from relay_teams.agent_runtimes.test_job_service import AgentRuntimeTestJobService
 from relay_teams.env.proxy_config_service import ProxyConfigService
-from relay_teams.env.proxy_env import ProxyEnvInput
-from relay_teams.env.web_config_models import WebConfig
+from relay_teams.env.proxy_env import (
+    ProxyEnvUpdate,
+    ProxyEnvView,
+    preserve_proxy_auth,
+)
+from relay_teams.env.web_config_models import WebConfigUpdate, WebConfigView
 from relay_teams.env.web_config_service import WebConfigService
 from relay_teams.general import GeneralConfig, GeneralConfigService, GeneralConfigUpdate
 from relay_teams.net.web_connectivity import (
@@ -180,10 +187,16 @@ from relay_teams.skills.skill_models import (
 )
 from relay_teams.skills.skill_registry import SkillRegistry
 from relay_teams.triggers import GitHubTriggerService
-from relay_teams.hooks import HookRuntimeView, HookService, HooksConfig
+from relay_teams.hooks import (
+    HookConfigReferenceError,
+    HookRuntimeView,
+    HookService,
+    HooksConfig,
+)
 from relay_teams.plugins import PluginInstallSourceKind, PluginRegistry, PluginScope
 from relay_teams.plugins.marketplace_models import (
     PluginMarketplaceIndex,
+    PluginMarketplaceProviderCatalog,
     PluginMarketplaceProviderKind,
     PluginMarketplaceSource,
 )
@@ -433,6 +446,11 @@ async def load_plugin_marketplace(
         )
     except Exception as exc:
         _raise_system_http_error(exc, value_error_status=400, os_error_status=400)
+
+
+@router.get("/configs/plugins/marketplace/providers")
+async def get_plugin_marketplace_providers() -> PluginMarketplaceProviderCatalog:
+    return PluginMarketplaceService.provider_catalog()
 
 
 @router.post("/configs/plugins/marketplace:search")
@@ -831,15 +849,53 @@ async def save_ui_language_settings(
 @router.get("/configs/model")
 async def get_model_config(
     service: ModelConfigService = Depends(get_model_config_service),
-) -> dict[str, JsonValue]:
-    return await asyncio.to_thread(service.get_model_config)
+) -> dict[str, dict[str, JsonValue]]:
+    profiles = await asyncio.to_thread(service.get_model_profiles)
+    return _public_model_profiles(profiles)
 
 
 @router.get("/configs/model/profiles")
 async def get_model_profiles(
     service: ModelConfigService = Depends(get_model_config_service),
 ) -> dict[str, dict[str, JsonValue]]:
-    return await asyncio.to_thread(service.get_model_profiles)
+    profiles = await asyncio.to_thread(service.get_model_profiles)
+    return _public_model_profiles(profiles)
+
+
+def _public_model_profiles(
+    profiles: dict[str, dict[str, JsonValue]],
+) -> dict[str, dict[str, JsonValue]]:
+    public_profiles: dict[str, dict[str, JsonValue]] = {}
+    for name, profile in profiles.items():
+        public_profile = dict(profile)
+        api_key = public_profile.get("api_key")
+        public_profile["has_api_key"] = bool(
+            public_profile.get("has_api_key") is True
+            or isinstance(api_key, str)
+            and api_key.strip()
+        )
+        public_profile["api_key"] = None
+        headers = public_profile.get("headers")
+        if isinstance(headers, list):
+            public_profile["headers"] = [
+                _public_model_header(header) for header in headers
+            ]
+        public_profiles[name] = public_profile
+    return public_profiles
+
+
+def _public_model_header(header: JsonValue) -> JsonValue:
+    if not isinstance(header, dict) or header.get("secret") is not True:
+        return header
+    public_header = dict(header)
+    value = public_header.get("value")
+    public_header["configured"] = bool(
+        public_header.get("configured") is True
+        or isinstance(value, str)
+        and value.strip()
+    )
+    public_header["value"] = None
+    return public_header
 
 
 @router.get("/configs/model-fallback")
@@ -1251,17 +1307,24 @@ async def delete_environment_variable(
 @router.get("/configs/proxy")
 async def get_proxy_config(
     service: ProxyConfigService = Depends(get_proxy_config_service),
-) -> ProxyEnvInput:
-    return await asyncio.to_thread(service.get_saved_proxy_config)
+) -> ProxyEnvView:
+    config = await asyncio.to_thread(service.get_saved_proxy_config)
+    return ProxyEnvView.from_input(config)
 
 
 @router.put("/configs/proxy")
 async def save_proxy_config(
-    req: ProxyEnvInput,
+    req: ProxyEnvUpdate,
     service: ProxyConfigService = Depends(get_proxy_config_service),
 ) -> dict[str, str]:
     try:
-        await asyncio.to_thread(service.save_proxy_config, req)
+        preserved_config = None
+        if req.preserve_password:
+            preserved_config = await asyncio.to_thread(service.get_saved_proxy_config)
+        await asyncio.to_thread(
+            service.save_proxy_config,
+            req.to_input(preserved_config=preserved_config),
+        )
         return {"status": "ok"}
     except Exception as exc:
         _raise_system_http_error(
@@ -1274,17 +1337,25 @@ async def save_proxy_config(
 @router.get("/configs/web")
 async def get_web_config(
     service: WebConfigService = Depends(get_web_config_service),
-) -> WebConfig:
-    return await asyncio.to_thread(service.get_web_config)
+) -> WebConfigView:
+    config = await asyncio.to_thread(service.get_web_config)
+    return WebConfigView.from_config(config)
 
 
 @router.put("/configs/web")
 async def save_web_config(
-    req: WebConfig,
+    req: WebConfigUpdate,
     service: WebConfigService = Depends(get_web_config_service),
 ) -> dict[str, str]:
     try:
-        await asyncio.to_thread(service.save_web_config, req)
+        preserved_api_key = None
+        if req.preserve_exa_api_key:
+            existing = await asyncio.to_thread(service.get_web_config)
+            preserved_api_key = existing.exa_api_key
+        await asyncio.to_thread(
+            service.save_web_config,
+            req.to_config(preserved_api_key=preserved_api_key),
+        )
         return {"status": "ok"}
     except Exception as exc:
         _raise_system_http_error(
@@ -1509,17 +1580,25 @@ async def save_github_config(
 @router.get("/configs/clawhub")
 async def get_clawhub_config(
     service: ClawHubConfigService = Depends(get_clawhub_config_service),
-) -> ClawHubConfig:
-    return await asyncio.to_thread(service.get_clawhub_config)
+) -> ClawHubConfigView:
+    config = await asyncio.to_thread(service.get_clawhub_config)
+    return ClawHubConfigView.from_config(config)
 
 
 @router.put("/configs/clawhub")
 async def save_clawhub_config(
-    req: ClawHubConfig,
+    req: ClawHubConfigUpdate,
     service: ClawHubConfigService = Depends(get_clawhub_config_service),
 ) -> dict[str, str]:
     try:
-        await asyncio.to_thread(service.save_clawhub_config, req)
+        preserved_token = None
+        if req.preserve_token:
+            existing = await asyncio.to_thread(service.get_clawhub_config)
+            preserved_token = existing.token
+        await asyncio.to_thread(
+            service.save_clawhub_config,
+            req.to_config(preserved_token=preserved_token),
+        )
         return {"status": "ok"}
     except Exception as exc:
         _raise_system_http_error(
@@ -1873,8 +1952,20 @@ async def reload_proxy_config(
 async def probe_web_connectivity(
     req: WebConnectivityProbeRequest,
     service: WebConnectivityProbeService = Depends(get_web_connectivity_probe_service),
+    proxy_service: ProxyConfigService = Depends(get_proxy_config_service),
 ) -> WebConnectivityProbeResult:
     try:
+        if req.preserve_saved_proxy_password and req.proxy_override is not None:
+            saved_proxy = await asyncio.to_thread(proxy_service.get_saved_proxy_config)
+            req = req.model_copy(
+                update={
+                    "proxy_override": preserve_proxy_auth(
+                        req.proxy_override,
+                        existing=saved_proxy,
+                    ),
+                    "preserve_saved_proxy_password": False,
+                }
+            )
         return await service.probe(req)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -2032,6 +2123,23 @@ async def save_hooks_config(
 ) -> HooksConfig:
     try:
         return await asyncio.to_thread(service.save_user_config, req)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=exc.errors(include_context=False, include_url=False),
+        ) from exc
+    except HookConfigReferenceError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=[
+                {
+                    "type": exc.code,
+                    "loc": list(exc.loc),
+                    "msg": str(exc),
+                    "ctx": {"role_id": exc.role_id},
+                }
+            ],
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -2044,5 +2152,22 @@ async def validate_hooks_config(
     try:
         _ = await asyncio.to_thread(service.validate_config, req)
         return {"status": "ok"}
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=exc.errors(include_context=False, include_url=False),
+        ) from exc
+    except HookConfigReferenceError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=[
+                {
+                    "type": exc.code,
+                    "loc": list(exc.loc),
+                    "msg": str(exc),
+                    "ctx": {"role_id": exc.role_id},
+                }
+            ],
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

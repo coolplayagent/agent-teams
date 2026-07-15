@@ -20,6 +20,7 @@ class EnvironmentVariableRecord(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     key: str
+    masked: bool = False
     value: str
     scope: EnvironmentVariableScope
     value_kind: EnvironmentVariableValueKind = EnvironmentVariableValueKind.STRING
@@ -35,5 +36,6 @@ class EnvironmentVariableCatalog(BaseModel):
 class EnvironmentVariableSaveRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    preserve_existing: bool = False
     source_key: str | None = None
     value: str

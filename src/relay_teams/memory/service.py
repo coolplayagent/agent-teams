@@ -1004,8 +1004,22 @@ class MemoryBankService:
             self._retrieval_service is not None
             and request.status == MemoryEntryStatus.ACTIVE
         ):
-            return await self._search_fts_async(request)
-        return await self._search_fallback_async(request)
+            return await self._search_fts_async(request, stop_after_limit=False)
+        return await self._search_fallback_async(request, stop_after_limit=False)
+
+    async def search_limited_async(
+        self,
+        request: MemorySearchRequest,
+    ) -> tuple[MemorySearchHit, ...]:
+        """Return at most the requested hits without computing the full match count."""
+        if (
+            self._retrieval_service is not None
+            and request.status == MemoryEntryStatus.ACTIVE
+        ):
+            result = await self._search_fts_async(request, stop_after_limit=True)
+        else:
+            result = await self._search_fallback_async(request, stop_after_limit=True)
+        return result.items
 
     async def search_global_async(
         self, request: GlobalMemorySearchRequest
@@ -1085,7 +1099,10 @@ class MemoryBankService:
         return MemorySearchResult(items=tuple(items), total_count=total_matches)
 
     async def _search_fts_async(
-        self, request: MemorySearchRequest
+        self,
+        request: MemorySearchRequest,
+        *,
+        stop_after_limit: bool,
     ) -> MemorySearchResult:
         """Query the FTS5 retrieval index and cross-reference with the memory table."""
         assert self._retrieval_service is not None
@@ -1134,6 +1151,11 @@ class MemoryBankService:
                         ),
                     )
                 )
+                if stop_after_limit and len(items) >= request.limit:
+                    return MemorySearchResult(
+                        items=tuple(items),
+                        total_count=len(items),
+                    )
 
             offset += len(fts_hits)
             if len(fts_hits) < FTS_SEARCH_BATCH_SIZE or not new_hit_seen:
@@ -1145,7 +1167,10 @@ class MemoryBankService:
         )
 
     async def _search_fallback_async(
-        self, request: MemorySearchRequest
+        self,
+        request: MemorySearchRequest,
+        *,
+        stop_after_limit: bool,
     ) -> MemorySearchResult:
         """Fallback text search when no FTS5 retrieval service is available."""
         items: list[MemorySearchHit] = []
@@ -1196,6 +1221,11 @@ class MemoryBankService:
                             snippet=self._build_snippet(searchable_text, text_lower),
                         )
                     )
+                    if stop_after_limit and len(items) >= request.limit:
+                        return MemorySearchResult(
+                            items=tuple(items),
+                            total_count=len(items),
+                        )
                 rank += 1
 
             offset += GLOBAL_SEARCH_BATCH_SIZE

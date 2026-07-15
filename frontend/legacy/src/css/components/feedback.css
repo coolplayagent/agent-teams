@@ -1,0 +1,326 @@
+/* Unified Feedback */
+.feedback-toast-stack {
+    position: fixed;
+    right: 1rem;
+    bottom: 1rem;
+    z-index: 1250;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    width: min(360px, calc(100vw - 2rem));
+    pointer-events: none;
+}
+
+.feedback-toast {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.9rem;
+    padding: 0.85rem 0.95rem;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: var(--bg-surface);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.14);
+    pointer-events: auto;
+    transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.feedback-toast.is-leaving {
+    opacity: 0;
+    transform: translateY(6px);
+}
+
+.feedback-toast-body {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.feedback-toast-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.feedback-toast-message {
+    margin-top: 0.15rem;
+    font-size: 0.8rem;
+    line-height: 1.45;
+    color: var(--text-secondary);
+    word-break: break-word;
+}
+
+.feedback-toast-close {
+    flex: 0 0 auto;
+    min-width: 2.4rem;
+    border: 1px solid var(--border-color);
+    background: var(--bg-surface-muted);
+    color: var(--text-secondary);
+    border-radius: 8px;
+    padding: 0.2rem 0.45rem;
+    font-size: 0.7rem;
+    line-height: 1.4;
+    text-align: center;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+}
+
+.feedback-toast-close:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.feedback-dialog-root {
+    position: fixed;
+    inset: 0;
+    z-index: 1300;
+    display: none;
+}
+
+.feedback-dialog-root.active {
+    display: block;
+}
+
+.feedback-dialog-backdrop {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: rgba(18, 20, 22, 0.34);
+}
+
+.feedback-dialog {
+    width: min(760px, calc(100vw - 2rem));
+    max-height: min(88vh, 900px);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    background: var(--bg-surface);
+    box-shadow: 0 18px 46px rgba(0, 0, 0, 0.22);
+    overflow: auto;
+}
+
+.feedback-dialog-header {
+    padding: 1rem 1rem 0;
+}
+
+.feedback-dialog-header h3 {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.feedback-dialog-body {
+    padding: 0.55rem 1rem 0;
+    font-size: 0.875rem;
+    line-height: 1.55;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+}
+
+.feedback-dialog-input-wrap {
+    padding: 0.25rem 1rem 0;
+}
+
+.feedback-dialog-field-compact {
+    padding-top: 0.25rem;
+}
+
+.feedback-dialog-input {
+    width: 100%;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: var(--bg-surface-muted);
+    color: var(--text-primary);
+    padding: 0.72rem 0.8rem;
+    font: inherit;
+}
+
+.feedback-dialog-secure-row .feedback-dialog-input {
+    min-width: 0;
+}
+
+.feedback-dialog-copyable-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.55rem;
+    align-items: center;
+}
+
+.feedback-dialog-copy-btn {
+    min-width: 74px;
+    height: 100%;
+}
+
+.feedback-dialog-form {
+    display: grid;
+    gap: 0.55rem;
+    padding-bottom: 0.35rem;
+}
+
+.feedback-dialog-input-label {
+    display: inline-flex;
+    align-items: center;
+    margin-bottom: 0.35rem;
+    color: var(--text-primary);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+}
+
+.feedback-dialog-field-copy {
+    display: block;
+    margin-bottom: 0.45rem;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    line-height: 1.5;
+}
+
+.feedback-dialog-field-compact .feedback-dialog-field-copy {
+    margin-bottom: 0.3rem;
+    line-height: 1.35;
+}
+
+.feedback-dialog-textarea {
+    min-height: 132px;
+    resize: vertical;
+    line-height: 1.5;
+}
+
+.feedback-dialog-textarea-compact {
+    min-height: 74px;
+}
+
+.feedback-dialog-select {
+    appearance: none;
+    cursor: pointer;
+}
+
+.feedback-dialog-multiselect {
+    min-width: 0;
+}
+
+.feedback-dialog-multiselect-trigger {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.feedback-dialog-multiselect-menu {
+    max-height: min(220px, 32vh);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.feedback-dialog-multiselect-option {
+    min-width: 0;
+}
+
+.feedback-dialog-multiselect-option span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.feedback-dialog-checkbox-wrap {
+    gap: 0.2rem;
+}
+
+.feedback-dialog-checkbox {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.7rem;
+    padding: 0.85rem 0.9rem;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background: var(--bg-surface-muted);
+}
+
+.feedback-dialog-field-compact .feedback-dialog-checkbox {
+    align-items: center;
+    padding: 0.55rem 0.75rem;
+}
+
+.feedback-dialog-checkbox-input {
+    width: 16px;
+    height: 16px;
+    margin-top: 0.1rem;
+    accent-color: var(--primary);
+    flex: 0 0 auto;
+}
+
+.feedback-dialog-field-error {
+    display: block;
+    margin-top: 0.35rem;
+    color: var(--danger);
+    font-size: 0.76rem;
+    line-height: 1.45;
+}
+
+.feedback-dialog-submit-error {
+    margin-top: 0.8rem;
+    padding: 0 1.15rem;
+    color: var(--danger);
+    font-size: 0.8rem;
+    line-height: 1.5;
+}
+
+.feedback-dialog-checkbox-copy {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    line-height: 1.5;
+}
+
+.feedback-dialog-input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent);
+}
+
+.feedback-dialog-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.65rem;
+    padding: 1rem;
+    border-top: 1px solid var(--border-color);
+    background: var(--bg-surface);
+}
+
+.feedback-action-btn {
+    width: 88px;
+    min-width: 88px;
+    min-height: 36px;
+    padding-left: 0.85rem;
+    padding-right: 0.85rem;
+    white-space: nowrap;
+}
+
+.feedback-tone-success {
+    border-color: color-mix(in srgb, var(--success) 35%, var(--border-color));
+}
+
+.feedback-tone-warning {
+    border-color: color-mix(in srgb, var(--warning) 35%, var(--border-color));
+}
+
+.feedback-tone-danger {
+    border-color: color-mix(in srgb, var(--danger) 40%, var(--border-color));
+}
+
+@media (max-width: 480px) {
+    .feedback-dialog-actions {
+        justify-content: stretch;
+    }
+
+    .feedback-action-btn {
+        flex: 1 1 0;
+        width: auto;
+        min-width: 0;
+    }
+}

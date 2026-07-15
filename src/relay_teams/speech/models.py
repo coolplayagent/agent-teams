@@ -16,6 +16,13 @@ SUPPORTED_REALTIME_STT_MODELS = frozenset(
     }
 )
 NoiseReductionMode = Literal["near_field", "far_field", "disabled"]
+SpeechProfileEligibilityReason = Literal[
+    "diarization_not_supported",
+    "input_audio_not_supported",
+    "provider_not_supported",
+    "realtime_stt_not_declared",
+    "tts_only",
+]
 
 
 class SpeechConfig(BaseModel):
@@ -40,3 +47,19 @@ class SpeechConfig(BaseModel):
 
 class SpeechConfigUpdate(SpeechConfig):
     pass
+
+
+class SpeechProfileEligibility(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    eligible: bool
+    model: str
+    profile_name: str
+    reason: SpeechProfileEligibilityReason | None = None
+
+
+class SpeechConfigView(SpeechConfig):
+    model_config = ConfigDict(extra="forbid")
+
+    configured: bool
+    profile_eligibility: tuple[SpeechProfileEligibility, ...]

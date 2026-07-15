@@ -34,6 +34,7 @@ class WebConnectivityProbeRequest(BaseModel):
         int
     ) | None = Field(default=None, ge=1000, le=_MAX_WEB_PROBE_TIMEOUT_MS)
     proxy_override: ProxyEnvInput | None = None
+    preserve_saved_proxy_password: bool = False
 
 
 class WebConnectivityProbeDiagnostics(BaseModel):

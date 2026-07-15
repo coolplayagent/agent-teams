@@ -4,9 +4,9 @@ import asyncio
 import json
 import logging
 import time
-from typing import cast
+from typing import Annotated, cast
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from relay_teams.interfaces.server.async_call import (
     call_maybe_async_in_session_fast_read_thread,
 )
+from relay_teams.interfaces.server.ag_ui.sse import resolve_after_event_id
 from relay_teams.interfaces.server.deps import (
     get_model_config_service,
     get_session_service,
@@ -448,8 +449,14 @@ async def list_session_subagents_snapshot(
 async def stream_session_subagent_events(
     session_id: RequiredIdentifierStr,
     service: SessionService = Depends(get_session_service),
-    after_event_id: int = 0,
+    after_event_id: Annotated[int | None, Query(ge=0)] = None,
+    last_event_id: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
 ) -> StreamingResponse:
+    resolved_after_event_id = resolve_after_event_id(
+        query_after_event_id=after_event_id,
+        last_event_id=last_event_id,
+    )
+
     async def event_generator():
         event_count = 0
         started = time.perf_counter()
@@ -458,15 +465,22 @@ async def stream_session_subagent_events(
             logging.INFO,
             event="session.subagent_stream.opened",
             message="Session subagent event stream opened",
-            payload={"session_id": session_id, "after_event_id": after_event_id},
+            payload={
+                "session_id": session_id,
+                "after_event_id": resolved_after_event_id,
+            },
         )
         try:
             async for event in service.stream_normal_mode_subagent_events(
                 session_id,
-                after_event_id=after_event_id,
+                after_event_id=resolved_after_event_id,
             ):
                 event_count += 1
-                yield f"data: {event.model_dump_json()}\n\n"
+                event_json = event.model_dump_json()
+                if event.event_id is None:
+                    yield f"data: {event_json}\n\n"
+                else:
+                    yield f"id: {event.event_id}\ndata: {event_json}\n\n"
             elapsed_ms = int((time.perf_counter() - started) * 1000)
             log_event(
                 logger,
@@ -496,6 +510,41 @@ async def stream_session_subagent_events(
                 exc_info=exc,
             )
             yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@router.get("/{session_id}/activity/events")
+async def stream_session_activity_events(
+    session_id: RequiredIdentifierStr,
+    service: SessionService = Depends(get_session_service),
+    last_event_id: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
+) -> StreamingResponse:
+    replay_after_event_id = (
+        resolve_after_event_id(query_after_event_id=None, last_event_id=last_event_id)
+        if last_event_id is not None
+        else None
+    )
+
+    async def event_generator():
+        try:
+            async for event in service.stream_session_activity_events(
+                session_id,
+                after_event_id=replay_after_event_id,
+            ):
+                if event is None:
+                    yield (
+                        "event: ready\n"
+                        f"data: {json.dumps({'session_id': session_id})}\n\n"
+                    )
+                    continue
+                event_json = event.model_dump_json()
+                if event.event_id is None:
+                    yield f"data: {event_json}\n\n"
+                else:
+                    yield f"id: {event.event_id}\ndata: {event_json}\n\n"
+        except KeyError:
+            yield f"data: {json.dumps({'error': 'Session not found'})}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
@@ -535,9 +584,14 @@ async def get_session_messages(
 async def get_agent_messages(
     session_id: RequiredIdentifierStr,
     instance_id: RequiredIdentifierStr,
+    task_id: OptionalIdentifierStr = None,
     service: SessionService = Depends(get_session_service),
 ) -> list[dict[str, object]]:
-    return await service.get_agent_messages_async(session_id, instance_id)
+    return await service.get_agent_messages_async(
+        session_id,
+        instance_id,
+        task_id=task_id,
+    )
 
 
 @router.get("/{session_id}/tasks")

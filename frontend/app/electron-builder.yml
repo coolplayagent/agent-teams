@@ -1,0 +1,42 @@
+appId: io.relayteams.desktop
+productName: Agent Teams
+copyright: Copyright (c) Agent Teams contributors
+
+directories:
+  output: ../../.tmp/desktop-release
+
+asar: true
+compression: normal
+npmRebuild: false
+
+files:
+  - dist-desktop/desktop/**/*.js
+  - dist-desktop/desktop/**/*.cjs
+  - dist-desktop/desktop/**/*.json
+  - "!dist-desktop/desktop/testMain.js"
+  - package.json
+
+extraResources:
+  - from: dist-backend/relay-teams-backend
+    to: backend
+    filter:
+      - "**/*"
+
+win:
+  executableName: Agent Teams
+  signAndEditExecutable: false
+  target:
+    - target: nsis
+      arch:
+        - x64
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Agent Teams
+  artifactName: Agent-Teams-Setup-${version}-${arch}.${ext}
+
+publish: null

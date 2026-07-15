@@ -279,6 +279,8 @@ class WorkspaceRecord(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     workspace_id: RequiredIdentifierStr
+    display_name: str | None = Field(default=None, min_length=1)
+    system_workspace: bool = False
     default_mount_name: RequiredIdentifierStr
     mounts: tuple[WorkspaceMountRecord, ...]
     created_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))

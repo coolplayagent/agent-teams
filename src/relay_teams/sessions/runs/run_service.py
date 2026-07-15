@@ -26,10 +26,7 @@ from relay_teams.notifications import NotificationService, NotificationType
 from relay_teams.agents.orchestration.settings_service import (
     OrchestrationSettingsService,
 )
-from relay_teams.providers.provider_contracts import (
-    EchoProvider,
-    LLMProvider,
-)
+from relay_teams.providers.provider_contracts import LLMProvider
 from relay_teams.roles.role_models import RoleDefinition
 from relay_teams.roles.role_registry import RoleRegistry
 from relay_teams.roles.runtime_role_resolver import RuntimeRoleResolver
@@ -197,8 +194,7 @@ class SessionRunService:
         self,
         *,
         meta_agent: MetaAgent,
-        provider_factory: Callable[[RoleDefinition, str | None], LLMProvider]
-        | None = None,
+        provider_factory: Callable[[RoleDefinition, str | None], LLMProvider],
         role_registry: RoleRegistry | None = None,
         injection_manager: RunInjectionManager,
         run_event_hub: RunEventHub,
@@ -229,9 +225,7 @@ class SessionRunService:
         memory_event_handler: MemoryEventHandler | None = None,
     ) -> None:
         self._meta_agent: MetaAgent = meta_agent
-        self._provider_factory = provider_factory or (
-            lambda _role, _session_id: EchoProvider()
-        )
+        self._provider_factory = provider_factory
         self._role_registry = role_registry
         self._injection_manager: RunInjectionManager = injection_manager
         self._run_event_hub: RunEventHub = run_event_hub

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from relay_teams.roles.role_models import RoleDefinition
+from relay_teams.roles.role_models import RoleDefinition, SystemRoleIdentity
 from relay_teams.roles.role_registry import RoleRegistry
 from relay_teams.roles.runtime_role_resolver import RuntimeRoleResolver
 from relay_teams.roles.temporary_role_models import TemporaryRoleSpec
@@ -17,6 +17,7 @@ def _base_registry() -> RoleRegistry:
     registry.register(
         RoleDefinition(
             role_id="Coordinator",
+            system_role=SystemRoleIdentity.COORDINATOR,
             name="Coordinator",
             description="system",
             version="1",
@@ -27,6 +28,7 @@ def _base_registry() -> RoleRegistry:
     registry.register(
         RoleDefinition(
             role_id="MainAgent",
+            system_role=SystemRoleIdentity.MAIN_AGENT,
             name="MainAgent",
             description="system",
             version="1",
@@ -69,7 +71,7 @@ async def test_runtime_role_resolver_async_creates_role_from_template(
     )
 
     assert role.role_id == "tmp_async_researcher"
-    assert role.tools == ("read", "office_read_markdown")
+    assert role.tools == ("read",)
     assert role.model_profile == "default"
     assert await resolver.list_temporary_role_ids_async(run_id="run-1") == (
         "tmp_async_researcher",

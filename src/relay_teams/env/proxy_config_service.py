@@ -11,7 +11,9 @@ from relay_teams.env.proxy_env import (
     ProxyEnvInput,
     apply_proxy_password,
     mask_proxy_url,
+    proxy_configs_have_same_proxy_urls,
     proxy_config_contains_password,
+    proxy_input_has_distinct_url_auth,
     resolve_proxy_env_config,
     sanitize_proxy_config_for_storage,
 )
@@ -67,9 +69,35 @@ class ProxyConfigService:
     def save_proxy_config(self, payload: ProxyEnvInput) -> None:
         payload_config = payload.to_config()
         resolved_input = ProxyEnvInput.from_config(payload_config)
+        existing_storage_config = resolve_proxy_env_config(
+            load_env_file(self._config_dir / ".env")
+        )
+        existing_storage_input = ProxyEnvInput.from_config(existing_storage_config)
+        if (
+            payload.proxy_password is None
+            and proxy_config_contains_password(payload_config)
+            and proxy_input_has_distinct_url_auth(existing_storage_input)
+            and not proxy_configs_have_same_proxy_urls(
+                payload_config,
+                existing_storage_config,
+            )
+        ):
+            raise ValueError(
+                "Legacy per-proxy credentials can only be preserved while all proxy URLs remain unchanged. "
+                "Enter one new shared username/password pair or clear the saved credentials before changing a proxy URL."
+            )
+        preserves_legacy_url_auth = (
+            proxy_config_contains_password(payload_config)
+            and resolved_input.proxy_password is None
+            and proxy_configs_have_same_proxy_urls(
+                payload_config,
+                existing_storage_config,
+            )
+        )
         if (
             proxy_config_contains_password(payload_config)
             and resolved_input.proxy_password is None
+            and not preserves_legacy_url_auth
         ):
             raise ValueError(
                 "Saving multiple distinct proxy passwords is not supported. "
@@ -80,14 +108,22 @@ class ProxyConfigService:
             update={"proxy_password": None},
             deep=True,
         )
-        proxy_config = sanitize_proxy_config_for_storage(sanitized_input.to_config())
-        if proxy_config_contains_password(proxy_config):
+        proxy_config = (
+            payload_config
+            if preserves_legacy_url_auth
+            else sanitize_proxy_config_for_storage(sanitized_input.to_config())
+        )
+        if not preserves_legacy_url_auth and proxy_config_contains_password(
+            proxy_config
+        ):
             raise ValueError(
                 "Proxy passwords cannot be saved to .env. "
                 "Use the dedicated username/password fields with a shared credential set."
             )
 
-        if proxy_password is not None:
+        if preserves_legacy_url_auth:
+            pass
+        elif proxy_password is not None:
             self._secret_store.set_password(self._config_dir, proxy_password)
         else:
             self._secret_store.delete_password(self._config_dir)

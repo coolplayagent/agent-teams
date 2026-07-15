@@ -17,7 +17,7 @@ from relay_teams.agents.tasks.task_repository import TaskRepository
 from relay_teams.media import ContentPartsAdapter, content_parts_from_text
 from relay_teams.providers.token_usage_repo import TokenUsageRepository
 from relay_teams.reminders import render_system_reminder
-from relay_teams.roles.role_models import RoleDefinition
+from relay_teams.roles.role_models import RoleDefinition, SystemRoleIdentity
 from relay_teams.roles.role_registry import RoleRegistry
 from relay_teams.sessions.runs.enums import ExecutionMode
 from relay_teams.sessions.runs.enums import RunEventType
@@ -53,6 +53,7 @@ def _build_service(
     role_registry.register(
         RoleDefinition(
             role_id="Coordinator",
+            system_role=SystemRoleIdentity.COORDINATOR,
             name="Coordinator",
             description="Coordinates delegated work.",
             version="1.0.0",
@@ -63,6 +64,7 @@ def _build_service(
     role_registry.register(
         RoleDefinition(
             role_id="MainAgent",
+            system_role=SystemRoleIdentity.MAIN_AGENT,
             name="Main Agent",
             description="Handles direct runs.",
             version="1.0.0",

@@ -1,0 +1,1472 @@
+# V1 Parity Closure Matrix
+
+This matrix is the working plan for ending the frontend rewrite. It is not a
+wishlist. Each row must be checked against V1, implemented in V2, verified in
+the browser, and backed by focused tests where behavior can regress.
+
+Status values:
+
+- `Not checked`: V1 behavior has not been captured precisely enough.
+- `Gap found`: V1 behavior is known and V2 is missing or wrong.
+- `In progress`: implementation or verification is underway.
+- `Blocked`: needs backend data, product decision, or missing fixture.
+- `Verified`: V1/V2 comparison, tests, and manual browser evidence are done.
+
+No item can become `Verified` only because the screen has visible text. The
+verification must check order, duplication, missing content, disabled states,
+loading states, error states, terminal states, scroll behavior, and refresh or
+session-switch recovery where applicable.
+
+## Current Closure Snapshot
+
+Last audited: 2026-07-11.
+
+| State | Count | Rows |
+| --- | ---: | --- |
+| Verified | 44 | All detailed matrix rows |
+| In progress | 0 | None |
+| Not checked | 0 | None in the detailed matrix. Open closure-order bands are tracked as `In progress` until their row groups reach `Verified`. |
+
+The execution rule from here is deliberately narrow: finish rows to
+`Verified` in priority order, and do not mark a row done until V1 capture, V2
+browser evidence, automated coverage, and manual visual review all agree.
+
+### 2026-07-11 Operational Surface Comparison Audit
+
+- Automation, Connectors, and Observability now share a contract-valid V1/V2
+  operational fixture and desktop screenshot pairs. The Automation inventory
+  retains Schedules and GitHub, proves the V1 source exposes no separate
+  Monitor or Follow-up page, and exercises both V2 secondary destinations:
+  a recent run opens its chat session and GitHub opens the existing System >
+  GitHub Settings page rather than creating another first-level entry.
+- Discord and Xiaoluban now have real V2 account editors backed by their
+  public create, update, enable, disable, and delete endpoints. Component
+  coverage executes both complete lifecycles and failure paths. At 720x760 the
+  browser scrolls the Discord editor itself, fills display name and token,
+  clicks Save, verifies the exact submitted payload, and confirms the document
+  remains fixed-height.
+- Memory keeps Architecture and Skill Drafts as secondary pages. Browser
+  coverage distinguishes list loading, list failure, detail failure, and empty
+  selection; it also executes Generate, Save, Validate, Apply, and Reject. The
+  Reject scenario verifies a real update payload with `status: rejected` and
+  the resulting visible Rejected state.
+- Observability uses the full visible V1 KPI inventory. A staggered-query
+  regression test proves the Gateway section does not appear merely because a
+  breakdown request is still loading, while real gateway metrics still render
+  their own loading/data surface. The V1 fixture has no standalone Events
+  heading, so V2 does not invent one.
+- Evidence: `.tmp/frontend-v1-v2-operational-surfaces/`,
+  `.tmp/frontend-v1-v2-primary-surfaces/`, and
+  `.tmp/frontend-v2-ts-memory/`; focused component/API tests 76/76; paired,
+  narrow, loading, error, and action browser scenarios 13/13; `npm run lint`;
+  and `npm run build`.
+
+### 2026-07-11 Runtime And Recovery Closure Audit
+
+- The runtime batch closes thinking, tool lifecycles, scroll anchoring, AG-UI
+  event coverage, recovery, and subagent sessions against the evidence required
+  by the product checklist rather than open-ended provider-specific additions.
+  The same-fixture V1/V2 complex replay verifies one prompt, one thinking row,
+  one merged tool lifecycle, one final answer, processed collapse/expand, stable
+  geometry, and refresh replay.
+- Live thinking ignores empty deltas, resumes from its event cursor, dedupes
+  replayed content, and folds once at terminal state. Live tools remain one card
+  from pending through refresh, result, and terminal replay. English and Chinese
+  now both use action-specific labels such as Reading/Read, Running/Ran,
+  Editing/Edited, and Searching/Searched instead of generic Tool call/result.
+- Timeline tests measure both away-from-bottom anchoring and bottom following.
+  Session-switch tests restore exact normal and orchestration content without
+  duplicate, missing, or reordered thinking, tools, or text. Recovery tests
+  execute approvals, questions, action errors, resume, active refresh,
+  background task stop, and paused subagent opening above the composer.
+- The frontend AG-UI contract explicitly inventories every required event
+  family. Backend RunEvent-to-AG-UI mapping now has 43 parameterized cases,
+  including output, thinking start/finish, model lifecycle, validation,
+  approvals/questions, injection, state, todo, background, subagent,
+  notification, token usage, and every run terminal state.
+- Subagent evidence covers paused, active, stopped, resumed, and completed
+  states; incremental child output; prompt and tool rendering; resizable right
+  panel; terminal hydration; hard refresh; session switching; and strict parent
+  isolation. Managed-backend tests add real TCP interruption and exact cursor
+  recovery for normal, tool-heavy, orchestration, and subagent streams.
+- Evidence: runtime components 405/405; focused post-change components 255/255;
+  mapping 43/43; runtime UI browser 31/31; real HTTP SSE 19/19; managed backend
+  critical paths 4/4; `npm run build`; and inspected images under
+  `.tmp/frontend-v2-ts-complex-replay/`, `.tmp/frontend-v2-ts-tool-lifecycle/`,
+  `.tmp/frontend-v2-ts-recovery/`, and `.tmp/frontend-v2-ts-subagent-session/`.
+
+### 2026-07-11 Promotion And Desktop Closure Audit
+
+- The React application is promoted from the migration `/app/` mount to the
+  root route. Vite now owns `frontend/dist/`; rebuilding removes the old
+  hand-maintained V1 asset tree instead of preserving two applications.
+- The V1 return control, route-switch scenario, V1-only browser helper, and the
+  final real-backend V1 replay dependency are removed. All 39 `v2-*` browser
+  specs use neutral production names; runtime source has no user-facing
+  temporary V2 label.
+- Root-path Playwright coverage passed 28/28 across shell, naming, primary,
+  operational, replay, settings, composer, Markdown, and narrow states. The
+  inspected screenshots show one fixed application frame with no migration
+  control or document scroll.
+- Electron produces both unpacked Windows x64 and NSIS artifacts with a frozen
+  backend sidecar. Packaged smoke passed 5/5 for health-gated startup, root
+  renderer load, refresh, isolated preload, failure diagnostics, safe external
+  links, and backend shutdown on quit.
+- Frontend Vitest reached 852/853 in the full serial run; the only miss was the
+  environment-variable scenario exceeding its old explicit 20-second limit
+  late in the 64-test Settings file. The scenario passed alone, the remaining
+  previously timed-out groups passed after isolation, and the explicit limit
+  is now 60 seconds. Focused naming/shell tests passed 53/53, desktop tests
+  13/13, and backend hosting/packaging/AG-UI tests 114/114.
+- Final independent review: `DESK-01` PASS. `CLEAN-01` initially failed on the
+  remaining real-backend V1 replay helper; that dependency and helper were
+  removed before final re-review.
+
+### 2026-07-11 Primary Surface Comparison Audit
+
+- Skills, Board, Search, and Memory now share one packed V1/V2 comparison
+  fixture. The browser opens each real surface in both interfaces, exercises
+  its primary detail or secondary workflow, and captures desktop pairs. V2 is
+  additionally checked at 720x760 with explicit document, sidebar, control,
+  and internal Board-column overflow assertions.
+- Search uses the same `release` query, `Release handoff notes` visible title,
+  session ID, and terminal message marker in both interfaces. The V1 fixture
+  supplies the legacy `metadata.title` contract as well as the V2 top-level
+  title. Screenshot capture waits beyond V1's 300 ms container transition, so
+  evidence cannot record a half-painted frame.
+- Skills retains its dedicated market, installed, detail, pagination,
+  install/uninstall, ClawHub save/probe/failure, loading, error, and narrow
+  suites. Its saved-token mock now uses the public `token_configured` contract;
+  the complete browser spec passes 3/3.
+- Board retains six dedicated real-action scenarios for filter, archive, sync,
+  handoff, request changes, sources, loading, and error states. At 720px the
+  app frame does not overflow and the Board alone owns a usable horizontal
+  column scroller with a minimum 248px column width.
+- Evidence: `.tmp/frontend-v1-v2-primary-surfaces/`,
+  `.tmp/frontend-v2-ts-skills/`, `.tmp/frontend-v2-ts-board-actions/`, and
+  `.tmp/frontend-v2-ts-search/`; paired browser 2/2, Skills 3/3,
+  Board/Search 8/8, primary-page components 28/28, `npm run lint`, and
+  `npm run build`.
+- Independent reviewer `Jason`
+  (`019f4f11-958c-72d1-9e7a-469f23c383b2`) first rejected the stale ClawHub
+  mock and V1's missing visible Search title. After both contracts and their
+  assertions were corrected, final review returned PASS and approved
+  `PAGE-02`, `PAGE-03`, and `PAGE-04` as `Verified`.
+
+### 2026-07-11 Replay, Media, And Paused Subagent Recovery Audit
+
+- `MSG-01`, `MSG-05`, and `MSG-06` close from one paired replay batch rather
+  than isolated screenshots. V1 and V2 consume the same complex completed-run
+  fixture and both complete collapse, expand, and collapse round trips with
+  stable geometry and scroll position. V2 keeps one prompt, one thinking row,
+  one merged tool lifecycle, one final answer, and one final action block.
+- The Markdown/media pair starts at the same timeline position. All 18 long
+  output checkpoints are asserted exactly once and in DOM order; the long code
+  line remains inside the message column. V2 additionally strips frontmatter,
+  opens the image preview, closes it without disturbing the shell, and survives
+  a hard refresh with the same ordered content. V1's duplicate prompt and lack
+  of image preview are documented legacy defects, not V2 parity targets.
+- Paused recovery now exposes the existing right-side subagent view directly
+  above the composer. The browser fixture returns a genuinely paused child,
+  shows `Paused` with its persisted checkpoint, and proves that opening it does
+  not create a false `/subagents/events` stream. Running child streaming and
+  terminal hydration remain covered separately; `REC-02` and `SUB-01` stay open
+  for their broader real-backend/manual closure requirements.
+- Evidence: paired screenshots under
+  `.tmp/frontend-v2-ts-complex-replay/` and
+  `.tmp/frontend-v2-ts-markdown-media/`, plus
+  `.tmp/frontend-v2-ts-subagent-session/v2-subagent-paused-recovery-panel.png`;
+  4/4 paired replay/media browser scenarios, 13/13 subagent browser scenarios,
+  63/63 focused component tests, `npm run lint`, and `npm run build`.
+- Independent reviewer `Singer`
+  (`019f4d4e-07af-7563-a128-570460b87972`) returned PASS after the V1 collapse
+  round trip, complete long-output order/refresh checks, and true paused/no-fake-
+  stream fixture replaced the earlier incomplete evidence.
+
+### 2026-07-10 Composer And Run Control Closure Audit
+
+- `COMP-01` through `COMP-03` close as one runtime workflow rather than three
+  isolated control checks. The browser suite covers multiline keyboard input,
+  image attachments, leading mentions, voice availability, native Chromium
+  microphone capture, normal and orchestration topology, role/model/preset and
+  target selection, thinking, Shell, YOLO, busy locks, queued and interrupt
+  injection, Stop, and checkpoint Resume.
+- Stop, injection, and standalone Resume now run through a real Node HTTP SSE
+  server. Queue and Interrupt arrive while the same `text/event-stream`
+  response remains open; Stop closes it once and a 100 ms retry interval plus a
+  four-second observation proves native EventSource does not reconnect. Resume
+  opens from `after_event_id=7`, receives timed event 8, and settles on event 9.
+- V1/V2 visual evidence is paired from identical fixtures at 1280x900. Mention
+  screenshots use the same role inventory and `@W` query. Running screenshots
+  use one run ID, normal mode, prompt `Composer running visual parity`, and the
+  same event-2 output. Idle desktop/720px and stopped/Resume pairs complete the
+  fixed-shell and terminal-state review.
+- Evidence: 114/114 Composer and Recovery component tests; 45/45 focused
+  Composer, voice, recovery, and real-SSE browser scenarios; focused real HTTP
+  Stop/inject/Resume 3/3; `npm run lint`; `npm run build`; and inspected images
+  under `.tmp/frontend-v2-ts-composer-closure/`.
+- Independent review: reviewer `Beauvoir`
+  (`019f4d09-8fdd-72f1-aa1b-795e09a2ac38`) returned PASS after the initial
+  route-fulfilled SSE proof was replaced with a retained HTTP stream, the
+  running screenshots were regenerated from one fixture, and the reconnect
+  retry interval was reduced from 60 seconds to 100 ms.
+
+### 2026-07-10 Settings Closure Audit
+
+- The packed browser now opens the live V1 Settings shell and records all 14
+  legacy tabs, then opens V2 and maps each tab to one of 13 primary pages or
+  the System secondary launcher. The mapping is a checked source contract,
+  not a test-only label list.
+- The paired contract verifies multiple page-specific text and control tokens
+  for Appearance, General, Model, MCP, Plugins, Commands, Hooks, Agent Runtime,
+  Roles, Orchestration, Web, Proxy, Remote workspace, and Environment variables.
+  It also opens the V2 Model, Agent Runtime, Roles, Orchestration, Remote
+  workspace, and Environment variable secondary editors and verifies their
+  exact labeled controls before capturing each detail surface.
+  It also records normalized DOM snapshots in
+  `.tmp/frontend-v2-ts-settings-parity/settings-complete-v1-v2-pairing.json`.
+- V2 keeps Speech, Notifications, and ClawHub as the approved first-level split
+  pages and keeps MCP, Plugins, Commands, Hooks, Agent Runtime, GitHub, and
+  Gateway behind System. No new first-level entry was introduced by this audit.
+- Every V2 first-level page is opened at desktop and 620px widths. The browser
+  asserts the fixed drawer and active heading stay inside the viewport with no
+  document scrolling. Appearance light/dark/import/copy/reset/failure states
+  remain covered by the dedicated appearance suite.
+- Settings load errors now expose an explicit Retry action. Packed browser
+  coverage exhausts automatic retries, then proves manual recovery for System,
+  General, and a Role secondary detail without losing the fixed Settings frame.
+- System secondary navigation uses a compact `Back to System` action, and the
+  launcher no longer repeats `System` on every row. Plugin and Agent Runtime
+  install actions are truly disabled while their mutations are pending.
+
+Primary evidence: `npx playwright test browser-tests/v2-settings-parity.spec.ts
+--project=chromium` (8/8), `npx playwright test
+browser-tests/v2-settings-actions.spec.ts --project=chromium` (17/17), focused
+Settings component groups (24/24), GitHub settings (4/4), Runtime settings
+(3/3), API client (36/36), the Settings backend/SDK contract set (310/310),
+`uv run --extra dev ruff check`, `uv run --extra dev basedpyright`, `npm run
+typecheck`, `npm run build`, the paired JSON above, and inspected screenshots
+under `.tmp/frontend-v2-ts-settings-parity/`. The independent reviewer returned
+PASS after two proxy legacy-credential P1 findings were fixed and independently
+reran the 46-test proxy set.
+
+SET-06 through SET-13 are now closed as one batch. The current packed build
+passes all 17 Settings action scenarios and all 8 V1/V2 pairing and recovery
+scenarios. The live in-app browser was also used against the real backend to
+open Roles, a Role secondary detail, a new Orchestration secondary detail,
+Environment variables, ClawHub, and a saved Model secondary detail. That pass
+confirmed the original first-level item list remains intact, secondary pages
+remain secondary, the new orchestration selects a subagent, and saved model or
+ClawHub secrets are not present in password input values. Screenshots are under
+`.tmp/frontend-v2-in-app-settings/`.
+
+The public Settings credential contract now keeps model API keys, Web Exa
+keys, ClawHub tokens, proxy passwords, and sensitive environment values out of
+normal GET responses. Boolean configured/masked fields drive the UI, while
+explicit preserve flags distinguish an unchanged secret from replacement or
+clearing. Router, component, browser, TypeScript, Python type, and build checks
+cover these boundaries.
+
+### 2026-07-10 Settings Security And Detail Closure
+
+- `SET-06` through `SET-13` close as one reviewed batch rather than isolated
+  page tweaks. Model profile reads no longer expose API keys or secret header
+  values; Web, ClawHub, Proxy, and Environment use explicit configured/masked
+  public views plus preserve-or-clear write contracts in both TypeScript and
+  Python SDK clients.
+- The orchestration editor waits for role options before creating a draft,
+  freezes that draft while later queries settle, and displays friendly role
+  names without replacing user edits. Role creation enforces all required V1
+  fields and preserves the execution-surface contract.
+- GitHub secondary settings no longer let a token-save refetch overwrite an
+  in-progress Webhook edit. A delayed-refetch component test and the full
+  packed action suite both cover the race.
+- V1 and V2 evidence is now paired at both levels. The packed browser captures
+  every primary Settings page plus six V2 secondary editors; modal screenshots
+  wait for transition completion so the stored evidence contains the actual
+  SSH and environment editor instead of a transparent transition frame.
+- Evidence: `.tmp/frontend-v2-ts-settings-parity/settings-complete-v1-v2-pairing.json`,
+  `.tmp/frontend-v2-ts-settings-parity/v2-settings-*-detail-complete-pairing.png`,
+  `.tmp/frontend-v2-in-app-settings/`, 8/8 parity/recovery browser scenarios,
+  17/17 action scenarios, 24 focused Settings component scenarios, 310 backend
+  and SDK contract tests, zero Ruff/BasedPyright/TypeScript errors, and a clean
+  production build.
+- Independent review: PASS. `SET-06` through `SET-13` may remain `Verified`.
+
+| Order | Rows | Closure Work |
+| --- | --- | --- |
+| 1 | `SHELL-01`..`SHELL-03`, `SESS-03`, `MSG-01`..`MSG-07`, `STREAM-01`, `STREAM-02`, `REC-01`, `REC-02`, `SUB-01` | Stabilize the runtime-visible product: fixed shell, live stream, replay, refresh/reconnect, processed work, tools, thinking, subagents, pending actions, and session switching. |
+| 2 | `COMP-01`..`COMP-03`, `SESS-01`, `SESS-02` | Close run creation and navigation workflows: composer, modes, stop/resume/injection, projects, session list, indicators, and exact switch-back recovery. |
+| 3 | `SET-01`, `SET-02`, `SET-05`..`SET-14` | Finish Settings against V1: first-level entries, second-level pages, loading/error/disabled states, save behavior, and no flattened secondary pages. |
+| 4 | `PAGE-01`..`PAGE-07` | Finish primary product surfaces: Automation, Skills, Board, Search, Connectors, Memory, and Observability with V1 screenshots plus browser action coverage. |
+| 5 | `DESK-01`, `CLEAN-01` | Finish desktop packaging and migration cleanup: packaging evidence, naming sweep, old harness retirement, and final reviewer sign-off. |
+
+## Closure Order
+
+| Priority | Area | Why It Comes Here | Exit Condition | Status |
+| --- | --- | --- | --- | --- |
+| P0 | Runtime timeline, streaming, replay, recovery | Broken runtime semantics make every other page review unreliable. | Live stream, replay, hard refresh, interrupted recovery, and session switch recovery render the same run content with no duplicate, missing, or out-of-order rows. | In progress |
+| P0 | Shell frame and fixed workspace layout | The app must stop page-level scrolling and keep sidebar/workspace/chat regions stable before detailed polish. | Main viewport is one fixed app page; chat scroll does not drag the sidebar/session list; desktop and narrow screenshots match V1 density or better. | Verified |
+| P0 | V1 navigation inventory | Randomly adding or removing entries breaks product parity. | Sidebar and settings entries exactly match V1 unless a difference is documented and approved. | Verified |
+| P1 | Settings pages | Settings are visibly incomplete and easy to compare item by item. | Every V1 settings tab has the same reachable second-level logic, controls, loading/error/disabled states, save behavior, and tests. | Verified |
+| P1 | Composer and run controls | Run creation, stop/resume, modes, roles, model/preset controls, YOLO, Shell, thinking, and injection are core workflows. | Normal and orchestration modes behave like V1 through create, stop, resume, inject, and switch flows. | Verified |
+| P1 | Sessions, projects, and subagents | Session selection and active/background work determine most app navigation. | Project/session/subagent selection, indicators, refresh, and unavailable states match V1. | In progress |
+| P1 | Search, board, connectors, memory, observability | These are primary V1 surfaces, not optional placeholders. | Each surface has a V1 capture, V2 implementation location, browser pass, and focused tests for real actions. | Verified |
+| P2 | Visual polish and density | Once behavior is stable, each page needs V1-quality spacing, typography, and control placement. | Desktop and narrow screenshots are reviewed page by page against V1. | In progress |
+| P2 | Cleanup and naming | The final product cannot feel like a temporary V2 fork. | Temporary V2 names are removed or isolated to migration-only files. | In progress |
+
+## V1 Inventory And Verification Matrix
+
+| ID | V1 Surface Or Flow | V1 Items To Capture | V2 Implementation Area | Required Evidence | Status | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| SHELL-01 | Top bar | sidebar toggle, title/session label, language, activity/observability, download/export, settings, theme, health/version controls | `features/shell/*`, `styles/theme.css` | V1/V2 screenshots, focus/keyboard check, button count/name comparison | Verified | Verified 2026-07-10. The current session title is now the visible topbar identity instead of the workspace name, with workspace context retained in the tooltip. Run status remains visually quiet but is localized and announced through a polite atomic status region. V1/V2 desktop and 720px paired captures confirm the title and complete control inventory remain visible; packed shell navigation verifies language, observability, export, settings, theme, backend health, and V1 switch controls. Evidence: `.tmp/frontend-react-ts-route-switch/shell-pair-v1-desktop.png`, `.tmp/frontend-react-ts-route-switch/shell-pair-v2-desktop.png`, `.tmp/frontend-react-ts-route-switch/shell-pair-v1-narrow.png`, `.tmp/frontend-react-ts-route-switch/shell-pair-v2-narrow.png`, `.tmp/frontend-v2-ts-shell/v2-topbar-nav-parity.png`; focused component/browser tests, typecheck, build, manual in-app inspection, and independent reviewer PASS. |
+| SHELL-02 | Sidebar primary nav | Chat, automation, skills, boards, search, connectors, memory, observability, settings, workspace/project area | `SessionsSidebar.tsx`, `AppShell.tsx` | DOM/nav list comparison with V1, screenshot, navigation test | Verified | Verified 2026-07-10. The primary sidebar keeps the approved V1 inventory and order: Chat, Automation, Skills, Board, Search, Connectors, Memory, Observability, Settings; every entry opens its real surface, while topbar Observability and Settings remain shortcuts rather than replacements. Fresh V1/V2 accessibility snapshots and desktop/720px captures verify the complete inventory, fixed frame, and compact density. Evidence: `.tmp/frontend-v2-ts-shell/v2-sidebar-module-parity.png`, `.tmp/frontend-react-ts-route-switch/sidebar-pair-v1-desktop-menu.png`, `.tmp/frontend-react-ts-route-switch/sidebar-pair-v2-desktop-menu.png`, `.tmp/frontend-react-ts-route-switch/sidebar-pair-v1-narrow-menu.png`, `.tmp/frontend-react-ts-route-switch/sidebar-pair-v2-narrow-menu.png`; 78 focused component tests, full shell browser suite 8/8, typecheck, build, manual inspection, and independent reviewer PASS. |
+| SHELL-03 | Fixed app layout | fixed viewport, sidebar independent scroll, chat independent scroll, composer pinned | `ChatWorkspace.tsx`, shell CSS | Browser screenshot plus scroll test proving sidebar does not move with chat | Verified | Verified 2026-07-10. The page remains viewport-locked while the session list and timeline scroll independently and the composer stays pinned. Desktop subagent split now preserves a 480px main chat and at least 420px right panel; when the actual workspace container falls below 908px it switches to a contained right-side overlay instead of clipping either surface. Browser geometry asserts both panel edges stay inside the workspace at 1280px and 1024px, body scroll remains zero, parent content survives child terminal hydration, and medium-width overlay screenshots were inspected. Paired V1/V2 desktop and 720px captures plus the existing 390px sidebar overlay complete the responsive frame evidence. Evidence: `.tmp/frontend-v2-ts-subagent-session/v2-subagent-session-live.png`, `.tmp/frontend-v2-ts-subagent-session/v2-subagent-session-completed.png`, `.tmp/frontend-v2-ts-subagent-session/v2-subagent-session-medium-overlay.png`, `.tmp/frontend-v2-ts-shell/v2-shell-fixed-long-sidebar-chat.png`, `.tmp/frontend-react-ts-route-switch/shell-pair-v1-desktop.png`, `.tmp/frontend-react-ts-route-switch/shell-pair-v2-desktop.png`, `.tmp/frontend-react-ts-route-switch/shell-pair-v1-narrow.png`, `.tmp/frontend-react-ts-route-switch/shell-pair-v2-narrow.png`, `.tmp/frontend-v2-ts-appearance/v2-narrow-sidebar-overlay.png`; full focused subagent browser suite 12/12, repeated responsive/stream checks 6/6, route/shell/replay browser checks 3/3, typecheck, build, manual in-app geometry inspection, and independent reviewer PASS. |
+| SESS-01 | Workspace/project selector | project list, active project, reload, project open/close, path display | `WorkspaceProjectView.tsx`, `SessionsSidebar.tsx` | V1/V2 screenshots and click flow | Verified | Verified 2026-07-10. V1/V2 desktop and 720px captures now pair the project list, full paths, active project, collapse/expand, new session, workspace view, removal, and all three exact sort labels. Project-view browser coverage still verifies open/reload/back, file tree/content tabs, and removal confirmation. Workspace metadata failure now has a compact retry action while already-loaded sessions remain usable through workspace-ID fallback. Evidence: paired `sidebar-pair-v1-*`/`sidebar-pair-v2-*` captures under `.tmp/frontend-react-ts-route-switch/`, `.tmp/frontend-v2-ts-project-view/v2-project-view-files.png`, `.tmp/frontend-v2-ts-shell/v2-sidebar-narrow-load-error.png`, and `v2-sidebar-narrow-recovered.png`; 78 focused component tests, shell browser suite 8/8, project-view browser coverage, typecheck, build, manual inspection, and independent reviewer PASS. |
+| SESS-02 | Session list | search, create, refresh, active highlight, unread/background run indicator, delete/rename if present | `SessionsSidebar.tsx` | Browser flow and component tests | Verified | Verified 2026-07-10. The session list now has formal V1/V2 desktop and 720px comparison plus complete action coverage: create, search, rename, delete, selected highlight, running/failed/stopped/unread indicators, background/approval/question counts, collapse/expand, per-workspace loading, and flat chronological mode. The Chinese sort label exactly matches V1's `按时间顺序`. A persistent API outage renders one compact error state; explicit Retry refetches both workspace and session inventories, and the settled narrow screenshot is captured only after the title, timeline, and composer have hydrated. V1-style nested subagent directories intentionally remain excluded per the approved right-panel design. Evidence: paired `sidebar-pair-v1-*`/`sidebar-pair-v2-*` captures, `.tmp/frontend-v2-ts-shell/v2-sidebar-workspace-session-statuses.png`, `v2-sidebar-workspace-session-inventory.png`, `v2-sidebar-narrow-load-error.png`, and `v2-sidebar-narrow-recovered.png`; 78 focused component tests, full shell browser suite 8/8, typecheck, build, manual inspection, and independent reviewer PASS. |
+| SESS-03 | Session switch during active run | switch away, stream continues or is recoverable, switch back restores exact content | `ChatWorkspace.tsx`, `useRunStreamController.ts`, `MessageTimeline.tsx` | Timed stream sampling before/after switch, no duplicate/missing/order changes | Verified | Verified 2026-07-10. The controller now records the owning session for every tracked stream, so selecting another session cannot reconcile or close the background run; late forced recovery confirmations are invalidated on session cleanup. Normal and orchestration browser flows prove hidden background growth, cursor reconnect, ordered tool/thinking/text restoration, and terminal cleanup. A true-provider run switched away immediately after the first real delta, received more independent SSE probe deltas while hidden, switched back, and converged byte-for-byte to one final answer. Evidence: `npx playwright test browser-tests/v2-session-switch-stream.spec.ts browser-tests/v2-stream-reconnect.spec.ts browser-tests/v2-stream-refresh.spec.ts --project=chromium --workers=1` (13/13), `AGENT_TEAMS_REAL_LIVE_STREAM=1 npm run test:browser -- v2-real-backend-live-stream.spec.ts --project=chromium -g "real backend normal stream"` (2/2), paired V2/V1 screenshots under `.tmp/frontend-v2-real-backend-live/`, 335 focused component/runtime tests, and independent reviewer PASS. |
+| MSG-01 | Historical replay | round marker, prompt, processed work, final answer, copy placement | `MessageTimeline.tsx`, `RoundMarker.tsx` | Complex history replay screenshots and DOM row snapshots | Verified | Expanded round markers now use a controlled button/body pair instead of native `details`, so the collapsed title is removed before the full prompt body appears. Real browser checks confirm the open marker summary only shows the collapse action, the prompt prefix appears once across the whole `.at-round-marker` row, and the body owns the full text. The long Explorer prompt fixture covers real history where `run_user_message` is null and the prompt is recovered from `intent`/`intent_parts`. Split-panel replay also keeps the round rail from collapsing the virtual timeline column to `0px`. Round rail component coverage now verifies ordered rounds, active/current state, run-id selection, stable rerenders, todo snapshot updates without replacing the list/active node, hover/focus detail behavior, clamped popover placement, and todo status labels. Browser coverage verifies round rail retry/todo detail, scoped todo detail, expanded marker no-duplicate prompt, paged round history navigation, and verification-failed warning tone. A complex Chinese replay fixture combines a duplicated user prompt source, round marker, folded processed work, thinking, split tool-call/tool-return, final answer, and hard refresh; DOM counts prove the prompt prefix appears once in the main virtual timeline before and after refresh. The 2026-07-10 complex replay pass now also guards session-history plus round-coordinator double sources: duplicated work parts are stripped before processed grouping, duplicated final text is not hidden inside `已处理`, and copy/read-aloud actions remain in one `.at-message-actions` block below the final answer before and after refresh. Evidence: `.tmp/round-marker-expand-final-dom.json`, `.tmp/round-marker-background-filter-final.png`, `.tmp/round-marker-expanded-final.json`, `.tmp/round-marker-button-dom-final.json`, `.tmp/round-marker-button-final.png`, `.tmp/pending-cursor-roundmarker-final.png`, `.tmp/round-marker-narrow-rail-final.json`, `.tmp/round-marker-narrow-rail-final.png`, `.tmp/frontend-v2-ts-rounds/v2-round-marker-expanded-no-duplicate.png`, `.tmp/frontend-v2-ts-complex-replay/v2-complex-replay-expanded-before-refresh.png`, `.tmp/frontend-v2-ts-complex-replay/v2-complex-replay-expanded-after-refresh.png`, `.tmp/frontend-v2-ts-complex-replay/v2-complex-replay-final-actions-placement.png`; tests: `npm test -- src/test/RoundRail.test.tsx`, `npm run test:browser -- v2-rounds.spec.ts --project=chromium`, `npm test -- src/test/MessageTimeline.test.tsx -t "copies the latest|reads the latest|final answer actions"`, `npm test -- src/test/MessageTimeline.test.tsx -t "duplicate|processed work|round messages"`, `npm run test:browser -- v2-complex-replay.spec.ts --project=chromium`. Full `MessageTimeline.test.tsx` now passes and is counted as current regression evidence for this row. Verified 2026-07-11. The final paired V1/V2 fixture now proves identical source ordering, two-way processed-work folding, stable geometry/scroll, one V2 prompt, and one final action block before and after refresh. V1's duplicated prompt remains recorded as a legacy defect. Independent reviewer PASS. |
+| MSG-02 | Live text streaming | empty start, first token, long output, terminal close | `reducers.ts`, `streamClient.ts`, `MessageTimeline.tsx` | Timeline samples and final replay comparison | Verified | Verified 2026-07-10. V2 renders the exact accumulated real SSE deltas in one stable row, with an inline loading point only while open. Same-run strict prefixes are removed after processed grouping; legitimate equal/disjoint post-tool and reconnect segments remain and receive unique render identities. Terminal hydration, hard refresh, and V1 replay converge to one full answer with no rebuild, repeated prefix, missing tail, empty thinking card, stale cursor, or internal lifecycle text. The independent probe requires monotonic unique event IDs, multiple nonempty provider deltas, visible incremental growth, and exact final DOM equality. Evidence: true-provider active switch and hard-refresh scenarios 2/2, mock switch/reconnect/refresh scenarios 13/13, `MessageTimeline` plus runtime/recovery suite 335/335, `.tmp/frontend-v2-real-backend-live/real-live-normal-streaming.png`, `real-live-normal-after-switch.png`, `real-live-normal-active-after-refresh.png`, V1 replay screenshot, and independent reviewer PASS. |
+| MSG-03 | Thinking/reasoning | start, delta, finish, terminal folded under processed group | `MessageTimeline.tsx` | Live and replay screenshots with opened/closed processed group | Verified | Verified 2026-07-11. Live and replay coverage proves empty thinking is hidden, refresh resumes from the event cursor, repeated full deltas dedupe, terminal output settles once, and the single thinking body folds under Processed. Normal, orchestration, and subagent isolation paths are covered by the runtime, real HTTP SSE, and right-panel suites; independent audit PASS. |
+| MSG-04 | Tool call lifecycle | pending call shows running, result fills same card, validation failure/error, compact collapsed rows | `MessageTimeline.tsx` | Tool-heavy session replay and live tool run; component tests | Verified | Verified 2026-07-11. Persisted split call/result messages and live pending calls merge into one lifecycle card through refresh, result, terminal folding, and replay. Action-specific running/completed/error labels are covered in English and Chinese across normal, orchestration, subagent, and managed-backend tool pressure; independent audit PASS. |
+| MSG-05 | Processed group | terminal work folds under one `已处理` affordance, no decorative divider abuse | `MessageTimeline.tsx`, CSS | Screenshot, click expand/collapse, virtual row measurement test | Verified | Browser coverage now verifies a completed run renders one collapsed `Processed` control without the old `.at-processed-group-line` divider, keeps thinking/tool work hidden while the final answer remains visible, expands on click, and increases both processed-row height and virtual timeline height after remeasurement. Complex replay coverage now also expands `已处理` after a hard refresh and confirms thinking/tool work stays folded under the single processed affordance while the final answer remains outside the group. The 2026-07-10 pass fixes the double-source replay case where round coordinator messages duplicated an already persisted thinking/tool/final sequence: the expanded processed group now has one thinking block, one completed tool card, and no hidden final-answer duplicate. Evidence: `npm run test:browser -- v2-processed-group.spec.ts --project=chromium`, `npm run test:browser -- v2-complex-replay.spec.ts --project=chromium`, screenshots `.tmp/frontend-v2-ts-processed-group/v2-processed-group-expanded.png`, `.tmp/frontend-v2-ts-complex-replay/v2-complex-replay-expanded-before-refresh.png`, `.tmp/frontend-v2-ts-complex-replay/v2-complex-replay-expanded-after-refresh.png`, `.tmp/frontend-v2-ts-complex-replay/v2-complex-replay-final-actions-placement.png`; focused tests: `npm test -- src/test/MessageTimeline.test.tsx -t "duplicate|processed work|round messages"`. Full `MessageTimeline.test.tsx` now passes and is counted as current regression evidence for this row. Verified 2026-07-11. Paired V1/V2 collapse-expand-collapse screenshots and DOM geometry checks now prove the compact V2 control has no decorative divider, preserves scroll/virtual height, and restores one thinking block plus one merged tool card without duplicating the final answer. Independent reviewer PASS. |
+| MSG-06 | Markdown/media/code | tables, links, code highlight, image previews, long outputs | `MarkdownMessage.tsx`, timeline render parts | Component tests and screenshot fixture | Verified | Packed V2 browser coverage now replays a single timeline containing stripped frontmatter, a GFM table, external-target link behavior, highlighted TypeScript code, a deliberately long code line, an image `media_ref`, and a following message. Dedicated image-preview browser coverage also opens the actual Ant Image preview overlay from the current `/app/` timeline and closes it without breaking the fixed shell. The obsolete Python harness `tests/unit_tests/frontend/test_image_preview_ui.py`, which only scanned old `frontend/dist/js` image-preview wiring, has been removed after TS browser/component coverage took ownership. Evidence: `npm run build`, `npm run test:browser -- v2-markdown-media.spec.ts --project=chromium`, `npm run test:browser -- v2-image-preview.spec.ts --project=chromium`, `npm test -- src/test/ShellLayoutCss.test.ts -t "markdown code blocks"`, `npm test -- src/test/MessageTimeline.test.tsx -t "image media references\|workspace image previews\|media_ref previews\|non-image media references\|runtime output_delta media_ref"`, screenshots `.tmp/frontend-v2-ts-markdown-media/v2-markdown-media-code.png`, `.tmp/frontend-v2-ts-image-preview/v2-image-preview-open.png`. Verified 2026-07-11. A same-fixture V1/V2 comparison now covers table, external link, highlighted TypeScript, overflow-resistant long code, all 18 ordered long-output checkpoints, image preview, preview close, following-row continuity, and V2 hard-refresh replay. Independent reviewer PASS. |
+| MSG-07 | Scroll behavior | bottom follow, scroll anchor during hydration, virtualizer row measurement | `MessageTimeline.tsx` | Component tests plus browser scroll recording | Verified | Verified 2026-07-11. Browser coverage proves away-from-bottom anchoring and pinned-bottom follow without document scrolling. Component coverage verifies hydration anchoring, virtual row measurement, long Markdown, and stable shell/session switching; independent audit PASS. |
+| STREAM-01 | AG-UI event coverage | text, output parts, thinking, model lifecycle, tool, approvals, questions, injection, state, subagent, background, todo, token, terminal events | `events.ts`, `reducers.ts`, `streamClient.ts`, timeline | Unit and integration tests per event family | Verified | Verified 2026-07-11. The frontend required-family inventory covers every AG-UI event name and reducers retain known and future runtime events in replay order. Backend RunEvent-to-AG-UI mapping has 43 parameterized cases spanning output, model/thinking/tool lifecycles, validation, approvals/questions, injection, state, todo, background, subagent, notification, token, and terminal states; independent audit PASS. |
+| STREAM-02 | Replay and reconnect | `after_event_id`, Last-Event-ID fallback, duplicate events, network reconnect, terminal settlement | `streamClient.ts`, `useRunStreamController.ts` | Tests and browser interrupted-stream scenario | Verified | Verified 2026-07-10. Positive event IDs are retained as compact ranges for the full run, late IDs insert in order, and replaying event 1 after 6,001 later events is still rejected. Batched notifications flush accepted state before close, replacement, or terminal settlement; per-run settlement preserves remaining background streams and session ownership prevents cross-session closure. Browser coverage proves query-cursor and Last-Event-ID reconnect, active hard refresh, late event ordering, non-text/tool replay, manual reconnect exhaustion, and an actual TCP cut with post-cut cursor continuation. Final UI and V1 replay equal the independently concatenated provider deltas exactly once. Evidence: 13/13 mock browser scenarios, 2/2 true-provider scenarios, managed TCP-cut confirmation PASS, 335/335 focused tests, production build/typecheck, and independent reviewer PASS. |
+| REC-01 | Recovery bar | active run, stopped run, resume, local reconciliation | `RecoveryBar.tsx` | Browser refresh during active run and stopped run | Verified | Verified 2026-07-11. Recovery snapshots, stopped-run resume, local reconciliation, active hard refresh, stale selection repair, terminal settlement, and exact-cursor reconnect are covered. Real HTTP SSE plus managed-backend network-cut scenarios recover normal, tool-heavy, orchestration, and subagent streams without duplicates or stale reconnects; independent audit PASS. |
+| REC-02 | Pending actions | tool approval, user question, background task, paused subagent | `RecoveryBar.tsx`, subagent views | Tests and manual browser flows | Verified | Verified 2026-07-11. Tool approvals and user questions render above the composer and cover allow, reject, answer, focus refresh, and retryable failure paths. Background tasks and paused subagents preserve recovery state and open the shared right panel without false streaming; independent audit PASS. |
+| COMP-01 | Composer input | multiline, Enter/Shift+Enter, disabled/busy, attachments, mention menu, voice state | `Composer.tsx`, attachments/mention/voice modules | Component tests and browser flow | Verified | Verified 2026-07-10. Multiline Enter/Shift+Enter, valid pasted image rendering and serialization, attachment-only submission, leading role mention selection and stripping, unsupported/configured voice states, prompt injection while busy, and disabled run options all have component and packed-browser coverage. The voice suite includes a Chromium process using its native fake media device, real `getUserMedia` and `AudioContext`, PCM delivery to the STT socket, transcript insertion, silence/backpressure/finalize boundaries, and fixed-shell geometry. Paired V1/V2 mention, desktop idle, and 720px idle captures were inspected. Evidence: 114 focused component tests, the 45-scenario browser batch, `.tmp/frontend-v2-ts-composer-closure/composer-pair-v1-mention.png`, `composer-pair-v2-mention.png`, idle pairs, production build, and independent reviewer PASS. |
+| COMP-02 | Run options | normal/orchestration mode, role, model, preset, thinking, YOLO, Shell safety | `Composer.tsx`, settings APIs | Browser comparison with V1 and tests | Verified | Verified 2026-07-10. Normal root role and model PATCHes, orchestration mode/default preset, explicit preset PATCH, target role, thinking payload, Shell policy, YOLO, EventSource start, active-run locks, and the corrected orchestration `Preset` label are exercised through the packed UI. The paired running test creates one normal-mode run in V1, switches through the real New UI link, and restores the identical run ID, prompt, event-2 checkpoint, output, viewport, and Stop state in V2. Evidence: `.tmp/frontend-v2-ts-composer-closure/composer-pair-v1-running.png`, `composer-pair-v2-running.png`, full browser batch, lint/build, and independent reviewer PASS. |
+| COMP-03 | Stop/resume/injection | stop button, queued/interrupt injection, resume run | `Composer.tsx`, `RecoveryBar.tsx` | Browser flow and API assertions | Verified | Verified 2026-07-10. Queue and Interrupt send exact payloads without creating another run while the same real HTTP SSE response is open. Stop reaches `:stop`, closes the active response once, and remains at one stream request across a 100 ms retry interval and four-second reconnect window. Standalone Resume hides raw run IDs, opens from checkpoint event 7, receives timed event 8 and terminal event 9, removes the recovery row, and returns the composer to idle. Paired V1/V2 stopped/Resume captures verify placement above the composer and fixed-shell behavior. Evidence: focused real HTTP scenarios 3/3, the 45-scenario browser batch, `.tmp/frontend-v2-ts-composer-closure/composer-pair-v1-resume.png`, `composer-pair-v2-resume-real.png`, and independent reviewer PASS. |
+| SET-01 | Settings shell | V1 tab list and second-level opening logic | `SettingsCenter.tsx`, `SettingsDrawer.tsx` | V1/V2 tab list comparison and navigation screenshot | Verified | Browser parity now opens all 13 V1-aligned Settings entries in the packed app and confirms MCP/Plugins/Commands/Hooks/Agent Runtime/GitHub/Gateway stay nested under System, not flattened into first-level Settings navigation. Evidence: `.tmp/frontend-v2-ts-settings-parity/v2-settings-v1-section-survey.png`; tests: `npm run test:browser -- v2-settings-parity.spec.ts --project=chromium`, `npm run lint`, `npm run build`. The live V1 inventory, V2 primary inventory, and System secondary mapping are now captured together in the complete Settings pairing audit; desktop and 620px navigation both passed. |
+| SET-02 | Appearance | system/light/dark, theme import/copy/select, colors, fonts, sidebar alpha, contrast, cursor, motion, font sizes, diff markers | `SettingsAppearanceSection.tsx`, `theme.css` | Implemented controls, screenshot against provided V1 refs | Verified | Packed browser coverage now verifies the user-target page shape in light and dark modes: 3 theme cards, diff preview, 15 appearance controls, GitHub/Rose Pine preset application, root CSS variable updates, fixed settings shell framing, and the preset dropdown open state. The dropdown now scrolls inside the settings drawer instead of overflowing below the viewport. Import/copy/reset coverage now copies the active GitHub theme through `navigator.clipboard.writeText`, imports a JSON theme through the file chooser, verifies localStorage plus live CSS variables update, and resets back to the default appearance state without breaking the fixed shell. Failure/fallback coverage now proves clipboard rejection uses the `document.execCommand("copy")` fallback and malformed JSON import shows an error without corrupting the current theme storage or CSS variables. Evidence: `npm run test:browser -- v2-appearance-layout.spec.ts --project=chromium`, `npm test -- src/test/SettingsDrawer.test.tsx -t "appearance"`, `npm test -- src/test/ShellLayoutCss.test.ts -t "appearance"`, `npm run build`; screenshots `.tmp/frontend-v2-ts-appearance/v2-appearance-light-github.png`, `.tmp/frontend-v2-ts-appearance/v2-appearance-light-preset-menu.png`, `.tmp/frontend-v2-ts-appearance/v2-appearance-dark-rose-pine.png`, `.tmp/frontend-v2-ts-appearance/v2-appearance-imported-theme.png`, `.tmp/frontend-v2-ts-appearance/v2-appearance-reset-default.png`, `.tmp/frontend-v2-ts-appearance/v2-appearance-import-failed.png`. The complete Settings pairing audit now includes inspected V1/V2 Appearance screenshots, while the dedicated light/dark/import/reset/failure browser suite remains green. |
+| SET-03 | General | Shell safety policy plus V1 General diagnostics/speech/notification inventory mapped to current split-page entries | `SettingsCenter.tsx`, settings CSS/i18n | V1/V2 DOM + screenshots, control count/name/save tests, secondary-entry click checks | Verified | V1 live capture showed Diagnostics, Shell Policy, Speech, and Notifications inside General. V2 keeps only the real General API control on the page, exposes diagnostics/speech/notifications as second-level entries, saves Shell policy through `/system/configs/general`, and does not flatten notification details. Evidence: `.tmp/v1-general-settings.png`, `.tmp/v1-general-dom.json`, `.tmp/v2-general-settings-final.png`, `.tmp/v2-general-dom-final.json`, `.tmp/v2-general-related-clicks.json`. |
+| SET-04 | Speech | speech/voice settings and unavailable states | `SpeechSettingsSection.tsx` | V1 comparison and disabled/loading test | Verified | V1 General speech capture showed STT profile, language, and prompt controls with no separate first-level tab. V2 keeps the V1 settings tab list unchanged, exposes Speech as the intended second-level page, preserves STT/language/prompt save behavior, and adds explicit unavailable-profile explanations for non-STT/provider/TTS/no-speech states instead of silently hiding them. Evidence: `.tmp/v1-speech-general.png`, `.tmp/v1-speech-dom.json`, `.tmp/v2-speech-final.png`, `.tmp/v2-speech-dom-final.json`; tests: `npm test -- src/test/SettingsDrawer.test.tsx -t "speech"`, `npm test -- src/test/ShellLayoutCss.test.ts`, `npm run build`. |
+| SET-05 | Notifications | notification settings, save/reset/error states | `NotificationSettingsSection.tsx` | V1 comparison and tests | Verified | V1 capture confirms notifications live inside the General panel with one General save action; V2 keeps Notifications as the approved split page, preserves the same four rule labels/descriptions/enabled/channel states, visibly reports preserved hidden channels, resets unsaved edits without submitting, drives a 500 save failure while preserving the local edit and backend state, then saves through `/system/configs/notifications`. Evidence: `.tmp/frontend-v2-ts-settings-parity/v1-general-notifications-pairing.png`, `.tmp/frontend-v2-ts-settings-parity/v2-notifications-v1-pairing.png`, `.tmp/frontend-v2-ts-settings-parity/notifications-v1-v2-dom.json`, `.tmp/frontend-v2-ts-settings-parity/v2-settings-notifications-reset-error.png`, `.tmp/frontend-v2-ts-settings-parity/v2-settings-notification-proxy-actions.png`; tests: `npm run test:browser -- v2-settings-parity.spec.ts --project=chromium`, `npm test -- src/test/SettingsNavigationParity.test.ts`, `npm run lint`, `npm run build`. |
+| SET-06 | Models | provider/model list, defaults, credentials/keyring states if surfaced | runtime/model settings modules | V1 comparison, API save/load tests | Verified | Verified 2026-07-10. Live V1 model list/detail captures are paired with the V2 list, secondary editor, catalog create, MaaS credential, probe, validation, SSL, loading, error, and retry states. Public profile reads now return `api_key: null` plus `has_api_key`; unchanged credentials are preserved and replacements remain explicit. Evidence: `.tmp/frontend-v2-ts-settings-parity/v1-settings-model-detail-complete-pairing.png`, `.tmp/frontend-v2-ts-settings-parity/v2-settings-model-detail-complete-pairing.png`, `.tmp/frontend-v2-in-app-settings/model-detail-live.png`; full browser actions/parity, focused Settings tests, router secret-contract tests, and manual in-app inspection passed.
+| SET-07 | Roles | role list, create/edit/delete, tools/MCP/skills, validation errors | role/settings modules | Browser workflow and tests | Verified | Verified 2026-07-10. V1 role list/detail controls are paired with V2 list and secondary detail without flattening. Create/edit/delete, required-field validation, execution surface, tools, MCP servers, skills, bound runtime, prompt preview, role-option failure/retry, and payload preservation are covered. Evidence: `.tmp/frontend-v2-ts-settings-parity/v1-settings-roles-detail-complete-pairing.png`, `.tmp/frontend-v2-ts-settings-parity/v2-settings-roles-detail-complete-pairing.png`, `.tmp/frontend-v2-in-app-settings/roles-live.png`; browser actions/parity, focused component tests, and manual inspection passed.
+| SET-08 | Orchestration | orchestration config, normal/orchestrated mode dependencies | `OrchestrationSettingsSection.tsx` | Browser workflow and tests | Verified | Verified 2026-07-10. V1 orchestration list/detail controls are paired with the V2 secondary editor. Default switching, create/delete, graph/policy preservation, role-option loading/error/retry, required fields, and save payloads are covered. New drafts are stable and prefer a selectable subagent instead of a main-agent alias. Evidence: `.tmp/frontend-v2-ts-settings-parity/v1-settings-orchestration-detail-complete-pairing.png`, `.tmp/frontend-v2-ts-settings-parity/v2-settings-orchestration-detail-complete-pairing.png`, `.tmp/frontend-v2-in-app-settings/orchestration-create-live.png`; browser actions/parity and focused component tests passed.
+| SET-09 | Web | web/search settings and save states | `WebSettingsSection.tsx` | V1 comparison and tests | Verified | Verified 2026-07-10. The approved V2 Web split page covers defaults, language persistence, fallback visibility, save failure, loading/error/retry, and connectivity. Public reads expose only `exa_api_key_configured`; unchanged, replacement, and clear paths remain distinct. Evidence: `.tmp/frontend-v2-ts-settings-actions/v2-web-settings-defaults-language.png`, `.tmp/frontend-v2-ts-settings-actions/v2-web-settings-error.png`, `.tmp/frontend-v2-ts-settings-parity/v2-settings-web-load-error.png`; browser, component, and router tests passed.
+| SET-10 | ClawHub | account/config/status controls | `ClawHubSettingsSection.tsx` | V1 comparison and tests | Verified | Verified 2026-07-10. ClawHub remains the documented first-level split and covers configured status, probe, auto-install notice, replacement, clear, required-token, loading/error/retry, and the Skills credential consumer. Public reads expose only `token_configured`; preserve and clear payloads are distinct. Evidence: `.tmp/frontend-v2-ts-settings-actions/v2-clawhub-settings-probe.png`, `.tmp/frontend-v2-ts-settings-actions/v2-clawhub-settings-clear.png`, `.tmp/frontend-v2-ts-settings-parity/v2-settings-clawhub-load-error.png`; browser, Settings/Skills component, router, and manual input inspection passed.
+| SET-11 | Proxy | proxy fields, auth/no-auth, validation, save/test if V1 has it | `ProxySettingsSection.tsx` | V1 comparison and tests | Verified | Verified 2026-07-10. V1 proxy controls are paired with V2 fields/actions; inherited SSL remains `null`, credentials survive probe/save without returning the password, and loading/error/retry plus connectivity feedback are covered. Public reads expose `has_password`; save and probe use explicit preserve flags. Shared credentials remain in the secret store, while unchanged legacy URLs with distinct embedded credentials are preserved exactly for save/probe without exposing them or permitting a new multi-password set. Partial URL changes under legacy preserve mode return 400 instead of moving one old credential onto a new host. Evidence: `.tmp/frontend-v2-ts-settings-parity/v2-settings-notification-proxy-actions.png`, `.tmp/frontend-v2-ts-settings-parity/v2-settings-proxy-load-error.png`; browser, component, 46 focused proxy tests, the 310-test backend/SDK set, and documentation checks passed.
+| SET-12 | Remote workspace | remote workspace configuration and status | `WorkspaceSettingsSection.tsx` | V1 comparison and tests | Verified | Verified 2026-07-10. Live V1 workspace detail is paired with the V2 Remote workspace page and secondary editor. Create/edit/delete confirmation, cancel, empty state, saved-secret preservation/reveal, validation, probe, loading/error/retry, and framing are covered. Evidence: `.tmp/frontend-v2-ts-settings-parity/v1-settings-workspace-detail-complete-pairing.png`, `.tmp/frontend-v2-ts-settings-parity/v2-settings-workspace-detail-complete-pairing.png`, `.tmp/frontend-v2-ts-settings-actions/v2-remote-workspace-delete.png`; browser and component tests passed.
+| SET-13 | Environment variables | env var list, add/edit/delete, masking, validation | `EnvironmentSettingsSection.tsx` | Browser workflow and tests | Verified | Verified 2026-07-10. Live V1 environment detail is paired with V2 list/modal behavior. App/system separation, managed-key filtering, create/edit/rename/delete, invalid-key validation, loading/error/retry, system read-only behavior, and secret masking/preservation are covered. Sensitive values render masked, edit fields stay blank, and `preserve_existing` avoids browser-side secret recovery. Evidence: `.tmp/frontend-v2-ts-settings-parity/v1-settings-environment-detail-complete-pairing.png`, `.tmp/frontend-v2-ts-settings-parity/v2-settings-environment-detail-complete-pairing.png`, `.tmp/frontend-v2-ts-settings-actions/v2-environment-variable-edit-dialog.png`, `.tmp/frontend-v2-in-app-settings/environment-live.png`; browser, component, environment/router tests, and inspected screenshots passed.
+| SET-14 | System | system info, diagnostics, update/restart/export if V1 has them | settings/system modules | V1 comparison and tests | Verified | Packed browser coverage now opens the V1-aligned `System` Settings entry, verifies the first-level Settings nav does not contain System-owned secondary pages, asserts the System landing facts (`Skills loaded`, skill count), asserts the secondary launcher order (`MCP`, `Plugins`, `Commands`, `Hooks`, `Agent Runtime`, `GitHub`, `Gateway`), and screenshots the landing page without flattening secondary content into the primary nav. Component/static coverage verifies desktop version rendering, System secondary page order, representative secondary-page drill-ins, and V2 MCP secondary behavior for tool loading, delete confirmation/non-app delete hiding, JSON import aliases, and hidden config-field preservation. Hooks now has structured-editor coverage for group/handler cards, add/edit/delete controls, validation/save serialization, runtime diagnostics, loading-failure recovery into a new local hook, multiple matchers under one event, HTTP handler field preservation, and packed-browser evidence for editing, saving, and displaying structured backend validation errors under the System secondary page. Gateway now has packed-browser evidence from the System secondary page for Feishu/WeChat provider inventory, reload actions, WeChat login start/wait polling, Feishu disable, Feishu detail editing, WeChat detail editing, API payload assertions, fixed-shell framing, and screenshot capture. MCP, Commands, and GitHub now have direct packed-browser evidence under the System secondary page: first-level Settings navigation still hides them, Commands edits and creates real command payloads, MCP tests/refreshes/disables/edits server configs, and GitHub reveals/probes/saves token and webhook/tunnel state through real client paths. System status loading/error browser coverage now delays `/system/configs`, verifies the top status skeleton while secondary page launchers remain visible, then returns a 500 and verifies the inline error alert without flattening MCP/Commands/GitHub into first-level navigation. Evidence: `npm run test:browser -- v2-settings-parity.spec.ts --project=chromium`, `npm test -- src/test/SettingsNavigationParity.test.ts`, `npm test -- src/test/SettingsDrawer.test.tsx -t "renders a real settings center"`, `npm test -- src/test/SettingsDrawer.test.tsx -t "MCP"`, `npm test -- src/test/HooksSettingsSection.test.tsx`, `npm test -- src/test/SettingsDrawer.test.tsx -t "hooks"`, `npm run test:browser -- v2-settings-actions.spec.ts -g "validates and saves Hooks"`, `npm run test:browser -- v2-settings-actions.spec.ts --project=chromium -g "Gateway accounts"`, `npm run test:browser -- v2-settings-actions.spec.ts --project=chromium -g "MCP, Commands, and GitHub"`, `npm run lint`; screenshots `.tmp/frontend-v2-ts-settings-parity/v2-settings-system-landing.png`, `.tmp/frontend-v2-ts-settings-parity/v2-settings-v1-section-survey.png`, `.tmp/frontend-v2-ts-settings-parity/v2-settings-system-status-loading.png`, `.tmp/frontend-v2-ts-settings-parity/v2-settings-system-status-error.png`, `.tmp/frontend-v2-ts-settings-actions/v2-hooks-structured-editor-save.png`, `.tmp/frontend-v2-ts-settings-actions/v2-gateway-settings-actions.png`, `.tmp/frontend-v2-ts-settings-actions/v2-commands-secondary-actions.png`, `.tmp/frontend-v2-ts-settings-actions/v2-mcp-secondary-actions.png`, `.tmp/frontend-v2-ts-settings-actions/v2-github-secondary-actions.png`. The complete Settings pairing audit now maps every live V1 infrastructure tab into the System secondary launcher, verifies loading/error/manual-retry recovery, removes repeated System metadata, and includes inspected desktop/narrow screenshots. |
+| PAGE-01 | Automation | triggers, monitor/follow-up style workflows, session links | `AutomationView.tsx` | V1/V2 screenshot and workflow tests | Verified | Verified 2026-07-11. A same-fixture V1/V2 desktop pair covers Running, Paused, Current, the three shared project records, Schedules, GitHub, and recent-run session identity. Source and DOM inventory prove V1 exposes no separate Monitor or Follow-up surface. Dedicated actions retain create, run, edit, toggle, delete, interval, and one-shot coverage; the browser additionally clicks a recent run into its exact chat session and opens the existing System > GitHub Settings secondary page. Loading and terminal error states remain fixed inside the 720px shell. Evidence: `.tmp/frontend-v1-v2-operational-surfaces/`, `v1-v2-operational-surfaces.spec.ts` 6/6, focused component/API coverage, lint/build, visual review, and independent reviewer PASS. |
+| PAGE-02 | Skills | skill list, install/status/detail flows | `SkillsView.tsx` | V1/V2 screenshot and interaction tests | Verified | Verified 2026-07-11. Same-fixture V1/V2 desktop pairing now covers the Skills entry, list, search/settings controls, installed count, Writer identity, installs, and detail surface. Dedicated packed coverage retains market browse/search/loading/pagination/detail, install/uninstall failures and success, installed detail/error, reload, ClawHub save/probe/failure, public saved-token contract, 720px framing, and fixed-shell checks. Evidence: `.tmp/frontend-v1-v2-primary-surfaces/primary-pair-v1-skills.png`, `primary-pair-v2-skills.png`, `primary-narrow-v2-skills.png`, `.tmp/frontend-v2-ts-skills/`; paired browser 2/2, Skills browser 3/3, focused components, lint/build, manual screenshot review, and independent reviewer PASS. |
+| PAGE-03 | Board | board/todo source groups, statuses, sync, filters | `BoardTodosView.tsx` | V1/V2 screenshot and tests | Verified | Verified 2026-07-11. Same-fixture V1/V2 desktop pairing covers source groups, status columns, counts, filters, the shared issue card, and source details. Dedicated packed coverage verifies search, archive, sync, handoff, request changes, source CRUD, loading, and error states. The 720px contract keeps the fixed shell free of document overflow while Board owns an internal horizontal scroller with readable 248px-or-wider columns. Evidence: `.tmp/frontend-v1-v2-primary-surfaces/primary-pair-v1-board.png`, `primary-pair-v2-board.png`, `primary-narrow-v2-board.png`, `.tmp/frontend-v2-ts-board-actions/`; paired browser 2/2, Board/Search browser 8/8, focused components, manual screenshot review, and independent reviewer PASS. |
+| PAGE-04 | Search | session search, result selection, highlighting, empty/error states | `SessionSearchView.tsx` | Browser workflow and tests | Verified | Verified 2026-07-11. V1 and V2 now search the same `release` query, display the same `Release handoff notes` title from the contracts each implementation actually consumes, select the same session ID, and hydrate the same release marker. Dedicated coverage retains multi-workspace filtering, highlighting, empty/error/loading states, keyboard and click selection, selected sidebar state, and fixed-shell checks. At 720px the rendered result, input, and surface boundaries are asserted instead of inferred from page width. Evidence: `.tmp/frontend-v1-v2-primary-surfaces/primary-pair-v1-search.png`, `primary-pair-v2-search.png`, `primary-narrow-v2-search.png`, `.tmp/frontend-v2-ts-search/`; paired browser 2/2, Board/Search browser 8/8, focused components, manual screenshot review, and independent reviewer PASS. |
+| PAGE-05 | Connectors | connector list, runtime tools, enable/status/detail flows | `ConnectorsView.tsx`, `RuntimeToolsSection.tsx` | V1/V2 screenshot and tests | Verified | Verified 2026-07-11. The same V1/V2 fixture covers GitHub, W3, Discord, Feishu, WeChat, Xiaoluban, search, summary, status, and CLI tools. V2 retains real W3 and Settings routing and adds typed Discord/Xiaoluban account editors with create, update, enable, disable, delete, and visible mutation failures. The 720px browser physically scrolls, edits, and saves Discord, verifies its payload, and proves editor scrolling does not become document scrolling. Evidence: `.tmp/frontend-v1-v2-operational-surfaces/`, full Discord/Xiaoluban component lifecycles, typed API client tests, operational browser 6/6, focused 76/76 batch, lint/build, screenshot review, and independent reviewer PASS. |
+| PAGE-06 | Memory | memory facts, sessions, edit/delete if V1 has it | `MemoryView.tsx` | V1/V2 screenshot and tests | Verified | Verified 2026-07-11. Same-fixture V1/V2 desktop comparison covers workspace count, selected memory/detail, Architecture, and Skill Draft list/detail while preserving both secondary-page transitions. Search, filters, rebuild, generate, save, validate, apply, and reject are exercised through visible controls; Reject submits `status: rejected` and updates the rendered status. Dedicated 720px loading/list-error coverage and a distinct detail-error scenario prevent failure from masquerading as an empty selection. Evidence: `.tmp/frontend-v1-v2-primary-surfaces/`, `.tmp/frontend-v2-ts-memory/`, Memory browser 5/5, focused component/API tests, lint/build, screenshot review, and independent reviewer PASS. |
+| PAGE-07 | Observability | metrics, events, trends, lineage panels | `ObservabilityPanel.tsx`, `ObservabilityTrends.tsx`, `SpecLineagePanel.tsx` | V1/V2 screenshot and tests | Verified | Verified 2026-07-11. A same-fixture desktop pair verifies the complete visible V1 KPI inventory for cached/uncached input, cache ratio, retrieval count/failure/latency/docs, skill calls, MCP calls, and Gateway metrics; V1 exposes no separate Events heading. Missing values remain `—`, and Gateway UI is gated by gateway overview data rather than an unrelated pending breakdown query. Existing scope, trend, breakdown, lineage, empty, error, skeleton, and 720px checks remain green. Evidence: `.tmp/frontend-v1-v2-operational-surfaces/`, operational browser 6/6, focused component/API tests, real-page visual inspection, lint/build, and independent reviewer PASS. |
+| SUB-01 | Subagent rail/session | subagent list, active/stopped/resumed, parent-child relation | `SubagentSessionView.tsx`, sidebar subagent UI | Complex orchestration history replay and live stream | Verified | Verified 2026-07-11. The resizable right panel covers prompt, messages, thinking, tools, parent/child identity, paused through completed states, incremental cadence, terminal hydration, hard refresh, and session-switch pressure. Child output never leaks into the parent timeline across browser, real HTTP SSE, real backend history, and managed-backend recovery; independent audit PASS. |
+| DESK-01 | Desktop packaging | Electron shell, backend process lifecycle, app refresh, deep links if present | desktop target | Desktop run evidence | Verified | Verified 2026-07-11. Electron now produces a Windows x64 unpacked distribution and NSIS installer containing the hashed renderer, isolated main/preload bundle, release metadata, and a PyInstaller backend sidecar. The packaged app selects an available loopback port, waits for backend health, loads the root application, survives renderer refresh, reports startup failure, routes external links through preload, and stops the backend on quit. Evidence: desktop Vitest 13/13, packaged Electron smoke 5/5, installer and unpacked artifacts under .tmp/desktop-release, screenshot under .tmp/frontend-desktop, and independent reviewer PASS. |
+| CLEAN-01 | V2 cleanup | no user-facing V2 naming except migration boundary | all frontend files | grep and screenshot check | Verified | Verified 2026-07-11. The React build now owns frontend/dist and the root route; the hand-maintained V1 HTML, CSS, JS, vendor, connector, and migration app subtree are deleted. The V1 switch, separate /app base, V1-only route-switch tests, V1 helper, and real-backend V1 replay dependency are removed. Browser specs use neutral file names, runtime source has no user-facing temporary V2 naming, and frontend architecture/docs describe the final React, AG-UI, and Electron system. Root-path browser coverage 28/28, naming/components 53/53, focused desktop 13/13, backend packaging/hosting/mapping 114/114, build/lint, full Vitest 852/853 before the sole slow environment test was isolated PASS and its explicit timeout corrected, and independent reviewer PASS. |
+
+## Evidence Rules
+
+For every row moved to `Verified`, record:
+
+1. V1 evidence: screenshot path, DOM/state sample, or exact behavior notes.
+2. V2 implementation: file path and component/function names.
+3. Automated evidence: targeted TypeScript tests or integration tests.
+4. Manual evidence: browser screenshot or timed stream sample.
+5. Decision: same as V1, intentionally better, or documented product change.
+
+## Verification Ledger
+
+### 2026-07-10 Interrupted Session-Switch Reconnect Guard
+
+- `SESS-03`, `STREAM-02`, and `REC-01` tightened for the combined failure mode
+  where a foreground stream is interrupted after the user switches to another
+  session. The packed browser scenario now streams an initial text event,
+  switches away, dispatches an SSE error on the original source, waits for the
+  run stream to reopen at `after_event_id=2`, receives the hidden continuation,
+  then switches back.
+- The verification asserts the restored transcript contains exactly one
+  `.at-message-markdown` node with the precise concatenated text
+  `prefix + hidden recovery chunk + visible continuation`, no duplicated
+  prefix, no stale `.streaming-cursor`, and no document-level scroll or
+  composer overlap after terminal completion.
+- Automated evidence: `npm run test:browser -- v2-session-switch-stream.spec.ts
+  --project=chromium -g "resumes an interrupted stream while another session is
+  selected"` passed, and `npm run lint` passed.
+- Browser evidence reviewed:
+  `.tmp/frontend-v2-ts-session-switch/v2-interrupted-stream-session-switch-recovery.png`.
+- This does not move `SESS-03`, `STREAM-02`, or `REC-01` to `Verified`;
+  managed/real interrupted-recovery variants, true real-provider normal-stream
+  proof, and final V1/V2 visual sign-off remain open.
+
+### 2026-07-10 Subagent Stable Markdown Hydration Guard
+
+- `SUB-01`, `MSG-02`, and `STREAM-02` tightened for the right-side subagent
+  panel. The completed-subagent stream browser scenario now uses two explicit
+  SSE text deltas instead of expecting frontend-generated character reveal:
+  the first delta renders only the prefix, the second delta renders the final
+  text, and terminal hydration must not replay or replace the answer row.
+- The browser test marks the live subagent panel `.at-message-markdown` DOM
+  node and verifies that the same node survives terminal completion and final
+  persisted history hydration. It also reasserts that the child output is not
+  present in the parent `.at-chat-view`.
+- Automated evidence: `npm run test:browser -- v2-subagent-session.spec.ts
+  --project=chromium -g "does not replay an already complete subagent stream"`
+  passed, and `npm run lint` passed.
+- Browser evidence reviewed:
+  `.tmp/frontend-v2-ts-subagent-session/v2-subagent-complete-stream-terminal-hydration.png`.
+- This does not move `SUB-01`, `MSG-02`, or `STREAM-02` to `Verified`;
+  broader real-backend production variants, interrupted recovery, and final
+  V1/V2 visual sign-off remain open.
+
+### 2026-07-10 Stable Streaming Markdown Container
+
+- `MSG-02` and `STREAM-02` tightened for the user-visible case where a live
+  answer had already fully rendered, then terminal/history settlement replaced
+  the inner renderer and looked like a second rebuild. `MessageTimeline` no
+  longer switches live text through separate inline/plain-stream renderers;
+  streaming and completed text now share the same markdown container and only
+  add/remove the live cursor and streaming class.
+- Browser coverage now marks the actual `.at-message-markdown` DOM node during
+  live streaming and asserts the same node survives terminal completion and
+  persisted history catch-up. Long runtime streams are also covered through the
+  stable markdown path, with the retired `.at-message-plain-stream` renderer
+  absent.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx` passed
+  with 202 tests, `npm test -- src/test/ShellLayoutCss.test.ts` passed,
+  `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium -g
+  "does not rebuild a fully displayed live answer"` passed, `npm run lint`
+  passed, and `npm run build` passed.
+- Browser evidence reviewed:
+  `.tmp/frontend-v2-ts-stream/v2-stream-terminal-catchup-after-history.png`.
+- This does not move `MSG-02` or `STREAM-02` to `Verified`; broader
+  production-backend stream variants, interrupted recovery, and final V1/V2
+  visual sign-off remain open.
+
+### 2026-07-10 Managed Active Terminal Reload Guard
+
+- `REC-01` and `STREAM-02` tightened with managed real-backend/fake-LLM
+  evidence for the active hard-refresh continuation path. The browser test now
+  starts a slow managed stream, hard-refreshes while the run is still active,
+  waits for terminal settlement, then hard-refreshes again from terminal
+  history.
+- The terminal reload path reuses the stable-answer guard: one answer row,
+  stable row identity, no strict-prefix row, no `.at-message-streaming-text`,
+  no plain-stream wrapper, no stale `.streaming-cursor`, and no document-level
+  scroll or composer overlap.
+- Automated evidence: `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser
+  -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "active
+  stream stays"` passed, and `npm run lint` passed.
+- Browser evidence reviewed:
+  `.tmp/frontend-v2-managed-backend-live/managed-live-active-refresh-terminal-reload.png`.
+- This does not move `REC-01` or `STREAM-02` to `Verified`; real-provider
+  normal stream proof, real-backend orchestration/tool-heavy active refresh
+  variants, and final V1/V2 visual sign-off remain open.
+
+### 2026-07-10 Tool-Heavy Terminal Refresh Guard
+
+- `STREAM-02` and `REC-01` tightened for the tool-heavy refresh/replay path.
+  The packed browser scenario now continues from a hydrated tool cursor,
+  receives a validation failure and resumed output, completes the run, then
+  hard-refreshes terminal history.
+- The terminal replay assertion verifies the successful `read` result, failed
+  `shell` result, validation card, hydrated pre-refresh answer, and resumed
+  output each render once, in order where applicable, with no stale
+  `.streaming-cursor`, no `Tool call:*` duplicate shells, and no old
+  `.at-message-tool-status` indicator.
+- Automated evidence: `npm run test:browser -- v2-stream-refresh.spec.ts
+  --project=chromium -g "continues a tool-heavy"` passed, the full
+  `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium`
+  passed with 6 Chromium tests, and `npm run lint` passed.
+- Browser evidence reviewed:
+  `.tmp/frontend-v2-ts-stream/v2-stream-tool-heavy-refresh-replay.png` and
+  `.tmp/frontend-v2-ts-stream/v2-stream-tool-heavy-terminal-refresh-replay.png`.
+- This does not move `STREAM-02` or `REC-01` to `Verified`; managed/real
+  active hard-refresh continuation, real-backend orchestration/tool-heavy
+  variants, true real-provider normal-stream proof, and final V1/V2 visual
+  sign-off remain open.
+
+### 2026-07-10 Active Refresh Duplicate Cursor Guard
+
+- `REC-01` and `STREAM-02` tightened for the active hard-refresh continuation
+  path. The packed browser recovery scenario now reloads after event 2 is
+  persisted, reconnects from `after_event_id=2`, replays duplicate event 2,
+  and verifies the duplicate cursor event does not append a second copy of the
+  persisted chunk.
+- The same test then streams event 3, checks the persisted and resumed chunks
+  appear once and in order, completes the run, hard-refreshes again, and
+  verifies the terminal replay still has one answer row, no stale cursor, and
+  no duplicate persisted/resumed text.
+- Automated evidence: `npm run test:browser -- v2-stream-refresh.spec.ts
+  --project=chromium -g "resumes an active stream"` passed, the full
+  `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium`
+  passed with 6 Chromium tests, and `npm run lint` passed.
+- Browser evidence reviewed:
+  `.tmp/frontend-v2-ts-stream/v2-stream-refresh-replay.png`.
+- This does not move `REC-01` or `STREAM-02` to `Verified`; managed/real active
+  hard-refresh continuation, broader orchestration/tool-heavy recovery, true
+  real-provider normal-stream proof, and final V1/V2 visual sign-off remain
+  open.
+
+### 2026-07-10 Exact SSE Stream Rendering Guard
+
+- `MSG-02`, `STREAM-02`, and `SUB-01` tightened after review showed the
+  frontend could already have the full answer text and still rebuild/replay it
+  through a presentation-layer reveal path. `MessageTimeline` now renders the
+  exact text currently held in runtime state. A complete SSE `text_delta`
+  appears complete; visible growth is only caused by later SSE events.
+- Hydrated persisted answers for still-open rounds keep their full text visible
+  and may show one live cursor at the end. They are not cleared, replayed from
+  a prefix, duplicated when live replay arrives, or remounted when terminal
+  history catches up. Cursor-only placeholders are no longer hidden just
+  because thinking/tool rows exist; they disappear only when visible runtime
+  text for the run exists.
+- Browser tests were changed to model real streaming as multiple runtime
+  events, not frontend-generated character ticks. The main chat and subagent
+  panel now assert first delta, second delta, terminal close, row-key stability,
+  no duplicate final answer, no empty streaming text node, no stale cursor, and
+  no child text leakage into the parent timeline.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx` passed
+  with 200 tests; `npm run test:browser -- v2-stream-refresh.spec.ts
+  --project=chromium` passed with 6 Chromium tests; `npm run test:browser --
+  v2-stream-create-run.spec.ts --project=chromium` passed with 4 Chromium
+  tests; `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium
+  -g "streams subagent deltas incrementally"` passed; `npm run lint` passed;
+  `npm run build` passed and regenerated `frontend/dist/app`.
+- Browser evidence reviewed:
+  `.tmp/frontend-v2-ts-stream/v2-stream-received-delta-no-replay.png`,
+  `.tmp/frontend-v2-ts-stream/v2-stream-history-first-live-replay.png`, and
+  `.tmp/frontend-v2-ts-subagent-session/v2-subagent-delta-visible.png`.
+- This supersedes entries that required frontend-generated typewriter cadence.
+  It does not move `MSG-02`, `STREAM-02`, or `SUB-01` to `Verified`; true
+  real-provider normal-stream proof, interrupted recovery, broader
+  production-backend orchestration/tool variants, and final V1/V2 visual
+  sign-off remain open.
+
+### 2026-07-10 Terminal Settle Without Runtime Drop Guard
+
+- `MSG-02` and `STREAM-02` tightened after manual review showed a fully
+  displayed live answer could still appear to rebuild when backend terminal
+  metadata arrived. The shell no longer uses destructive `clearRunStream` for
+  a selected session that the backend has already marked terminal. It now
+  settles that run as closed while preserving the runtime transcript entries,
+  so `MessageTimeline` can keep the already-visible answer anchored to the
+  same row instead of replacing it with a freshly hydrated history row.
+- The controller guard proves the active run id is removed and the run status
+  becomes closed while existing runtime entries remain intact. The AppShell
+  guard proves backend terminal metadata calls the settle path rather than the
+  destructive clear path. Browser coverage then verifies the exact user-visible
+  failure mode: a fully displayed live answer remains stable when terminal
+  status arrives, with no streaming cursor, no strict-prefix leftover row, and
+  no terminal replay/retype.
+- Automated evidence: `npm test -- src/test/AppShell.test.tsx -t "terminal state|primary feature surface"`,
+  `npm test -- src/test/RunStreamController.test.tsx -t "settles a terminal run without dropping displayed runtime entries"`,
+  `npm run lint`, `npm run build`,
+  `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "fully displayed live answer stable"`,
+  and `npm run test:browser -- v2-stream-create-run.spec.ts --project=chromium -g "does not replay after terminal output"`.
+- Browser evidence: `.tmp/frontend-v2-managed-backend-live/managed-live-hold-terminal-stable.png`.
+- This does not move `MSG-02` or `STREAM-02` to `Verified`; true
+  real-provider normal-stream proof, broader orchestration/tool-heavy terminal
+  variants, interrupted recovery, and final V1/V2 visual sign-off remain open.
+
+### 2026-07-10 Gateway Secondary Settings Browser Pass
+
+- `SET-14` tightened: the System-owned Gateway page now has packed-browser
+  evidence instead of relying only on component tests. The browser flow opens
+  Settings through `/app/`, verifies `Gateway` is not flattened into the
+  first-level Settings navigation, drills through System to Gateway, and
+  exercises Feishu plus WeChat account actions.
+- The test verifies Feishu and WeChat inventory text, reload requests, WeChat
+  login start/wait polling payloads, Feishu disable behavior, Feishu edit
+  payloads, WeChat edit payloads, fixed-shell layout, clean transient-message
+  state, no unhandled API routes, and screenshot capture.
+- Automated evidence:
+  `npm run test:browser -- v2-settings-actions.spec.ts --project=chromium -g "Gateway accounts"`.
+- Browser evidence:
+  `.tmp/frontend-v2-ts-settings-actions/v2-gateway-settings-actions.png`.
+- This does not move `SET-14` to `Verified`; formal V1 visual/DOM pairing,
+  System loading/error-state browser capture, deep MCP/Commands/GitHub
+  secondary-page browser evidence, and reviewer sign-off remain open.
+
+### 2026-07-10 Active Recovery Order Guard
+
+- `REC-01` and `STREAM-02` tightened for active-run refresh recovery. The
+  packed browser recovery scenario now reloads after event 18 has been
+  persisted, immediately verifies the checkpoint row's `.at-message-text` is
+  the complete checkpoint text, reconnects from `after_event_id=18`, then
+  streams event 19 and asserts the checkpoint and continuation each appear
+  exactly once and in order.
+- This closes a false-positive gap where the recovery test only checked that
+  both strings eventually appeared, without proving no duplicate, missing, or
+  out-of-order rows during the refresh/reconnect handoff.
+- Automated evidence: `npm run build`,
+  `npm run test:browser -- v2-recovery.spec.ts --project=chromium -g "reopens an active recovery stream from the latest checkpoint after refresh"`,
+  `npm run lint`, and `git diff --check`.
+- This does not move `REC-01` or `STREAM-02` to `Verified`; managed/real
+  production-backend orchestration/tool recovery, broader interrupted
+  real-provider recovery, and final V1/V2 visual sign-off remain open.
+
+### 2026-07-10 Cursor-Only Hydrated Active Text Guard
+
+- `MSG-02`, `STREAM-02`, and `REC-01` tightened for active recovery/hydration
+  where a complete persisted answer is already known while the run is still
+  open. V2 now distinguishes "show a live cursor at the end" from "replay this
+  text with a presentation-layer typewriter", so hydrated complete answers keep
+  their full text visible immediately after refresh or replay while visible
+  runtime growth remains tied to subsequent SSE chunks.
+- The packed browser guard now samples the answer row as soon as it appears,
+  before waiting for the text to settle, and requires `.at-message-text` to
+  already equal the full answer. The existing create-run stream test was rerun
+  to prove ordinary live deltas still start shorter than the final buffer and
+  grow over time.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx`,
+  `npm run build`,
+  `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium -g "does not replay when persisted history renders before live replay arrives"`,
+  `npm run test:browser -- v2-stream-create-run.spec.ts --project=chromium -g "renders received stream text immediately"`,
+  and `npm run lint`.
+- This does not move `MSG-02`, `STREAM-02`, or `REC-01` to `Verified`; broader
+  production-backend orchestration/tool recovery, interrupted real-provider
+  recovery, and final V1/V2 visual sign-off remain open.
+
+### 2026-07-10 History-First Stream Replay Guard
+
+- `MSG-02` and `STREAM-02` tightened for the race where `/messages` or
+  `/rounds` can render the complete answer before a live/replayed SSE
+  `text_delta` for the same run arrives. The stream display snapshot is now
+  allowed to migrate between message and runtime row identities only within the
+  same run id, so a remount can keep already-visible complete text without
+  borrowing state from another run that happened to have the same text.
+- The running state still shows the cursor at the end of the already-known
+  answer, but the live replay can no longer restart from the first character.
+  Terminal close then removes `.at-message-streaming-text` and
+  `.streaming-cursor` while preserving one answer occurrence.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx`,
+  `npm run build`,
+  `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium -g "does not replay when persisted history renders before live replay arrives"`,
+  `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium -g "does not rebuild a fully displayed live answer when persisted history catches up"`,
+  and `npm run lint`.
+- This does not move `MSG-02` or `STREAM-02` to `Verified`; interrupted
+  recovery, broader production-backend orchestration/tool variants, true
+  real-provider normal-stream proof, and final V1/V2 visual sign-off remain
+  open.
+
+### 2026-07-10 Streaming Initial-Mount Reveal Guard
+
+- Superseded by the 2026-07-10 No Synthetic Stream Replay pass. This guard remains useful for the remount race it caught, but current behavior no longer includes any frontend typewriter reveal.
+- `MSG-02` and `STREAM-02` tightened after manual review showed a live answer could be fully visible and then visually restart from the beginning when the streaming text component remounted during terminal/history or session recovery. Initial streaming mounts now show the already-known text immediately with the cursor at the end; later visible growth must come from subsequent SSE chunks.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx src/test/SubagentSessionView.test.tsx`, `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "managed backend normal stream receives incremental chunks|managed backend keeps a fully displayed live answer stable"`, `npm run build`, `npm run lint`, `git diff --check`.
+- This does not move `MSG-02` or `STREAM-02` to `Verified`; true real-provider normal-stream proof, broader orchestration/tool-heavy stream variants, interrupted recovery, and final V1/V2 visual sign-off remain open.
+
+### 2026-07-10 Terminal Reveal Rebuild Guard
+
+- `MSG-02` and `STREAM-02` tightened after manual review showed a fully rendered live answer could still be visually rebuilt when terminal/history state arrived. Terminal processed-row splitting and persisted-answer hydration now strip text `streaming`/`reveal` flags, so completed transcript rows cannot re-enter the typewriter path during processed folding or terminal runtime-to-history takeover.
+- Managed-backend browser coverage now drives the exact order that caused the false positive: `[slow-stream-hold ms=5000]` renders the full answer while the run is still active, then the run reaches terminal status. The test records the live answer row key before terminal close and samples the terminal state for 20 frames, requiring one answer row, the same row key, no strict-prefix row, no `.at-message-streaming-text`, and no `.streaming-cursor`.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx src/test/SubagentSessionView.test.tsx`, `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "managed backend keeps a fully displayed live answer stable"`, `npm run build`, `npm run lint`.
+- This does not move `MSG-02` or `STREAM-02` to `Verified`; true real-provider normal-stream proof, broader orchestration/tool-heavy stream variants, interrupted recovery, and final V1/V2 visual sign-off remain open.
+
+### 2026-07-03 Real Backend Orchestration Running-State Honesty Pass
+
+- `SESS-03`, `MSG-04`, and `STREAM-02` tightened: the live-backend orchestration browser scenario no longer waits for deterministic fake terminal text on a backend that may keep the orchestration run active. It now verifies the real running phase that current backend state can prove: orchestration mode is selected, a visible tool card appears, switching away and back restores that tool stream, internal delegation prompts stay hidden, naked role labels stay absent, and the fixed shell/composer layout remains stable.
+- The previous terminal fake-completion claim is explicitly not counted as current evidence. Deterministic orchestration terminal/replay remains open until a controlled fake-backend runner or approved live-backend fixture can prove it.
+- Evidence target: `AGENT_TEAMS_REAL_LIVE_STREAM=1 npm run test:browser -- v2-real-backend-live-stream.spec.ts --project=chromium -g "real backend orchestration tool stream"`.
+- This does not move `SESS-03`, `MSG-04`, or `STREAM-02` to `Verified`; terminal orchestration replay, broader tool-heavy variants, and final V1 visual sign-off remain open.
+
+### 2026-07-03 Stream Create Immediate Delta Browser Pass
+
+- Superseded by the 2026-07-09 runtime text reveal pass. This older evidence proved row identity and no terminal replay, but its "complete delta visible immediately" expectation is no longer the desired behavior.
+- Current `MSG-02` evidence now requires progressive reveal from received runtime text, stable row identity, one live cursor while open, and no second reveal/rebuild after terminal or history catch-up.
+- Complex production tool/orchestration streams, subagent live cadence, and final V1/V2 visual sign-off remain open.
+
+### 2026-07-03 Real Backend Subagent Runtime-Text Cadence Pass
+
+- `SUB-01` and `STREAM-02` tightened: the real-backend subagent live browser scenario no longer proves output by searching the whole panel text, because the prompt itself can contain the expected token. The prompt now describes the token-generation rule without embedding the full expected output, and the test samples only right-panel runtime text rows.
+- The scenario now proves the first child token appears in the right-panel timeline before the last child token is present, then the same visible runtime text grows before terminal/reload checks. This catches the user-visible "prompt text or final replay looked like streaming" false positive.
+- Evidence: `AGENT_TEAMS_REAL_LIVE_STREAM=1 npm run test:browser -- v2-real-backend-live-stream.spec.ts --project=chromium -g "real backend subagent stream"` passed in Chromium against the live local backend.
+- This still does not close all live production-backend subagent/orchestration variants or final V1/V2 visual sign-off.
+
+### 2026-07-09 General Settings Related-Route Browser Pass
+
+- `SET-03` evidence tightened without changing its `Verified` status: packed-browser coverage now opens General, verifies only the shell policy control is rendered there, verifies Appearance/Speech/Notifications remain related route entries, and proves Notifications rows are not flattened into General.
+- The same browser flow drills from General into Speech, Notifications, and Appearance through those related route entries, preserving the V1 second-level-page logic requested for Settings.
+- Evidence: `npm run test:browser -- v2-settings-parity.spec.ts --project=chromium -g "General related settings"` and screenshot `.tmp/frontend-v2-ts-settings-parity/v2-general-related-routes.png`.
+
+### 2026-07-09 Managed Active Refresh Stream Hydration Pass
+
+- `MSG-02`, `STREAM-02`, `REC-01`, and `SESS-03` tightened: active hard refresh now keeps reconstructed running-round output in the same streaming row while the runtime SSE state is still reconnecting, instead of rendering it once as completed replay and then rebuilding a separate stream row.
+- Hydrated text matching now consumes runtime text in event order, so repeated text after a tool boundary is not incorrectly anchored to the later live segment.
+- `ChatWorkspace` now passes the active run id as a fallback timeline run id, keeping partial active messages associated with the active stream when explicit message run metadata is not yet available.
+- Evidence: `npm test -- src/test/MessageTimeline.test.tsx`, `npm run build`, `npm run lint`, `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium`, and `git diff --check`.
+- This does not move `MSG-02`, `STREAM-02`, `REC-01`, or `SESS-03` to `Verified`; true real-provider normal stream proof, complex orchestration/subagent recovery variants, and final V1/V2 visual sign-off remain open.
+
+### 2026-07-09 Runtime Text Reveal Pass
+
+- Superseded by the 2026-07-10 No Synthetic Stream Replay pass. This entry is retained as historical evidence for the terminal-settlement bugs it exposed, but its frontend presentation-layer reveal model is no longer current.
+- `MSG-02` previously changed live text deltas away from immediate full-buffer rendering. The current expected behavior is exact received-buffer rendering: a single complete SSE payload is visible immediately, and visible growth comes only from later runtime events.
+- Terminal completion and history catch-up preserve the same runtime row identity, remove the cursor, and do not run a second typewriter/rebuild pass when persisted history replaces runtime state.
+- Test evidence: `npm test -- src/test/MessageTimeline.test.tsx`, `npm run build`, `npm run test:browser -- v2-stream-create-run.spec.ts v2-stream-refresh.spec.ts --project=chromium -g "progressively|terminal catch-up|structured output"`, and `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium -g "fully displayed live answer"`.
+- Browser screenshots: `.tmp/frontend-v2-ts-stream/v2-stream-terminal-catchup-after-history.png`, `.tmp/frontend-v2-ts-stream/v2-stream-terminal-output-prefix-final.png`.
+
+### 2026-07-10 No Synthetic Stream Replay Pass
+
+- `MSG-02`, `STREAM-02`, and `SUB-01` tightened after direct browser review showed the frontend could display an already received answer and then replay/rebuild it through the presentation-layer reveal cache.
+- `MessageTimeline` now renders the exact text currently present in runtime state. A full SSE delta appears as a full delta; visible streaming growth must come from subsequent SSE events, not a frontend `requestAnimationFrame` typewriter.
+- Terminal history hydration keeps the same live row identity, removes the cursor/streaming wrapper, and does not start a second reveal pass. The right-side subagent panel uses the same rule: the first delayed stdout chunk appears completely, later chunks append only when their SSE events arrive, and child stdout remains out of `.at-chat-view`.
+- Evidence: `npm run test -- MessageTimeline.test.tsx`, `npm run lint`, `npm run build`, `npm run test:browser -- streaming-message-timeline.spec.ts --project=chromium -g "live terminal finalize|subagent live terminal|terminal completed overlay"`, and `npm run test:browser -- v2-real-sse-stale-recovery.spec.ts --project=chromium -g "subagent stdout"`.
+- Screenshot inspection reviewed `.tmp/frontend-v2-ts-stream/v2-real-sse-subagent-stdout-mid-stream.png` and `.tmp/frontend-v2-ts-stream/v2-real-sse-subagent-stdout-replay.png`; mid-stream shows only the first child stdout chunk with the cursor at its tail, and replay shows the completed child stdout once with no cursor.
+- This supersedes prior evidence that required frontend-generated partial character frames. It does not mark `MSG-02`, `STREAM-02`, or `SUB-01` as `Verified`; interrupted recovery, broader production-backend orchestration/tool variants, true real-provider normal-stream proof, and final V1/V2 visual sign-off remain open.
+
+### 2026-07-02 Direct Delta Rendering Closure
+
+- Superseded by the 2026-07-10 No Synthetic Stream Replay pass. This older closure is retained as historical evidence for row identity, terminal catch-up, duplicate prevention, and immediate full-delta visibility.
+- Current behavior displays the exact received runtime buffer, then terminal/history catch-up flushes the same row without a second typewriter pass, duplicate answer, or rebuild.
+- Packed-browser coverage now asserts a complete SSE delta is fully visible immediately and the same row key survives terminal history catch-up with no cursor and no duplicate answer.
+- Evidence: `npm test -- src/test/MessageTimeline.test.tsx`, `npm run build`, `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium`.
+- Browser plugin note: direct in-app browser control timed out while listing/reading the current tab, so this slice relies on packed Chromium evidence and does not count as manual current-tab verification.
+- This does not move `MSG-02`, `STREAM-02`, or `REC-01` to `Verified`; real-backend orchestration/tool-heavy streams, subagent cadence, and final V1 paired visual sign-off remain open.
+
+### 2026-07-02 Refresh Hydration Cursor Replay Tightening
+
+- `MSG-02`, `STREAM-02`, and `REC-01` tightened: active refresh recovery now keeps hydrated persisted text/tool history when the EventSource resumes from `after_event_id`, instead of deleting the persisted answer/tool row just because a later live text segment arrives.
+- Runtime hydration suppression now consumes hydrated text in event order rather than using whole-answer substring matching. This prevents repeated text after tool/thinking boundaries from being hidden while still suppressing already-hydrated prefix chunks.
+- Completed runtime text close no longer marks terminal text for a second visual reveal; once terminal or persisted history catches up, the existing text row settles without fake-typing the same answer again.
+- Processed folding now keeps user injection notices and their immediate main-agent narration visible, while ordinary intermediate worker updates remain inside `已处理`.
+- Evidence: `npm test -- src/test/MessageTimeline.test.tsx`, `npm run build`, `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium`.
+- This does not move `MSG-02`, `STREAM-02`, or `REC-01` to `Verified`; live real-backend orchestration/tool-heavy recovery, subagent cadence, and final V1 paired visual sign-off remain open.
+
+### 2026-07-02 Migration Naming Boundary Guard
+
+- `CLEAN-01` tightened: `UserFacingNamingParity.test.ts` now checks both visible runtime text and frontend file paths.
+- Runtime UI source under `frontend/app/src` plus `frontend/app/index.html` still rejects user-facing `V2/v2`, with only the documented non-UI MaaS `/api/v2/` endpoint allowed.
+- The migration-only `v2-*` file-name boundary is now explicit: such names are allowed only for browser proof specs under `frontend/app/browser-tests`, and the guard fails if they move into runtime source or the app entry.
+- Evidence: `npm test -- src/test/UserFacingNamingParity.test.ts`.
+- This closes the migration-only test/file naming decision portion of `CLEAN-01`; promoted-route naming, final browser screenshot sweep, and reviewer sign-off remain open.
+
+### 2026-07-02 Final Frontend Python UI Harness Retirement
+
+- `CLEAN-01` tightened: removed the remaining broad `tests/integration_tests/frontend/test_project_view_ui.py` fake-DOM/source-copy harness and its now-unused frontend CSS helper shims. The old file mixed Project View, Automation, GitHub, Skills, Connectors, Gateway, Board, Memory, and Runtime Tool assertions against retired `frontend/dist/js` modules.
+- Current ownership is V2-native TypeScript and packed-browser coverage: `WorkspaceProjectView.test.tsx`/`v2-project-view.spec.ts`, `AutomationView.test.tsx`, `GitHubSettingsSection.test.tsx`, `SkillsView.test.tsx`/`v2-skills-view.spec.ts`, `ConnectorsView.test.tsx`/`v2-connectors-view.spec.ts`, `RuntimeSettingsSections.test.tsx`, `BoardTodosView.test.tsx`/`v2-board-actions.spec.ts`, `MemoryView.test.tsx`/`v2-memory-view.spec.ts`, and shell/settings browser suites.
+- The frontend Python UI harness inventory now contains only package marker files under `tests/integration_tests/frontend` and `tests/unit_tests/frontend`; no Python UI test or helper proof path remains.
+- Evidence: `rg --files tests/integration_tests/frontend tests/unit_tests/frontend`, `uv run --extra dev ruff check tests/integration_tests/frontend tests/unit_tests/frontend`, `npm test -- src/test/WorkspaceProjectView.test.tsx src/test/AutomationView.test.tsx src/test/SkillsView.test.tsx src/test/ConnectorsView.test.tsx src/test/RuntimeSettingsSections.test.tsx src/test/BoardTodosView.test.tsx src/test/MemoryView.test.tsx src/test/GitHubSettingsSection.test.tsx --testTimeout=20000`, `npm run test:browser -- v2-project-view.spec.ts --project=chromium`.
+- This does not move `CLEAN-01` to `Verified`; promoted-route naming, final browser screenshot sweep, and reviewer sign-off remain open.
+
+### 2026-07-02 Stream Reveal Remount Guard
+
+- `MSG-02` tightened: production-mode text reveal now remembers when a row/part has already displayed its full target text. If processed folding, terminal hydration, or persisted history remounts the same visible answer, the row restores the full text immediately instead of replaying from the first characters.
+- `MSG-01`/`MSG-05` tightened as a side effect of the same fix: text part keys are stable by content kind, so inserting processed thinking/tool blocks before an answer no longer changes the answer text component identity.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx`, `npm run typecheck`, `npm run lint`, `npm run build`, `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium`.
+- Browser plugin note: the in-app browser connection timed out twice during a direct DOM read, so it was not used as evidence for this slice. The reliable browser evidence is the packed Playwright suite above.
+- This does not move `MSG-01`, `MSG-02`, `MSG-05`, `STREAM-02`, or `SUB-01` to `Verified`; broader real-backend orchestration/tool stream variants and final V1 paired visual sign-off remain open.
+
+### 2026-07-02 Stream Hydration Anchor And Processed Fold Tightening
+
+- `MSG-02`, `STREAM-02`, and `REC-01` tightened: persisted terminal history for the same run now inherits the covered runtime text row key, so a live answer that has already rendered is not remounted and re-revealed from the beginning when replay data catches up.
+- `MSG-01` and `MSG-05` tightened: completed-run processed folding keeps tool/thinking work under one `已处理` affordance while leaving user-facing injection notices and MainAgent narration visible, reducing repeated text when processed details are expanded.
+- `SUB-01` tightened by browser observation on the current `/app/` page: the parent timeline shows only subagent summary answers, while the right subagent panel owns the child prompt/tool/stdout transcript.
+- Evidence: `npm test -- src/test/MessageTimeline.test.tsx`, `npm run typecheck`, `npm run lint`, `npm run build`, DevTools snapshot of `http://127.0.0.1:8000/app/?codex_verify=final_subagent_clean_1782842576308`, screenshot `tmp/v2-stream-hydration-check.png`.
+- This does not move `MSG-01`, `MSG-02`, `MSG-05`, `STREAM-02`, `REC-01`, or `SUB-01` to `Verified`; from-start live cadence observation, interrupted recovery, broader orchestration/subagent variants, and final V1 paired visual sign-off remain open.
+
+### 2026-07-02 Completed Stream No-Replay And Subagent Session Race Closure
+
+- `MSG-02` and `STREAM-02` tightened: closed runtime text rows no longer carry a permanent terminal `reveal` flag. A mounted row can still finish visual catch-up after EventSource close, but already-complete text is not replayed from the beginning when terminal history or remounts arrive.
+- `SUB-01` tightened: the right subagent panel now has packed-browser coverage for a complete child stream followed by matching terminal history; the child answer appears exactly once, with no streaming container and no stale cursor.
+- `SESS-03` and `SUB-01` tightened: switching away from a session clears the active right-side subagent panel instead of showing stale child context while another parent session hydrates.
+- Evidence: `npm test -- src/test/AppShell.test.tsx -t "subagent"`, `npm test -- src/test/MessageTimeline.test.tsx`, `npm run build`, `npm run test:browser -- browser-tests/v2-subagent-session.spec.ts`; screenshot `.tmp/frontend-v2-ts-subagent-session/v2-subagent-complete-stream-terminal-hydration.png`.
+- This does not move `MSG-02`, `SESS-03`, `STREAM-02`, or `SUB-01` to `Verified`; live real-backend orchestration variants, broader interrupted recovery, final V1 paired visual sign-off, and reviewer sign-off remain open.
+
+### 2026-07-02 Terminal Stream Catch-Up Identity Closure
+
+- `MSG-02`, `STREAM-02`, and `REC-01` tightened: terminal persisted history catch-up no longer rebuilds a fully revealed live answer row. When the closed runtime deltas exactly match the hydrated final answer, the runtime row remains the display anchor, partial/stale prefixes still yield to persisted history, and the terminal view has no stale cursor or duplicate answer text.
+- Added a packed-browser regression that records the live answer row key before terminal catch-up, completes the run with matching persisted history, and verifies the same row key remains after terminal settlement with one visible answer.
+- Evidence: `npm test -- src/test/MessageTimeline.test.tsx -t "persisted text upgrades|terminal runtime|covered by hydrated|closed runtime output"`, `npm run typecheck`, `npm run build`, `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium`; screenshots `.tmp/frontend-v2-ts-stream/v2-stream-terminal-catchup-before-history.png` and `.tmp/frontend-v2-ts-stream/v2-stream-terminal-catchup-after-history.png`.
+- This does not move `MSG-02`, `STREAM-02`, or `REC-01` to `Verified`; complex tool/orchestration streaming, subagent stream cadence, live real-backend recovery, and final V1 visual sign-off remain open.
+
+### 2026-07-02 Model Profile Auth Harness Retirement
+
+- `SET-06` tightened: Model settings now exposes provider-specific MaaS and CodeAgent credential controls in the V2 detail page, hides the generic API Key field for those providers, preserves saved CodeAgent profile-owned passwords when left blank, and saves MaaS profile-owned credentials from catalog-created profiles.
+- `CLEAN-01` tightened: removed `tests/integration_tests/frontend/test_model_profiles_ui.py` after moving the remaining current MaaS/CodeAgent auth and catalog-save semantics to V2-native component and packed-browser coverage.
+- Evidence: `npm test -- src/test/SettingsDrawer.test.tsx -t "MaaS|CodeAgent|model profile"`, `npm run typecheck`, `npm run build`, `npm run test:browser -- v2-settings-actions.spec.ts --project=chromium -g "MaaS model profile"`.
+- This does not move `SET-06` or `CLEAN-01` to `Verified`; formal V1 visual/DOM pairing, broader Model credentials/SSO failure states, remaining old frontend Python harness decisions, promoted-route naming, and reviewer sign-off remain open.
+
+### 2026-07-02 Orchestration Session-Switch Browser Closure
+
+- Added packed-browser coverage for an orchestration-mode, tool/thinking-heavy stream that switches away from the active session while a tool result and answer text continue in the background, then switches back and verifies the restored timeline order exactly.
+- Tightened the rendered timeline contract so runtime rows no longer show naked role labels such as `Coordinator`, `Explorer`, or `Crafter`; those identities remain internal metadata, while subagent details belong in the right-side subagent panel and tool state belongs in tool cards.
+- Rebuilt `frontend/dist/app`, re-ran the focused browser scenario, and inspected `.tmp/frontend-v2-ts-session-switch/v2-orchestration-tool-session-switch.png`; the final screenshot shows one answer row, no naked role label, no stale streaming cursor, and the fixed shell/composer still in place.
+- Evidence: `npm run build`; `npm run test:browser -- v2-session-switch-stream.spec.ts --project=chromium`.
+- This tightens `SESS-03`, `MSG-02`, `MSG-04`, and `STREAM-02` for the packed-browser path. It does not mark those rows `Verified`; live real-backend orchestration/tool-heavy switch variants, broader stream cadence sampling, and final V1 visual sign-off remain open.
+
+### 2026-07-02 Real Backend History Audit Hardening
+
+- Tightened `v2-real-backend-history.spec.ts` so real backend history is no longer accepted just because text is visible. The browser test now audits both the main timeline and the right-side subagent panel for empty thinking cards, raw internal lifecycle lines, standalone `Explorer`/`Crafter` role labels, stale streaming cursors, and actual message/tool presence.
+- Re-ran the real local backend history browser pass against the currently running app and inspected the generated screenshots: `.tmp/frontend-v2-real-backend/real-backend-subagent-history.png`, `.tmp/frontend-v2-real-backend/real-backend-subagent-panel.png`, and `.tmp/frontend-v2-real-backend/real-backend-orchestration-history.png`.
+- Corrected the closure-order status table so sessions/subagents, visual polish, and cleanup are tracked as `In progress` instead of contradicting the detailed matrix's `Not checked = 0` snapshot.
+- Evidence: `npm run test:browser -- v2-real-backend-history.spec.ts --project=chromium`.
+- This is an evidence-quality tightening slice for `MSG-03`, `MSG-04`, `STREAM-02`, and `SUB-01`. It does not claim those rows are `Verified`; live real-backend orchestration variants, final V1 visual sign-off, reviewer sign-off, and final V2 completion remain open.
+
+### 2026-07-02 Hooks Settings Harness Retirement
+
+- `SET-14` tightened: Hooks settings now supports recovery from config-load failure by letting the user add a new structured hook locally, hides the stale load error after the local draft starts, preserves HTTP handler fields (`headers`, `allowed_env_vars`, `timeout`, `on_error`, and `if`), and renders multiple matchers under the same event without collapsing them.
+- `CLEAN-01` tightened: removed `tests/integration_tests/frontend/test_hooks_settings_ui.py` after moving the still-current behavior into V2-native component and packed-browser coverage.
+- Evidence: `npm test -- src/test/HooksSettingsSection.test.tsx`, `npm run test:browser -- v2-settings-actions.spec.ts --project=chromium -g "validates and saves Hooks"`, `uv run --extra dev ruff check tests/integration_tests/frontend`, `npm run typecheck`, `npm run build`.
+- This does not move `SET-14` or `CLEAN-01` to `Verified`; formal V1 visual/DOM pairing, broader System secondary-page browser evidence, remaining frontend Python harness decisions, and reviewer sign-off remain open.
+
+### 2026-07-02 Hooks Settings Structured Error Closure
+
+- `SET-14` tightened: Hooks validate/save/delete failures now format structured backend details into user-facing hook locations and field names, map flattened agent role/prompt backend errors without leaking backend phrasing, and restore an optimistically deleted saved group when delete autosave fails.
+- `CLEAN-01` tightened: removed the migrated V1/dist fake-DOM harness scenarios for Hooks delete failure, structured validate/save errors, localized required fields, and flattened agent-role/prompt backend errors. `tests/integration_tests/frontend/test_hooks_settings_ui.py` remains for HTTP field coverage, stale reload reconciliation, and final V1 visual pairing.
+- Evidence: `npm test -- src/test/HooksSettingsSection.test.tsx`, `npm test -- src/test/SettingsDrawer.test.tsx -t "hooks"`, `uv run --extra dev ruff check tests\integration_tests\frontend\test_hooks_settings_ui.py`, `npm run test:browser -- v2-settings-actions.spec.ts -g "validates and saves Hooks" --project=chromium`, `npm run lint`, `npm run build`.
+
+### 2026-07-02 Hooks Settings Handler Field Preservation
+
+- `SET-14` tightened: Hooks handler `status_message` is now editable in the structured React editor, and TS coverage verifies save payloads preserve edited status messages plus backend-owned extras such as command `shell` and prompt `model`.
+- `CLEAN-01` unchanged for the legacy hooks harness: `tests/integration_tests/frontend/test_hooks_settings_ui.py` remains because HTTP field coverage, structured backend error localization, delete failure result mapping, stale reload reconciliation, and final V1 visual pairing are still not fully replaced.
+- Evidence: `npm test -- src/test/HooksSettingsSection.test.tsx`, `npm test -- src/test/SettingsDrawer.test.tsx -t "hooks"`, `npm run test:browser -- v2-settings-actions.spec.ts -g "validates and saves Hooks"`, `npm run lint`, `npm run build`.
+
+### 2026-07-02 Hooks Settings Delete Autosave Baseline
+
+- `SET-14` tightened: deleting a saved Hooks group now immediately persists the remaining saved configuration, deleting the last saved group sends `{ hooks: {} }`, and deleting an unsaved new group stays local. The delete autosave path uses the saved baseline so unrelated in-flight sibling drafts are not persisted accidentally.
+- `CLEAN-01` unchanged for the legacy hooks harness: `tests/integration_tests/frontend/test_hooks_settings_ui.py` remains because queued manual-save-after-delete, stale reload reconciliation, delete failure result mapping, structured backend error localization, and final V1 visual pairing are still not fully replaced.
+- Evidence: `npm test -- src/test/HooksSettingsSection.test.tsx`, `npm test -- src/test/SettingsDrawer.test.tsx -t "hooks"`, `npm run test:browser -- v2-settings-actions.spec.ts -g "validates and saves Hooks"`, `npm run lint`, `npm run build`.
+
+### 2026-07-02 Hooks Settings Local Required-Field Validation
+
+- `SET-14` tightened: Hooks agent and prompt handlers now fail locally when prompt text is missing, before validate/save requests reach the backend. The behavior is covered by TS component tests for both Validate and Save paths.
+- `CLEAN-01` unchanged for the legacy hooks harness: `tests/integration_tests/frontend/test_hooks_settings_ui.py` remains because delete autosave ordering, stale reload reconciliation, structured backend error mapping, browser error-state evidence, and final V1 visual pairing are still not fully replaced.
+- Evidence: `npm test -- src/test/HooksSettingsSection.test.tsx`, `npm test -- src/test/SettingsDrawer.test.tsx -t "hooks"`, `npm run test:browser -- v2-settings-actions.spec.ts -g "validates and saves Hooks"`, `npm run lint`, `npm run build`.
+
+### 2026-07-02 Hooks Settings Structured Editor First Pass
+
+- `SET-14` tightened: Hooks settings is no longer a raw JSON textarea in V2. The System secondary page now renders structured hook group and handler cards, supports add/edit/delete controls, validates and saves serialized payloads, keeps runtime diagnostics, and has packed-browser evidence for editing and saving a command handler.
+- `CLEAN-01` unchanged for the legacy hooks harness: `tests/integration_tests/frontend/test_hooks_settings_ui.py` remains because deeper V1 handler matrix behavior, validation/error rendering, stale/concurrent reload boundaries, and final V1 visual pairing are not closed in this slice.
+- Evidence: `npm test -- src/test/HooksSettingsSection.test.tsx`, `npm test -- src/test/SettingsDrawer.test.tsx -t "hooks"`, `npm run test:browser -- v2-settings-actions.spec.ts -g "validates and saves Hooks"`, `npm run lint`, `npm run build`, screenshot `.tmp/frontend-v2-ts-settings-actions/v2-hooks-structured-editor-save.png`.
+
+### 2026-07-02 Plugin Settings Harness Retirement
+
+- `SET-14` tightened: Plugins settings now covers the remaining old plugin harness behavior for marketplace empty/no-search state, install pending state, unsupported marketplace blocking, semantic version-detail fallback from `ref`/`sha`, JSON config round-tripping, direct-compatible ClawHub filtering, provider defaults, and install/update/configure payload boundaries.
+- `CLEAN-01` tightened: removed `tests/integration_tests/frontend/test_plugins_settings_ui.py` after replacing its current behavior with V2 TypeScript and packed-browser coverage.
+- Evidence: `npm test -- src/test/SettingsDrawer.test.tsx -t "plugins|plugin user_config|marketplace|json plugin config"`, `uv run --extra dev ruff check tests/integration_tests/frontend`, `npm run lint`, `npm run build`, and `npm run test:browser -- v2-settings-actions.spec.ts -g "manages Plugins" --project=chromium`; screenshots `.tmp/frontend-v2-ts-settings-actions/v2-plugin-actions.png` and `.tmp/frontend-v2-ts-settings-actions/v2-plugin-marketplace-actions.png`.
+- This does not move `SET-14` to `Verified`; full System settings parity still needs formal V1 visual/DOM pairing, loading/error-state browser capture, deeper secondary-page browser evidence, and reviewer sign-off.
+
+### 2026-07-02 Plugin Settings V1 Harness Coverage Expansion
+
+- `SET-14` tightened: Plugins settings now filters ClawHub marketplace installs to direct-compatible supported entries, preserves Claude and ClawHub provider defaults through load/install/update payloads, matches ClawHub updates by marketplace source value, rejects fractional integer config values instead of truncating them, omits blank optional new config fields, and still allows explicit clearing of existing optional fields.
+- `CLEAN-01` unchanged for the legacy plugins harness: `tests/integration_tests/frontend/test_plugins_settings_ui.py` remains because pending/loading states, empty-list behavior, remaining typed config edges, browser visual evidence, and broader System settings closure are not done in this slice.
+- Evidence: `npm test -- src/test/SettingsDrawer.test.tsx -t "plugins|plugin user_config"`, `npm run lint`, and `npm run build`.
+
+### 2026-07-02 Plugin Settings Marketplace Selection And Update
+
+- `SET-14` tightened: Plugins settings now has V2-native marketplace loading on the Add Plugin secondary page, filters unsupported marketplace versions, preserves provider/source/ref/version/safety payload fields, and opens a marketplace-specific Update secondary page for installed marketplace plugins.
+- `CLEAN-01` unchanged for the legacy plugins harness: `tests/integration_tests/frontend/test_plugins_settings_ui.py` still remains because ClawHub full-safe marketplace browsing, deeper inspect behavior, in-app/manual visual pairing, and broader System settings closure are not done in this slice.
+- Evidence: `npm test -- src/test/apiClient.test.ts -t "plugin marketplace"`, `npm test -- src/test/SettingsDrawer.test.tsx -t "plugin"`, `npm run test:browser -- v2-settings-actions.spec.ts -g "manages Plugins" --project=chromium`, `npm run lint`, and `npm run build`; screenshot `.tmp/frontend-v2-ts-settings-actions/v2-plugin-marketplace-actions.png`. In-app browser control was attempted but DOM reads timed out, so this entry does not claim in-app-browser sign-off.
+
+### 2026-07-02 Plugin Settings Install And Configure UI
+
+- `SET-14` tightened: Plugins settings now has V2-native install and configure sub-views, uses the backend plugin registry manifest `user_config` schema, preserves V1-relevant install payload fields, parses JSON config values, and avoids resending unchanged sensitive `<configured>` values.
+- `CLEAN-01` unchanged for the legacy plugins harness: `tests/integration_tests/frontend/test_plugins_settings_ui.py` still remains because marketplace browsing/version selection, ClawHub full-safe browsing behavior, marketplace update version filtering, and browser screenshot evidence are not closed in this slice.
+- Evidence: `npm test -- src/test/SettingsDrawer.test.tsx -t "plugin"`, `npm run lint`, and `npm run build`. Browser verification was attempted after build, but the in-app browser tab selection timed out, so no screenshot sign-off is claimed.
+
+### 2026-07-02 Plugin Settings API Gap Closure
+
+- `SET-14` tightened: the frontend API layer now exposes the existing backend plugin install and configure contracts that V1 plugin settings depended on, including source references, marketplace provider/source/ref/version fields, safety flags, and typed `user_config` payloads.
+- `CLEAN-01` unchanged for this harness: `tests/integration_tests/frontend/test_plugins_settings_ui.py` remains because V2 still needs the actual Plugins settings add/install/configure UI restored before the legacy proof path can be retired.
+- Evidence: `npm test -- src/test/apiClient.test.ts -t "manages plugins"`, `npm test -- src/test/apiClient.test.ts`, and `npm run lint`.
+
+### 2026-07-02 Trigger Settings Harness Migration
+
+- `SET-14` tightened: the System-owned Gateway secondary page now has V2-native component coverage for Feishu/WeChat provider inventory, Feishu detail-page editing, create/update payloads, WeChat login start/wait polling, and WeChat edit payloads.
+- `CLEAN-01` tightened: removed `tests/integration_tests/frontend/test_trigger_settings_ui.py` after replacing the still-current behavior with `frontend/app/src/test/TriggerSettingsSection.test.tsx`.
+- Automated evidence: `npm test -- src/test/TriggerSettingsSection.test.tsx`.
+- This does not move `SET-14` to `Verified`; formal V1 visual/DOM pairing, loading/error-state browser capture, and deeper System secondary-page browser coverage remain open.
+
+### 2026-07-02 Projects Sidebar Harness Migration
+
+- `SESS-02` tightened: while migrating the old projects sidebar fake-DOM harness, V2 was found to be missing the V1 `Chronological sessions` sort mode.
+- Restored `Chronological sessions` in `SessionsSidebar.tsx`: it renders a flat session list sorted by session update time, removes workspace row actions from that mode, keeps capped `Show more` behavior, and preserves workspace/session selection recovery when opening a flat-list row.
+- `CLEAN-01` tightened: removed `tests/integration_tests/frontend/test_projects_sidebar_ui.py` after replacing the still-current behavior with V2 TS component coverage.
+- Old V1 nested subagent-directory assertions from that harness were intentionally not restored because the current V2 direction opens subagent sessions from tool cards into the right-side subagent panel.
+- Automated evidence: `npm test -- src/test/SessionsSidebar.test.tsx`.
+- Remaining before cleanup verification: project view/settings/model/plugin/hook/trigger Python harness migration decisions, browser screenshot sign-off for chronological mode, promoted-route naming decision, migration-only file/test naming decision, and reviewer sign-off.
+
+### 2026-07-02 API Facade Harness Migration
+
+- `CLEAN-01` tightened: removed `tests/integration_tests/frontend/test_api_facade_ui.py`, the old Python integration harness that imported V1 `frontend/dist/js/core/api*.js` modules through temporary fake browser runners.
+- V2 ownership is now explicit for facade force-refresh behavior: `apiFacadeParity.test.ts` covers sidebar sessions, subagents, rounds, recovery, and token usage helpers preserving backend `force_refresh=true` query parameters.
+- `apiHttp.test.ts` now also covers structured backend validation detail arrays, and `http.ts` formats them into readable `ApiError.message` and `ApiError.detail` strings.
+- Existing `apiClient.test.ts` owns the current typed facade endpoint assertions for sessions, workspaces, SSH profiles, model catalog/profile/probe, roles, orchestration, triggers/gateways, UI language, runtime tools, and connectors.
+- The V1-only `requestJsonManaged()` invalidation assertions were not restored because V2 snapshot cache ownership is TanStack Query.
+- Automated evidence: `npm test -- src/test/apiHttp.test.ts src/test/apiFacadeParity.test.ts`, `npm test -- src/test/apiClient.test.ts`.
+- Remaining before cleanup verification: settings/project/model Python harness migration decisions, broader `tests/integration_tests/frontend/*.py` retirement, promoted-route naming decision, migration-only file/test naming decision, and reviewer sign-off.
+
+### 2026-07-02 API Request Harness Migration
+
+- `CLEAN-01` tightened: removed `tests/integration_tests/frontend/test_api_request_ui.py`, the old Python integration harness that executed V1 `frontend/dist/js/core/api/request.js` and connector facade modules in a fake Node/browser environment.
+- V2 ownership is now explicit for the still-relevant HTTP helper behavior: `apiHttp.test.ts` covers GET/HEAD no-store defaults, JSON headers, `ApiError` payloads, frontend log emission, backend status hints, AbortError pass-through, and repeated offline hint suppression.
+- `apiClient.test.ts` continues to own the typed API facade endpoint assertions, including current connector runtime-tool actions such as `/connectors/runtime-tools/system-path:add`.
+- The V1-only `requestJsonManaged()` cache/queue/lane assertions were not restored because the V2 architecture target assigns server snapshot caching to TanStack Query. The old W3 connector form-specific function assertions remain deferred to the connector/model-profile harness migrations.
+- Automated evidence: `npm test -- src/test/apiHttp.test.ts`, `npm test -- src/test/apiClient.test.ts`.
+- Remaining before cleanup verification: connector/model/profile Python harness migration decisions, broader `tests/integration_tests/frontend/*.py` retirement, promoted-route naming decision, migration-only file/test naming decision, and reviewer sign-off.
+
+### 2026-07-02 Frontend Logger Harness Migration
+
+- `CLEAN-01` tightened: removed `tests/integration_tests/frontend/test_logger_sdk.py`, the old Python integration harness that copied V1 `frontend/dist/js/utils/logger.js` into a fake browser module runner.
+- V2 ownership is now explicit for this proof path: `frontendLogger.test.ts` covers structured `/api/logs/frontend` batches, nullable run/session context, automatic full-batch flush, `sysLog` error feedback without bringing back a system-log panel, and `beforeunload` keepalive delivery while active streams defer normal flushes.
+- Added `runtime/frontendLogger.ts` as the current React/Vite logger runtime instead of relying on the retired `frontend/dist/js` logger module.
+- Automated evidence: `npm test -- src/test/frontendLogger.test.ts`.
+- Remaining before cleanup verification: API request helper harness migration, broader `tests/integration_tests/frontend/*.py` retirement, promoted-route naming decision, migration-only file/test naming decision, and reviewer sign-off.
+
+### 2026-07-02 App Build Artifact Harness Migration
+
+- `CLEAN-01` tightened: removed `tests/integration_tests/browser/test_frontend_module_loading.py`, the old Python browser-style harness that walked V1 `frontend/dist/js` modules and imported retired `subagentRail.js`, `connectorCards.js`, and `newSessionDraft.js` fake-DOM modules.
+- V2 ownership is now explicit for this proof path: `AppBuildArtifacts.test.ts` verifies the committed React app entry under `frontend/dist/app/index.html` references existing `/app/assets/*` bundles and no longer depends on retired hand-maintained `/js/` modules.
+- Behavior-specific coverage remains in current TS/browser tests instead of the deleted V1 module harness: subagent panel behavior, connector cards/actions, and new-session/session-switch behavior are owned by `AppShell.test.tsx`, `SubagentSessionView.test.tsx`, `ConnectorsView.test.tsx`, `ChatWorkspace.test.tsx`, and the relevant packed browser specs.
+- Updated frontend testing maintenance docs so the recommended module-loading/build-artifact check is `npm test -- src/test/AppBuildArtifacts.test.ts`, not the removed Python path.
+- Automated evidence: `npm test -- src/test/AppBuildArtifacts.test.ts`.
+- Remaining before cleanup verification: broader `tests/integration_tests/frontend/*.py` harness retirement, promoted-route naming decision, migration-only file/test naming decision, and reviewer sign-off.
+
+### 2026-07-02 Real Backend Terminal Settlement And Subagent Stream Replay
+
+- `MSG-02`/`STREAM-02` tightened with real local backend evidence for the failure class reported in the browser: a normal live run can stream, settle, hard refresh, and replay the final answer exactly once with no stale `running` marker, no prefix-only runtime row, no repeated-tail row, no stale cursor, and no document-level scroll.
+- `STREAM-02` tightened: stream close without a terminal event now closes the tracked runtime run in memory, then keeps refreshing the sidebar/detail/round data until the backend reports the exact terminal run ID. Live `running` rounds also poll until a terminal round arrives, so stale round metadata cannot keep the UI in a fake running state after refresh.
+- `SUB-01` tightened: subagent stream snapshots now merge only the child run into the existing runtime state instead of replacing parent state with stale snapshots. This prevents a child panel stream from reopening a completed parent run or leaking child rows into the main timeline during switch/reload.
+- `SUB-01` tightened against a real running child session: the test opens the right panel while the child is still running, hard-refreshes during that state, verifies the prompt and child output are still in the panel, then waits for completed status with no spinner/skeleton/cursor and no child output in the main timeline.
+- Visual evidence inspected: `.tmp/frontend-v2-real-backend-live/real-live-normal-terminal-after-refresh.png`, `.tmp/frontend-v2-real-backend-live/real-live-subagent-completed.png`.
+- Automated evidence: `npm test -- src/test/RunStreamController.test.tsx`, `npm test -- src/test/MessageTimeline.test.tsx`, `npm test -- src/test/SubagentSessionView.test.tsx src/test/MessageTimeline.test.tsx src/test/RunStreamController.test.tsx src/test/AppShell.test.tsx`, `npm run build`, `AGENT_TEAMS_REAL_LIVE_STREAM=1 npm run test:browser -- v2-real-backend-live-stream.spec.ts --project=chromium`.
+- Remaining before verification: real production-backend orchestration/tool-heavy stream variants, ordinary/orchestration mode cross-checks with exact order snapshots, and formal V1/V2 paired visual sign-off. This entry does not mark the whole P0 batch or V2 frontend goal complete.
+
+### 2026-07-01 Real Backend Live Stream And Subagent Panel Closure
+
+- `MSG-02`/`STREAM-02` tightened against real local backend behavior instead of only mock SSE: terminal row merge now consumes stale runtime text rows when persisted assistant history contains the final answer, including both leftover prefix rows and corrupted `final answer + repeated prefix` rows.
+- `SESS-03` tightened: the real backend browser test creates a normal run, samples incremental visible text, switches to another session and back, waits for terminal settlement, and asserts the final answer appears once with no strict-prefix row, repeated-tail row, stale cursor, missing answer, or document-level scroll.
+- `SUB-01` tightened: the real backend browser test starts a Crafter subagent, opens the right-side panel while the child run is still active, verifies prompt/header retention, child stdout/result rendering, completed badge settlement, and parent timeline isolation.
+- Visual evidence inspected: `.tmp/frontend-v2-real-backend-live/real-live-normal-streaming.png`, `.tmp/frontend-v2-real-backend-live/real-live-normal-after-switch.png`, `.tmp/frontend-v2-real-backend-live/real-live-subagent-running-panel.png`, `.tmp/frontend-v2-real-backend-live/real-live-subagent-completed.png`.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx`, `npm test -- src/test/SubagentSessionView.test.tsx`, `npm run lint`, `npm run build`, `AGENT_TEAMS_REAL_LIVE_STREAM=1 npm run test:browser -- v2-real-backend-live-stream.spec.ts --project=chromium`.
+- Remaining before verification: live orchestration variants, tool/thinking-heavy real session switching, and formal V1 paired visual sign-off. Real-backend terminal hard-refresh is now covered by the 2026-07-02 entry.
+
+### 2026-07-01 Subagent Stream State And Replay Isolation Fix
+
+- `SUB-01` tightened: the right subagent panel now applies a closed stream runtime state immediately during `onState`, so terminal text/status can repaint before persisted history refresh finishes.
+- `SUB-01`/`STREAM-02` tightened: parent timelines now filter detached persisted subagent messages even when the saved message incorrectly reuses the parent `run_id`, preventing child replay content from appearing above the main conversation.
+- `MSG-03` tightened: empty persisted thinking parts are no longer considered renderable rows, removing blank thinking cards and virtual-list space with no content.
+- Automated evidence: `npm test -- src/test/SubagentSessionView.test.tsx`, `npm test -- src/test/MessageTimeline.test.tsx`, `npm test -- src/test/runtimeReducers.test.ts src/test/streamClient.test.ts`, `npm run test:browser -- browser-tests/v2-subagent-session.spec.ts --project=chromium`, `npm run test:browser -- browser-tests/v2-real-sse-stale-recovery.spec.ts --project=chromium`, `npm run lint`, `git diff --check`.
+- Remaining before verification: formal V1 paired screenshots, real production-backend orchestration sampling, and final no-duplicate/no-missing/no-out-of-order review across normal and orchestration modes.
+
+### 2026-07-01 Tool Lifecycle Refresh Result Evidence
+
+- `MSG-04` tightened with a browser fixture for the actual live tool lifecycle: running tool call, hard refresh while the call is pending, reconnect from `after_event_id=2`, runtime result event, completed single-card state, terminal replay, `Processed` expansion, and opened tool body containing both result and call args.
+- Fixed a real stream/replay bug: hydrated tool state now distinguishes pending calls from resolved results. A persisted pending call no longer suppresses its later runtime `tool_result`, while already-resolved hydrated tools still suppress duplicate runtime results.
+- Scoped the final mixed persisted/runtime tool merge so it does not reuse historical non-tool duplicate removal; this preserves repeated live text after a tool boundary instead of treating it as already hydrated.
+- Visual evidence inspected: `.tmp/frontend-v2-ts-tool-lifecycle/v2-tool-lifecycle-live-running.png`, `.tmp/frontend-v2-ts-tool-lifecycle/v2-tool-lifecycle-live-completed.png`, `.tmp/frontend-v2-ts-tool-lifecycle/v2-tool-lifecycle-live-replay.png`.
+- Automated evidence: `npm run test -- src/test/MessageTimeline.test.tsx -t "tool|hydrated|reconnect|pending|supersedes"`, `npm run build`, `npm run test:browser -- v2-tool-lifecycle.spec.ts --project=chromium`, `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium -g "tool-heavy"`, `npm run test:browser -- v2-stream-reconnect.spec.ts --project=chromium -g "non-text"`.
+- Remaining before verification: normal/orchestration real-session tool-heavy browser passes and V1 paired comparison.
+
+### 2026-07-01 Thinking Stream Replay Lifecycle Evidence
+
+- `MSG-03` tightened with a packed `/app/` browser fixture that exercises the whole thinking lifecycle instead of only a component-level render: live start, empty thinking payload suppression, prefix delta, hard-refresh reconnect, repeated full-delta continuation, terminal structured output, replay hydration, processed expansion, and opened thinking body.
+- `MessageTimeline` now merges runtime thinking continuations back into the matching hydrated thinking row by `run_id` and part index, so refresh/reconnect no longer creates a second live card for the same reasoning part. Structured `run_completed.output` is now allowed to render as the final answer while status-only completion events remain hidden.
+- Visual evidence inspected: `.tmp/frontend-v2-ts-thinking/v2-thinking-live-resumed.png`, `.tmp/frontend-v2-ts-thinking/v2-thinking-live-terminal.png`, `.tmp/frontend-v2-ts-thinking/v2-thinking-terminal-replay-expanded.png`.
+- Automated evidence: `npm run test:browser -- v2-thinking-lifecycle.spec.ts --project=chromium`, `npm run test -- src/test/MessageTimeline.test.tsx -t "thinking|terminal payload|processed group"`, `npm run test -- src/test/RunStreamController.test.tsx -t "completed|terminal|thinking|refresh"`, `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium`, `npm run test:browser -- v2-stream-create-run.spec.ts --project=chromium -g "creates a run from the V2 composer"`, `npm run build`, `npm run lint`.
+- Remaining before verification: real-backend stream/replay comparison, V1 paired screenshots, and orchestration/subagent thinking variants.
+
+### 2026-07-01 User-Facing V2 Naming Cleanup Evidence
+
+- `CLEAN-01` moved from `Not checked` to `In progress`: added a focused TypeScript static guard that scans runtime UI source and `index.html` for `V2/v2`, with only the existing non-UI MAAS `/api/v2/` endpoint allowed as a migration boundary.
+- Added packed browser evidence that opens `/app/`, waits for the new shell, checks the visible body text for no `V2/v2`, verifies the shell remains fixed, and captures `.tmp/frontend-v2-ts-cleanup/v2-cleanup-no-v2-visible.png`.
+- Automated evidence: `npm run test -- src/test/UserFacingNamingParity.test.ts`, `npm run test:browser -- v2-cleanup-naming.spec.ts --project=chromium`, `npm run lint`.
+- Remaining before `Verified`: final route promotion naming sweep, explicit decision on migration-only file/test names that still use `v2-*`, and reviewer sign-off.
+
+### 2026-07-01 Skills Browser And Component Evidence Sweep
+
+- `PAGE-02` moved from `Not checked` to `In progress`: added dedicated packed V2 browser coverage for the Skills primary surface, including market browse/search, detail drawer, install payload, installed list/detail, uninstall confirmation, reload, and ClawHub token probe/save.
+- Tightened evidence quality: the installed detail screenshot now captures the `Skill detail` drawer itself instead of an ambiguous full-page frame, and the saved ClawHub token component test has a scoped 10 second timeout because it consistently passes but exceeds Vitest's default 5 seconds under Ant Drawer/jsdom interaction.
+- Automated evidence: `npm run test:browser -- v2-skills-view.spec.ts --project=chromium`, `npm test -- src/test/SkillsView.test.tsx`, `npm run lint`.
+- Browser evidence inspected: `.tmp/frontend-v2-ts-skills/v2-skills-market.png`, `.tmp/frontend-v2-ts-skills/v2-skills-installed-detail.png`, `.tmp/frontend-v2-ts-skills/v2-skills-clawhub-settings.png`.
+- Remaining before verification: formal V1 screenshot/DOM pairing, loading/error browser states, market install/probe failure states, pagination beyond one page, and narrow-density review.
+
+### 2026-07-01 Automation Browser And Component Evidence Sweep
+
+- `PAGE-01` moved from `Not checked` to `In progress`: packed V2 browser coverage now exercises the Automation primary surface through list/detail rendering, enable/disable, create with delivery target/events, run-now session handoff, and delete confirmation.
+- Fixed a stale component-test mock for `listAutomationDeliveryBindings` so `AutomationView.test.tsx` covers the current API dependency instead of crashing before render; the run-now assertion now verifies the selected workspace id as well as the returned session id.
+- Automated evidence: `npm run test:browser -- v2-module-actions.spec.ts --project=chromium -g "automation"`, `npm test -- src/test/AutomationView.test.tsx`.
+- Browser evidence inspected: `.tmp/frontend-v2-ts-module-actions/v2-automation-toggle-actions.png`, `.tmp/frontend-v2-ts-module-actions/v2-automation-create-xiaoluban-dialog.png`, `.tmp/frontend-v2-ts-module-actions/v2-automation-create-detail.png`.
+- Remaining before verification: formal V1 screenshot/DOM pairing, loading/error browser states, monitor/follow-up style workflow inventory, and narrow-density review.
+
+### 2026-07-01 Observability Browser Evidence Sweep
+
+- `PAGE-07` moved from `Not checked` to `In progress`: packed V2 browser coverage now opens Observability from the top bar and verifies global/session metrics, trends, breakdown tables, gateway signals, spec lineage, direct task lineage routing, and empty/error states.
+- Automated evidence: `npm run test:browser -- v2-observability.spec.ts --project=chromium`, `npm test -- src/test/SpecLineagePanel.test.tsx`.
+- Browser evidence inspected: `.tmp/frontend-v2-ts-observability/v2-observability-session.png`, `.tmp/frontend-v2-ts-observability/v2-observability-trends.png`, `.tmp/frontend-v2-ts-observability/v2-observability-gateway.png`, `.tmp/frontend-v2-ts-observability/v2-observability-spec-lineage.png`, `.tmp/frontend-v2-ts-observability/v2-observability-trends-empty.png`, `.tmp/frontend-v2-ts-observability/v2-observability-trends-error.png`, `.tmp/frontend-v2-ts-observability/v2-spec-lineage-direct-task.png`.
+- Remaining before verification: formal V1 screenshot/DOM pairing, loading-state capture, V1 event panel inventory if present, and narrow-density review.
+
+### 2026-07-01 Settings Parity Browser Gate And Proxy Semantics
+
+- `SET-01` moved from `Gap found` to `In progress`: added packed V2 browser coverage that opens every V1-aligned Settings first-level entry and confirms System-owned MCP/Plugins/Commands/Hooks/Agent Runtime/GitHub/Gateway stay behind the secondary System page launcher.
+- `SET-05` moved from unchecked to active evidence: the same browser gate opens Notifications, verifies rule labels plus hidden channel preservation, toggles a rule, and saves through the real `/system/configs/notifications` client path.
+- `SET-11` moved from unchecked to active evidence: fixed Proxy's `ssl_verify: null` mapping so saved inherited SSL behavior renders as `Inherit default`, then verified probe/save payloads preserve `ssl_verify: null`, keep the saved password, show probe feedback, and reload proxy config after save.
+- Automated evidence: `npm run build`, `npm run test:browser -- v2-settings-parity.spec.ts --project=chromium`, `npm run lint`.
+- Browser evidence: `.tmp/frontend-v2-ts-settings-parity/v2-settings-v1-section-survey.png`, `.tmp/frontend-v2-ts-settings-parity/v2-settings-notification-proxy-actions.png`.
+
+### 2026-07-01 Workspace And Session Sidebar Inventory
+
+- `SESS-01` moved from unchecked to active evidence: packed V2 browser coverage now exercises workspace labels/paths, project sort control, project view open/reload/back, file tree/file content, and workspace removal confirmation inside the fixed shell.
+- `SESS-02` moved from unchecked to active evidence: packed V2 browser coverage now checks selected-session styling, compact running/failed/stopped/unread indicators, background/approval/question counts, per-workspace `Show more`, collapse/expand, search reopening a collapsed group, and sort-menu state.
+- Existing shell browser flows remain the evidence for create/rename/delete, unread terminal clearing after selection/reload, and preventing V1-style subagent directories plus eager subagent requests on large session lists.
+- Automated evidence: `npm run test:browser -- v2-shell-parity.spec.ts --project=chromium -g "workspace and session list"`, `npm run test:browser -- v2-shell-parity.spec.ts --project=chromium -g "manages sessions|marks unread terminal|large initial sidebar load"`, `npm run test:browser -- v2-project-view.spec.ts --project=chromium`, `npm test -- src/test/SessionsSidebar.test.tsx -t "subagent|lazy|run indicators|filters|workspace groups|creates a session|sorts projects"`, `npm run lint`.
+- Browser evidence: `.tmp/frontend-v2-ts-shell/v2-sidebar-workspace-session-statuses.png`, `.tmp/frontend-v2-ts-shell/v2-sidebar-workspace-session-expanded.png`, `.tmp/frontend-v2-ts-shell/v2-sidebar-workspace-session-inventory.png`, `.tmp/frontend-v2-ts-project-view/v2-project-view-files.png`.
+
+### 2026-07-01 Composer Mention Voice And Round Prompt Recheck
+
+- `COMP-01` tightened: added a packed V2 browser flow that opens the leading role mention menu, selects `@Writer`, verifies the submitted run strips the mention from `input` while sending `target_role_id: "Writer"`, and captures the configured voice button in the same fixed composer.
+- The same browser coverage verifies configured speech with missing browser runtime renders a disabled `Voice input unsupported` control instead of silently disappearing.
+- `MSG-01` tightened against the latest expanded-prompt redundancy report: the long Chinese Explorer prompt fixture now counts the prompt prefix across the whole `.at-round-marker` row, so a collapsed title plus expanded body duplication fails even if the body itself is unique.
+- Automated evidence: `npm run test:browser -- v2-composer-input-affordances.spec.ts --project=chromium`, `npm run test:browser -- v2-rounds.spec.ts --project=chromium -g "does not repeat the round prompt title"`, `npm test -- src/test/Composer.test.tsx -t "leading role mention|voice input"`, `npm test -- src/test/RoundMarker.test.tsx`, `npm run lint`.
+- Browser evidence: `.tmp/frontend-v2-ts-composer-affordances/v2-composer-mention-menu-voice.png`, `.tmp/frontend-v2-ts-composer-affordances/v2-composer-mention-voice-ready.png`, `.tmp/frontend-v2-ts-rounds/v2-round-marker-expanded-no-duplicate.png`.
+
+### 2026-07-01 Composer Controls And Round Prompt Regression
+
+- `MSG-01` tightened against the latest expanded-prompt redundancy report: the browser round fixture now mirrors a real session shape where `run_user_message` is null and the long Chinese Explorer prompt is recovered from `intent`/`intent_parts`. The expanded summary must be exactly `Collapse`, and the full prompt appears only in the marker body.
+- `COMP-01` moved from unchecked to active evidence with a packed V2 browser flow for multiline Shift+Enter input, pasted image attachments, serialized text plus inline media payloads, active-run Stop state, fixed-shell layout, and locked runtime option controls while preserving the input for queued injection.
+- `COMP-02` moved from unchecked to active evidence in the same browser flow: normal root role, model profile, orchestration mode/default preset, preset selection, target role, thinking, Shell safety, and YOLO all reach the expected API requests and `/ag-ui/runs` payload.
+- Automated evidence: `npm run test:browser -- v2-rounds.spec.ts -g "does not repeat the round prompt title" --project=chromium`, `npm run test:browser -- v2-composer-controls.spec.ts --project=chromium`, `npm test -- src/test/RoundMarker.test.tsx`, `npm test -- src/test/Composer.test.tsx -t "pasted image|topology|model profile|thinking|YOLO|shell safety"`.
+- Browser evidence: `.tmp/frontend-v2-ts-composer-controls/v2-composer-controls-options.png`.
+
+### 2026-07-01 Composer Stop Resume And Injection Flow
+
+- `COMP-03` moved from unchecked to active evidence with a packed V2 browser flow that starts from an active recovered run, exercises queued injection, interrupt injection, Stop, reload into recoverable stopped state, and Resume from the recorded checkpoint.
+- The browser assertions check the exact API payloads for `/ag-ui/runs/{run}/inject`, `/ag-ui/runs/{run}:stop`, and `/ag-ui/runs/{run}:resume`; they also prove Resume opens `/events?after_event_id=8` and the next text delta appears in the foreground timeline while the composer remains fixed at the bottom.
+- Automated evidence: `npm run test:browser -- v2-composer-run-actions.spec.ts --project=chromium`, `npm test -- src/test/Composer.test.tsx -t "queues an injection|clears queued runtime injection|stops an active run|keeps leading role mention|interrupts an active run"`, `npm test -- src/test/RecoveryBar.test.tsx -t "resume|foreground recovery"`.
+- Browser evidence: `.tmp/frontend-v2-ts-composer-run-actions/v2-composer-run-actions-resume-ready.png`, `.tmp/frontend-v2-ts-composer-run-actions/v2-composer-run-actions-resumed.png`.
+
+### 2026-07-01 Markdown Media And Long Code Replay
+
+- `MSG-06` moved from unchecked to active evidence: added a packed V2 browser replay that renders frontmatter-stripped markdown, GFM table cells, links, highlighted TypeScript code, image media, and a following message in one timeline fixture.
+- The first browser pass found a real layout bug: a long code line made the markdown grid item exceed the timeline column and the `pre` element was not horizontally scrollable. The fix constrains `.at-message-markdown` and `.at-message-markdown pre` with `min-width: 0`, allowing the code block to own horizontal overflow without widening the message column.
+- Static CSS coverage now locks those shrink boundaries, while component tests cover Markdown parsing/highlighting, image and non-image media references, long runtime text finalization, and row measurement for long markdown blocks.
+- Automated evidence: `npm run build`, `npm run test:browser -- v2-markdown-media.spec.ts --project=chromium`, `npm test -- src/test/ShellLayoutCss.test.ts -t "markdown code blocks"`, `npm test -- src/test/MessageTimeline.test.tsx -t "strips frontmatter\|renders image media references\|renders workspace image previews\|renders media_ref previews\|renders non-image media references\|long runtime text streams\|measures markdown rows"`.
+- Browser evidence: `.tmp/frontend-v2-ts-markdown-media/v2-markdown-media-code.png`.
+
+### 2026-07-01 Timeline Scroll And Expanded Prompt Recheck
+
+- `MSG-07` moved from unchecked to active evidence: added a packed V2 browser test that opens `/app/`, loads a tall real timeline, resumes an active EventSource stream, confirms away-from-bottom deltas do not drag the reader, then confirms bottom-position deltas keep the cursor at the newest text while the page body remains fixed.
+- The same pass re-ran the complex Chinese replay fixture behind the reported expanded prompt duplication. The packed page now shows the expanded marker summary as only the arrow plus `收起`, with the long prompt owned by the body and counted once before and after hard refresh.
+- Component evidence still covers the lower-level virtualizer cases: pinned-bottom updates, away-from-bottom preservation, replay hydration inserting rows before the viewport, and row remeasurement for long markdown blocks.
+- Automated evidence: `npm run test:browser -- v2-timeline-scroll.spec.ts --project=chromium`, `npm run test:browser -- v2-complex-replay.spec.ts --project=chromium`, `npm test -- src/test/MessageTimeline.test.tsx -t "keeps the timeline pinned\|preserves scroll position\|preserves the anchored row\|measures markdown rows\|does not repeat the round prompt title\|collapses one-line round prompts"`.
+- Browser evidence: `.tmp/frontend-v2-ts-timeline-scroll/v2-timeline-scroll-bottom-follow.png`, `.tmp/frontend-v2-ts-complex-replay/v2-complex-replay-expanded-after-refresh.png`.
+
+### 2026-07-01 Active Run Recovery Refresh Checkpoint
+
+- `REC-01` tightened: added a browser refresh scenario for an active recovered run, proving V2 reconnects from the recovery snapshot checkpoint, preserves the already persisted streamed event after reload, and continues from the next event without duplicating the persisted row.
+- Mock recovery evidence now covers both active-run refresh and stopped-run resume from checkpoint in `v2-recovery.spec.ts`; real-SSE evidence covers active stop without stale reconnect, standalone recoverable resume, and checkpoint refresh recovery.
+- Visual inspection confirmed the active refresh state stays inside the fixed shell, shows no extra recovery card when no action is pending, and keeps the composer pinned while the stream is still active.
+- Automated evidence: `npm run test:browser -- v2-recovery.spec.ts --project=chromium`, `npm run test:browser -- v2-real-sse-stale-recovery.spec.ts -g "reopens a real SSE stream from the recovery checkpoint after refresh|resumes a real SSE recoverable run from the standalone action|stops a real SSE active run" --project=chromium`.
+- Browser evidence: `.tmp/frontend-v2-ts-recovery/v2-active-recovery-refresh.png`, `.tmp/frontend-v2-ts-stream/v2-real-sse-refresh-recovery.png`.
+
+### 2026-07-01 Recovery Pending Actions And Prompt Redundancy
+
+- `REC-02` tightened: pending tool approvals and user questions now have browser assertions that they stay between the timeline and composer and do not show the old `Run ... is awaiting_tool_approval` banner or inject internal question/answer text into the main timeline.
+- Recovery edge coverage now includes action retry failures, webfetch approval scoping, stopped-run resume, background task stop, paused subagent recovery without a generic banner/resume button, and recovered background subagent output staying out of the parent timeline.
+- `MSG-01` tightened again against the reported expanded-prompt redundancy: the long Chinese prompt fixture now asserts the prompt prefix itself is absent from the expanded summary and appears only once in the marker, not only that the full prompt string is unique.
+- Round rail browser coverage is explicitly run at a wide viewport, while the long prompt expansion case remains at the default viewport so rail hiding does not mask main-column prompt behavior.
+- Automated evidence: `npm run build`, `npm run test:browser -- v2-recovery.spec.ts --project=chromium`, `npm run test:browser -- v2-rounds.spec.ts --project=chromium`, `npm run test:browser -- v2-complex-replay.spec.ts --project=chromium`.
+- Browser evidence: `.tmp/frontend-v2-ts-recovery/v2-recovery-actions.png`, `.tmp/frontend-v2-ts-recovery/v2-paused-subagent-recovery.png`, `.tmp/frontend-v2-ts-rounds/v2-round-marker-expanded-no-duplicate.png`, `.tmp/frontend-v2-ts-complex-replay/v2-complex-replay-expanded-after-refresh.png`.
+
+### 2026-07-01 Complex Replay Prompt And Processed Refresh
+
+- `MSG-01` tightened: expanded long round prompts no longer read as duplicated header/body content. The open marker summary is a compact right-side collapse control, and the full prompt body owns the only main-timeline copy of the prompt.
+- `MSG-05` tightened: the same fixture expands processed work after a hard refresh and keeps thinking plus split tool-call/tool-return rows under one `已处理` affordance while the final answer remains outside the group.
+- Browser verification used a Chinese light-mode complex replay with a user message, round metadata, thinking, split tool call/result, final answer, expansion, hard refresh, and expansion again. DOM counts target `.at-timeline-virtual` so the right round rail cannot mask a duplicated main timeline row.
+- Automated evidence: `npm test -- src/test/ShellLayoutCss.test.ts src/test/RoundMarker.test.tsx`, `npm run build`, `npm run test:browser -- v2-complex-replay.spec.ts --project=chromium`, `npm run test:browser -- v2-rounds.spec.ts -g "does not repeat the round prompt title" --project=chromium`.
+- Browser evidence: `.tmp/frontend-v2-ts-complex-replay/v2-complex-replay-expanded-before-refresh.png`, `.tmp/frontend-v2-ts-complex-replay/v2-complex-replay-expanded-after-refresh.png`.
+
+### 2026-07-01 Streaming Typewriter And Subagent Prompt Pass
+
+- `MSG-02` tightened: production live text rows now reveal large incoming SSE chunks through a presentation-layer typewriter buffer while reducer state keeps exact payload text. Browser coverage samples a large subagent child delta before it finishes revealing, then verifies the full first delta and appended second delta settle into one right-panel row.
+- `MSG-03` tightened: whitespace-only or structurally empty thinking deltas no longer render empty `Thinking` cards or missing-text fallback rows. Malformed thinking payloads still surface diagnostic runtime text.
+- `SUB-01` tightened: parent `spawn_subagent` metadata now carries prompt text into the right subagent panel, survives authoritative record hydration and localStorage restoration, and is shown while the child run is live/waiting without flattening completed replay.
+- Browser verification on `/app/` with built `index-CIHdubqP.js` covered live prompt presence, incremental child streaming, terminal close before final history refill, parent timeline isolation, hard-refresh restoration, send/switch pressure, and parent hydration race.
+- Automated evidence: `npm test -- MessageTimeline.test.tsx`, `npm test -- SubagentSessionView.test.tsx`, `npm test -- AppShell.test.tsx SessionsSidebar.test.tsx`, `npm test -- ShellLayoutCss.test.ts`, `npm run build`, `npm run lint`, `npm run test:browser -- v2-subagent-session.spec.ts`.
+- Browser evidence: `.tmp/frontend-v2-ts-subagent-session/v2-subagent-incremental-stream-before-refill.png`, `.tmp/frontend-v2-ts-subagent-session/v2-subagent-hard-refresh-restored.png`.
+
+### 2026-07-01 V1 Primary Sidebar Inventory Restore
+
+- `SHELL-02` tightened: the primary sidebar no longer uses the obsolete six-entry set. It now matches the V1 user-facing order: Chat, Automation, Skills, Board, Search, Connectors, Memory, Observability, Settings.
+- Sidebar Observability and Settings are real entry points that open the module surface and settings drawer; the existing topbar buttons remain visible as shortcuts and no longer mask sidebar parity.
+- Browser verification on `/app/` with built `index-jGtzJpgW.js` clicked every primary sidebar entry and confirmed the real module surfaces opened inside the fixed shell frame.
+- Automated evidence: `npm test -- src/test/AppShell.test.tsx`, `npm test -- src/test/SessionsSidebar.test.tsx`, `npm run build`, `npm run test:browser -- v2-shell-parity.spec.ts -g "primary sidebar" --project=chromium`.
+- Browser evidence: `.tmp/frontend-v2-ts-shell/v2-sidebar-module-parity.png`.
+
+### 2026-07-01 Subagent Stream, Terminal Refill, And Hard Refresh
+
+- `SUB-01` tightened: the shell persists the active right-side subagent panel and restores it after a hard refresh without replaying the child answer into the parent `.at-chat-view`.
+- Subagent terminal hydration now preserves streamed text deltas while a delayed history request still returns an older checkpoint, then lets persisted history take over once the final message arrives.
+- `MessageTimeline` keeps this relaxed terminal-hydration rule scoped to subagent runtime state so normal closed-run de-duplication is not widened globally.
+- Browser verification on `/app/` with built `index-DrrDQkM0.js` covered live child streaming, terminal refill, hard-refresh restoration, send/switch pressure, and parent hydration race in `v2-subagent-session.spec.ts`.
+- Automated evidence: `npm test -- src/test/SubagentSessionView.test.tsx`, `npm test -- src/test/AppShell.test.tsx -t "subagent"`, `npm run build`, `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium`.
+- Browser evidence: `.tmp/frontend-v2-ts-subagent-session/v2-subagent-session-live.png`, `.tmp/frontend-v2-ts-subagent-session/v2-subagent-session-completed.png`, `.tmp/frontend-v2-ts-subagent-session/v2-subagent-hard-refresh-restored.png`, `.tmp/frontend-v2-ts-subagent-session/v2-subagent-session-race.png`, `.tmp/frontend-v2-ts-subagent-session/v2-subagent-send-switch-pressure.png`.
+
+### 2026-07-01 Subagent Terminal State Before History Refill
+
+- `SUB-01` tightened: when a subagent stream closes, the panel now stores the terminal runtime state immediately instead of waiting for persisted history to become available.
+- Terminal display preserves already streamed runtime rows while history refill is pending, so the panel does not drop visible output or leave a stale running/loading affordance between stream close and message hydration.
+- Browser verification on `/app/` with built `index-DpdOgFUl.js` opened a completed subagent from the parent tool card and showed `badge: "completed"`, `spinnerCount: 0`, `waitingTextCount: 0`, and `statusRunningCount: 0`.
+- Automated evidence: `npm test -- src/test/SubagentSessionView.test.tsx`, `npm run build`.
+- Browser evidence: `.tmp/subagent-terminal-state-first-final.json`, `.tmp/subagent-terminal-state-first-final.png`.
+
+### 2026-07-01 Round Marker Split-Panel Width Guard
+
+- `MSG-01` tightened: the round marker split-panel path no longer depends on a `max(0px, calc(100% - 288px))` rail reservation that can collapse the timeline virtual column to zero.
+- `MSG-05`/layout tightened: `.at-timeline-frame` is now an inline-size container; narrow timeline containers hide the round rail and keep the reading column at the normal timeline width instead of relying on viewport-wide media queries.
+- Browser verification on `/app/` with built `index-CAmwhJw-.js` and `index-BDLPeTMS.css` showed `virtualWidth: 760`, `buttonWidth: 734`, `railDisplay: "none"`, `summaryText: "收起"`, `titleInSummary: false`, and `prefixCount: 1` after opening the marker.
+- Automated evidence: `npm test -- src/test/ShellLayoutCss.test.ts`, `npm test -- src/test/RoundMarker.test.tsx`, `npm run build`.
+- Browser evidence: `.tmp/round-marker-narrow-rail-final.json`, `.tmp/round-marker-narrow-rail-final.png`.
+
+### 2026-07-01 Subagent Main Timeline Isolation
+
+- `SUB-01` tightened: main session timelines now reject detached subagent runs before role matching, so a scoped subagent run cannot leak back into the parent merely because an event carries the primary role.
+- Replay injection tightened: subagent rounds returned by session history no longer re-enter the main timeline through `mergeTimelineMessages`; explicit selected-run/subagent panel playback remains allowed.
+- Replay hydration before round metadata tightened: detached persisted child messages with UUID agent instances or subagent identifiers are filtered from the main timeline even when `/rounds` has not returned parent run IDs yet.
+- Browser verification on `/app/` with built `index-CqPIrZoU.js` showed `mainDetachedRows: []` in `.at-chat-view` while the right panel retained the Crafter `subagent_run_*` rows and `SUBOPEN_*` output.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx -t "subagent round messages|scoped subagent runs|subagent orphan|subagent stream rows|UUID subagent"`, `npm test -- src/test/MessageTimeline.test.tsx -t "subagent orphan messages|orphan subagent messages out before round metadata|subagent round messages|selected subagent stream|live subagent stream rows|UUID subagent"`, `npm test -- src/test/MessageTimeline.test.tsx`, `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium`, `npm run build`.
+- Browser evidence: `.tmp/subagent-main-panel-isolation-final.json`, `.tmp/subagent-main-panel-isolation-final.png`.
+
+### 2026-07-01 Parent Subagent Tool Card Preservation
+
+- `SUB-01` tightened: parent `spawn_subagent` tool-result cards are no longer removed by the detached-subagent replay filter when their message or run identifiers contain `subagent`.
+- This preserves the user-facing "Subagent started" card in the main timeline so clicking it opens the right-side subagent panel, while detached child output remains filtered out of the parent timeline.
+- Browser verification on `/app/` with built `index-BW92pzP9.js` passed all four `v2-subagent-session` scenarios: live subagent streaming, terminal history refill, hard-refresh restoration, send/switch pressure, and parent hydration race.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx -t "persisted parent subagent tool cards|opens the subagent panel|opens a running subagent|subagent orphan|UUID subagent|thinking"`, `npm run build`, `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium`.
+- Browser evidence: `.tmp/frontend-v2-ts-subagent-session/v2-subagent-session-live.png`, `.tmp/frontend-v2-ts-subagent-session/v2-subagent-session-completed.png`, `.tmp/frontend-v2-ts-subagent-session/v2-subagent-hard-refresh-restored.png`, `.tmp/frontend-v2-ts-subagent-session/v2-subagent-send-switch-pressure.png`, `.tmp/frontend-v2-ts-subagent-session/v2-subagent-session-race.png`.
+
+### 2026-07-01 Subagent Panel Width Clamp
+
+- `SUB-01` tightened: the right subagent panel now derives its maximum width from the live workspace width, preserving a minimum readable main timeline column instead of letting the saved/dragged panel width exceed the actual grid space.
+- Browser verification on `/app/` with the built `index-BdhUluEL.js` bundle kept `aria-valuemax`, `aria-valuenow`, CSS `--at-subagent-panel-width`, `grid-template-columns`, and measured panel width aligned at `646px` after an additional grow keypress.
+- Automated evidence: `npm test -- src/test/AppShell.test.tsx -t "subagent panel|right-side panel|available workspace width"`, `npm test -- src/test/ShellLayoutCss.test.ts`, `npm run build`.
+- Browser evidence: `.tmp/subagent-panel-width-clamp-final.json`, `.tmp/subagent-panel-width-clamp-final.png`.
+
+### 2026-07-01 Round Marker And Subagent Panel Cleanup
+
+- `MSG-01` tightened: long round prompts no longer duplicate the truncated title and full prompt when expanded; the summary becomes a single action button while the body owns the full prompt text.
+- `SUB-01` tightened: the right subagent panel filters internal `Subagent status` and `Background task` lifecycle rows, keeps streamed task output visible as output, and preserves completed panel replay without raw `Explorer` role labels.
+- `MSG-04` tightened: generic tool results that happen to contain `instance_id`, `run_id`, or `role_id` are not promoted into subagent cards unless they carry explicit subagent reference fields.
+- Automated evidence: `npm test -- src/test/RoundMarker.test.tsx`, `npm test -- src/test/MessageTimeline.test.tsx`, `npm run build`.
+- Browser evidence: `.tmp/round-marker-button-dom-final.json`, `.tmp/round-marker-button-final.png`, `.tmp/subagent-clean-live-samples.json`, `.tmp/subagent-clean-final-panel-now.json`, `.tmp/subagent-panel-clean-replay-final.json`, `.tmp/subagent-panel-clean-final.png`, `.tmp/final-browser-dom-check.json`.
+
+### 2026-07-01 Live Pending Cursor And Prompt Dedup
+
+- `MSG-02` tightened: open runtime runs with scoped lifecycle entries but no visible output now render a compact empty streaming text row with a typing cursor until the first real text/thinking/tool row arrives.
+- `MSG-01` tightened: expanded round markers are covered by a component test that prevents the prompt from appearing in both the summary header and the expanded body.
+- Automated evidence: `npm test -- src/test/RoundMarker.test.tsx`, `npm test -- src/test/MessageTimeline.test.tsx -t "pending runtime cursor"`, `npm test -- src/test/MessageTimeline.test.tsx -t "pending cursor for an open scoped run"`, `npm test -- src/test/MessageTimeline.test.tsx`, `npm run build`.
+- Browser evidence: `.tmp/live-pending-cursor-final.json`, `.tmp/round-marker-expanded-final.json`, `.tmp/pending-cursor-roundmarker-final.png`.
+
+### 2026-07-01 Top-Level Subagent Output Delta Streaming
+
+- `MSG-02` tightened: `output_delta` events that arrive as top-level `text`, `delta`, `content`, or `message` payloads now join the active runtime text stream instead of falling back to separate non-streaming `output delta` rows.
+- `SUB-01` tightened: the right-side subagent panel now streams top-level child `message.output.delta` payloads inside one live row with a cursor, while the parent `.at-chat-view` stays clean.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx`, `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium`, `npm run lint`, `npm run build`.
+- Browser evidence: `.tmp/frontend-v2-ts-subagent-session/v2-subagent-top-level-output-delta.png`.
+- Real HTTP SSE stdout subagent cadence and hard-refresh replay now have packed-browser evidence; remaining before verification: broader production-backend orchestration/tool-heavy variants and final V1 visual sign-off.
+
+### 2026-07-01 Terminal Typewriter Catch-Up
+
+- `MSG-02` tightened: a runtime text row that was already streaming no longer jumps to the full text merely because the run reaches a terminal state or history refill starts. The presentation buffer continues revealing the existing text target until it catches up, then removes the cursor.
+- `SUB-01` tightened: a subagent panel can show `completed` while its last streamed child output is still visually catching up, without leaking that child output into the parent `.at-chat-view` and without leaving a stale cursor afterward.
+- Automated evidence: `npm run build`, `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium -g "terminal close"`, `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium`, `npm test -- src/test/MessageTimeline.test.tsx`, `npm run lint`.
+- Browser evidence: `.tmp/frontend-v2-ts-subagent-session/v2-subagent-terminal-typewriter-catchup-mid.png`, `.tmp/frontend-v2-ts-subagent-session/v2-subagent-terminal-typewriter-catchup-final.png`.
+- Real HTTP SSE stdout cadence is now covered; remaining before verification: broader production-backend orchestration/tool-heavy variants and final V1 visual sign-off.
+
+### 2026-07-01 Subagent Catch-Up Refresh Recovery
+
+- `MSG-02`/`STREAM-02` tightened: a hard refresh during the terminal visual catch-up window now has packed-browser evidence. The restored panel reconnects to `/subagents/events`, accepts replayed child events, resumes the typewriter reveal from the restored event text, and settles with no stale cursor.
+- `SUB-01` tightened: the restored subagent panel keeps the prompt/header context, keeps replayed child output out of `.at-chat-view`, and does not duplicate the replayed child output after delayed final history is released.
+- Automated evidence: `npm run build`, `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium -g "refresh during terminal catch-up"`.
+- Browser evidence: `.tmp/frontend-v2-ts-subagent-session/v2-subagent-refresh-catchup-restored-mid.png`, `.tmp/frontend-v2-ts-subagent-session/v2-subagent-refresh-catchup-restored-final.png`.
+- Real HTTP SSE stdout cadence is now covered; remaining before verification: broader production-backend orchestration/tool-heavy variants and final V1 visual sign-off.
+
+### 2026-07-01 Live Orchestration Subagent Stream Cadence
+
+- `MSG-02` tightened: a packed-browser orchestration session now covers a live `subagent_kind="orchestration"` child stream with `Crafter` role events, typewriter reveal samples, top-level `output_delta` tail merging, terminal close, delayed final history refill, and no stale cursor.
+- `SUB-01` tightened: the live orchestration child stream stays in the right-side subagent panel, preserves prompt/header context, does not render raw role labels inside the body, and never leaks child output or the final child answer into `.at-chat-view`.
+- Automated evidence: `npm run build`, `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium -g "live orchestration subagent"`.
+- Browser evidence: `.tmp/frontend-v2-ts-subagent-session/v2-subagent-orchestration-live-stream-mid.png`, `.tmp/frontend-v2-ts-subagent-session/v2-subagent-orchestration-live-stream-final.png`.
+- Real HTTP SSE stdout cadence is now covered; remaining before verification: production-backend orchestration/SSE cadence and final V1 visual sign-off.
+
+### 2026-07-02 Real Backend Terminal Reveal And Session Switch Closure
+
+- `MSG-02` tightened: terminal persisted assistant history no longer creates a second `runtime-reveal` row after the same answer has already streamed. A matching persisted final answer now keeps its stable `message:*` row key, consumes the duplicate closed runtime row, and does not visually rebuild the completed response.
+- `SESS-03`/`STREAM-02` tightened: the real-backend live browser suite now covers normal live stream session switching, terminal hard refresh after live stream, subagent panel open while running plus switch-away/switch-back restoration, and orchestration tool-heavy running-state session switching. The orchestration case is intentionally a running-phase smoke on the current live backend; it no longer claims deterministic fake terminal completion when the backend remains active.
+- `SUB-01` tightened: the right-side subagent panel is no longer permanently cleared by switching away from its parent session; it is hidden for other sessions and restored when the user returns to the owning session.
+- Fake backend support now has deterministic slow-stream and hook-subagent triggers so stream/replay tests assert exact tokens, ordering, duplicate counts, and final settlement instead of depending on vague model prose.
+- Automated evidence: `npm run test -- MessageTimeline.test.tsx -t "terminal runtime reveal|orchestration coordinator|live runtime tools|subagent stream|internal orchestration"`, `npm run typecheck`, `npm run build`, `uv run --extra dev ruff check tests/integration_tests/support/fake_llm_server.py`, and focused real local backend browser coverage for normal stream, terminal refresh, subagent running panel, and orchestration running tool recovery.
+- Remaining before verification: deterministic orchestration terminal/replay evidence on a controlled fake backend or an approved live-backend fixture, broader production-backend visual sign-off, remaining Settings/page parity rows, and final full-goal reviewer pass.
+
+### 2026-07-02 Runtime Terminal Output Anchor Closure
+
+- `MSG-02`/`STREAM-02` tightened: terminal `run_completed.output` is now treated as visible runtime output and anchored to the existing runtime text row instead of creating a fresh hydrated/replayed answer row after the user already saw the full text.
+- The stream identity now strips transient processed/final row suffixes, and terminal structured output merges into the previous runtime text row when it repeats or extends the already streamed answer.
+- Real Chrome verification used unique marker `UNIQUE_STREAM_1782987247637` on the local `/app/` page. At terminal detection (`terminalSeenAt=7950ms`) and again 1200ms later, the final answer appeared in exactly one row with zero streaming cursors and zero streaming wrappers.
+- Automated evidence: `npm test -- src/test/runtimeReducers.test.ts --testTimeout=30000`, `npm test -- src/test/MessageTimeline.test.tsx --testTimeout=30000`, `npm run lint`, `npm run build`.
+- Remaining before verification: subagent panel cadence, broader orchestration/tool-heavy variants, interrupted recovery, and final V1/V2 visual sign-off still remain open.
+
+### 2026-07-02 Terminal Catch-Up Reveal Closure
+
+- `MSG-02` tightened: when terminal structured output extends a runtime prefix that is already visible, the same mounted row now continues revealing from that prefix instead of jumping directly to the full answer.
+- `STREAM-02` tightened: once terminal catch-up reaches the full answer, the row leaves the streaming wrapper state, so completed output does not keep stale `.at-message-streaming-text` chrome.
+- Packed-browser evidence covers both terminal subagent output before history refill and already-complete subagent stream hydration without replay.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx -t "terminal structured output|terminal structured output from the already displayed|previous runtime text" --testTimeout=30000`, `npm test -- src/test/MessageTimeline.test.tsx --testTimeout=30000`, `npm run build`, `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium -g "settles terminal subagent output immediately before history refill|does not replay an already complete subagent stream"`, `npm run lint`.
+- Remaining before verification: real production-backend orchestration variants, interrupted recovery, and final V1/V2 visual sign-off still remain open.
+
+### 2026-07-02 Terminal Catch-Up Browser Evidence
+
+- `MSG-02`/`STREAM-02` tightened with packed-browser evidence: `v2-stream-refresh.spec.ts` now samples terminal structured output immediately after completion, during catch-up, and after final settlement.
+- The new browser case proves the same `runtime-text:*` row remains mounted, the final answer is not present immediately after `run_completed.output`, the visible text grows from the prefix, and `.at-message-streaming-text` is gone after settlement.
+- Automated evidence: `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium`, `npm run lint`, `npm run build`.
+- Browser evidence: `.tmp/frontend-v2-ts-stream/v2-stream-terminal-output-prefix-reveal.png`, `.tmp/frontend-v2-ts-stream/v2-stream-terminal-output-prefix-final.png`.
+- Remaining before verification: real production-backend orchestration variants, interrupted recovery, and final V1/V2 visual sign-off still remain open.
+
+### 2026-07-02 Subagent Stream Isolation And Catch-Up
+
+- `STREAM-02`/`SUB-01` tightened: parent run streams now filter later child-role runtime rows when an earlier `spawn_subagent` tool result in the same run identified that child role, even if those later child text/tool rows omit explicit subagent markers and `normal_root_role_id` is still unavailable.
+- `MSG-02` tightened: terminal stream settlement now drops the streaming wrapper after EventSource close so the already-streaming row settles before delayed persisted history arrives, while open streams still reveal gradually enough to avoid whole-chunk jumps.
+- `SUB-01` tightened: switching sessions clears the active right-side subagent panel instead of restoring stale child context onto the newly selected parent; clicking the current session's subagent tool card still opens the panel immediately before backend IDs/session detail finish hydrating.
+- Packed-browser evidence now covers the full subagent panel suite in one run: parent-run child-marker isolation, incremental right-panel child stream, terminal settlement, refresh during settlement, live orchestration child stream, send/session-switch pressure, and parent hydration race.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx`, `npm test -- src/test/AppShell.test.tsx`, `npm run build`, `npm run test:browser -- browser-tests/v2-subagent-session.spec.ts --project=chromium`.
+- Remaining before verification: broader live production-backend orchestration/tool-heavy variants, formal V1/V2 visual pairing, and final P0 runtime sign-off.
+
+### 2026-07-01 Real SSE Subagent Stdout Cadence
+
+- `MSG-02` tightened: a real HTTP `text/event-stream` browser scenario now sends delayed subagent stdout writes and samples increasing visible text lengths before the final output is fully revealed.
+- `STREAM-02` tightened: terminal hydration no longer replaces an already-streaming right-panel child stdout row with the same completed persisted row, so hard refresh/replay does not create duplicate or stale cursor states.
+- `SUB-01` tightened: the subagent panel preserves prompt/header context, keeps the parent `.at-chat-view` free of child stdout, and replays the final stdout exactly once after refresh.
+- Automated evidence: `npm run build`, `npm run test:browser -- v2-real-sse-stale-recovery.spec.ts --project=chromium -g "subagent stdout"`, `npm test -- src/test/MessageTimeline.test.tsx`, `npm test -- src/test/SubagentSessionView.test.tsx`, `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium`, `npm run test:browser -- v2-real-sse-stale-recovery.spec.ts --project=chromium`, `npm run lint`.
+- Browser evidence: `.tmp/frontend-v2-ts-stream/v2-real-sse-subagent-stdout-mid-stream.png`, `.tmp/frontend-v2-ts-stream/v2-real-sse-subagent-stdout-replay.png`.
+- Remaining before verification: broader production-backend orchestration/tool-heavy variants and final V1 visual sign-off.
+
+### 2026-07-01 Parent-Run Subagent Marker Isolation
+
+- `STREAM-02`/`SUB-01` tightened: parent run streams that temporarily carry child-role events are now filtered when the payload explicitly identifies a subagent run, instance, role, or `kind/mode: subagent`, even while `normal_root_role_id` is still loading.
+- `STREAM-02` tightened: terminal runtime text is no longer suppressed merely because stale persisted assistant text exists for the same run; the runtime answer stays visible until persisted history actually contains that same text, preventing stream-complete/history-settle gaps from losing the final answer.
+- The user-facing `spawn_subagent` lifecycle card is preserved so the main timeline still has the "Subagent started" affordance that opens the right-side panel; only child process rows are filtered from the parent transcript.
+- Packed-browser and real HTTP SSE coverage now create the parent run from the composer while `normal_root_role_id` is null, inject child-marked thinking/text/read-tool events into that parent run, prove the main timeline renders only the legitimate parent text, then terminate the stream, expand the processed `Subagent started` card, and open the right-side subagent panel.
+- Automated evidence: `npm run test -- MessageTimeline.test.tsx -t "keeps closed runtime output visible when persisted assistant text is stale|keeps subagent-marked parent-run stream rows out while primary role metadata is loading"`, `npm run build`, `npm run test:browser -- v2-real-sse-stale-recovery.spec.ts --project=chromium -g "parent-run child markers"`, `npm run test:browser -- v2-real-sse-stale-recovery.spec.ts --project=chromium -g "streams real SSE subagent stdout|parent-run child markers"`.
+- Browser evidence reviewed: `.tmp/frontend-v2-ts-stream/v2-real-sse-subagent-stdout-mid-stream.png`, `.tmp/frontend-v2-ts-stream/v2-real-sse-subagent-stdout-replay.png`, `.tmp/frontend-v2-ts-stream/v2-real-sse-parent-run-marker-isolated.png`, `.tmp/frontend-v2-ts-subagent-session/v2-subagent-orchestration-live-stream-mid.png`, `.tmp/frontend-v2-ts-subagent-session/v2-subagent-orchestration-live-stream-final.png`, `.tmp/frontend-v2-ts-subagent-session/v2-subagent-parent-run-marker-isolated.png`.
+- Remaining before verification: real production-backend tool-heavy/orchestration sessions still need manual V1/V2 sign-off, but this closes the primary-role-loading leak window observed during switch/refresh.
+
+### 2026-07-01 Real Backend History Audit
+
+- `MSG-04`/`STREAM-02`/`SUB-01` tightened: real production-backend history replay is now covered by `v2-real-backend-history.spec.ts`, which queries the live local backend, selects actual normal/subagent and orchestration sessions, opens `http://127.0.0.1:8000/app/`, and checks the fixed shell, compact tool rows, processed groups, right-side subagent panel hydration, and orchestration role-label hygiene.
+- Browser evidence reviewed: `.tmp/frontend-v2-real-backend/real-backend-subagent-panel.png`, `.tmp/frontend-v2-real-backend/real-backend-orchestration-history.png`.
+- Automated evidence: `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH="C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" npm run test:browser -- v2-real-backend-history.spec.ts --project=chromium`.
+- Remaining before verification: live production-backend stream variants and final V1/V2 visual sign-off still need to be completed; this closes the missing real-history audit gap.
+
+### 2026-07-02 Pending Subagent Source Stream
+
+- `SUB-01` tightened: clicking a running subagent tool card before child `run_id`/`instance_id` hydration now carries the parent source run into the right-side panel, so child-role live output can render there immediately while parent-role rows stay out of the panel.
+- `MSG-02` tightened: terminal subagent streams no longer keep a fake `.at-message-streaming-text` catch-up after EventSource close. The already received final text settles immediately, remains singular during delayed history refill, and replay still hydrates the persisted answer once.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx src/test/SubagentSessionView.test.tsx`, `npm run typecheck`, `npm run lint`, `npm run build`, `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium`.
+- Remaining before verification: live production-backend stream variants and final V1/V2 visual sign-off still need to be completed.
+
+### 2026-07-01 Timeline Background Notification And Prompt Expansion
+
+- `STREAM-01` tightened: managed background task completion notifications are hidden from the user-visible transcript even when replayed from persisted `message.parts[*].part_kind="user-prompt"` payloads.
+- `MSG-01` tightened: round marker prompt expansion is now React-controlled, so the collapsed title cannot remain visible beside the expanded full prompt because of native `details` event ordering.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx -t "managed background task|long round prompts|one-line round prompts"`, `npm test -- src/test/MessageTimeline.test.tsx`, `npm run build`.
+- Browser evidence: `.tmp/session-e4dde0de-api.json`, `.tmp/background-notification-filter-final-dom.json`, `.tmp/round-marker-expand-final-dom.json`, `.tmp/round-marker-background-filter-final.png`.
+
+### 2026-06-30 Speech Settings And Expanded Prompt Closure
+
+- `SET-04` moved to `Verified`: compared V1 speech controls inside General against V2 Speech second-level page, kept the settings tab list unchanged, verified STT profile/language/prompt controls, and added unavailable-profile reasons for model profiles that cannot be used for realtime STT.
+- `MSG-01` tightened: expanded round markers now rely on native `details` toggling and no longer keep the truncated title in the summary while the full prompt is open.
+- Automated evidence: `npm test -- src/test/SettingsDrawer.test.tsx -t "speech"`, `npm test -- src/test/MessageTimeline.test.tsx`, `npm test -- src/test/ShellLayoutCss.test.ts`, `npm run build`.
+- Browser evidence: `.tmp/v2-speech-final.png`, `.tmp/v2-speech-dom-final.json`, `.tmp/round-marker-expanded.png`, `.tmp/round-marker-expanded-dom.json`.
+
+### 2026-07-01 Round Prompt And CSS Module Harness Closure
+
+- `CLEAN-01` tightened: removed `test_round_user_prompt_ui.py` and `test_css_module_splits.py`, the remaining V1/static proof paths for old round prompt/thinking strings, old `frontend/dist` CSS split files, and old round navigator/history implementation internals.
+- V2 ownership is now explicit: `ShellLayoutCss.test.ts` guards compact thinking blocks, processed folding, constrained markdown/code, streaming cursor affordances, overlaid round rail CSS, and rejects old V1/dist selectors in runtime CSS; `RoundRail.test.tsx` covers ordered/active rail behavior and clamped todo/status popovers; `MessageTimeline.test.tsx` covers round marker prompt dedupe, thinking/processed behavior, paged round hydration, and stale-session suppression; `v2-rounds.spec.ts` verifies long prompt expansion and paged round navigation in the packed browser shell.
+- Automated evidence: `npm test -- src/test/ShellLayoutCss.test.ts`, `npm test -- src/test/RoundRail.test.tsx`, `npm test -- src/test/MessageTimeline.test.tsx -t "round rail|round marker|user prompt|thinking|processed"`, `npm run test:browser -- browser-tests/v2-rounds.spec.ts -g "does not repeat|collects paged"`, `uv run --extra dev ruff check tests/unit_tests/frontend`, `npm run lint`.
+- No unit-level Python frontend static harness test files remain; only non-test helper files are left under `tests/unit_tests/frontend`. Broader integration frontend harnesses still remain. This update does not mark `CLEAN-01` verified.
+
+### 2026-07-01 Visual Style Regression Harness Closure
+
+- `CLEAN-01` tightened: removed `test_ui_style_regressions.py`, the final unit-level Python UI harness test file, after migrating its useful visual regression checks to V2-native TypeScript coverage.
+- V2 ownership is now explicit: `VisualStyleRegressions.test.ts` scans the current React/CSS surface for Connectors, Observability, Settings shared list/form/empty primitives, chart color ownership, and high-risk decorative patterns. `ShellLayoutCss.test.ts` remains the focused fixed-shell/layout owner.
+- The migration exposed and fixed real V2 CSS gaps instead of merely deleting the harness: `.at-settings-form-card` and `.at-settings-list` now declare `background: var(--at-surface)`, `.at-settings-list-row` declares a transparent row background, `.at-settings-empty` is a lighter dashed surface, and `.at-settings-native-select` has `min-width: 0`.
+- Automated evidence: `npm test -- src/test/VisualStyleRegressions.test.ts src/test/ShellLayoutCss.test.ts`, `uv run --extra dev ruff check tests/unit_tests/frontend`, `npm run lint`, `npm run build`, `npm run test:browser -- v2-settings-parity.spec.ts --project=chromium`.
+- Remaining cleanup still includes the broader integration frontend Python UI harness inventory, promoted-route naming, final browser screenshot sweep, and reviewer sign-off.
+
+## 2026-07-09 Real Backend Stream Audit Correction
+
+- `SUB-01` tightened: the live-backend subagent browser scenario now proves the right-side child panel receives incremental output instead of accepting a fully completed child answer. The child run executes slow stdout, the test samples visible text growth, verifies the last token is absent immediately after the first token appears, refreshes the open panel, and asserts child stdout stays out of the parent timeline.
+- `STREAM-02` tightened: the live-backend orchestration tool-stream scenario still passes after cleaning up duplicate local backend processes and rerunning the full stream spec.
+- `MSG-02`/`SESS-03` are not closed by the live-backend normal assistant stream evidence. The full `v2-real-backend-live-stream.spec.ts` run on 2026-07-09 passed the subagent and orchestration scenarios but failed both normal assistant-stream scenarios because the real model did not emit the deterministic token text before timeout. The reliable proof path for normal assistant stream cadence still needs either a deterministic fake-provider browser backend run or a real-provider scenario that can be observed from first token through terminal refresh without model-output ambiguity.
+- Automated evidence: `AGENT_TEAMS_REAL_LIVE_STREAM=1 npm run test:browser -- v2-real-backend-live-stream.spec.ts --project=chromium -g "real backend subagent stream"` passed; `AGENT_TEAMS_REAL_LIVE_STREAM=1 npm run test:browser -- v2-real-backend-live-stream.spec.ts --project=chromium` produced 2 passed / 2 failed and is intentionally not counted as full closure.
+
+## 2026-07-09 Managed Backend Normal Stream Proof
+
+- `MSG-02`/`SESS-03` tightened with a deterministic backend proof for the normal assistant path. The new browser spec starts an isolated fake LLM server plus an isolated real FastAPI backend, opens the real packed `/app/` bundle, submits normal chat runs, and samples visible stream text growth before the final token is present.
+- The session-switch scenario verifies the partially visible live row survives switching away and back, then settles as one final answer with no strict-prefix leftover row, no stale cursor, no duplicate final text, no document-level scroll, and no composer overlap.
+- The terminal-refresh scenario verifies a completed normal stream remains singular after hard refresh, with no second typewriter/rebuild pass and no stale streaming wrapper.
+- Automated evidence: `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium` passed with 2 Chromium scenarios.
+- This does not move `MSG-02`, `SESS-03`, or `STREAM-02` to `Verified`; true real-provider normal-stream proof, interrupted recovery, complex tool/orchestration variants, and final V1 visual sign-off remain open.
+
+## 2026-07-09 Terminal Stream Reveal Hardening
+
+- `MSG-02`/`STREAM-02` tightened for the completed-stream rebuild complaint: terminal history hydration now only inherits runtime `reveal` state when the runtime text is a strict prefix of the persisted answer. If the already-rendered runtime row already equals the persisted answer, hydration only preserves the runtime row key and cannot restart the typewriter/reveal cycle.
+- Added component coverage for the pure text-delta path where the full answer is visible before terminal and persisted history arrives without structured `run_completed.output`; the same DOM row and text node must remain mounted, with no `.at-message-streaming-text` or cursor after terminal/history catch-up.
+- Added component coverage for the tool-boundary path where a completed runtime row can carry stale `reveal=true`; when history later contains the same final answer, it must settle as one non-streaming row keyed to `runtime-text:*` instead of replaying from the first character.
+- Strengthened managed-backend browser coverage: terminal hard-refresh and active hard-refresh cases now continuously sample the settled answer for 20 frames after completion and assert one answer row, no prefix row, no cursor, no streaming wrapper, and stable row key.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx -t "fully streamed text answer|completed runtime row"`, `npm test -- src/test/MessageTimeline.test.tsx`, `npm run lint`, `npm run build`, `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "terminal hard refresh|active stream stays"`.
+- This still does not mark `MSG-02`, `STREAM-02`, or `SUB-01` as `Verified`; true real-provider normal-stream proof, interrupted recovery, broader production-backend orchestration/tool-heavy variants, and final V1 visual sign-off remain open.
+
+## 2026-07-09 Managed Tool-Pressure Stream Closure
+
+- `MSG-04`/`STREAM-02` tightened with deterministic browser evidence for normal-mode tool streaming. The managed backend spec now drives a fake-LLM normal run that issues three delayed `shell` tool calls, observes at least one visible running lifecycle card, switches away and back during the active run, then verifies terminal replay.
+- Fixed the terminal processed-group gap exposed by that browser run: if a run is terminal but persisted history still only has `tool-call` parts, the processed segment now closes those pending tool cards as completed instead of leaving hidden `running` cards and stale spinners after completion. The same terminal close guard also remains on runtime rows.
+- The browser terminal assertion now checks one final answer row, exactly three collapsed completed tool lifecycle cards, no legacy `Tool call: shell` label, no spinner, no naked role-only rows, no document-level scroll, and no composer overlap.
+- Added component coverage for both unresolved runtime tool calls after `run_completed` and unresolved persisted tool-call-only history inside a completed round.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx -t "closes unresolved runtime tool calls|closes unresolved persisted tool calls|keeps closed runtime tool events"`, `npm test -- src/test/MessageTimeline.test.tsx`, `npm run lint`, `npm run build`, `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "normal tool pressure"`.
+- This does not mark `MSG-04` or `STREAM-02` as `Verified`; production-backend tool/orchestration variants, interrupted recovery, and final V1 visual sign-off remain open.
+
+## 2026-07-09 Completed Stream History Refresh Guard
+
+- `MSG-02` tightened for the visible regression where a fully rendered stream could be treated as new reveal text after terminal state and history refresh. Persisted answer rows that are anchored to a closed runtime text row now explicitly drop text `streaming`/`reveal` state while preserving the runtime row key, so repeated history refreshes cannot restart the typewriter animation or replace the existing answer DOM node.
+- Added component coverage that reproduces the end-to-end handoff shape: a full text delta becomes visible, `run_completed` closes the stream, history arrives with the same answer and a completed round, then history refreshes again with a different message id. The test asserts the same article node and `.at-message-text` node remain mounted, the final answer appears once, and no `.at-message-streaming-text` or cursor returns.
+- Browser evidence remains the existing packed stream check for exact received-buffer rendering and terminal settlement: the row is marked before terminal, terminal close removes the streaming wrapper/cursor, keeps the same row key, and leaves one final answer.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx -t "does not restart reveal|does not replay a fully streamed text answer|keeps a fully received live row"`, `npm test -- src/test/MessageTimeline.test.tsx`, `npm run test:browser -- v2-stream-create-run.spec.ts --project=chromium -g "renders received stream text immediately"`, `npm run lint`, `npm run build`.
+- This still does not mark `MSG-02` or `STREAM-02` as `Verified`; true real-provider normal-stream proof, interrupted recovery, broader production-backend orchestration/tool-heavy variants, and final V1 visual sign-off remain open.
+
+## 2026-07-09 Terminal Text Stream Hydration Gate
+
+- `MSG-02`/`STREAM-02` tightened after browser evidence showed the packed stream-refresh spec was not actually proving terminal `/messages` hydration for pure text streams. The terminal controller had been waiting for round history for every run, including runs with no tool calls, so normal text streams could stay on runtime-only output until the round-settle loop timed out.
+- The round-settle gate now only applies to terminal runs that emitted tool calls needing persisted round/tool reconciliation. Pure text streams immediately invalidate/refetch session detail, messages, rounds, sidebar, and token usage at terminal close; tool-heavy streams still wait for round history to include the expected tool call ids before refreshing hydrated rounds.
+- Browser coverage now counts `/sessions/{id}/messages` requests, proves terminal close triggers a real messages refetch after the full live answer is visible, and samples the settled answer for 20 frames: one answer row, stable runtime row key, no `.at-message-streaming-text`, no cursor, and no duplicated final text.
+- Automated evidence: `npm test -- src/test/RunStreamController.test.tsx -t "refreshes timeline|waits for terminal round history"`, `npm test -- src/test/RunStreamController.test.tsx`, `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium -g "does not rebuild a fully displayed live answer"`, `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium`, `npm run build`, `npm run lint`.
+- This still does not mark `MSG-02` or `STREAM-02` as `Verified`; true real-provider normal-stream proof, interrupted recovery, broader production-backend orchestration/tool-heavy variants, and final V1 visual sign-off remain open.
+
+## 2026-07-09 Orchestration Subagent Cadence Guard
+
+- `MSG-02`/`SUB-01` tightened after reviewing the live orchestration subagent browser proof: the test previously accepted the full first child-output chunk appearing at once, which would not catch the right-panel "no real typewriter cadence" failure.
+- The live orchestration subagent scenario now samples `.at-message-streaming-text` in the right-side panel immediately after a large child delta arrives. It requires visible partial text, multiple increasing samples, and no complete first chunk during the sampled window before later waiting for the full text plus tail to settle.
+- The same scenario still asserts the prompt/header context is visible, raw `Crafter` role labels are not rendered in the panel body, child output stays out of `.at-chat-view`, terminal delayed history refill does not duplicate the child answer, and no stale cursor remains after completion.
+- `SUB-01`/`SESS-03` tightened for the session-switch race exposed by the full subagent browser run: after a user leaves a session with an open right-side subagent panel, returning to that parent session no longer auto-restores the old panel while the main timeline hydrates. The saved panel context is retained for same-session hard refresh, but cross-session return requires clicking the current timeline's subagent tool card again.
+- Automated evidence: `npm test -- src/test/AppShell.test.tsx -t "subagent"`, `npm run build`, `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium`.
+- This does not mark `MSG-02`, `STREAM-02`, or `SUB-01` as `Verified`; production-backend orchestration stream variants, interrupted recovery, and final V1 visual sign-off remain open.
+
+## 2026-07-09 Real SSE Reconnect Replay Tightening
+
+- `MSG-02`/`STREAM-02` tightened for interrupted stream recovery: the runtime-cursor real SSE scenario now reconnects from `after_event_id=2`, verifies the resumed answer is exactly one message row with the pre-interruption chunk before the resumed chunk, then hard-refreshes and verifies the persisted replay remains exactly one non-streaming row with no cursor or second reveal pass.
+- `MSG-04` tightened for rich replay: real SSE replay now asserts the terminal tool lifecycle is represented by the completed `Tool result: read` card only, with no separate stale `Tool call: read` card after completion.
+- `SUB-01`/`MSG-03` tightened for subagent lifecycle noise: `subagent_session_status_changed`, `subagent_stopped`, and `subagent_resumed` are now filtered from the main transcript like question/injection lifecycle events. The right-side subagent panel still owns child output; main timeline keeps user-visible recovery/manual-action content without leaking internal subagent status rows.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx -t "hides internal coordination"`, `npm test -- src/test/MessageTimeline.test.tsx`, `npm run build`, `npm run test:browser -- v2-real-sse-stale-recovery.spec.ts --project=chromium -g "preserves rich real SSE replay"`, `npm run test:browser -- v2-real-sse-stale-recovery.spec.ts --project=chromium`, `npm run lint`.
+- This does not mark `MSG-02`, `STREAM-02`, or `SUB-01` as `Verified`; live production-backend stream variants and final V1/V2 visual sign-off remain open.
+
+## 2026-07-09 Managed Subagent Cadence Proof
+
+- `SUB-01`/`MSG-02` tightened with a deterministic real-backend/fake-LLM subagent stream proof. The managed browser spec now triggers `spawn_subagent`, opens the completed/running subagent tool card into the right panel, and samples numbered `SUBAGENT_STREAM_*` tokens from the panel body.
+- The new cadence assertion checks more than visible text: the first child token must appear before the last child token, sampled token indexes must increase at least three times, and the sampled window must not already contain the last token. This catches the false pass where a panel shows one or two characters and then jumps to a full answer.
+- The same scenario asserts child tokens never leak into the parent timeline, the parent final answer is still visible, stale cursors are gone after terminal state, and the fixed shell/composer geometry remains stable.
+- Automated evidence: `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "managed backend subagent stream receives incremental chunks"`, `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium`, `npm run lint`.
+- This does not mark `SUB-01`, `MSG-02`, or `STREAM-02` as `Verified`; live production-backend orchestration variants and final V1/V2 visual sign-off remain open.
+
+## 2026-07-09 Managed Active Refresh Terminal Cursor Closure
+
+- `MSG-02`/`STREAM-02` tightened after managed-browser evidence showed a fully rendered stream could still carry `.at-message-streaming-text` and `.streaming-cursor` when the run had already reached backend terminal state after a session switch or hard refresh.
+- Main-session closure now refreshes selected session detail while active streams are present, so `latest_terminal_run_id/status` reaches `MessageTimeline` promptly after backend completion. The managed normal-stream session-switch case now settles with one final answer row, stable row key, zero prefix rows, zero streaming wrappers, and zero cursors.
+- `SUB-01` tightened for the right-side subagent panel active-refresh case: after opening the panel during child streaming, hard-refreshing the page, restoring the panel, and sampling continued numbered child tokens, terminal state closes stale runtime streaming even if the child runtime store still has an open snapshot. The panel keeps prompt/header context, child tokens stay out of `.at-chat-view`, and final terminal state has no cursor.
+- Added component coverage for both terminal subagent history refresh and stale-open runtime text under a completed subagent record; kept existing open-runtime hydration tests intact so active streams still show streaming while they are genuinely active.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx src/test/SubagentSessionView.test.tsx`, `npm run build`, `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium`, `npm run lint`.
+- This does not mark `MSG-02`, `STREAM-02`, or `SUB-01` as `Verified`; live production-backend orchestration variants, interrupted real-provider recovery, and final V1/V2 visual sign-off remain open.
+
+## 2026-07-10 Terminal Answer DOM Stability Probe
+
+- `MSG-02`/`STREAM-02` tightened for the false-pass class where the final answer text appears correct but the UI still unmounts and rebuilds the already-visible answer after terminal status or history hydration. The managed browser terminal-answer helper now marks the live answer DOM node before terminal close and requires the same node marker to survive the settled 20-frame sample window.
+- The focused held-stream scenario now proves three things at once: the full answer is already visible while the run is still active, the terminal status transition keeps the same `data-row-key`, and the exact same DOM node remains mounted with no prefix row, no streaming wrapper, and no cursor. This catches the visible "rendered once, then retyped/rebuilt" regression instead of only counting final text.
+- The normal slow-stream terminal-hard-refresh path now supports a deliberate post-content terminal hold. The browser test waits until the final token is already visible while the backend still reports the run as active, marks that live answer node, then requires the same node/probe to survive terminal status, history catch-up, and hard refresh without a second reveal pass.
+- The full managed-backend live stream spec was rerun after the probe change, covering normal stream switch-back, terminal hard refresh, held full-answer terminal transition, active-stream hard refresh, normal tool pressure, and right-panel subagent streaming.
+- Automated evidence: `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "managed backend keeps a fully displayed live answer stable"`, `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "managed backend normal stream survives terminal hard refresh without duplicate rows"`, `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium`.
+- This does not mark `MSG-02`, `STREAM-02`, or `SUB-01` as `Verified`; live production-backend orchestration variants, interrupted real-provider recovery, true real-provider normal-stream proof, and final V1/V2 visual sign-off remain open.
+
+## 2026-07-10 Subagent Panel Resize Boundary
+
+- `SUB-01` tightened for the right-side subagent panel readability issue. Pointer resizing now calculates panel width from the chat workspace right edge instead of `window.innerWidth`, so dragging the divider remains correct when the left sidebar or workspace frame shifts the chat shell away from the viewport origin.
+- Component coverage now simulates a chat workspace with a non-zero left offset and verifies pointer dragging changes the panel from 560px to 640px, persists `agentTeams.subagentPanelWidth`, and clears the resizing state on pointer up. This catches the prior window-width based calculation.
+- Browser coverage now opens a real packed subagent panel from the timeline tool card, drags the visible separator, verifies the side panel width and persisted localStorage width both grow, and continues through live child output plus terminal history refresh inside the fixed shell.
+- Automated evidence: `npm test -- src/test/AppShell.test.tsx -t "subagent panel|subagent sessions|subagent"`, `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium -g "opens a nested subagent session"`, `npm run lint`, `npm run build`.
+- This does not mark `SUB-01` as `Verified`; live production-backend variants, final V1/V2 visual sign-off, and broader subagent replay/streaming closure remain open.
+
+## 2026-07-10 Managed Tool Active Refresh Guard
+
+- `MSG-04`/`STREAM-02` tightened for tool-heavy active refresh. The managed real-backend/fake-LLM tool-pressure run now holds shell calls open long enough to hard-refresh while the backend still reports the run as active, then verifies the refreshed page restores the same tool lifecycle cards instead of dropping, splitting, or leaking role-only rows.
+- The terminal phase still requires one final answer row, three completed tool lifecycle cards folded under `Processed`, no spinner, no legacy `Tool call: shell` label, no document scroll, and no composer overlap. This covers the user-visible class where a tool stream looks right only before a session switch or hard refresh.
+- Automated evidence: `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "managed backend normal tool pressure streams compact lifecycle cards"`, `npm run lint`, `uv run --extra dev ruff check tests/integration_tests/support/fake_llm_server.py`, `git diff --check`.
+- This does not mark `MSG-04` or `STREAM-02` as `Verified`; broader orchestration variants, interrupted real-provider recovery, and final V1/V2 visual sign-off remain open.
+
+## 2026-07-10 Managed Orchestration Tool Refresh Guard
+
+- `MSG-04`/`STREAM-02` tightened for the orchestration branch of live tool-heavy runs. The managed backend spec now creates a real session, switches it through `/api/sessions/{id}/topology` into orchestration mode, drives `[orch-tool-pressure]` through the actual composer, and hard-refreshes while the backend still reports the orchestration run as active.
+- The browser assertions verify the composer stays in orchestration mode after refresh and after session switch, main timeline tool cards are restored, orchestration prompt scaffolding is not leaked into the transcript, `MainAgent`/`Explorer`/`Crafter` role-only rows stay hidden, the final orchestration answer appears once, and terminal state has no stale cursor or role chrome.
+- Automated evidence: `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "managed backend orchestration tool stream survives active refresh"`, `npm run lint`, `git diff --check`.
+- This does not mark `MSG-04` or `STREAM-02` as `Verified`; interrupted real-provider recovery, broader real-provider coverage, and final V1/V2 visual sign-off remain open.
+
+## 2026-07-10 Terminal Round Hydration Stability
+
+- `MSG-02`/`STREAM-02` tightened for the user-visible failure where the full live answer had already rendered, then terminal `/messages` plus `/rounds` catch-up caused the answer to be treated as a new message shape and visually rebuilt. Timeline message merging now prefers richer hydrated parts, such as `thinking` plus final `text`, when the text content is equivalent to an already-visible runtime row. This preserves the runtime row identity while allowing terminal processed work to appear.
+- Component coverage now uses a long deterministic live answer, advances the reveal until fully visible, injects terminal hydration with processed thinking, and verifies there is still one answer, no streaming wrapper, no cursor, and no later timer tick restarts the reveal.
+- Browser coverage now reproduces terminal round-history catch-up in the packed app: it samples progressive live text, closes the run, serves both persisted `/messages` and richer `/rounds`, then checks the same `data-row-key`, one collapsed `Processed` group, one final-answer occurrence, zero streaming cursors, and no 20-frame replay.
+- Subagent panel status labels were also made user-facing (`Running`, `Completed`, etc.) while retaining raw `data-status` for tests and styling, so the panel no longer exposes raw backend status strings.
+- Automated evidence: `npm test -- src/test/MessageTimeline.test.tsx`, `npm test -- src/test/SubagentSessionView.test.tsx`, `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium -g "does not rebuild a fully displayed live answer|terminal round history catches up"`, `npm run test:browser -- v2-stream-create-run.spec.ts --project=chromium -g "renders received stream text immediately"`, `npm run test:browser -- v2-subagent-session.spec.ts --project=chromium -g "opens a nested subagent session|replays an orchestration subagent panel|streams a live orchestration subagent"`, `npm run lint`, `npm run build`.
+- This does not mark `MSG-02`, `STREAM-02`, or `SUB-01` as `Verified`; interrupted recovery, broader production-backend orchestration/tool variants, and final V1/V2 visual sign-off remain open.
+
+## 2026-07-10 Late Stream Event Ordering Guard
+
+- `STREAM-02` tightened for the missing-content class where a reconnecting or replaying stream can receive event IDs out of order. The runtime reducer no longer drops an unseen event solely because its `event_id` is below the highest local cursor; it only drops events at or before the explicit replay cursor. This preserves late-but-unseen events while still suppressing stale replay data.
+- Runtime timeline entries are now kept in stable `event_id` order and terminal state is recomputed from that ordered entry list. This prevents a late event from rendering after newer text or incorrectly changing the visible run lifecycle by arrival order alone.
+- Browser coverage now drives a packed V2 stream that receives `ORDER_EVENT_10`, then `ORDER_EVENT_12`, then the late `ORDER_EVENT_11`; the DOM assertion verifies all three appear exactly once and in 10 -> 11 -> 12 order before terminal close removes the cursor. The same reconnect file was rerun fully to keep manual reconnect exhaustion, non-text reconnect, and Last-Event-ID fallback coverage intact.
+- Automated evidence: `npm test -- src/test/runtimeReducers.test.ts`, `npm test -- src/test/streamClient.test.ts`, `npm run test:browser -- v2-stream-reconnect.spec.ts --project=chromium -g "late unseen stream events|Last-Event-ID"`, `npm run test:browser -- v2-stream-reconnect.spec.ts --project=chromium`, `npm run lint`, `npm run build`.
+- This does not mark `STREAM-02` as `Verified`; active hard-refresh continuation through broader managed/real backend variants and final V1/V2 visual sign-off remain open.
+
+## 2026-07-10 No Synthetic Stream Replay
+
+- `MSG-02`/`STREAM-02` tightened for the false streaming class where the UI already had the full answer text, then rebuilt it through a frontend typewriter pass after terminal state or hydration. Runtime text rendering now displays exactly the text currently received from SSE and only keeps the live cursor while the run is open; it no longer splits a complete event payload into artificial character ticks.
+- Component coverage was updated to assert the new contract directly: a full `text_delta` is visible immediately with one live cursor, and `run_completed` removes the cursor while preserving the same answer article/text DOM nodes. Existing terminal/history hydration tests still assert the final answer appears once and does not regain `.at-message-streaming-text` or a cursor after repeated history refreshes.
+- Automated evidence: `npm test -- MessageTimeline.test.tsx`, `npm run test:browser -- v2-stream-refresh.spec.ts --project=chromium`, `npm run test:browser -- v2-stream-create-run.spec.ts --project=chromium`, `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "managed backend keeps a fully displayed live answer stable|managed backend normal stream survives terminal hard refresh"`, `npm run lint`.
+- This does not mark `MSG-02` or `STREAM-02` as `Verified`; browser-level managed/real reruns, interrupted recovery, broader production-backend orchestration/tool variants, and final V1/V2 visual sign-off remain open.
+
+## 2026-07-10 Frontend Python UI Harness Guard
+
+- `CLEAN-01` tightened after confirming the old frontend Python UI harness inventory is currently empty except package marker files. A V2-native TypeScript guard now scans `tests/integration_tests/frontend` and `tests/unit_tests/frontend` and fails if Python UI proof files are reintroduced there.
+- The guard intentionally allows `__init__.py` package markers only; runtime and UI behavior proof remains owned by TypeScript component tests and Playwright browser specs.
+- Automated evidence: `npm test -- src/test/FrontendPythonUiHarnessParity.test.ts src/test/UserFacingNamingParity.test.ts`, `npm run lint`.
+- This does not mark `CLEAN-01` as `Verified`; promoted-route naming, final screenshot sweep, final documentation, and reviewer sign-off remain open.
+
+## 2026-07-10 Managed Stale-Selection Active Recovery Guard
+
+- `SESS-03`/`STREAM-02`/`REC-01` tightened with a managed real-backend/fake-LLM recovery path that combines active streaming, session switching, stale persisted selection, and hard refresh.
+- The browser scenario starts a slow normal assistant stream, captures one live row, switches to another session while the source run remains active, deliberately persists the idle session as the selected session, and reloads. Startup reconciliation must select the genuinely active source run instead of the stale idle selection.
+- Post-reload assertions require exactly one restored live message row, an active backend run, multiple increasing text-length samples, the complete ordered token range through terminal settlement, one occurrence of the first token, no strict-prefix leftover row, no stale cursor, no document-level scroll, and no composer overlap.
+- Automated evidence: `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "managed backend active stream recovers when stored selection points elsewhere"`, `npm run lint`.
+- Visual evidence: `.tmp/frontend-v2-managed-backend-live/managed-live-stale-selection-active-refresh.png` shows the recovered terminal answer inside the fixed shell with the sidebar and composer remaining fixed.
+- This does not mark `SESS-03`, `STREAM-02`, or `REC-01` as `Verified`; real-provider interruption/reconnect, broader production orchestration/tool recovery variants, and final paired V1/V2 visual sign-off remain open.
+
+## 2026-07-10 Managed Network Interruption Recovery Batch
+
+- `SESS-03`/`MSG-02`/`STREAM-02`/`REC-01`/`SUB-01` tightened with a reusable TCP fault proxy and Chrome DevTools request probe. The proxy destroys live browser/backend sockets while the backend run continues; the probe requires a failed SSE request plus a cursor-bearing reconnect rather than accepting visible text alone.
+- Managed browser coverage now interrupts and restores four packed `/app/` paths in one serial run: a 72-token normal assistant stream, three concurrent normal shell tools, orchestration task/subagent tools, and the right-side normal-mode subagent stream. Each path continues through its existing refresh, switch, terminal, no-duplicate, no-role-leakage, fixed-shell, and composer-geometry assertions.
+- The batch exposed a real subagent recovery defect: `/sessions/{session_id}/subagents/events` emitted no SSE `id:` lines, so native `EventSource` reconnects returned to `after_event_id=0`. The endpoint now emits persisted event IDs, honors the newer query or `Last-Event-ID` cursor, and the panel adds a bounded transport fallback from its latest runtime cursor.
+- Automated evidence: `npm test -- src/test/SubagentSessionView.test.tsx` (29 passed), `uv run --extra dev pytest -q tests/unit_tests/interfaces/server/test_sessions_router.py -k "stream_session_subagent_events"` (3 passed), `npm run lint`, `npm run build`, and `AGENT_TEAMS_MANAGED_LIVE_STREAM=1 npm run test:browser -- v2-managed-backend-live-stream.spec.ts --project=chromium -g "normal stream resumes exactly|normal tool pressure|orchestration tool stream|subagent stream receives incremental chunks"` (4 passed).
+- Visual evidence: `.tmp/frontend-v2-managed-backend-live/managed-live-network-cut-recovered-streaming.png`, `.tmp/frontend-v2-managed-backend-live/managed-live-tool-pressure-after-network-recovery.png`, `.tmp/frontend-v2-managed-backend-live/managed-live-orchestration-tool-after-network-recovery.png`, and `.tmp/frontend-v2-managed-backend-live/managed-live-subagent-panel-after-network-recovery.png`. Pixel inspection confirmed the 1280x720 RGB screenshots are opaque; apparent black bands in the multi-image viewer were not present in the PNGs.
+- This does not mark the rows or final V2 frontend `Verified`; true real-provider interruption/reconnect, final paired V1/V2 visual sign-off, and the remaining non-runtime parity rows are still open.
+
+## Immediate P0 Batch
+
+The current batch closes these rows first:
+
+| Row | Required Fix | Verification |
+| --- | --- | --- |
+| MSG-01 | Prompt appears only in the round marker, not duplicated as a user row or expanded summary/body pair. | Closed 2026-07-11 with a same-fixture V1/V2 complex replay, one V2 prompt, one final action block below the answer, stable collapse-expand-collapse geometry and scroll, hard-refresh replay, and independent reviewer PASS. |
+| MSG-02 | Live stream has no giant blank cursor row, no fake second typewriter pass, and no stray internal `passed` text. | Closed 2026-07-10 with exact true-provider SSE evidence, active switch and hard-refresh recovery, one stable terminal row, paired V1 replay, 335 focused tests, 13 browser switch/reconnect/refresh tests, and independent reviewer PASS. |
+| MSG-03 | Thinking appears once, never as an empty card, and folds into `已处理` after terminal state. | `MessageTimeline.test.tsx` and `v2-thinking-lifecycle.spec.ts` now cover hydrated closed-stream thinking folded into processed work, empty/whitespace live thinking deltas, hard-refresh reconnect, repeated full thinking deltas, terminal structured output, and replay expansion screenshots. Still needs real-backend/V1 paired stream and replay screenshots plus orchestration/subagent variants. |
+| MSG-04 | Tool call and result occupy one lifecycle card: running while pending, filled when done, compact after processed. | `MessageTimeline.test.tsx` covers live tool/approval rows, reconnected tool results, compact previews, and the repeated text after tool boundary regression. `v2-tool-lifecycle.spec.ts` now proves split persisted call/result history plus live pending-refresh-result-terminal replay render as one lifecycle card. `v2-real-backend-history.spec.ts` now replays actual normal/subagent tool history and orchestration `ask_question` history against the live local backend. Still needs final V1 visual sign-off. |
+| MSG-05 | `已处理` is a real compact fold control, not divider decoration, and preserves virtualizer measurements. | Closed 2026-07-11 with paired V1/V2 collapse-expand-collapse evidence, no decorative divider, stable virtual measurements and scroll, one thinking block, one merged tool card, one final answer, and independent reviewer PASS. |
+| STREAM-02 | Switching sessions during an active stream and returning restores exact run content by event order. | Closed 2026-07-10 with session-owned tracked streams, stale async-confirmation invalidation, compact lifetime event-ID ranges, query/Last-Event-ID recovery, actual TCP-cut continuation, active hard refresh, exact V1 replay, and independent reviewer PASS. |
+| SUB-01 | Right-side subagent panel remains readable and resizable across replay/live panel states. | `AppShell.test.tsx` now clamps panel growth to the measured workspace width and preserves prompt context across authoritative record hydration; `MessageTimeline.test.tsx` now covers scoped subagent events carrying the primary role and subagent rounds injected from replay. `SubagentSessionView.test.tsx` covers live and completed prompt retention plus terminal state reaching the panel before history refill finishes while preserving live runtime output, and `v2-subagent-session.spec.ts` now proves child prompt visibility above the timeline, incremental child deltas in one right-panel row, completed-stream hydration with multiple partial text samples before final text, same-row terminal settlement, completed orchestration replay restoration, live orchestration child streaming, hard-refresh restoration, parent-run child marker filtering, and no parent timeline leakage. `v2-real-sse-stale-recovery.spec.ts` adds delayed real HTTP SSE stdout streaming, right-panel prompt/header retention, no parent leakage, exactly-once replay after refresh, and real HTTP parent-run child-marker filtering with the completed `Subagent started` card opening the right-side panel. `v2-real-backend-history.spec.ts` now opens an actual completed subagent tool card from live backend history, waits for the right panel to hydrate child messages/tools, and screenshots the hydrated panel. Paused child recovery now opens the same resizable panel without claiming a live stream, while the existing running-child cases continue to prove incremental deltas, terminal refill, refresh, and parent isolation. Still needs broader live production-backend stream variants and final V1 visual sign-off. |
+| CLEAN-01 | Old static UI harnesses should not be the proof path for V2 shell layout and status. | The legacy `test_settings_shell_ui.py` file was removed after mapping its remaining Settings shell, action ownership, General, model-editor, environment, workspace, and mask-click assertions to V2 Settings component/static/browser coverage. The legacy `test_backend_status_ui.py` file was removed after adding V2 `AppShell.test.tsx` status/error/refresh coverage and re-running the packed-browser backend pressure test; the legacy `test_system_status_ui.py` file was removed after adding V2 MCP editor/status coverage in `SettingsDrawer.test.tsx` and duplicate skill source/ref coverage in `SkillsView.test.tsx`; the legacy `test_round_todo_card_ui.py` file was removed after adding V2 `RoundRail.test.tsx` coverage; the legacy `test_board_todo_phase_one_ui.py` file was removed after confirming Board ownership in `BoardTodosView.test.tsx` and `v2-board-actions.spec.ts`; the legacy `test_image_preview_ui.py` file was removed after confirming image-preview ownership in `v2-image-preview.spec.ts` and `MessageTimeline.test.tsx`; the legacy `test_recovery_stream_ui.py` file was removed after confirming recovery stream ownership in `RecoveryBar.test.tsx`, `v2-recovery.spec.ts`, and `v2-real-sse-stale-recovery.spec.ts`; the legacy `test_message_export_ui.py` file was removed after confirming ownership in `MessageExportMenu.test.tsx`, `messageExport.test.ts`, and `v2-message-export.spec.ts`; the legacy `test_workspace_prompt_ui.py` file was removed after adding `WorkspacePromptParity.test.ts` coverage for the current React shell, prompt controls, token usage, retired right-rail IDs, markdown ownership, stream cursor primitives, and fixed viewport contract; the legacy `test_round_user_prompt_ui.py` file was removed after adding V2 CSS coverage for compact thinking blocks and confirming prompt/thinking ownership in `MessageTimeline.test.tsx`, `RoundMarker.test.tsx`, `v2-rounds.spec.ts`, `v2-complex-replay.spec.ts`, and `v2-thinking-lifecycle.spec.ts`; the legacy `test_memory_view_ui.py` file was removed after V2 Memory gained Architecture and Skill Drafts tabs plus TS component/client coverage for the old harness's meaningful behavior; the legacy `test_speech_ui.py` file was removed after V2 ownership moved to `Composer.test.tsx`, `feedbackMessages.test.ts`, `SettingsDrawer.test.tsx`, `MessageTimeline.test.tsx`, `apiClient.test.ts`, `v2-composer-input-affordances.spec.ts`, and `voice-input-audio.spec.ts`. Remaining cleanup still includes promoted-route naming, final screenshot sweep, and reviewer sign-off; the old frontend Python UI harness inventory has been retired. |

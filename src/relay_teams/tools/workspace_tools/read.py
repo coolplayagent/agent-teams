@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import mimetypes
+import json
 from pathlib import Path
 
 from PIL import (
@@ -42,6 +43,7 @@ from relay_teams.tools.workspace_tools.read_support import (
     MAX_BYTES_LABEL,
     MAX_LINE_LENGTH,
     MAX_LINE_SUFFIX,
+    WorkspaceReadPresentation,
     _project_read_result,
     resolve_read_instruction_sections,
     validate_pagination_args,
@@ -316,6 +318,11 @@ async def _project_image_read_result(
             "mime_type": mime_type,
             "content": [media_part],
         },
+        presentation=WorkspaceReadPresentation(
+            path=str(file_path),
+            resource_type="image",
+            content=f"[image: {file_path.name}]",
+        ),
     ).model_copy(
         update={
             "internal_data": {
@@ -389,6 +396,11 @@ def register(agent: Agent[ToolDeps, str]) -> None:
                     output="\n".join(output),
                     truncated=truncated,
                     next_offset=next_offset,
+                    presentation=WorkspaceReadPresentation(
+                        path=str(file_path),
+                        resource_type="directory",
+                        entries=tuple(entries),
+                    ),
                 )
 
             if not path_is_file(file_path):
@@ -399,7 +411,7 @@ def register(agent: Agent[ToolDeps, str]) -> None:
                     deps=ctx.deps,
                     file_path=file_path,
                 )
-                output, _cells, truncated, _parsed = read_notebook_for_tool(
+                output, cells, truncated, parsed = read_notebook_for_tool(
                     file_path=file_path,
                     cell_id=cell_id,
                     include_outputs=include_outputs,
@@ -415,6 +427,16 @@ def register(agent: Agent[ToolDeps, str]) -> None:
                     output=output,
                     truncated=truncated,
                     next_offset=None,
+                    presentation=WorkspaceReadPresentation(
+                        path=str(file_path),
+                        resource_type="notebook",
+                        content=(
+                            json.dumps(cells, ensure_ascii=False, indent=2)
+                            if parsed
+                            else output
+                        ),
+                        instructions=instruction_sections,
+                    ),
                 )
 
             if cell_id is not None:
@@ -457,29 +479,29 @@ def register(agent: Agent[ToolDeps, str]) -> None:
                 output.append("<instructions>")
                 output.append("\n\n".join(instruction_sections))
                 output.append("</instructions>")
-            output.append("<content>")
-
             numbered_lines = [f"{offset + i}: {line}" for i, line in enumerate(lines)]
-            output.append("\n".join(numbered_lines))
+            content_output = "\n".join(numbered_lines)
 
             last_read_line = offset + len(lines) - 1
             continuation_offset: int | None = last_read_line + 1
 
             if truncated_by_bytes:
-                output.append(
+                content_output += (
                     f"\n\n(Output capped at {MAX_BYTES_LABEL}. "
                     f"Showing lines {offset}-{last_read_line}. "
                     f"Use offset={continuation_offset} to continue.)"
                 )
             elif truncated_by_lines:
-                output.append(
+                content_output += (
                     f"\n\n(Showing lines {offset}-{last_read_line} of {total_lines}. "
                     f"Use offset={continuation_offset} to continue.)"
                 )
             else:
                 continuation_offset = None
-                output.append(f"\n\n(End of file - total {total_lines} lines)")
+                content_output += f"\n\n(End of file - total {total_lines} lines)"
 
+            output.append("<content>")
+            output.append(content_output)
             output.append("</content>")
             await record_file_read_async(
                 shared_store=ctx.deps.shared_store,
@@ -492,6 +514,12 @@ def register(agent: Agent[ToolDeps, str]) -> None:
                 output="\n".join(output),
                 truncated=truncated_by_lines or truncated_by_bytes,
                 next_offset=continuation_offset,
+                presentation=WorkspaceReadPresentation(
+                    path=str(file_path),
+                    resource_type="file",
+                    content=content_output,
+                    instructions=instruction_sections,
+                ),
             )
 
         return await execute_tool_call(

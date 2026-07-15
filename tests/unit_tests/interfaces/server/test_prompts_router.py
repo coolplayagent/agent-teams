@@ -30,7 +30,7 @@ from relay_teams.mcp.mcp_models import (
 )
 from relay_teams.mcp.mcp_registry import McpRegistry
 from relay_teams.mcp.runtime_schema_loader import RuntimeMcpSchemaLoader
-from relay_teams.roles.role_models import RoleDefinition
+from relay_teams.roles.role_models import RoleDefinition, SystemRoleIdentity
 from relay_teams.roles.role_registry import RoleRegistry
 from relay_teams.skills.skill_models import SkillInstructionEntry
 from relay_teams.skills.skill_routing_models import (
@@ -228,6 +228,7 @@ def _build_role_registry() -> RoleRegistry:
     registry.register(
         RoleDefinition(
             role_id="Coordinator",
+            system_role=SystemRoleIdentity.COORDINATOR,
             name="Coordinator",
             description="Coordinates delegated work.",
             version="1.0",
@@ -380,7 +381,7 @@ def test_prompts_preview_returns_runtime_provider_and_user_sections() -> None:
         "- Description: Drafts release notes and summaries."
         in payload["runtime_system_prompt"]
     )
-    assert "- Tools: none" in payload["runtime_system_prompt"]
+    assert "- Tools: orch_dispatch_task" in payload["runtime_system_prompt"]
     assert (
         "- MCP Tools: docs_read_file, docs_search_docs"
         in payload["runtime_system_prompt"]

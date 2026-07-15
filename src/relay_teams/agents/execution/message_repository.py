@@ -653,15 +653,21 @@ class MessageRepository(SharedSqliteRepository):
         session_id: str,
         instance_id: str,
         *,
+        task_id: str | None = None,
         include_cleared: bool = False,
         include_hidden_from_context: bool = False,
     ) -> list[dict[str, JsonValue]]:
+        query = (
+            "SELECT id, session_id, conversation_id, agent_role_id, instance_id, task_id, trace_id, role, message_json, created_at, hidden_from_context, hidden_reason, hidden_at, hidden_marker_id "
+            "FROM messages WHERE session_id=? AND instance_id=?"
+        )
+        params: tuple[str, ...] = (session_id, instance_id)
+        if task_id is not None:
+            query += " AND task_id=?"
+            params = (*params, task_id)
+        query += " ORDER BY id ASC"
         with self._lock:
-            rows = self._conn.execute(
-                "SELECT id, session_id, conversation_id, agent_role_id, instance_id, task_id, trace_id, role, message_json, created_at, hidden_from_context, hidden_reason, hidden_at, hidden_marker_id "
-                "FROM messages WHERE session_id=? AND instance_id=? ORDER BY id ASC",
-                (session_id, instance_id),
-            ).fetchall()
+            rows = self._conn.execute(query, params).fetchall()
         rows = self._filter_rows_for_read(
             rows,
             include_cleared=include_cleared,
@@ -699,16 +705,21 @@ class MessageRepository(SharedSqliteRepository):
         session_id: str,
         instance_id: str,
         *,
+        task_id: str | None = None,
         include_cleared: bool = False,
         include_hidden_from_context: bool = False,
     ) -> list[dict[str, JsonValue]]:
+        query = (
+            "SELECT id, session_id, conversation_id, agent_role_id, instance_id, task_id, trace_id, role, message_json, created_at, hidden_from_context, hidden_reason, hidden_at, hidden_marker_id "
+            "FROM messages WHERE session_id=? AND instance_id=?"
+        )
+        params: tuple[str, ...] = (session_id, instance_id)
+        if task_id is not None:
+            query += " AND task_id=?"
+            params = (*params, task_id)
+        query += " ORDER BY id ASC"
         rows = await self._run_async_read(
-            lambda conn: async_fetchall(
-                conn,
-                "SELECT id, session_id, conversation_id, agent_role_id, instance_id, task_id, trace_id, role, message_json, created_at, hidden_from_context, hidden_reason, hidden_at, hidden_marker_id "
-                "FROM messages WHERE session_id=? AND instance_id=? ORDER BY id ASC",
-                (session_id, instance_id),
-            )
+            lambda conn: async_fetchall(conn, query, params)
         )
         return await self._project_message_rows_async(
             rows,

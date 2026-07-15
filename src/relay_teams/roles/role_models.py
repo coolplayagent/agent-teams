@@ -28,6 +28,11 @@ class RoleMode(str, Enum):
     ALL = "all"
 
 
+class SystemRoleIdentity(str, Enum):
+    MAIN_AGENT = "main_agent"
+    COORDINATOR = "coordinator"
+
+
 class RoleDefinition(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -42,6 +47,7 @@ class RoleDefinition(BaseModel):
     bound_agent_id: OptionalIdentifierStr = None
     execution_surface: ExecutionSurface = ExecutionSurface.API
     mode: RoleMode = RoleMode.PRIMARY
+    system_role: SystemRoleIdentity | None = None
     memory_profile: MemoryProfile = Field(default_factory=default_memory_profile)
     contract: RoleContract = Field(default_factory=RoleContract)
     hooks: HooksConfig = Field(default_factory=HooksConfig)
@@ -60,6 +66,7 @@ class RoleDocumentSummary(BaseModel):
     bound_agent_id: OptionalIdentifierStr = None
     execution_surface: ExecutionSurface = ExecutionSurface.API
     mode: RoleMode = RoleMode.PRIMARY
+    system_role: SystemRoleIdentity | None = None
     source: RoleConfigSource = RoleConfigSource.APP
     deletable: bool = False
 
@@ -79,6 +86,7 @@ class RoleDocumentDraft(BaseModel):
     bound_agent_id: OptionalIdentifierStr = None
     execution_surface: ExecutionSurface = ExecutionSurface.API
     mode: RoleMode = RoleMode.PRIMARY
+    system_role: SystemRoleIdentity | None = None
     memory_profile: MemoryProfile = Field(default_factory=default_memory_profile)
     contract: RoleContract = Field(default_factory=RoleContract)
     system_prompt: str = Field(min_length=1)
@@ -102,6 +110,7 @@ class NormalModeRoleOption(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     role_id: RequiredIdentifierStr
+    system_role: SystemRoleIdentity | None = None
     name: str = Field(min_length=1)
     description: str = Field(min_length=1)
     model_profile: str = Field(min_length=1)

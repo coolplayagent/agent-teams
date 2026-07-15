@@ -8,7 +8,11 @@ import pytest
 from relay_teams.hooks.hook_models import HookEventName
 from relay_teams.hooks.hook_models import HooksConfig
 from relay_teams.builtin import get_builtin_roles_dir
-from relay_teams.roles.role_models import RoleDefinition, RoleMode
+from relay_teams.roles.role_models import (
+    RoleDefinition,
+    RoleMode,
+    SystemRoleIdentity,
+)
 from relay_teams.roles.role_contracts import (
     RoleContractInvariantType,
     RoleContractPostconditionType,
@@ -18,6 +22,7 @@ from relay_teams.roles.role_registry import (
     RoleLoader,
     RoleRegistry,
     _parse_frontmatter_hooks,
+    is_reserved_system_role_definition,
 )
 
 
@@ -89,7 +94,7 @@ def test_role_loader_loads_role_contract_from_front_matter(tmp_path: Path) -> No
     assert role.contract.invariants[0].tools == ("edit",)
 
 
-def test_role_loader_adds_office_markdown_tool_to_non_coordinator_roles(
+def test_role_loader_preserves_explicit_tools_for_non_coordinator_roles(
     tmp_path: Path,
 ) -> None:
     role_file = tmp_path / "writer.md"
@@ -108,12 +113,7 @@ def test_role_loader_adds_office_markdown_tool_to_non_coordinator_roles(
 
     role = RoleLoader().load_one(role_file)
 
-    assert role.tools == (
-        "orch_dispatch_task",
-        "office_read_markdown",
-        "todo_write",
-        "todo_read",
-    )
+    assert role.tools == ("orch_dispatch_task",)
 
 
 def test_role_loader_keeps_coordinator_tools_unchanged(tmp_path: Path) -> None:
@@ -257,6 +257,7 @@ def test_role_registry_resolves_dynamic_coordinator_role() -> None:
     registry.register(
         RoleDefinition(
             role_id="Coordinator",
+            system_role=SystemRoleIdentity.COORDINATOR,
             name="Coordinator",
             description="Coordinates delegated work.",
             version="1.0.0",
@@ -301,11 +302,40 @@ def test_role_registry_does_not_treat_legacy_coordinator_id_as_system_role() -> 
         _ = registry.get_coordinator()
 
 
+def test_role_registry_does_not_infer_system_identity_from_names_or_tools() -> None:
+    registry = RoleRegistry()
+    coordinator_named_role = RoleDefinition(
+        role_id="custom-coordinator",
+        name="Coordinator",
+        description="A user-defined role with an overlapping display name.",
+        version="1.0.0",
+        tools=("orch_create_tasks", "orch_update_task", "orch_dispatch_task"),
+        system_prompt="Coordinate a custom workflow.",
+    )
+    main_agent_named_role = RoleDefinition(
+        role_id="custom-main",
+        name="Main Agent",
+        description="A user-defined primary role.",
+        version="1.0.0",
+        system_prompt="Handle a custom workflow.",
+    )
+    registry.register(coordinator_named_role)
+    registry.register(main_agent_named_role)
+
+    assert is_reserved_system_role_definition(coordinator_named_role) is False
+    assert is_reserved_system_role_definition(main_agent_named_role) is False
+    with pytest.raises(KeyError, match="Coordinator role could not be resolved"):
+        _ = registry.get_coordinator()
+    with pytest.raises(KeyError, match="Main agent role could not be resolved"):
+        _ = registry.get_main_agent()
+
+
 def test_role_registry_lists_normal_mode_roles_with_main_agent_first() -> None:
     registry = RoleRegistry()
     registry.register(
         RoleDefinition(
             role_id="Coordinator",
+            system_role=SystemRoleIdentity.COORDINATOR,
             name="Coordinator",
             description="Coordinates delegated work.",
             version="1.0.0",
@@ -316,6 +346,7 @@ def test_role_registry_lists_normal_mode_roles_with_main_agent_first() -> None:
     registry.register(
         RoleDefinition(
             role_id="MainAgent",
+            system_role=SystemRoleIdentity.MAIN_AGENT,
             name="Main Agent",
             description="Handles direct runs.",
             version="1.0.0",
@@ -348,8 +379,9 @@ def test_role_registry_lists_normal_mode_roles_with_main_agent_first() -> None:
 
     roles = registry.list_normal_mode_roles()
 
-    assert [role.role_id for role in roles] == ["MainAgent", "Crafter"]
-    assert registry.resolve_normal_mode_role_id("Crafter") == "Crafter"
+    assert [role.role_id for role in roles] == ["MainAgent"]
+    with pytest.raises(ValueError, match="Role cannot be used in normal mode"):
+        _ = registry.resolve_normal_mode_role_id("Crafter")
     with pytest.raises(ValueError, match="Role cannot be used in normal mode"):
         _ = registry.resolve_normal_mode_role_id("DelegationPlanner")
 
@@ -359,6 +391,7 @@ def test_role_registry_lists_subagent_roles_only_for_subagent_modes() -> None:
     registry.register(
         RoleDefinition(
             role_id="Coordinator",
+            system_role=SystemRoleIdentity.COORDINATOR,
             name="Coordinator",
             description="Coordinates delegated work.",
             version="1.0.0",
@@ -369,6 +402,7 @@ def test_role_registry_lists_subagent_roles_only_for_subagent_modes() -> None:
     registry.register(
         RoleDefinition(
             role_id="MainAgent",
+            system_role=SystemRoleIdentity.MAIN_AGENT,
             name="Main Agent",
             description="Handles direct runs.",
             version="1.0.0",
@@ -409,6 +443,7 @@ def test_role_registry_rejects_coordinator_in_normal_mode() -> None:
     registry.register(
         RoleDefinition(
             role_id="Coordinator",
+            system_role=SystemRoleIdentity.COORDINATOR,
             name="Coordinator",
             description="Coordinates delegated work.",
             version="1.0.0",
@@ -419,6 +454,7 @@ def test_role_registry_rejects_coordinator_in_normal_mode() -> None:
     registry.register(
         RoleDefinition(
             role_id="MainAgent",
+            system_role=SystemRoleIdentity.MAIN_AGENT,
             name="Main Agent",
             description="Handles direct runs.",
             version="1.0.0",
@@ -431,11 +467,12 @@ def test_role_registry_rejects_coordinator_in_normal_mode() -> None:
         _ = registry.resolve_normal_mode_role_id("Coordinator")
 
 
-def test_role_registry_resolves_subagent_role_in_normal_mode() -> None:
+def test_role_registry_rejects_subagent_role_in_normal_mode() -> None:
     registry = RoleRegistry()
     registry.register(
         RoleDefinition(
             role_id="Coordinator",
+            system_role=SystemRoleIdentity.COORDINATOR,
             name="Coordinator",
             description="Coordinates delegated work.",
             version="1.0.0",
@@ -446,6 +483,7 @@ def test_role_registry_resolves_subagent_role_in_normal_mode() -> None:
     registry.register(
         RoleDefinition(
             role_id="MainAgent",
+            system_role=SystemRoleIdentity.MAIN_AGENT,
             name="Main Agent",
             description="Handles direct runs.",
             version="1.0.0",
@@ -465,7 +503,8 @@ def test_role_registry_resolves_subagent_role_in_normal_mode() -> None:
         )
     )
 
-    assert registry.resolve_normal_mode_role_id("Crafter") == "Crafter"
+    with pytest.raises(ValueError, match="Role cannot be used in normal mode"):
+        _ = registry.resolve_normal_mode_role_id("Crafter")
 
 
 def test_role_registry_resolves_subagent_only_role_for_subagent_use() -> None:
@@ -473,6 +512,7 @@ def test_role_registry_resolves_subagent_only_role_for_subagent_use() -> None:
     registry.register(
         RoleDefinition(
             role_id="Coordinator",
+            system_role=SystemRoleIdentity.COORDINATOR,
             name="Coordinator",
             description="Coordinates delegated work.",
             version="1.0.0",
@@ -483,6 +523,7 @@ def test_role_registry_resolves_subagent_only_role_for_subagent_use() -> None:
     registry.register(
         RoleDefinition(
             role_id="MainAgent",
+            system_role=SystemRoleIdentity.MAIN_AGENT,
             name="Main Agent",
             description="Handles direct runs.",
             version="1.0.0",

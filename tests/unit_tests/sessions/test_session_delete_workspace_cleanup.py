@@ -662,3 +662,52 @@ def test_delete_normal_mode_subagent_rejects_running_child_session(
 
     with pytest.raises(RuntimeError, match="Cannot delete a running subagent"):
         service.delete_normal_mode_subagent("session-1", instance_id)
+
+
+@pytest.mark.asyncio
+async def test_delete_workspace_sessions_async_removes_every_related_session(
+    tmp_path: Path,
+) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    service = _build_service(
+        tmp_path / "workspace_session_cleanup.db",
+        project_root,
+        app_config_dir=tmp_path / ".agent-teams",
+    )
+    _ = service.create_session(session_id="session-1", workspace_id="default")
+    _ = service.create_session(session_id="session-2", workspace_id="default")
+
+    deleted_session_ids = await service.delete_workspace_sessions_async(
+        "default",
+        force=True,
+        cascade=True,
+    )
+
+    assert set(deleted_session_ids) == {"session-1", "session-2"}
+    assert await service.list_sessions_async(force_refresh=True) == ()
+
+
+@pytest.mark.asyncio
+async def test_delete_workspace_sessions_async_requires_explicit_cascade(
+    tmp_path: Path,
+) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    service = _build_service(
+        tmp_path / "workspace_session_guard.db",
+        project_root,
+        app_config_dir=tmp_path / ".agent-teams",
+    )
+    _ = service.create_session(session_id="session-1", workspace_id="default")
+
+    with pytest.raises(RuntimeError) as exc_info:
+        await service.delete_workspace_sessions_async("default")
+
+    assert str(exc_info.value) == (
+        "Cannot delete workspace without cascading its related sessions"
+    )
+    assert tuple(
+        session.session_id
+        for session in await service.list_sessions_async(force_refresh=True)
+    ) == ("session-1",)

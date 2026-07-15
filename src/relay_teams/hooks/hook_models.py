@@ -11,6 +11,7 @@ from pydantic import (
     JsonValue,
     model_validator,
 )
+from pydantic_core import PydanticCustomError
 
 
 class HookEventName(str, Enum):
@@ -138,18 +139,30 @@ class HookHandlerConfig(BaseModel):
     def validate_type_specific_fields(self) -> "HookHandlerConfig":
         if self.type == HookHandlerType.COMMAND:
             if not str(self.command or "").strip():
-                raise ValueError("command hook requires command")
+                raise PydanticCustomError(
+                    "hook_command_required",
+                    "Command is required for a command hook.",
+                )
             return self
         if self.type == HookHandlerType.HTTP:
             if not str(self.url or "").strip():
-                raise ValueError("http hook requires url")
+                raise PydanticCustomError(
+                    "hook_url_required",
+                    "URL is required for an HTTP hook.",
+                )
             return self
         if self.type == HookHandlerType.PROMPT:
             if not str(self.prompt or "").strip():
-                raise ValueError("prompt hook requires prompt")
+                raise PydanticCustomError(
+                    "hook_prompt_required",
+                    "Prompt is required for a prompt hook.",
+                )
             return self
         if not str(self.prompt or "").strip():
-            raise ValueError("agent hook requires prompt")
+            raise PydanticCustomError(
+                "hook_prompt_required",
+                "Prompt is required for an agent hook.",
+            )
         return self
 
 

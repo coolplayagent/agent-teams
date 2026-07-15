@@ -422,7 +422,10 @@ class TestReadDirectory:
 
 
 def test_project_read_result_keeps_output_first_shape() -> None:
-    from relay_teams.tools.workspace_tools.read import _project_read_result
+    from relay_teams.tools.workspace_tools.read import (
+        WorkspaceReadPresentation,
+        _project_read_result,
+    )
 
     projected = _project_read_result(
         output="<content>\n1: hello\n</content>",
@@ -440,6 +443,27 @@ def test_project_read_result_keeps_output_first_shape() -> None:
         "truncated": True,
         "next_offset": 2,
     }
+
+    structured = _project_read_result(
+        output="<content>\n1: hello\n</content>",
+        truncated=False,
+        next_offset=None,
+        presentation=WorkspaceReadPresentation(
+            path="src/demo.txt",
+            resource_type="file",
+            content="1: hello",
+        ),
+    )
+    assert cast(dict[str, object], structured.visible_data)["presentation"] == {
+        "kind": "workspace-read",
+        "path": "src/demo.txt",
+        "resource_type": "file",
+        "content": "1: hello",
+        "entries": [],
+        "instructions": [],
+    }
+    assert "output" not in cast(dict[str, object], structured.visible_data)
+    assert "presentation" not in cast(dict[str, object], structured.internal_data)
 
 
 @pytest.mark.asyncio

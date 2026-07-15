@@ -1,0 +1,81 @@
+/// <reference types="node" />
+
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+
+const timelineSource = readFileSync(
+  "src/features/timeline/MessageTimeline.tsx",
+  "utf8",
+);
+const scrollAnchoringSource = readFileSync(
+  "src/features/timeline/timelineScrollAnchoring.ts",
+  "utf8",
+);
+
+describe("timeline scroll state contract", () => {
+  it("stores only bounded lightweight state per session or subagent scope", () => {
+    expect(timelineSource).toContain(
+      "const TIMELINE_SCROLL_SCOPE_CACHE_LIMIT = 100;",
+    );
+    expect(timelineSource).toContain(
+      "new Map<string, TimelineContentSignature>()",
+    );
+    expect(timelineSource).toContain(
+      "new Map<string, TimelineScrollSnapshot>()",
+    );
+    expect(timelineSource).toMatch(
+      /while \(values\.size > TIMELINE_SCROLL_SCOPE_CACHE_LIMIT\)[\s\S]*?values\.delete\(oldestKey\);/,
+    );
+  });
+
+  it("offers new-content feedback only for appended timeline content", () => {
+    expect(timelineSource).toContain("timelineContentWasAppended(");
+    expect(timelineSource).toContain(
+      "next.lastRowContentLength > previous.lastRowContentLength",
+    );
+    expect(timelineSource).toContain('t("timelineJumpToLatest")');
+    expect(timelineSource).toContain('t("timelineNewContent")');
+  });
+
+  it("scopes programmatic scroll events so they cannot pollute another timeline", () => {
+    expect(timelineSource).toContain(
+      "pendingProgrammaticScrollRef.current = {",
+    );
+    expect(timelineSource).toContain(
+      "consumePendingProgrammaticTimelineScroll(",
+    );
+    expect(scrollAnchoringSource).toContain(
+      "pendingScroll.scopeKey === scopeKey",
+    );
+    expect(timelineSource).toContain("if (event.nativeEvent.isTrusted)");
+  });
+
+  it("anchors explicit reading intent to stable virtual row identity", () => {
+    expect(timelineSource).toContain("captureTimelineViewportAnchor(");
+    expect(timelineSource).toContain(
+      "scrollSnapshotRef.current = captureCurrentTimelineScrollSnapshot(",
+    );
+    expect(timelineSource).toContain(
+      "snapshot?.shouldFollow === false",
+    );
+    expect(timelineSource).toContain(
+      "pendingScrollScopeRestoreRef.current === scrollScopeKey",
+    );
+    expect(timelineSource).toContain(
+      "restoredAnchorReady &&",
+    );
+  });
+
+  it("replays scoped restoration when a preserved chat becomes visible", () => {
+    expect(timelineSource).toContain("visible?: boolean;");
+    expect(timelineSource).toMatch(
+      /!visible \|\|\s+container === null \|\|\s+timelineContainerIsHidden\(container\)/,
+    );
+    expect(timelineSource).toMatch(
+      /timelineHeight,\s+visible,\s+\]\);/,
+    );
+    expect(timelineSource).toMatch(
+      /handleTimelineScroll[\s\S]*?if \(!visible \|\| timelineContainerIsHidden\(container\)\) \{\s+return;/,
+    );
+  });
+});

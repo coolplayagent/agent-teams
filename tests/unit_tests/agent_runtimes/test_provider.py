@@ -595,7 +595,7 @@ def _build_manager(
         run_runtime_repo=run_runtime_repo or cast(RunRuntimeRepository, object()),
         run_intent_repo=run_intent_repo or cast(RunIntentRepository, object()),
         background_task_service=None,
-        tool_registry=cast(ToolRegistry, object()),
+        tool_registry=ToolRegistry({}),
         get_mcp_registry=McpRegistry,
         get_skill_registry=lambda: cast(SkillRegistry, object()),
         get_role_registry=RoleRegistry,

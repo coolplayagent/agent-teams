@@ -1,13 +1,18 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import asyncio
+import logging
 from pathlib import Path
 import platform
 
+from relay_teams.logger import get_logger, log_event
 from relay_teams.persistence.scope_models import ScopeRef, ScopeType, StateMutation
 from relay_teams.persistence.shared_state_repo import SharedStateRepository
 
 PROMPT_INSTRUCTION_STATE_PREFIX = "prompt_instruction:"
+LOGGER = get_logger(__name__)
+_SCHEDULED_STATE_WRITES: set[asyncio.Task[None]] = set()
 
 
 def normalize_instruction_path(path: Path) -> str:
@@ -45,6 +50,43 @@ async def record_prompt_instruction_paths_loaded_async(
             task_id=task_id,
             path=path,
         )
+
+
+def schedule_prompt_instruction_paths_loaded(
+    *,
+    shared_store: SharedStateRepository,
+    task_id: str,
+    paths: tuple[Path, ...],
+) -> asyncio.Task[None] | None:
+    if not paths:
+        return None
+    task = asyncio.create_task(
+        record_prompt_instruction_paths_loaded_async(
+            shared_store=shared_store,
+            task_id=task_id,
+            paths=paths,
+        )
+    )
+    _SCHEDULED_STATE_WRITES.add(task)
+    task.add_done_callback(_observe_scheduled_instruction_state_write)
+    return task
+
+
+def _observe_scheduled_instruction_state_write(task: asyncio.Task[None]) -> None:
+    _SCHEDULED_STATE_WRITES.discard(task)
+    try:
+        error = task.exception()
+    except asyncio.CancelledError:
+        return
+    if error is None:
+        return
+    log_event(
+        LOGGER,
+        logging.WARNING,
+        event="prompt_instruction.state_write_failed",
+        message="Deferred prompt instruction bookkeeping failed",
+        payload={"error": f"{type(error).__name__}: {error}"},
+    )
 
 
 async def is_prompt_instruction_loaded_async(

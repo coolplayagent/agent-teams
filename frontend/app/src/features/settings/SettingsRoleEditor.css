@@ -1,0 +1,70 @@
+.at-settings-detail-page.at-role-config-detail,
+.at-role-config-detail .at-role-config-form,
+.at-role-config-form .at-settings-form-layout {
+  width: 100%;
+  max-width: none;
+}
+
+.at-role-primary-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.at-role-primary-grid .at-role-description-field {
+  grid-column: 1 / -1;
+}
+
+.at-role-primary-grid .at-role-model-field {
+  grid-column: span 2;
+}
+
+.at-role-capability-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.at-role-advanced-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.at-settings-advanced-disclosure {
+  border: 1px solid var(--at-border);
+  border-radius: 10px;
+  background: var(--at-surface);
+}
+
+.at-settings-advanced-disclosure > summary {
+  padding: 10px 14px;
+  color: var(--at-muted);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.at-settings-advanced-disclosure > summary:focus-visible {
+  outline: 2px solid var(--at-accent);
+  outline-offset: 2px;
+}
+
+.at-settings-advanced-disclosure > .at-settings-form-grid-layout {
+  padding: 0 14px 14px;
+}
+
+@media (max-width: 900px) {
+  .at-role-primary-grid,
+  .at-role-capability-grid,
+  .at-role-advanced-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+
+  .at-role-primary-grid .at-role-model-field {
+    grid-column: span 1;
+  }
+}
+
+@media (max-width: 720px) {
+  .at-role-primary-grid,
+  .at-role-capability-grid,
+  .at-role-advanced-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

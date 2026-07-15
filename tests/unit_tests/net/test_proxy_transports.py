@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Iterator
 import json
 
@@ -14,6 +15,9 @@ from relay_teams.net.proxy_transports import (
     _chunk_has_terminal_sse_marker,
     _payload_has_complete_tool_call_delta,
     _tool_call_deltas_have_complete_arguments,
+)
+from relay_teams.net.async_request_limit_phase import (
+    observe_async_request_limit_phase,
 )
 
 
@@ -85,6 +89,25 @@ class _FakeTransport(httpx.AsyncBaseTransport):
 
     async def aclose(self) -> None:
         self.closed = True
+
+
+class _BlockingTransport(httpx.AsyncBaseTransport):
+    def __init__(self) -> None:
+        self.started = asyncio.Event()
+        self.cancelled = asyncio.Event()
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        _ = request
+        self.started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            self.cancelled.set()
+            raise
+        raise AssertionError("blocking transport unexpectedly resumed")
+
+    async def aclose(self) -> None:
+        return
 
 
 def _build_transport(
@@ -400,6 +423,66 @@ async def test_async_proxy_transport_releases_limiter_when_delegate_raises() -> 
             httpx.Request("GET", "https://provider.example/v1/chat/completions")
         )
 
+    assert limiter.lease.release_count == 1
+
+
+@pytest.mark.asyncio
+async def test_async_proxy_transport_releases_limiter_when_request_cancelled() -> None:
+    limiter = _FakeLimiter()
+    blocking_transport = _BlockingTransport()
+    transport, _ = _build_transport(limiter=limiter)
+    setattr(transport, "_direct_transport", blocking_transport)
+
+    request_task = asyncio.create_task(
+        transport.handle_async_request(
+            httpx.Request("GET", "https://provider.example/v1/chat/completions")
+        )
+    )
+    await asyncio.wait_for(blocking_transport.started.wait(), timeout=1.0)
+    request_task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        _ = await request_task
+
+    assert blocking_transport.cancelled.is_set()
+    assert limiter.lease.release_count == 1
+
+
+@pytest.mark.asyncio
+async def test_async_proxy_transport_reports_request_limit_queue_phases() -> None:
+    limiter = _FakeLimiter()
+    transport, _ = _build_transport(limiter=limiter)
+
+    with observe_async_request_limit_phase() as phase:
+        response = await transport.handle_async_request(
+            httpx.Request("GET", "https://provider.example/v1/chat/completions")
+        )
+
+    assert phase.waiting.is_set()
+    assert phase.acquired.is_set()
+    await response.aclose()
+
+
+@pytest.mark.asyncio
+async def test_async_proxy_transport_keeps_https_proxy_routing_with_limiter() -> None:
+    limiter = _FakeLimiter()
+    transport = AsyncProxyRoutingTransport(
+        ProxyEnvConfig(https_proxy="http://proxy.example:8080"),
+        ssl_verify=False,
+        request_limiter=limiter,
+    )
+    direct_transport = _FakeTransport()
+    proxy_transport = _FakeTransport()
+    setattr(transport, "_direct_transport", direct_transport)
+    setattr(transport, "_https_proxy_transport", proxy_transport)
+
+    response = await transport.handle_async_request(
+        httpx.Request("GET", "https://provider.example/v1/chat/completions")
+    )
+    await response.aread()
+
+    assert direct_transport.requests == []
+    assert len(proxy_transport.requests) == 1
     assert limiter.lease.release_count == 1
 
 

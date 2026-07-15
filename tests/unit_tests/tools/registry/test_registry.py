@@ -3,7 +3,13 @@ from __future__ import annotations
 
 import pytest
 
-from relay_teams.tools.registry import ToolRegistry, ToolResolutionContext
+from relay_teams.tools.registry import (
+    ToolActionFamily,
+    ToolRegistry,
+    ToolResolutionContext,
+    ToolSemanticCategory,
+    ToolSemantics,
+)
 
 
 def _register_alpha(_: object) -> None:
@@ -51,6 +57,34 @@ def test_registry_list_configurable_names_omits_hidden_tools() -> None:
 
     assert registry.list_names() == ("alpha", "beta")
     assert registry.list_configurable_names() == ("alpha",)
+
+
+def test_registry_semantics_are_owned_by_registration_not_tool_name() -> None:
+    semantics = ToolSemantics(
+        semantic_category=ToolSemanticCategory.FILE_READ,
+        action_family=ToolActionFamily.READ,
+    )
+    registry = ToolRegistry({"renamed_reader": _register_alpha})
+
+    registry.register_tool(
+        "renamed_reader_v2",
+        _register_beta,
+        semantics=semantics,
+    )
+
+    assert registry.get_tool_semantics("renamed_reader_v2") == semantics
+    assert registry.get_tool_semantics("renamed_reader").semantic_category == (
+        ToolSemanticCategory.UNKNOWN
+    )
+
+
+def test_registry_unknown_plugin_semantics_degrade_safely() -> None:
+    registry = ToolRegistry({"plugin_tool": _register_alpha})
+
+    semantics = registry.get_tool_semantics("plugin_tool")
+
+    assert semantics.semantic_category == ToolSemanticCategory.UNKNOWN
+    assert semantics.action_family == ToolActionFamily.GENERIC
 
 
 class _ImplicitResolver:

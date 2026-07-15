@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["DOM", "ES2022"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "noEmit": false,
+    "outDir": "dist-desktop",
+    "rootDir": "src",
+    "sourceMap": true,
+    "types": ["node", "electron"]
+  },
+  "include": ["src/desktop/**/*.cts", "src/desktop/**/*.ts"],
+  "exclude": ["src/desktop/testMain.ts"]
+}

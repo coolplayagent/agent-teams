@@ -10,6 +10,10 @@ from pydantic_ai import Agent
 
 from relay_teams.logger import get_logger, log_event
 from relay_teams.tools.runtime.context import ToolDeps
+from relay_teams.tools.registry.semantics import (
+    ToolSemantics,
+    UNKNOWN_TOOL_SEMANTICS,
+)
 
 ToolRegister: TypeAlias = Callable[[Agent[ToolDeps, str]], None]
 
@@ -45,6 +49,7 @@ class ToolRegistry:
         *,
         hidden_from_config: tuple[str, ...] = (),
         legacy_aliases: dict[str, str] | None = None,
+        semantics: dict[str, ToolSemantics] | None = None,
     ) -> None:
         self._tools: dict[str, ToolRegister] = {}
         self._unavailable_tools: dict[str, ToolAvailabilityRecord] = {}
@@ -61,11 +66,18 @@ class ToolRegistry:
             if legacy_aliases is None
             else {str(key): str(value) for key, value in legacy_aliases.items()}
         )
+        self._semantics = {} if semantics is None else dict(semantics)
 
     def register_implicit_resolver(self, resolver: ToolImplicitResolver) -> None:
         self._implicit_resolvers.append(resolver)
 
-    def register_tool(self, name: str, register: ToolRegister) -> None:
+    def register_tool(
+        self,
+        name: str,
+        register: ToolRegister,
+        *,
+        semantics: ToolSemantics | None = None,
+    ) -> None:
         normalized_name = name.strip()
         if not normalized_name:
             raise ValueError("Tool name must not be empty")
@@ -79,6 +91,8 @@ class ToolRegistry:
             return
         self._unavailable_tools.pop(normalized_name, None)
         self._tools[normalized_name] = register
+        if semantics is not None:
+            self._semantics[normalized_name] = semantics
 
     def unregister_tool(self, name: str) -> None:
         normalized_name = name.strip()
@@ -86,6 +100,10 @@ class ToolRegistry:
             raise ValueError("Tool name must not be empty")
         self._tools.pop(normalized_name, None)
         self._unavailable_tools.pop(normalized_name, None)
+        self._semantics.pop(normalized_name, None)
+
+    def get_tool_semantics(self, name: str) -> ToolSemantics:
+        return self._semantics.get(name.strip(), UNKNOWN_TOOL_SEMANTICS)
 
     def require(
         self,

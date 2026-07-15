@@ -27,6 +27,7 @@ from relay_teams.tools.workspace_tools.read_support import (
     MAX_BYTES,
     MAX_LINE_LENGTH,
     MAX_LINE_SUFFIX,
+    WorkspaceReadPresentation,
     _project_read_result,
     resolve_read_instruction_sections,
     validate_pagination_args,
@@ -154,33 +155,32 @@ def register(agent: Agent[ToolDeps, str]) -> None:
                 converted=converted,
                 include_line_numbers=line_numbers,
             )
-            output.append("<content>")
-            output.append(
-                _render_content_lines(
-                    lines=lines,
-                    offset=offset,
-                    include_line_numbers=line_numbers,
-                )
+            content_output = _render_content_lines(
+                lines=lines,
+                offset=offset,
+                include_line_numbers=line_numbers,
             )
 
             last_read_line = offset + len(lines) - 1
             continuation_offset: int | None = last_read_line + 1
 
             if truncated_by_bytes:
-                output.append(
+                content_output += (
                     f"\n\n(Output capped at {MAX_BYTES_LABEL}. "
                     f"Showing lines {offset}-{last_read_line}. "
                     f"Use offset={continuation_offset} to continue.)"
                 )
             elif truncated_by_lines:
-                output.append(
+                content_output += (
                     f"\n\n(Showing lines {offset}-{last_read_line} of {total_lines}. "
                     f"Use offset={continuation_offset} to continue.)"
                 )
             else:
                 continuation_offset = None
-                output.append(f"\n\n(End of file - total {total_lines} lines)")
+                content_output += f"\n\n(End of file - total {total_lines} lines)"
 
+            output.append("<content>")
+            output.append(content_output)
             output.append("</content>")
             await record_file_read_async(
                 shared_store=ctx.deps.shared_store,
@@ -196,6 +196,12 @@ def register(agent: Agent[ToolDeps, str]) -> None:
                 metadata=_build_file_metadata(
                     include_line_numbers=line_numbers,
                     converted=converted,
+                ),
+                presentation=WorkspaceReadPresentation(
+                    path=str(file_path),
+                    resource_type="file",
+                    content=content_output,
+                    instructions=instruction_sections,
                 ),
             )
 

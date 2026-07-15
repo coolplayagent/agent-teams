@@ -1,0 +1,39 @@
+/// <reference types="node" />
+
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+
+const css = readFileSync(
+  "src/features/settings/NotificationSettingsSection.css",
+  "utf8",
+);
+
+describe("notification settings layout", () => {
+  it("keeps rule copy and controls compact on desktop", () => {
+    expect(css).toMatch(
+      /\.at-notification-rule\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) minmax\(240px, 300px\);/,
+    );
+    expect(css).toMatch(
+      /\.at-notification-rule-toggle\s*{[\s\S]*?width:\s*100%;/,
+    );
+    expect(css).toMatch(
+      /\.at-notification-rule-channels\s*{[\s\S]*?flex-wrap:\s*wrap;/,
+    );
+    expect(css).toContain(".at-notification-rule-channels .at-choice-control");
+  });
+
+  it("stacks each rule in order on narrow windows", () => {
+    expect(css).toMatch(
+      /@media \(max-width: 720px\)[\s\S]*?\.at-notification-rule\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 720px\)[\s\S]*?\.at-notification-rule-controls\s*{[\s\S]*?border-left:\s*0;/,
+    );
+    expect(css).toMatch(
+      /\.at-notification-rule-list\s*{[\s\S]*?container-type:\s*inline-size;/,
+    );
+    expect(css).toMatch(
+      /@container \(max-width: 620px\)[\s\S]*?\.at-notification-rule\s*{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/,
+    );
+  });
+});

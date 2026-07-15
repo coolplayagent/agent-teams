@@ -1,0 +1,464 @@
+import {
+  contentPartText,
+  type JsonValue,
+  type SessionRound,
+  type SessionRoundMessage,
+  type SessionRoundMessagePart,
+} from "../../api/contracts";
+import type { Translate, TranslationKey } from "../../i18n";
+
+export type RoundTone = "error" | "warning";
+
+export type RoundRetryPhase =
+  | "failed"
+  | "fallback"
+  | "fallbackFailed"
+  | "retrying"
+  | "scheduled"
+  | "succeeded";
+
+export interface RoundRetrySummary {
+  attemptNumber: number;
+  errorLabel: string;
+  phase: RoundRetryPhase;
+  retryDelaySeconds: number;
+  targetLabel: string;
+  totalAttempts: number;
+}
+
+export interface RoundMicrocompactSummary {
+  compactedMessageCount: number;
+  compactedPartCount: number;
+  estimatedTokensAfter: number;
+  estimatedTokensBefore: number;
+}
+
+export interface RoundSummary {
+  diagnosticLabel: string | null;
+  durationLabel: string | null;
+  inputTokens: number;
+  microcompact: RoundMicrocompactSummary | null;
+  outputTokens: number;
+  pendingApprovalCount: number;
+  pendingQuestionCount: number;
+  promptCollapsible: boolean;
+  promptText: string;
+  retry: RoundRetrySummary | null;
+  statusLabel: string | null;
+  timeLabel: string;
+  title: string;
+  tone: RoundTone | null;
+  toolCount: number;
+}
+
+const VERIFICATION_NOT_PASSED_LABEL = "Verification not passed.";
+
+export function roundSummary(round: SessionRound, index: number): RoundSummary {
+  const retry = roundRetrySummary(round);
+  const pendingApprovalCount = positiveNumber(round.pending_tool_approval_count);
+  const pendingQuestionCount = positiveNumber(round.pending_user_question_count);
+  const promptText = roundPromptText(round);
+  return {
+    diagnosticLabel: roundDiagnosticLabel(round),
+    durationLabel: roundDurationLabel(round),
+    inputTokens: roundInputTokens(round),
+    microcompact: roundMicrocompactSummary(round),
+    outputTokens: roundOutputTokens(round),
+    pendingApprovalCount,
+    pendingQuestionCount,
+    promptCollapsible: roundPromptCollapsible(promptText),
+    promptText,
+    retry,
+    statusLabel: roundStatusLabel(round),
+    timeLabel: roundTimeLabel(round.created_at, index),
+    title: roundTitle(round, index),
+    tone: roundTone({
+      pendingApprovalCount,
+      pendingQuestionCount,
+      retry,
+      round,
+    }),
+    toolCount: roundToolCount(round),
+  };
+}
+
+export function roundTitle(round: SessionRound, index: number): string {
+  const intentText = normalizedText(roundPromptText(round))
+    || roundDiagnosticText(round);
+  if (intentText) {
+    return intentText;
+  }
+  return `Round ${index + 1}`;
+}
+
+export function sanitizeRoundDiagnosticText(
+  value: string,
+  errorCode: string | null | undefined = null,
+  verificationStatus: string | null | undefined = null,
+): string {
+  const text = normalizedText(value);
+  if (text.length === 0 || areDiagnosticsVisible()) {
+    return text;
+  }
+  const normalizedErrorCode = normalizedText(errorCode).toLowerCase();
+  const normalizedVerificationStatus = normalizedText(verificationStatus).toLowerCase();
+  if (
+    normalizedErrorCode === "verification_failed" ||
+    normalizedVerificationStatus === "failed"
+  ) {
+    return VERIFICATION_NOT_PASSED_LABEL;
+  }
+  return text;
+}
+
+export function roundPromptText(round: SessionRound): string {
+  // Only the structured intent is user-authored conversation input.
+  // `run_user_message` belongs to runtime diagnostics/presentation and must
+  // never be projected as a user message.
+  return rawText(roundIntentText(round)) || rawText(round.intent);
+}
+
+export function roundTimeLabel(value: string | undefined, index: number): string {
+  if (value === undefined || value.trim().length === 0) {
+    return `#${index + 1}`;
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return `#${index + 1}`;
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    hour12: false,
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(date);
+}
+
+export function formatRoundTokens(value: number): string {
+  if (value >= 1000) {
+    return `${(value / 1000).toFixed(1)}k`;
+  }
+  return String(Math.round(value));
+}
+
+export function roundStatusDisplayLabel(
+  statusLabel: string | null,
+  t: Translate,
+): string {
+  if (statusLabel === null) {
+    return "";
+  }
+  const normalized = statusLabel.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  const key = roundStatusTranslationKey(normalized);
+  return key === null ? statusLabel : t(key);
+}
+
+function roundStatusTranslationKey(status: string): TranslationKey | null {
+  switch (status) {
+    case "completed":
+    case "succeeded":
+    case "success":
+    case "verified":
+      return "timelineRoundStatusCompleted";
+    case "running":
+    case "in_progress":
+    case "streaming":
+    case "coordinator_running":
+    case "subagent_running":
+      return "timelineRoundStatusRunning";
+    case "stopping":
+      return "timelineRoundStatusStopping";
+    case "queued":
+    case "created":
+    case "pending":
+      return "timelineRoundStatusQueued";
+    case "idle":
+      return "timelineRoundStatusIdle";
+    case "failed":
+    case "error":
+      return "timelineRoundStatusFailed";
+    case "stopped":
+    case "interrupted":
+      return "timelineRoundStatusStopped";
+    case "canceled":
+    case "cancelled":
+      return "timelineRoundStatusCancelled";
+    case "awaiting_manual_action":
+    case "awaiting_input":
+      return "timelineRoundStatusAwaitingInput";
+    case "awaiting_tool_approval":
+      return "timelineRoundStatusAwaitingApproval";
+    case "awaiting_subagent_followup":
+      return "timelineRoundStatusAwaitingSubagent";
+    case "awaiting_recovery":
+      return "timelineRoundStatusRecovering";
+    case "paused":
+      return "timelineRoundStatusPaused";
+    case "terminal":
+      return "timelineRoundStatusFinished";
+    case "manual":
+      return "timelineRoundStatusManual";
+    case "verification_failed":
+      return "timelineRoundStatusVerificationFailed";
+    default:
+      return null;
+  }
+}
+
+function roundIntentText(round: SessionRound): string {
+  const parts = round.intent_parts ?? [];
+  return parts
+    .map((part) => contentPartText(part))
+    .filter((text): text is string => text !== null && text.trim().length > 0)
+    .join("");
+}
+
+function roundPromptCollapsible(value: string): boolean {
+  return value.includes("\n") || value.length > 64;
+}
+
+function rawText(value: string | null | undefined): string {
+  return value?.trim() ?? "";
+}
+
+function normalizedText(value: string | null | undefined): string {
+  return value?.trim().replace(/\s+/g, " ") ?? "";
+}
+
+function roundMessages(round: SessionRound): SessionRoundMessage[] {
+  return [
+    ...(round.coordinator_messages ?? []),
+    ...(round.injection_messages ?? []),
+  ];
+}
+
+function roundInputTokens(round: SessionRound): number {
+  return roundMessages(round).reduce(
+    (total, message) => total + positiveNumber(message.message?.usage?.input_tokens),
+    0,
+  );
+}
+
+function roundOutputTokens(round: SessionRound): number {
+  return roundMessages(round).reduce(
+    (total, message) => total + positiveNumber(message.message?.usage?.output_tokens),
+    0,
+  );
+}
+
+function roundToolCount(round: SessionRound): number {
+  return roundMessages(round).reduce(
+    (total, message) => total + messageParts(message).filter(isToolCallPart).length,
+    0,
+  );
+}
+
+function messageParts(message: SessionRoundMessage): SessionRoundMessagePart[] {
+  return message.message?.parts ?? [];
+}
+
+function isToolCallPart(part: SessionRoundMessagePart): boolean {
+  return part.part_kind === "tool-call" || part.kind === "tool_call";
+}
+
+function positiveNumber(value: number | undefined): number {
+  return value !== undefined && Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+function roundMicrocompactSummary(round: SessionRound): RoundMicrocompactSummary | null {
+  const microcompact = round.microcompact;
+  if (microcompact === null || microcompact === undefined) {
+    return null;
+  }
+  const compactedMessageCount = positiveNumber(
+    microcompact.compacted_message_count,
+  );
+  const compactedPartCount = positiveNumber(microcompact.compacted_part_count);
+  const estimatedTokensBefore = positiveNumber(
+    microcompact.estimated_tokens_before,
+  );
+  const estimatedTokensAfter = positiveNumber(
+    microcompact.estimated_tokens_after,
+  );
+  const applied = microcompact.applied === true ||
+    compactedMessageCount > 0 ||
+    compactedPartCount > 0;
+  if (!applied) {
+    return null;
+  }
+  return {
+    compactedMessageCount,
+    compactedPartCount,
+    estimatedTokensAfter,
+    estimatedTokensBefore,
+  };
+}
+
+function roundDiagnosticLabel(round: SessionRound): string | null {
+  const diagnostic = roundDiagnosticText(round);
+  return diagnostic.length > 0 ? truncateLabel(diagnostic) : null;
+}
+
+function roundDiagnosticText(round: SessionRound): string {
+  return sanitizeRoundDiagnosticText(
+    round.run_diagnostic_message ?? "",
+    round.run_error_code,
+    round.verification_status,
+  );
+}
+
+function roundRetrySummary(round: SessionRound): RoundRetrySummary | null {
+  const events = (round.retry_events ?? []).flatMap((event) => {
+    const object = jsonObject(event);
+    return object === null ? [] : [object];
+  });
+  const latest = events.find((event) => objectBoolean(event, "is_active")) ?? events.at(-1);
+  if (latest === undefined) {
+    return null;
+  }
+  const kind = objectString(latest, "kind");
+  const phase = retryPhase(kind, objectString(latest, "phase"));
+  return {
+    attemptNumber: objectPositiveNumber(latest, "attempt_number"),
+    errorLabel: objectString(latest, "error_message") || objectString(latest, "error_code"),
+    phase,
+    retryDelaySeconds: Math.ceil(objectPositiveNumber(latest, "retry_in_ms") / 1000),
+    targetLabel: objectString(latest, "to_profile_id")
+      || objectString(latest, "target_profile_id")
+      || objectString(latest, "model_profile_id"),
+    totalAttempts: objectPositiveNumber(latest, "total_attempts"),
+  };
+}
+
+function retryPhase(kind: string, phase: string): RoundRetryPhase {
+  const normalizedKind = kind.toLowerCase();
+  const normalizedPhase = phase.toLowerCase();
+  if (normalizedKind === "fallback") {
+    return normalizedPhase === "failed" ? "fallbackFailed" : "fallback";
+  }
+  if (normalizedPhase === "failed" || normalizedPhase === "exhausted") {
+    return "failed";
+  }
+  if (normalizedPhase === "retrying" || normalizedPhase === "running") {
+    return "retrying";
+  }
+  if (normalizedPhase === "succeeded" || normalizedPhase === "resumed") {
+    return "succeeded";
+  }
+  return "scheduled";
+}
+
+function roundTone({
+  pendingApprovalCount,
+  pendingQuestionCount,
+  retry,
+  round,
+}: {
+  pendingApprovalCount: number;
+  pendingQuestionCount: number;
+  retry: RoundRetrySummary | null;
+  round: SessionRound;
+}): RoundTone | null {
+  if (roundVerificationStatus(round) === "failed") {
+    return "warning";
+  }
+  if (
+    retry?.phase === "failed" ||
+    retry?.phase === "fallbackFailed" ||
+    normalizedText(round.run_status).toLowerCase() === "failed"
+  ) {
+    return "error";
+  }
+  if (pendingApprovalCount > 0 || pendingQuestionCount > 0 || retry !== null) {
+    return "warning";
+  }
+  return null;
+}
+
+function roundStatusLabel(round: SessionRound): string | null {
+  if (roundVerificationStatus(round) === "failed") {
+    return "verification failed";
+  }
+  const rawStatus = normalizedText(round.run_status)
+    || normalizedText(round.run_phase)
+    || normalizedText(round.verification_status);
+  return rawStatus || null;
+}
+
+function roundVerificationStatus(round: SessionRound): string {
+  return normalizedText(round.verification_status).toLowerCase();
+}
+
+function areDiagnosticsVisible(): boolean {
+  if (typeof document === "undefined") {
+    return false;
+  }
+  return document.documentElement.dataset.diagnosticsVisible === "true";
+}
+
+function roundDurationLabel(round: SessionRound): string | null {
+  const start = timestampMs(round.run_started_at) ?? timestampMs(round.created_at);
+  const end = timestampMs(round.run_updated_at);
+  if (start === null || end === null || end <= start) {
+    return null;
+  }
+  const seconds = Math.round((end - start) / 1000);
+  if (seconds < 60) {
+    return `${seconds}s`;
+  }
+  if (seconds >= 3600) {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return remainder === 0 ? `${minutes}m` : `${minutes}m ${remainder}s`;
+}
+
+function timestampMs(value: string | null | undefined): number | null {
+  if (value === undefined || value === null || value.trim().length === 0) {
+    return null;
+  }
+  const timestamp = new Date(value).getTime();
+  return Number.isNaN(timestamp) ? null : timestamp;
+}
+
+function jsonObject(value: JsonValue): Record<string, JsonValue> | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null;
+  }
+  return value;
+}
+
+function objectString(
+  object: Record<string, JsonValue>,
+  key: string,
+): string {
+  const value = object[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function objectPositiveNumber(
+  object: Record<string, JsonValue>,
+  key: string,
+): number {
+  const value = object[key];
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : 0;
+}
+
+function objectBoolean(
+  object: Record<string, JsonValue>,
+  key: string,
+): boolean {
+  return object[key] === true;
+}
+
+function truncateLabel(value: string): string {
+  if (value.length <= 90) {
+    return value;
+  }
+  return `${value.slice(0, 87)}...`;
+}

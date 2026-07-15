@@ -1,0 +1,347 @@
+.at-connectors-toolbar {
+  min-height: 54px;
+  padding: 10px 18px;
+}
+
+.at-connectors-content {
+  container-name: connectors-content;
+  container-type: inline-size;
+  gap: 12px;
+  overflow: hidden;
+  padding: 12px 18px 18px;
+}
+
+.at-connectors-section-tabs {
+  align-self: flex-start;
+}
+
+.at-connectors-overview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.at-connectors-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  overflow: visible;
+}
+
+.at-connectors-summary-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 3px 8px;
+  border: 1px solid var(--at-border);
+  border-radius: 999px;
+  background: var(--at-surface);
+}
+
+.at-connectors-summary-cell span,
+.at-connectors-summary-cell strong {
+  font-size: 11px;
+  line-height: 1;
+}
+
+.at-connectors-summary-cell strong {
+  font-family: var(--at-font-mono);
+}
+
+.at-connectors-controls {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) max-content;
+  align-items: center;
+  gap: 8px;
+}
+
+.at-connectors-search {
+  width: 100%;
+}
+
+.at-connectors-workbench {
+  flex: 1 1 auto;
+  display: block;
+  min-height: 0;
+  overflow: auto;
+}
+
+.at-connectors-card-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-content: start;
+  gap: 10px;
+  max-height: none;
+  overflow: visible;
+  padding: 0;
+}
+
+.at-connectors-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  min-width: 0;
+  min-height: 104px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.at-connectors-card-select {
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 12px 8px;
+}
+
+.at-connectors-card-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  color: var(--at-text-muted);
+}
+
+.at-connectors-card-body {
+  gap: 3px;
+}
+
+.at-connectors-card-body strong {
+  font-size: 13px;
+}
+
+.at-connectors-card-body span,
+.at-connectors-card-body em {
+  font-size: 12px;
+}
+
+.at-connectors-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 38px;
+  padding: 5px 8px 5px 12px;
+  border-top: 1px solid var(--at-border);
+}
+
+.at-connectors-card-meta,
+.at-connectors-card-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.at-connectors-card-actions {
+  flex: 0 0 auto;
+  gap: 2px;
+}
+
+.at-connectors-status,
+.at-connectors-account-count {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.at-connectors-card-footer .ant-btn-link {
+  height: 28px;
+  padding-inline: 5px;
+}
+
+.at-connectors-card-footer .at-connectors-card-action {
+  margin-left: 0;
+}
+
+.at-connectors-card-result {
+  padding: 7px 9px;
+  border-top: 1px solid var(--at-border);
+  color: var(--at-text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.at-connectors-card-result.is-success {
+  color: var(--at-success);
+}
+
+.at-connectors-card-result.is-warning,
+.at-connectors-card-result.is-error {
+  color: var(--at-danger);
+}
+
+.at-connectors-card-action {
+  margin-left: auto;
+}
+
+.at-connectors-modal {
+  max-width: calc(100vw - 32px);
+  padding-bottom: 0;
+}
+
+.at-connectors-modal .ant-modal-body {
+  max-height: min(720px, calc(100dvh - 160px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.at-connectors-modal .at-connectors-detail,
+.at-connectors-modal .at-gateway-connector-editor,
+.at-connectors-modal .at-settings-section {
+  min-height: 0;
+  max-height: none;
+  overflow: visible;
+  padding: 0;
+  border: 0;
+}
+
+.at-connectors-modal .at-gateway-connector-body,
+.at-connectors-modal .at-gateway-account-list,
+.at-connectors-modal .at-gateway-account-form,
+.at-connectors-modal .at-connectors-detail-section,
+.at-connectors-modal .at-settings-section-body {
+  max-height: none;
+  overflow: visible;
+}
+
+.at-connectors-modal .at-settings-github-section,
+.at-connectors-modal .at-settings-wide-form,
+.at-connectors-modal .at-settings-form-layout {
+  width: 100%;
+  max-width: none;
+}
+
+.at-connector-configuration {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+}
+
+.at-connector-configuration-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--at-border);
+}
+
+.at-connector-configuration-toolbar .ant-btn {
+  margin-left: -7px;
+}
+
+.at-connector-configuration > .at-settings-section,
+.at-connector-configuration > .at-gateway-connector-editor,
+.at-connector-configuration > .at-connectors-w3-editor {
+  width: 100%;
+  max-width: none;
+}
+
+.at-runtime-tools {
+  flex: 1 1 auto;
+  align-content: start;
+  grid-auto-rows: max-content;
+  min-height: 0;
+  overflow: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.at-runtime-tools-heading {
+  min-height: 32px;
+  padding-inline: 2px;
+}
+
+.at-runtime-tools-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-rows: max-content;
+  align-items: start;
+  gap: 10px;
+  align-self: start;
+  width: 100%;
+}
+
+.at-runtime-tool-card {
+  grid-template-rows: minmax(0, 1fr) max-content;
+  align-content: start;
+  height: auto;
+  min-height: 104px;
+  background: var(--at-surface);
+}
+
+@media (max-width: 1180px) {
+  .at-connectors-card-list,
+  .at-runtime-tools-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Respond to the usable work area as well as the window. This keeps cards
+   readable when a wider workspace rail or an embedded shell narrows the page. */
+@container connectors-content (max-width: 980px) {
+  .at-connectors-card-list,
+  .at-runtime-tools-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container connectors-content (max-width: 620px) {
+  .at-connectors-card-list,
+  .at-runtime-tools-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 900px) {
+  .at-connectors-overview {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .at-connectors-controls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .at-connectors-controls .ant-segmented {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+}
+
+@media (max-width: 760px) {
+  .at-connectors-content {
+    padding: 8px;
+  }
+
+  .at-connectors-card-list,
+  .at-runtime-tools-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .at-connectors-card-footer {
+    align-items: flex-start;
+  }
+
+  .at-connectors-card-meta {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .at-connectors-modal {
+    width: calc(100vw - 16px) !important;
+    max-width: calc(100vw - 16px);
+    margin: 8px auto;
+  }
+
+  .at-connectors-modal .ant-modal-body {
+    max-height: calc(100dvh - 128px);
+  }
+}

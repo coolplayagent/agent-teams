@@ -1,0 +1,104 @@
+/**
+ * components/rounds/utils.js
+ * Shared utility helpers for rounds timeline rendering.
+ */
+import { t } from '../../utils/i18n.js';
+import { state } from '../../core/state.js';
+
+export function roundSectionId(runId) {
+    return `round-${String(runId).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+}
+
+export function esc(text) {
+    if (!text) return '';
+    const d = document.createElement('div');
+    d.textContent = text;
+    return d.innerHTML;
+}
+
+export function roundStateTone(round) {
+    const phase = String(round?.run_phase || '');
+    if (roundVerificationFailed(round)) {
+        return 'warning';
+    }
+    const status = effectiveRoundStatus(round);
+    if (
+        phase === 'awaiting_tool_approval'
+        || phase === 'awaiting_subagent_followup'
+        || phase === 'awaiting_manual_action'
+    ) {
+        return 'warning';
+    }
+    switch (status) {
+        case 'running':
+            return 'running';
+        case 'completed':
+            return 'success';
+        case 'failed':
+            return 'danger';
+        case 'stopped':
+            return 'stopped';
+        default:
+            return 'idle';
+    }
+}
+
+export function roundStateLabel(round) {
+    const phase = String(round?.run_phase || '');
+    if (roundVerificationFailed(round)) {
+        return t('rounds.state.verification_failed');
+    }
+    const status = effectiveRoundStatus(round);
+    if (phase === 'awaiting_tool_approval') return t('rounds.state.awaiting_approval');
+    if (phase === 'awaiting_manual_action') return t('rounds.state.awaiting_manual_action');
+    if (phase === 'awaiting_subagent_followup') return t('rounds.state.awaiting_followup');
+    switch (status) {
+        case 'queued':
+            return t('rounds.state.queued');
+        case 'running':
+            return t('rounds.state.running');
+        case 'paused':
+            return t('rounds.state.paused');
+        case 'stopped':
+            return t('rounds.state.stopped');
+        case 'completed':
+            return t('rounds.state.completed');
+        case 'failed':
+            return t('rounds.state.failed');
+        default:
+            return '';
+    }
+}
+
+export function roundIsRunning(round) {
+    return effectiveRoundStatus(round) === 'running';
+}
+
+export function effectiveRoundStatus(round) {
+    if (hasRunningDelegatedTask(round)) {
+        return 'running';
+    }
+    return String(round?.run_status || '');
+}
+
+export function roundVerificationFailed(round) {
+    return String(round?.verification_status || '').trim().toLowerCase() === 'failed';
+}
+
+function hasRunningDelegatedTask(round) {
+    const runId = String(round?.run_id || '').trim();
+    if (!runId) {
+        return false;
+    }
+    const tasks = Array.isArray(state.sessionTasks) ? state.sessionTasks : [];
+    return tasks.some(task => {
+        if (!task || typeof task !== 'object') {
+            return false;
+        }
+        return (
+            String(task.run_id || '').trim() === runId
+            && String(task.status || '').trim().toLowerCase() === 'running'
+            && !!String(task.assigned_instance_id || task.instance_id || '').trim()
+        );
+    });
+}

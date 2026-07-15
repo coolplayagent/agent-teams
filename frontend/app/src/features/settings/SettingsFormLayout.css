@@ -1,0 +1,124 @@
+.at-settings-form-layout {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  width: 100%;
+  max-width: 880px;
+  min-width: 0;
+}
+
+.at-settings-form-card-layout {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--at-border);
+  border-radius: 10px;
+  background: var(--at-surface);
+}
+
+.at-settings-form-grid-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 10px 14px;
+  min-width: 0;
+}
+
+.at-settings-form-grid-layout > .ant-form-item,
+.at-settings-form-card-layout > .ant-form-item {
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.at-settings-form-grid-span {
+  grid-column: 1 / -1;
+}
+
+.at-settings-form-grid-layout .ant-form-item-label,
+.at-settings-form-card-layout .ant-form-item-label {
+  padding-bottom: 4px;
+}
+
+.at-settings-form-grid-layout .ant-form-item-label > label,
+.at-settings-form-card-layout .ant-form-item-label > label {
+  min-height: 20px;
+  color: var(--at-text-muted);
+  font-size: 12px;
+}
+
+.at-settings-form-actions-layout {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+  padding-top: 2px;
+}
+
+.at-settings-section.is-embedded {
+  height: auto;
+}
+
+.at-settings-section.is-embedded > .at-settings-section-body {
+  overflow: visible;
+  padding: 0;
+}
+
+.at-settings-github-section > .at-settings-section-body > .at-settings-facts,
+.at-settings-github-section
+  > .at-settings-section-body
+  > .at-settings-wide-form {
+  width: min(100%, 1040px);
+  margin-inline: auto;
+}
+
+.at-settings-github-section .at-settings-wide-form,
+.at-settings-github-section .at-settings-form-layout {
+  width: 100%;
+  max-width: none;
+}
+
+.at-settings-github-section .at-settings-form-layout {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.at-settings-detail-page.at-orchestration-preset-detail,
+.at-orchestration-preset-detail .at-orchestration-preset-form,
+.at-orchestration-preset-form > .at-settings-form-layout {
+  width: 100%;
+  max-width: none;
+}
+
+.at-orchestration-preset-form .ant-input-number {
+  width: 100%;
+}
+
+@media (max-width: 720px) {
+  .at-settings-form-layout {
+    gap: 12px;
+    max-width: none;
+  }
+
+  .at-settings-github-section .at-settings-form-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .at-settings-form-card-layout {
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .at-settings-form-grid-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .at-settings-form-actions-layout {
+    justify-content: stretch;
+  }
+
+  .at-settings-form-actions-layout > .ant-btn {
+    flex: 1 1 auto;
+  }
+}

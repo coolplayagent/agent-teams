@@ -25,6 +25,7 @@ from relay_teams.metrics.definitions import (
 )
 from relay_teams.metrics.models import (
     MetricScope,
+    MetricDimensionAttribution,
     MetricTagSet,
     MetricsScopeSelector,
     ObservabilityBreakdown,
@@ -151,14 +152,16 @@ class MetricsQueryService:
         tool_grouped: dict[tuple[str, str, str], dict[str, float]] = defaultdict(
             lambda: {"calls": 0.0, "failures": 0.0, "duration_ms": 0.0}
         )
-        role_grouped: dict[str, dict[str, float]] = defaultdict(
-            lambda: {
-                "input_tokens": 0.0,
-                "cached_input_tokens": 0.0,
-                "output_tokens": 0.0,
-                "tool_calls": 0.0,
-                "tool_failures": 0.0,
-            }
+        role_grouped: dict[tuple[str, MetricDimensionAttribution], dict[str, float]] = (
+            defaultdict(
+                lambda: {
+                    "input_tokens": 0.0,
+                    "cached_input_tokens": 0.0,
+                    "output_tokens": 0.0,
+                    "tool_calls": 0.0,
+                    "tool_failures": 0.0,
+                }
+            )
         )
         gateway_grouped: dict[tuple[str, str, str], dict[str, float]] = defaultdict(
             lambda: {
@@ -179,17 +182,23 @@ class MetricsQueryService:
                     tool_grouped[key]["failures"] += row.value
                 elif row.metric_name == TOOL_DURATION_MS.name:
                     tool_grouped[key]["duration_ms"] += row.value
-            role_id = tags.role_id or "unknown"
+            role_id = tags.role_id.strip()
+            role_key = (
+                role_id,
+                MetricDimensionAttribution.RECORDED
+                if role_id
+                else MetricDimensionAttribution.MISSING_METRIC_TAG,
+            )
             if row.metric_name == LLM_INPUT_TOKENS.name:
-                role_grouped[role_id]["input_tokens"] += row.value
+                role_grouped[role_key]["input_tokens"] += row.value
             elif row.metric_name == LLM_CACHED_INPUT_TOKENS.name:
-                role_grouped[role_id]["cached_input_tokens"] += row.value
+                role_grouped[role_key]["cached_input_tokens"] += row.value
             elif row.metric_name == LLM_OUTPUT_TOKENS.name:
-                role_grouped[role_id]["output_tokens"] += row.value
+                role_grouped[role_key]["output_tokens"] += row.value
             elif row.metric_name == TOOL_CALLS.name:
-                role_grouped[role_id]["tool_calls"] += row.value
+                role_grouped[role_key]["tool_calls"] += row.value
             elif row.metric_name == TOOL_FAILURES.name:
-                role_grouped[role_id]["tool_failures"] += row.value
+                role_grouped[role_key]["tool_failures"] += row.value
             if tags.gateway_operation and tags.gateway_phase and tags.gateway_transport:
                 gateway_key = (
                     tags.gateway_operation,
@@ -231,6 +240,7 @@ class MetricsQueryService:
             (
                 ObservabilityRoleBreakdownRow(
                     role_id=role_id,
+                    attribution=attribution,
                     input_tokens=values["input_tokens"],
                     cached_input_tokens=values["cached_input_tokens"],
                     uncached_input_tokens=max(
@@ -252,10 +262,15 @@ class MetricsQueryService:
                         else 0
                     ),
                 )
-                for role_id, values in role_grouped.items()
+                for (role_id, attribution), values in role_grouped.items()
                 if any(metric_value > 0 for metric_value in values.values())
             ),
-            key=lambda item: (-item.input_tokens, -item.tool_calls, item.role_id),
+            key=lambda item: (
+                -item.input_tokens,
+                -item.tool_calls,
+                item.attribution.value,
+                item.role_id,
+            ),
         )
         ordered_gateway_rows = sorted(
             (

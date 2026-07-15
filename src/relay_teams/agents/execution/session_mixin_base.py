@@ -63,7 +63,7 @@ from relay_teams.providers.model_fallback import (
     LlmFallbackDecision,
     LlmFallbackMiddleware,
 )
-from relay_teams.providers.provider_contracts import LLMRequest
+from relay_teams.providers.provider_contracts import LLMRequest, ProviderStreamContract
 from relay_teams.providers.token_usage_repo import TokenUsageRepository
 from relay_teams.roles.role_registry import RoleRegistry
 from relay_teams.sessions.runs.background_tasks.service import BackgroundTaskService
@@ -96,6 +96,7 @@ from relay_teams.workspace import WorkspaceManager
 
 class AgentLlmSessionMixinBase:  # pragma: no cover
     _config: ModelEndpointConfig
+    _provider_stream_contract: ProviderStreamContract
     _profile_name: str | None
     _task_repo: TaskRepository
     _shared_store: SharedStateRepository

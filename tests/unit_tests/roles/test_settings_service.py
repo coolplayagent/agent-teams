@@ -16,6 +16,7 @@ from relay_teams.roles import (
     RoleConfigSource,
     RoleMode,
     RoleRegistry,
+    SystemRoleIdentity,
     default_memory_profile,
 )
 from relay_teams.roles.settings_service import RoleSettingsService
@@ -429,9 +430,6 @@ def test_get_role_document_preserves_unknown_tool_names_without_aliases(
         "deprecated_writer",
         "shell",
         "missing_tool",
-        "office_read_markdown",
-        "todo_write",
-        "todo_read",
     )
 
 
@@ -624,11 +622,7 @@ def test_save_role_document_filters_unknown_capabilities_from_other_roles(
 
     assert saved.role_id == "writer"
     reloaded_dirty_role = captured_registry[-1].get("dirty")
-    assert reloaded_dirty_role.tools == (
-        "office_read_markdown",
-        "todo_write",
-        "todo_read",
-    )
+    assert reloaded_dirty_role.tools == ()
     assert reloaded_dirty_role.mcp_servers == ()
     assert reloaded_dirty_role.skills == ()
 
@@ -696,11 +690,7 @@ def test_save_role_document_preserves_persisted_wildcards_when_filtering_dirty_r
     )
 
     reloaded_dirty_role = captured_registry[-1].get("dirty")
-    assert reloaded_dirty_role.tools == (
-        "office_read_markdown",
-        "todo_write",
-        "todo_read",
-    )
+    assert reloaded_dirty_role.tools == ()
     assert reloaded_dirty_role.mcp_servers == ("*",)
     assert reloaded_dirty_role.skills == ("*",)
 
@@ -1311,7 +1301,7 @@ def test_validate_role_document_rejects_invalid_skill_ref_mixed_with_wildcard(
         )
 
 
-def test_save_role_document_strips_office_tool_from_coordinator_like_role(
+def test_save_role_document_preserves_explicit_tools_for_coordinator_like_role(
     tmp_path: Path,
 ) -> None:
     roles_dir = tmp_path / "roles"
@@ -1355,6 +1345,7 @@ def test_save_role_document_strips_office_tool_from_coordinator_like_role(
         "orch_create_tasks",
         "orch_update_task",
         "orch_dispatch_task",
+        "office_read_markdown",
     )
 
 
@@ -1369,6 +1360,7 @@ def test_save_role_document_allows_reserved_role_prompt_updates(tmp_path: Path) 
         description="Handles normal-mode runs directly.",
         version="1.0.0",
         tools=("orch_dispatch_task",),
+        system_role=SystemRoleIdentity.MAIN_AGENT,
         system_prompt="Handle the task directly.",
     )
     skills_dir = tmp_path / "skills"
@@ -1408,6 +1400,48 @@ def test_save_role_document_allows_reserved_role_prompt_updates(tmp_path: Path) 
         == "Handle the task directly and verify the outcome before finishing."
     )
     assert (roles_dir / "MainAgent.md").exists()
+    assert saved.system_role == SystemRoleIdentity.MAIN_AGENT
+    assert "system_role: main_agent" in saved.content
+
+
+def test_save_role_document_rejects_user_defined_system_identity(
+    tmp_path: Path,
+) -> None:
+    roles_dir = tmp_path / "roles"
+    roles_dir.mkdir()
+    skills_dir = tmp_path / "skills"
+    skills_dir.mkdir()
+    service = RoleSettingsService(
+        roles_dir=roles_dir,
+        builtin_roles_dir=_create_builtin_roles_dir(tmp_path),
+        get_tool_registry=build_default_registry,
+        get_mcp_registry=McpRegistry,
+        get_skill_registry=lambda: SkillRegistry.from_skill_dirs(
+            app_skills_dir=skills_dir
+        ),
+        get_external_agent_service=None,
+        on_roles_reloaded=lambda registry: None,
+    )
+
+    draft = RoleDocumentDraft(
+        role_id="custom-main",
+        name="Main Agent",
+        description="User-defined role with an overlapping name.",
+        version="1.0.0",
+        tools=("read",),
+        system_role=SystemRoleIdentity.MAIN_AGENT,
+        system_prompt="Handle custom work.",
+    )
+    with pytest.raises(
+        ValueError,
+        match="system_role may only be defined by builtin role manifests",
+    ):
+        service.validate_role_document(draft)
+    with pytest.raises(
+        ValueError,
+        match="system_role may only be defined by builtin role manifests",
+    ):
+        service.save_role_document("custom-main", draft=draft)
 
 
 def test_delete_role_document_removes_dirty_app_role_and_reloads_registry(
@@ -1468,11 +1502,7 @@ def test_delete_role_document_removes_dirty_app_role_and_reloads_registry(
     with pytest.raises(KeyError):
         captured_registry[-1].get("writer")
     reloaded_dirty_role = captured_registry[-1].get("dirty")
-    assert reloaded_dirty_role.tools == (
-        "office_read_markdown",
-        "todo_write",
-        "todo_read",
-    )
+    assert reloaded_dirty_role.tools == ()
     assert reloaded_dirty_role.mcp_servers == ()
     assert reloaded_dirty_role.skills == ()
 
@@ -1556,6 +1586,7 @@ def _write_role(
     description: str,
     version: str,
     tools: tuple[str, ...],
+    system_role: SystemRoleIdentity | None = None,
     mode: RoleMode = RoleMode.PRIMARY,
     mcp_servers: tuple[str, ...] = (),
     skills: tuple[str, ...] = (),
@@ -1569,9 +1600,15 @@ def _write_role(
         "model_profile: default\n",
         f"version: {version}\n",
         f"mode: {mode.value}\n",
-        "tools:\n",
-        *[f"  - {_format_yaml_list_item(tool)}\n" for tool in tools],
     ]
+    if system_role is not None:
+        lines.append(f"system_role: {system_role.value}\n")
+    lines.extend(
+        [
+            "tools:\n",
+            *[f"  - {_format_yaml_list_item(tool)}\n" for tool in tools],
+        ]
+    )
     if mcp_servers:
         lines.extend(
             [

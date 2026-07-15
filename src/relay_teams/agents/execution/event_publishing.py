@@ -29,6 +29,7 @@ from relay_teams.sessions.runs.event_stream import (
 )
 from relay_teams.sessions.runs.run_models import RunEvent
 from relay_teams.logger import get_logger, log_event
+from relay_teams.tools.registry import ToolRegistry
 from relay_teams.tools.runtime.persisted_state import (
     PersistedToolCallState,
     PersistedToolCallBatchItem,
@@ -54,9 +55,17 @@ class EventPublishingService:
         *,
         run_event_hub: AsyncRunEventPublisher | SyncRunEventPublisher | None,
         shared_store: SharedStateRepository | None = None,
+        tool_registry: ToolRegistry | None = None,
     ) -> None:
         self._run_event_hub = run_event_hub
         self._shared_store = shared_store
+        self._tool_registry = tool_registry
+
+    def _tool_semantics_payload(self, tool_name: str) -> dict[str, JsonValue]:
+        if self._tool_registry is None:
+            return {}
+        semantics = self._tool_registry.get_tool_semantics(tool_name)
+        return cast(dict[str, JsonValue], semantics.model_dump(mode="json"))
 
     def publish_text_delta_event(
         self,
@@ -256,6 +265,7 @@ class EventPublishingService:
                 "run_id": request.run_id,
                 "session_id": request.session_id,
                 "tool_name": tool_name,
+                **self._tool_semantics_payload(tool_name),
                 "tool_call_id": tool_call_id,
                 "args": part.args,
                 "batch_id": batch_id,
@@ -308,6 +318,7 @@ class EventPublishingService:
                     {
                         "tool_call_id": item.tool_call_id,
                         "tool_name": item.tool_name,
+                        **self._tool_semantics_payload(item.tool_name),
                         "args": item.args_preview,
                         "index": item.index,
                     }
@@ -355,6 +366,7 @@ class EventPublishingService:
                 "run_id": request.run_id,
                 "session_id": request.session_id,
                 "tool_name": tool_name,
+                **self._tool_semantics_payload(tool_name),
                 "tool_call_id": tool_call_id,
                 "args": part.args,
                 "batch_id": batch_id,
@@ -410,6 +422,7 @@ class EventPublishingService:
                     {
                         "tool_call_id": item.tool_call_id,
                         "tool_name": item.tool_name,
+                        **self._tool_semantics_payload(item.tool_name),
                         "args": item.args_preview,
                         "index": item.index,
                     }
@@ -965,6 +978,7 @@ class EventPublishingService:
                         event_type=RunEventType.TOOL_RESULT,
                         payload={
                             "tool_name": str(part.tool_name),
+                            **self._tool_semantics_payload(str(part.tool_name)),
                             "tool_call_id": tool_call_id,
                             "result": result_payload,
                             "error": is_error,
@@ -989,6 +1003,7 @@ class EventPublishingService:
                         event_type=RunEventType.TOOL_INPUT_VALIDATION_FAILED,
                         payload={
                             "tool_name": part.tool_name,
+                            **self._tool_semantics_payload(part.tool_name),
                             "tool_call_id": tool_call_id,
                             "reason": "Input validation failed before tool execution.",
                             "details": part.content,
@@ -1047,6 +1062,7 @@ class EventPublishingService:
                         event_type=RunEventType.TOOL_RESULT,
                         payload={
                             "tool_name": str(part.tool_name),
+                            **self._tool_semantics_payload(str(part.tool_name)),
                             "tool_call_id": tool_call_id,
                             "result": result_payload,
                             "error": is_error,
@@ -1071,6 +1087,7 @@ class EventPublishingService:
                         event_type=RunEventType.TOOL_INPUT_VALIDATION_FAILED,
                         payload={
                             "tool_name": part.tool_name,
+                            **self._tool_semantics_payload(part.tool_name),
                             "tool_call_id": tool_call_id,
                             "reason": "Input validation failed before tool execution.",
                             "details": part.content,

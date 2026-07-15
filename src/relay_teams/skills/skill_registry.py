@@ -139,6 +139,54 @@ class SkillRegistry(BaseModel):
             )
             return skill_map.get(normalized_name)
 
+    def get_skill_definitions(
+        self,
+        skill_names: tuple[str, ...],
+        *,
+        strict: bool = True,
+        consumer: str | None = None,
+        expand_wildcards: bool = True,
+    ) -> tuple[Skill, ...]:
+        """Resolve several skill references from one discovery snapshot.
+
+        Runtime prompt preparation commonly resolves dozens of authorized skills.
+        Building the effective map once keeps that hot path independent of the
+        number of authorized skills while preserving the registry's normal
+        filesystem refresh semantics.
+        """
+        if not skill_names:
+            return ()
+        attributes: dict[str, JsonValue] = {
+            "skill_names": list(skill_names),
+            "strict": strict,
+            "expand_wildcards": expand_wildcards,
+        }
+        if consumer is not None:
+            attributes["consumer"] = consumer
+        with trace_span(
+            LOGGER,
+            component="skills.registry",
+            operation="get_skill_definitions",
+            attributes=attributes,
+        ):
+            skill_map = self._get_effective_skill_map()
+            resolved, missing = self._resolve_skill_names_from_map(
+                skill_names,
+                skill_map=skill_map,
+                strict=strict,
+                expand_wildcards=expand_wildcards,
+            )
+            if strict and missing:
+                raise ValueError(f"Unknown skills: {list(missing)}")
+            if missing:
+                self._log_ignored_unknown_skills(
+                    skill_names=skill_names,
+                    resolved_names=resolved,
+                    missing_names=missing,
+                    consumer=consumer,
+                )
+            return tuple(skill_map[name] for name in resolved if name in skill_map)
+
     def get_toolset_tools(self, skill_names: tuple[str, ...]) -> list[Tool[ToolDeps]]:
         _ = skill_names
         tools: list[Tool[ToolDeps]] = [
@@ -161,6 +209,8 @@ class SkillRegistry(BaseModel):
         consumer: str | None = None,
         expand_wildcards: bool = True,
     ) -> tuple[str, ...]:
+        if not skill_names:
+            return ()
         attributes: dict[str, JsonValue] = {
             "skill_names": list(skill_names),
             "strict": strict,
@@ -368,6 +418,21 @@ class SkillRegistry(BaseModel):
         expand_wildcards: bool = True,
     ) -> tuple[tuple[str, ...], tuple[str, ...]]:
         skill_map = self._get_effective_skill_map()
+        return self._resolve_skill_names_from_map(
+            skill_names,
+            skill_map=skill_map,
+            strict=strict,
+            expand_wildcards=expand_wildcards,
+        )
+
+    @staticmethod
+    def _resolve_skill_names_from_map(
+        skill_names: tuple[str, ...],
+        *,
+        skill_map: dict[str, Skill],
+        strict: bool,
+        expand_wildcards: bool,
+    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
         resolved_names: list[str] = []
         wildcard_names: set[str] = set()
         missing_names: list[str] = []

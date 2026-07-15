@@ -57,11 +57,31 @@ def test_system_config_roundtrips_and_prompt_preview(
     web_payload = api_client.get("/api/system/configs/web").json()
     assert web_payload == {
         "provider": "exa",
-        "exa_api_key": exa_web_api_key,
+        "provider_options": [
+            {
+                "display_name": "Exa",
+                "provider": "exa",
+                "website_url": "https://exa.ai",
+            }
+        ],
+        "exa_api_key_configured": True,
         "fallback_provider": "searxng",
+        "fallback_provider_options": [
+            {
+                "display_name": "SearXNG",
+                "provider": "searxng",
+                "uses_instance_url": True,
+            },
+            {
+                "display_name": "Disabled",
+                "provider": "disabled",
+                "uses_instance_url": False,
+            },
+        ],
         "searxng_instance_url": "https://search.example.test/",
         "searxng_instance_seeds": list(DEFAULT_SEARXNG_INSTANCE_SEEDS),
     }
+    assert "exa_api_key" not in web_payload
 
     github_token = f"ghp_{uuid4().hex[:12]}"
     github_response = api_client.put(

@@ -1,0 +1,429 @@
+.at-composer .at-composer-inner {
+  container-name: composer;
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.at-composer .at-composer-prompt-anchor {
+  min-width: 0;
+}
+
+.at-composer .at-composer-sender.ant-sender {
+  min-height: 72px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.at-composer .at-composer-sender .ant-sender-content {
+  min-height: 72px;
+  padding: 2px 4px 0;
+}
+
+.at-composer .at-composer-sender .ant-sender-input {
+  min-height: 64px;
+  padding: 0;
+  font-size: 15px;
+  line-height: 1.55;
+  resize: none;
+}
+
+.at-prompt-mention-menu.at-prompt-mention-menu {
+  position: fixed;
+  z-index: 1100;
+  max-width: calc(100vw - 24px);
+  border: 1px solid var(--at-border);
+  border-radius: 14px;
+  background: var(--at-surface);
+  box-shadow: 0 14px 36px rgba(32, 35, 31, 0.2);
+  overflow: hidden;
+}
+
+.at-prompt-mention-menu .at-prompt-mention-menu-list {
+  max-height: inherit;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.at-prompt-mention-menu .at-prompt-mention-item {
+  display: grid;
+  grid-template-columns: 18px minmax(96px, 0.7fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 30px;
+  min-width: 0;
+  padding: 2px 8px;
+  border-bottom: 0;
+  font-size: 12px;
+}
+
+.at-prompt-mention-group-label {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 20px;
+  padding: 3px 8px 2px;
+  border-top: 1px solid color-mix(in srgb, var(--at-border) 65%, transparent);
+  background: color-mix(in srgb, var(--at-surface) 96%, transparent);
+  color: var(--at-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.at-prompt-mention-option-group:first-child .at-prompt-mention-group-label {
+  border-top: 0;
+}
+
+.at-prompt-mention-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  color: var(--at-text-muted);
+}
+
+.at-prompt-mention-menu .at-prompt-mention-name {
+  min-width: 0;
+}
+
+.at-prompt-mention-menu .at-prompt-mention-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.at-prompt-mention-menu .at-prompt-mention-kind {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.at-prompt-mention-menu .at-prompt-mention-description {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--at-text-muted);
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.at-prompt-mention-state {
+  padding: 14px 16px;
+  color: var(--at-text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.at-composer .at-prompt-attachments {
+  order: -1;
+  padding: 0 4px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+}
+
+.at-composer .at-prompt-attachment {
+  position: relative;
+  flex: 0 0 54px;
+  display: block;
+  width: 54px;
+  max-width: 54px;
+  min-height: 54px;
+  padding: 4px;
+}
+
+.at-composer .at-prompt-attachment-copy {
+  display: none;
+}
+
+.at-composer .at-prompt-attachment > .ant-btn {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  z-index: 1;
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--at-border);
+  border-radius: 50%;
+  background: var(--at-text);
+  color: var(--at-surface);
+}
+
+.at-composer .at-composer-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  min-height: 36px;
+}
+
+.at-composer .at-composer-toolbar-start,
+.at-composer .at-composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+.at-composer .at-composer-toolbar-start {
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.at-composer .at-composer-run-controls {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  gap: 6px;
+  min-width: 0;
+  padding: 1px 2px;
+}
+
+.at-composer .at-composer-topology-controls,
+.at-composer .at-composer-execution-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.at-composer .at-composer-topology-controls {
+  flex: 1 1 auto;
+}
+
+.at-composer .at-composer-execution-controls {
+  flex: 0 0 auto;
+}
+
+.at-composer .at-composer-run-controls .at-session-mode-control {
+  flex: 0 0 240px;
+  width: 240px;
+}
+
+.at-composer
+  .at-composer-run-controls
+  .at-session-mode-control
+  .ant-segmented-group {
+  width: 100%;
+}
+
+.at-composer
+  .at-composer-run-controls
+  .at-session-mode-control
+  .ant-segmented-item {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.at-composer .at-composer-role-select,
+.at-composer .at-composer-preset-select,
+.at-composer .at-composer-target-select {
+  width: 110px;
+}
+
+.at-composer .at-composer-model-select {
+  width: 126px;
+}
+
+.at-composer .at-composer-thinking-select {
+  width: 88px;
+}
+
+.at-composer .at-composer-run-controls .at-choice-control {
+  min-height: 30px;
+  padding: 3px 5px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+.at-composer .at-composer-run-controls .at-choice-control:hover {
+  background: var(--at-surface-elevated);
+}
+
+@container composer (max-width: 760px) {
+  .at-composer .at-composer-toolbar-start {
+    flex-wrap: wrap;
+    row-gap: 4px;
+    overflow: visible;
+  }
+
+  .at-composer .at-composer-run-controls {
+    order: 10;
+    flex: 1 0 100%;
+    width: 100%;
+    padding: 5px 0 0;
+    border-top: 1px solid var(--at-border);
+  }
+
+  .at-composer .at-composer-topology-controls {
+    flex: 1 1 auto;
+  }
+}
+
+@container composer (max-width: 560px) {
+  .at-composer .at-composer-run-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .at-composer .at-composer-topology-controls {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .at-composer .at-composer-execution-controls {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  .at-composer .at-composer-run-controls .at-session-mode-control,
+  .at-composer .at-composer-role-select,
+  .at-composer .at-composer-preset-select,
+  .at-composer .at-composer-target-select,
+  .at-composer .at-composer-model-select {
+    flex-basis: auto;
+    width: 100%;
+  }
+
+  .at-composer .at-composer-run-controls .at-session-mode-control {
+    grid-column: 1 / -1;
+  }
+}
+
+.at-composer .at-composer-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.at-composer .at-composer-plus-button {
+  flex: 0 0 auto;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  padding: 0;
+  color: var(--at-text-muted);
+}
+
+.at-composer .at-composer-plus-button:hover,
+.at-composer .at-composer-plus-button.is-active {
+  color: var(--at-text);
+  background: var(--at-surface-elevated);
+}
+
+.at-composer .at-composer-actions {
+  flex: 0 0 auto;
+}
+
+.at-composer .at-composer-summary-button {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 220px;
+  height: 30px;
+  padding-inline: 7px;
+  color: var(--at-text-muted);
+  border-radius: 8px;
+}
+
+.at-composer .at-composer-summary-button:hover {
+  color: var(--at-text);
+  background: var(--at-surface-elevated);
+}
+
+.at-composer .at-composer-summary-copy {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.at-composer .at-voice-input-button,
+.at-composer .at-composer-secondary-action,
+.at-composer .at-composer-primary-action {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  padding: 0;
+}
+
+.at-composer .at-composer-primary-action {
+  color: var(--at-surface);
+  border-color: var(--at-text);
+  background: var(--at-text);
+  box-shadow: none;
+}
+
+.at-composer .at-composer-primary-action:not(:disabled):hover {
+  color: var(--at-surface);
+  border-color: var(--at-text);
+  background: var(--at-text);
+  filter: brightness(1.15);
+}
+
+.at-composer .at-composer-stop-action {
+  color: var(--at-surface);
+  border-color: var(--at-danger);
+  background: var(--at-danger);
+}
+
+.at-composer-advanced-popover .ant-popover-inner {
+  max-width: min(720px, calc(100vw - 24px));
+  padding: 12px;
+  border: 1px solid var(--at-border);
+  border-radius: 14px;
+  background: var(--at-surface);
+  box-shadow: 0 14px 36px rgba(32, 35, 31, 0.2);
+}
+
+@container composer (max-width: 460px) {
+  .at-composer .at-composer-summary-button {
+    max-width: 132px;
+  }
+
+  .at-composer .at-composer-controls {
+    gap: 4px;
+  }
+}
+
+@container composer (max-width: 380px) {
+  .at-composer .at-composer-summary-copy,
+  .at-composer .at-composer-summary-button > svg:last-child {
+    display: none;
+  }
+
+  .at-composer .at-composer-summary-button {
+    width: 30px;
+    min-width: 30px;
+    padding: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .at-composer *,
+  .at-composer-advanced-popover * {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

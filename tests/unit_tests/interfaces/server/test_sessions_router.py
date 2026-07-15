@@ -1017,24 +1017,28 @@ def test_session_recovery_times_out_when_snapshot_blocks(
 
 
 @pytest.mark.asyncio
-async def test_health_responds_while_recovery_uses_default_threadpool() -> None:
-    service = _BlockingRecoveryService()
+async def test_health_responds_while_default_threadpool_is_saturated() -> None:
+    service = _FakeSessionService()
     executor = ThreadPoolExecutor(max_workers=1)
-    asyncio.get_running_loop().set_default_executor(executor)
+    loop = asyncio.get_running_loop()
+    loop.set_default_executor(executor)
+    default_worker_started = threading.Event()
+    release_default_worker = threading.Event()
     app = _create_sessions_and_system_app(service)
     transport = httpx.ASGITransport(app=app)
 
+    def block_default_worker() -> None:
+        default_worker_started.set()
+        _ = release_default_worker.wait(timeout=5.0)
+
+    blocking_task = asyncio.create_task(asyncio.to_thread(block_default_worker))
     try:
+        assert await _wait_for_threading_event(default_worker_started) is True
         async with httpx.AsyncClient(
             transport=transport,
             base_url="http://testserver",
             timeout=None,
         ) as client:
-            recovery_task = asyncio.create_task(
-                client.get("/api/sessions/session-1/recovery")
-            )
-            assert await _wait_for_threading_event(service.started) is True
-
             health_response = await asyncio.wait_for(
                 client.get("/api/system/health"),
                 timeout=1.0,
@@ -1042,11 +1046,9 @@ async def test_health_responds_while_recovery_uses_default_threadpool() -> None:
 
             assert health_response.status_code == 200
             assert health_response.json()["status"] == "ok"
-            service.release.set()
-            recovery_response = await asyncio.wait_for(recovery_task, timeout=1.0)
-            assert recovery_response.status_code == 200
     finally:
-        service.release.set()
+        release_default_worker.set()
+        await asyncio.wait_for(blocking_task, timeout=1.0)
         executor.shutdown(wait=True)
 
 

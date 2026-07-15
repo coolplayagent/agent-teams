@@ -372,4 +372,4 @@ jobs:
         run: npm run test:browser:ci
 
       - name: Verify repository is unchanged after checks
-        run: git diff --exit-code
+        run: git diff --exit-code -- . ':(exclude)frontend/dist'

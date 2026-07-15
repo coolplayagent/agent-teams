@@ -565,6 +565,10 @@ export async function mockShellApi(
       await fulfillJson(route, { by_role: {}, input_tokens: 0, output_tokens: 0 });
       return;
     }
+    if (path === `/sessions/${SESSION_ID}/activity/events`) {
+      await fulfillJson(route, { events: [] });
+      return;
+    }
     unhandledApiRoutes.push(`${method} ${path}${url.search}`);
     await fulfillJson(route, { detail: `Unhandled TS browser API route: ${path}` }, 404);
   });

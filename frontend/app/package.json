@@ -25,6 +25,7 @@
     "lint": "tsc --noEmit --pretty false && tsc -p tsconfig.desktop.json --noEmit --pretty false && tsc -p tsconfig.desktop-test.json --noEmit --pretty false",
     "test": "vitest run",
     "test:browser": "playwright test -c playwright.config.ts",
+    "test:browser:ci": "playwright test -c playwright.config.ts --workers=1 browser-tests/composer-input-affordances.spec.ts:145 browser-tests/timeline-scroll.spec.ts:22 browser-tests/timeline-scroll.spec.ts:170 browser-tests/timeline-scroll.spec.ts:236 browser-tests/version-route-switch.spec.ts",
     "test:watch": "vitest"
   },
   "dependencies": {

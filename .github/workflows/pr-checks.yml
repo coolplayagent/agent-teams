@@ -325,7 +325,7 @@ jobs:
   agents-self-check-browser-integration:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6.0.2
@@ -354,6 +354,10 @@ jobs:
         working-directory: frontend/app
         run: npm ci
 
+      - name: Build frontend distribution
+        working-directory: frontend/app
+        run: npm run build
+
       - name: Install Playwright Chromium
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
@@ -365,7 +369,7 @@ jobs:
           PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
           RELAY_TEAMS_INTEGRATION_TEST_TIMEOUT_SECONDS: "240"
         working-directory: frontend/app
-        run: npm run test:browser
+        run: npm run test:browser:ci
 
       - name: Verify repository is unchanged after checks
         run: git diff --exit-code

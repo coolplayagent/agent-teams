@@ -1103,7 +1103,7 @@ function shouldRenderOverlayInSeparateMessage(streamOverlayEntry, options = {}) 
 function findLastCompatibleMessageContent(container, label, options = {}) {
     if (!container || !label) return null;
     const messages = Array.from(container.querySelectorAll('.message'));
-    const expectedLabel = String(label || '').trim().toUpperCase();
+    const expectedLabel = String(label).trim().toUpperCase();
     if (!expectedLabel) return null;
     for (let index = messages.length - 1; index >= 0; index -= 1) {
         const message = messages[index];

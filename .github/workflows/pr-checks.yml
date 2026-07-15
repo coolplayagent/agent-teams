@@ -337,22 +337,35 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v6.1.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/app/package-lock.json
+
       - name: Set up uv
         uses: astral-sh/setup-uv@v8.1.0
 
       - name: Install dev dependencies
         run: uv sync --extra dev --no-default-groups
 
+      - name: Install frontend dependencies
+        working-directory: frontend/app
+        run: npm ci
+
       - name: Install Playwright Chromium
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
-        run: uv run --extra dev python -m playwright install --with-deps chromium
+        working-directory: frontend/app
+        run: npx playwright install --with-deps chromium
 
       - name: Browser integration tests
         env:
           PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
           RELAY_TEAMS_INTEGRATION_TEST_TIMEOUT_SECONDS: "240"
-        run: uv run --extra dev pytest -q tests/integration_tests/browser --durations=25
+        working-directory: frontend/app
+        run: npm run test:browser
 
       - name: Verify repository is unchanged after checks
         run: git diff --exit-code

@@ -57,6 +57,9 @@ def create_task_execution_service(
     app_config_dir: Path | None,
     prompt_instructions: tuple[str, ...] = (),
     provider_factory: Callable[[RoleDefinition, str | None], LLMProvider],
+    model_profile_name_resolver: (
+        Callable[[RoleDefinition, str | None], str | None] | None
+    ) = None,
     tool_registry: ToolRegistry,
     skill_registry: SkillRegistry,
     skill_runtime_service: SkillRuntimeService | None,
@@ -98,6 +101,7 @@ def create_task_execution_service(
             runtime_mcp_schema_loader=runtime_mcp_schema_loader,
         ),
         provider_factory=provider_factory,
+        model_profile_name_resolver=model_profile_name_resolver,
         tool_registry=tool_registry,
         skill_registry=skill_registry,
         skill_runtime_service=skill_runtime_service,

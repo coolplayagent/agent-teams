@@ -621,6 +621,10 @@ class SessionRecoveryMixin(AgentLlmSessionMixinBase):
         total_attempts: int,
         decision: LlmFallbackDecision,
     ) -> None:
+        await self._agent_repo.update_model_profile_async(
+            request.instance_id,
+            model_profile=decision.to_profile_name,
+        )
         await self._failure_handling_service().handle_fallback_activated_async(
             request=request,
             retry_number=retry_number,

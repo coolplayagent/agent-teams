@@ -437,8 +437,34 @@
 }
 
 .subagent-session-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
     color: var(--text-secondary);
     font-size: 0.78rem;
+}
+
+.subagent-session-meta-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.subagent-session-model-profile {
+    flex: 0 1 auto;
+    max-width: min(24rem, 48vw);
+    padding: 0.08rem 0.36rem;
+    border: 1px solid color-mix(in srgb, var(--border-color) 84%, transparent);
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--bg-hover) 58%, transparent);
+    color: color-mix(in srgb, var(--text-secondary) 80%, var(--text-primary));
+    font-size: 0.72rem;
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .subagent-session-badge {

@@ -525,18 +525,44 @@ def _build_record(
     )
 
 
-def _parent_intent() -> IntentInput:
+def _parent_intent(*, normal_model_profile: str | None = None) -> IntentInput:
     return IntentInput(
         session_id="session-1",
         execution_mode=ExecutionMode.AI,
         shell_safety_policy_enabled=False,
         thinking=RunThinkingConfig(enabled=True, effort="medium"),
         session_mode=SessionMode.NORMAL,
+        normal_model_profile=normal_model_profile,
     )
 
 
+def test_background_task_service_parent_model_profile_missing_fallbacks() -> None:
+    service_without_repo = BackgroundTaskService(
+        background_task_manager=None,
+        repository=cast(BackgroundTaskRepository, object()),
+    )
+    assert service_without_repo._parent_normal_model_profile("run-1") == ""
+
+    missing_intent_service = BackgroundTaskService(
+        background_task_manager=None,
+        repository=cast(BackgroundTaskRepository, object()),
+        run_intent_repo=_FakeRunIntentRepo(_parent_intent(normal_model_profile="fast")),
+    )
+    assert missing_intent_service._parent_normal_model_profile("missing-run") == ""
+
+    orchestration_intent = _parent_intent(
+        normal_model_profile="fast",
+    ).model_copy(update={"session_mode": SessionMode.ORCHESTRATION})
+    orchestration_intent_service = BackgroundTaskService(
+        background_task_manager=None,
+        repository=cast(BackgroundTaskRepository, object()),
+        run_intent_repo=_FakeRunIntentRepo(orchestration_intent),
+    )
+    assert orchestration_intent_service._parent_normal_model_profile("run-1") == ""
+
+
 def test_background_task_service_subagent_intent_inherits_shell_policy() -> None:
-    intent_repo = _FakeRunIntentRepo(_parent_intent())
+    intent_repo = _FakeRunIntentRepo(_parent_intent(normal_model_profile="fast"))
     service = BackgroundTaskService(
         background_task_manager=None,
         repository=cast(BackgroundTaskRepository, object()),
@@ -553,6 +579,7 @@ def test_background_task_service_subagent_intent_inherits_shell_policy() -> None
 
     subagent_intent = intent_repo.get("run-subagent-1")
     assert subagent_intent.shell_safety_policy_enabled is False
+    assert subagent_intent.normal_model_profile == "fast"
 
 
 @pytest.mark.asyncio
@@ -934,7 +961,7 @@ async def test_background_task_service_start_subagent_completes_and_persists_res
     )
     agent_repo = _FakeAgentRepo()
     task_repo = _FakeTaskRepo()
-    intent_repo = _FakeRunIntentRepo(_parent_intent())
+    intent_repo = _FakeRunIntentRepo(_parent_intent(normal_model_profile="fast"))
     run_control_manager = _FakeRunControlManager()
     service = BackgroundTaskService(
         background_task_manager=None,
@@ -976,8 +1003,10 @@ async def test_background_task_service_start_subagent_completes_and_persists_res
     assert persisted.status == BackgroundTaskStatus.COMPLETED
     assert persisted.output_excerpt == "analysis complete"
     assert agent_repo.calls[0]["run_id"] == updated.subagent_run_id
+    assert agent_repo.calls[0]["model_profile"] == "fast"
     assert executor.calls[0]["role_id"] == "Crafter"
     assert updated.subagent_run_id in intent_repo._records
+    assert intent_repo.get(updated.subagent_run_id or "").normal_model_profile == "fast"
     assert run_control_manager.unregistered_run_ids == [updated.subagent_run_id]
     runtime = runtime_repo.get(updated.subagent_run_id or "")
     assert runtime is not None
@@ -994,6 +1023,61 @@ async def test_background_task_service_start_subagent_completes_and_persists_res
         "instance_id": updated.subagent_instance_id,
         "status": InstanceStatus.COMPLETED,
     }
+
+
+@pytest.mark.asyncio
+async def test_background_task_service_start_bound_subagent_leaves_model_profile_empty(
+    tmp_path: Path,
+) -> None:
+    repo = BackgroundTaskRepository(
+        tmp_path / "background-task-service-bound-subagent.db"
+    )
+    executor = _FakeTaskExecutionService(
+        result=TaskExecutionResult(
+            output="analysis complete",
+            completion_reason=RunCompletionReason.ASSISTANT_RESPONSE,
+        )
+    )
+    agent_repo = _FakeAgentRepo()
+    role = RoleDefinition(
+        role_id="ExternalCrafter",
+        name="External Crafter",
+        description="Delegates work to an external agent.",
+        version="1",
+        mode=RoleMode.SUBAGENT,
+        bound_agent_id="external-agent-1",
+        system_prompt="Delegate externally.",
+    )
+    service = BackgroundTaskService(
+        background_task_manager=None,
+        repository=repo,
+        task_execution_service=executor,
+        agent_repo=agent_repo,
+        task_repo=_FakeTaskRepo(),
+        run_intent_repo=_FakeRunIntentRepo(_parent_intent(normal_model_profile="fast")),
+        run_control_manager=_FakeRunControlManager(),
+    )
+
+    started = await service.start_subagent(
+        run_id="run-1",
+        session_id="session-1",
+        instance_id="inst-1",
+        role_id="MainAgent",
+        tool_call_id="call-1",
+        workspace_id="workspace-1",
+        cwd=Path("C:/workspace"),
+        subagent_role_id=role.role_id,
+        subagent_role=role,
+        title="Investigate failures",
+        prompt="Inspect the failing tests and summarize the cause.",
+    )
+    _, completed = await service.wait_for_run(
+        run_id="run-1",
+        background_task_id=started.background_task_id,
+    )
+
+    assert completed is True
+    assert agent_repo.calls[0]["model_profile"] is None
 
 
 @pytest.mark.asyncio

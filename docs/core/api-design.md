@@ -1613,7 +1613,7 @@ Request:
 Rules:
 - Sending `null` clears the override and returns to the selected role's default model.
 - A non-empty value must name an existing model profile or the endpoint returns `422`.
-- The value is only applied to normal-mode root runs and `@Role` targets. Orchestration mode and normal-mode subagents continue to use their configured role models.
+- The value is applied to normal-mode root runs, `@Role` targets, and normal-mode child subagents spawned within that run. Orchestration-mode runs clear the normal-mode override.
 - Existing persisted values that later point at a missing profile do not block run creation; provider construction logs a warning and falls back through the existing provider defaults.
 
 ### `DELETE /sessions/{session_id}`
@@ -1836,6 +1836,7 @@ Response fields include:
 - `updated_at`
 - `runtime_system_prompt`
 - `runtime_tools_json`
+- `model_profile`
 
 ### `GET /sessions/{session_id}/subagents`
 
@@ -1873,6 +1874,7 @@ Response fields include:
 - `deletable`
 - `runtime_system_prompt`
 - `runtime_tools_json`
+- `model_profile`
 
 ### `GET /sessions/{session_id}/subagents:snapshot`
 
@@ -2057,7 +2059,7 @@ Notes:
 - `target_role_id` is optional. When set, that run starts from the specified role instead of the session-default root role, without mutating the saved session topology.
 - `target_role_id` may point to `Coordinator`, `MainAgent`, or any normal role known to the role registry.
 - `normal_model_profile` is optional. When set, it must name an existing model profile and overrides the session normal-mode model profile for this run only.
-- `normal_model_profile` is only applied to normal-mode root runs and `target_role_id` runs. Orchestration-mode runs clear the normal-mode override.
+- `normal_model_profile` is applied to normal-mode root runs, `target_role_id` runs, and normal-mode child subagents spawned within that run. Orchestration-mode runs clear the normal-mode override.
 - `orchestration_policy` is optional. When provided, it overrides the selected orchestration preset policy for that run only and is stored in the run topology snapshot.
 - The backend resolves the session mode at run creation time and snapshots the chosen root topology into the run intent for queued and recoverable resume flows.
 - `session_id`, `target_role_id`, `run_id`, and other identifier-style request fields follow the common identifier validation rules above.

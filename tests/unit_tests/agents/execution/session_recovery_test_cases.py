@@ -669,6 +669,7 @@ async def test_async_fallback_wrappers_delegate_to_failure_handling_service() ->
         rate_limited=True,
     )
     calls: list[str] = []
+    profile_updates: list[tuple[str, str]] = []
 
     class _FailureHandlingService:
         async def handle_fallback_activated_async(self, **kwargs: object) -> None:
@@ -679,7 +680,17 @@ async def test_async_fallback_wrappers_delegate_to_failure_handling_service() ->
             assert kwargs["error"] == retry_error
             calls.append("exhausted")
 
+    class _AgentRepo:
+        async def update_model_profile_async(
+            self,
+            instance_id: str,
+            *,
+            model_profile: str,
+        ) -> None:
+            profile_updates.append((instance_id, model_profile))
+
     session.__dict__["_failure_handling_service"] = lambda: _FailureHandlingService()
+    session.__dict__["_agent_repo"] = _AgentRepo()
 
     await AgentLlmSession._handle_fallback_activated_async(
         session,
@@ -698,6 +709,7 @@ async def test_async_fallback_wrappers_delegate_to_failure_handling_service() ->
     )
 
     assert calls == ["activated", "exhausted"]
+    assert profile_updates == [("inst-1", "secondary")]
 
 
 @pytest.mark.asyncio

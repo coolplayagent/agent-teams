@@ -59,7 +59,7 @@ Notes:
 - `project_kind` and `project_id` identify the logical project owner; workspace sessions default `project_id` to `workspace_id`.
 - `session_mode` is `normal` or `orchestration`.
 - `normal_root_role_id` stores the session-selected root role for normal mode. When `NULL`, runtime falls back to the current `MainAgent`.
-- `normal_model_profile` stores the session-selected normal-mode model override. When `NULL`, the selected root role or `@Role` target uses its role default.
+- `normal_model_profile` stores the session-selected normal-mode model override. When `NULL`, the selected root role, `@Role` target, or normal-mode child subagent uses its role default.
 - `orchestration_preset_id` stores the session-selected preset for orchestration mode.
 - `started_at` is written when the first run is created and locks further mode switching for that session.
 - `last_viewed_terminal_run_id` stores the latest terminal top-level run the user has opened, so the sidebar can distinguish newly finished runs from already-viewed sessions.
@@ -171,6 +171,7 @@ CREATE TABLE IF NOT EXISTS agent_instances (
     parent_instance_id    TEXT,
     runtime_system_prompt TEXT NOT NULL DEFAULT '',
     runtime_tools_json    TEXT NOT NULL DEFAULT '',
+    model_profile         TEXT NOT NULL DEFAULT '',
     created_at            TEXT NOT NULL,
     updated_at            TEXT NOT NULL
 );
@@ -179,7 +180,7 @@ CREATE INDEX IF NOT EXISTS idx_agent_instances_run_status
     ON agent_instances(run_id, status);
 ```
 
-Purpose: runtime snapshot of agent instances. Besides lifecycle state, each row now stores the latest runtime system prompt and runtime tools JSON shown in the subagent panel.
+Purpose: runtime snapshot of agent instances. Besides lifecycle state, each row now stores the latest runtime system prompt, runtime tools JSON, and effective model profile shown in subagent session details.
 
 Notes:
 - Runtime semantics distinguish reusable session role instances from ephemeral clones.
@@ -188,6 +189,7 @@ Notes:
 - Same-role concurrent dispatches may create `ephemeral` clone rows whose `parent_instance_id` points at the reusable instance.
 - `workspace_id` is the execution workspace bound from the owning session.
 - `conversation_id` is the conversation continuity key for the role instance.
+- `model_profile` stores the effective model profile used by the latest execution snapshot. Empty string means legacy, unknown, or role default.
 
 `status` values:
 - `idle`
@@ -1070,7 +1072,7 @@ Notes:
 - `intent` remains a text summary used for previews and logs.
 - `input_json` stores the canonical typed run input array, including text and media references.
 - `run_kind` distinguishes `conversation`, `generate_image`, `generate_audio`, and `generate_video`.
-- `normal_model_profile` snapshots the nullable session-level normal-mode model override for the root role or `@Role` target. Orchestration-mode intents store `NULL`.
+- `normal_model_profile` snapshots the nullable session-level normal-mode model override for the root role, `@Role` target, or normal-mode child subagent tasks spawned within that run. Orchestration-mode intents store `NULL`.
 - `generation_config_json` stores the typed native media-generation config for provider-native image/audio/video runs.
 - `yolo` controls whether tool approvals are skipped entirely for that run.
 - `shell_safety_policy_enabled` controls whether shell execution keeps the local shell safety deny layer enabled for that run.

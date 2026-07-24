@@ -305,13 +305,17 @@ def _build_service(
     artifact_repo: TaskArtifactRepository | None = None,
     memory_bank_service: MemoryBankService | None = None,
     provider_factory: Callable[[RoleDefinition, str | None], object] | None = None,
+    model_profile_name_resolver: (
+        Callable[[RoleDefinition, str | None], str | None] | None
+    ) = None,
+    role: RoleDefinition | None = None,
 ) -> tuple[
     TaskExecutionService,
     TaskRepository,
     AgentInstanceRepository,
     MessageRepository,
 ]:
-    role = RoleDefinition(
+    role_definition = role or RoleDefinition(
         role_id="time",
         name="time",
         description="Reports the current time.",
@@ -320,7 +324,7 @@ def _build_service(
         system_prompt="You are the time role.",
     )
     role_registry = RoleRegistry()
-    role_registry.register(role)
+    role_registry.register(role_definition)
 
     task_repo = TaskRepository(db_path)
     agent_repo = AgentInstanceRepository(db_path)
@@ -344,6 +348,7 @@ def _build_service(
             mcp_registry=McpRegistry(),
         ),
         provider_factory=provider_factory or (lambda _, __=None: provider),
+        model_profile_name_resolver=model_profile_name_resolver,
         tool_registry=build_default_registry(),
         skill_registry=_StaticSkillRegistry(),
         mcp_registry=McpRegistry(),
@@ -1176,7 +1181,7 @@ async def test_execute_applies_normal_model_profile_to_root_task(
 
 
 @pytest.mark.asyncio
-async def test_execute_does_not_apply_normal_model_profile_to_child_task(
+async def test_execute_applies_normal_model_profile_to_child_task(
     tmp_path: Path,
 ) -> None:
     provider = _CapturingProvider()
@@ -1214,7 +1219,148 @@ async def test_execute_does_not_apply_normal_model_profile_to_child_task(
         task=task,
     )
 
+    assert captured_roles[0].model_profile == "fast"
+    assert agent_repo.get_instance(instance_id).model_profile == "fast"
+
+
+@pytest.mark.asyncio
+async def test_execute_persists_resolved_runtime_model_profile_name(
+    tmp_path: Path,
+) -> None:
+    provider = _CapturingProvider()
+    captured_roles: list[RoleDefinition] = []
+    resolver_calls: list[tuple[str, str | None]] = []
+
+    def provider_factory(role: RoleDefinition, session_id: str | None) -> object:
+        captured_roles.append(role)
+        return provider
+
+    def model_profile_name_resolver(
+        role: RoleDefinition,
+        session_id: str | None,
+    ) -> str | None:
+        resolver_calls.append((role.model_profile, session_id))
+        return "runtime-default"
+
+    service, task_repo, agent_repo, message_repo = _build_service(
+        tmp_path / "task_execution_service_resolved_model_profile.db",
+        provider,
+        provider_factory=provider_factory,
+        model_profile_name_resolver=model_profile_name_resolver,
+    )
+    task, instance_id = _seed_task(
+        task_repo=task_repo,
+        agent_repo=agent_repo,
+        message_repo=message_repo,
+    )
+
+    _ = await service.execute(
+        instance_id=instance_id,
+        role_id="time",
+        task=task,
+    )
+
     assert captured_roles[0].model_profile == "default"
+    assert resolver_calls == [("default", task.session_id)]
+    assert agent_repo.get_instance(instance_id).model_profile == "runtime-default"
+
+
+@pytest.mark.asyncio
+async def test_execute_omits_local_model_profile_snapshot_for_bound_agent(
+    tmp_path: Path,
+) -> None:
+    provider = _CapturingProvider()
+    captured_roles: list[RoleDefinition] = []
+    resolver_calls: list[tuple[str, str | None]] = []
+    role = RoleDefinition(
+        role_id="time",
+        name="time",
+        description="Reports the current time.",
+        version="1",
+        tools=(),
+        system_prompt="You are the time role.",
+        bound_agent_id="external-agent-1",
+    )
+
+    def provider_factory(role: RoleDefinition, session_id: str | None) -> object:
+        _ = session_id
+        captured_roles.append(role)
+        return provider
+
+    def model_profile_name_resolver(
+        role: RoleDefinition,
+        session_id: str | None,
+    ) -> str | None:
+        resolver_calls.append((role.model_profile, session_id))
+        return "runtime-default"
+
+    service, task_repo, agent_repo, message_repo = _build_service(
+        tmp_path / "task_execution_service_bound_agent_model_profile.db",
+        provider,
+        provider_factory=provider_factory,
+        model_profile_name_resolver=model_profile_name_resolver,
+        role=role,
+    )
+    task, instance_id = _seed_task(
+        task_repo=task_repo,
+        agent_repo=agent_repo,
+        message_repo=message_repo,
+    )
+
+    _ = await service.execute(
+        instance_id=instance_id,
+        role_id="time",
+        task=task,
+    )
+
+    assert captured_roles[0].bound_agent_id == "external-agent-1"
+    assert resolver_calls == []
+    assert agent_repo.get_instance(instance_id).model_profile == ""
+
+
+@pytest.mark.asyncio
+async def test_execute_persists_resolved_normal_model_profile_fallback(
+    tmp_path: Path,
+) -> None:
+    provider = _CapturingProvider()
+    captured_roles: list[RoleDefinition] = []
+
+    def provider_factory(role: RoleDefinition, session_id: str | None) -> object:
+        _ = session_id
+        captured_roles.append(role)
+        return provider
+
+    service, task_repo, agent_repo, message_repo = _build_service(
+        tmp_path / "task_execution_service_missing_model_profile.db",
+        provider,
+        provider_factory=provider_factory,
+        model_profile_name_resolver=lambda _, __: "runtime-default",
+    )
+    task, instance_id = _seed_task(
+        task_repo=task_repo,
+        agent_repo=agent_repo,
+        message_repo=message_repo,
+        parent_task_id=None,
+    )
+    assert service.run_intent_repo is not None
+    service.run_intent_repo.upsert(
+        run_id=task.trace_id,
+        session_id=task.session_id,
+        intent=IntentInput(
+            session_id=task.session_id,
+            input=content_parts_from_text("query time"),
+            normal_model_profile="missing",
+        ),
+    )
+
+    _ = await service.execute(
+        instance_id=instance_id,
+        role_id="time",
+        task=task,
+    )
+
+    assert captured_roles[0].model_profile == "missing"
+    assert agent_repo.get_instance(instance_id).model_profile == "runtime-default"
 
 
 @pytest.mark.asyncio

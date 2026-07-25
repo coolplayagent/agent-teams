@@ -1402,6 +1402,12 @@ class ServerContainer:
             app_config_dir=self.runtime.paths.config_dir,
             prompt_instructions=self.runtime.prompt_instructions.instructions,
             provider_factory=self._provider_factory,
+            model_profile_name_resolver=lambda role, session_id: (
+                self._resolve_autoharness_model_config(
+                    role,
+                    session_id,
+                )[1]
+            ),
             tool_registry=self.tool_registry,
             skill_registry=self.skill_registry,
             skill_runtime_service=self.skill_runtime_service,

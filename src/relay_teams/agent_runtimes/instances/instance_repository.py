@@ -40,6 +40,7 @@ class AgentInstanceRepository(SharedSqliteRepository):
                     parent_instance_id TEXT,
                     runtime_system_prompt TEXT NOT NULL DEFAULT '',
                     runtime_tools_json TEXT NOT NULL DEFAULT '',
+                    model_profile TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 )
@@ -66,6 +67,10 @@ class AgentInstanceRepository(SharedSqliteRepository):
             if "runtime_tools_json" not in columns:
                 self._conn.execute(
                     "ALTER TABLE agent_instances ADD COLUMN runtime_tools_json TEXT NOT NULL DEFAULT ''"
+                )
+            if "model_profile" not in columns:
+                self._conn.execute(
+                    "ALTER TABLE agent_instances ADD COLUMN model_profile TEXT NOT NULL DEFAULT ''"
                 )
             if "lifecycle" not in columns:
                 self._conn.execute(
@@ -104,6 +109,7 @@ class AgentInstanceRepository(SharedSqliteRepository):
         status: InstanceStatus,
         lifecycle: InstanceLifecycle | None = None,
         parent_instance_id: str | None = None,
+        model_profile: str | None = None,
     ) -> None:
         now = datetime.now(tz=timezone.utc).isoformat()
         resolved_conversation_id = conversation_id or build_conversation_id(
@@ -111,13 +117,16 @@ class AgentInstanceRepository(SharedSqliteRepository):
             role_id,
         )
         lifecycle_value = lifecycle.value if lifecycle is not None else None
+        model_profile_value = (
+            model_profile.strip() if model_profile is not None else None
+        )
         run_sqlite_write_with_retry(
             conn=self._conn,
             db_path=self._db_path,
             operation=lambda: self._conn.execute(
                 """
-                INSERT INTO agent_instances(run_id, trace_id, session_id, instance_id, role_id, workspace_id, conversation_id, status, lifecycle, parent_instance_id, runtime_system_prompt, runtime_tools_json, created_at, updated_at)
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, 'reusable'), ?, '', '', ?, ?)
+                INSERT INTO agent_instances(run_id, trace_id, session_id, instance_id, role_id, workspace_id, conversation_id, status, lifecycle, parent_instance_id, runtime_system_prompt, runtime_tools_json, model_profile, created_at, updated_at)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, 'reusable'), ?, '', '', COALESCE(?, ''), ?, ?)
                 ON CONFLICT(instance_id)
                 DO UPDATE SET
                     run_id=excluded.run_id,
@@ -135,6 +144,10 @@ class AgentInstanceRepository(SharedSqliteRepository):
                         WHEN ? IS NULL THEN agent_instances.parent_instance_id
                         ELSE excluded.parent_instance_id
                     END,
+                    model_profile=CASE
+                        WHEN ? IS NULL THEN agent_instances.model_profile
+                        ELSE excluded.model_profile
+                    END,
                     updated_at=excluded.updated_at
                 """,
                 (
@@ -148,10 +161,12 @@ class AgentInstanceRepository(SharedSqliteRepository):
                     status.value,
                     lifecycle_value,
                     parent_instance_id,
+                    model_profile_value,
                     now,
                     now,
                     lifecycle_value,
                     parent_instance_id,
+                    model_profile_value,
                 ),
             ),
             lock=self._lock,
@@ -172,6 +187,7 @@ class AgentInstanceRepository(SharedSqliteRepository):
         status: InstanceStatus,
         lifecycle: InstanceLifecycle | None = None,
         parent_instance_id: str | None = None,
+        model_profile: str | None = None,
     ) -> None:
         now = datetime.now(tz=timezone.utc).isoformat()
         resolved_conversation_id = conversation_id or build_conversation_id(
@@ -179,13 +195,16 @@ class AgentInstanceRepository(SharedSqliteRepository):
             role_id,
         )
         lifecycle_value = lifecycle.value if lifecycle is not None else None
+        model_profile_value = (
+            model_profile.strip() if model_profile is not None else None
+        )
 
         async def operation() -> None:
             conn = await self._get_async_conn()
             cursor = await conn.execute(
                 """
-                INSERT INTO agent_instances(run_id, trace_id, session_id, instance_id, role_id, workspace_id, conversation_id, status, lifecycle, parent_instance_id, runtime_system_prompt, runtime_tools_json, created_at, updated_at)
-                VALUES(?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, 'reusable'), ?, '', '', ?, ?)
+                INSERT INTO agent_instances(run_id, trace_id, session_id, instance_id, role_id, workspace_id, conversation_id, status, lifecycle, parent_instance_id, runtime_system_prompt, runtime_tools_json, model_profile, created_at, updated_at)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, 'reusable'), ?, '', '', COALESCE(?, ''), ?, ?)
                 ON CONFLICT(instance_id)
                 DO UPDATE SET
                     run_id=excluded.run_id,
@@ -203,6 +222,10 @@ class AgentInstanceRepository(SharedSqliteRepository):
                         WHEN ? IS NULL THEN agent_instances.parent_instance_id
                         ELSE excluded.parent_instance_id
                     END,
+                    model_profile=CASE
+                        WHEN ? IS NULL THEN agent_instances.model_profile
+                        ELSE excluded.model_profile
+                    END,
                     updated_at=excluded.updated_at
                 """,
                 (
@@ -216,10 +239,12 @@ class AgentInstanceRepository(SharedSqliteRepository):
                     status.value,
                     lifecycle_value,
                     parent_instance_id,
+                    model_profile_value,
                     now,
                     now,
                     lifecycle_value,
                     parent_instance_id,
+                    model_profile_value,
                 ),
             )
             await cursor.close()
@@ -235,18 +260,35 @@ class AgentInstanceRepository(SharedSqliteRepository):
         *,
         runtime_system_prompt: str,
         runtime_tools_json: str,
+        model_profile: str | None = None,
     ) -> None:
         now = datetime.now(tz=timezone.utc).isoformat()
+        model_profile_value = (
+            model_profile.strip() if model_profile is not None else None
+        )
         run_sqlite_write_with_retry(
             conn=self._conn,
             db_path=self._db_path,
             operation=lambda: self._conn.execute(
                 """
                 UPDATE agent_instances
-                SET runtime_system_prompt=?, runtime_tools_json=?, updated_at=?
+                SET runtime_system_prompt=?,
+                    runtime_tools_json=?,
+                    model_profile=CASE
+                        WHEN ? IS NULL THEN model_profile
+                        ELSE ?
+                    END,
+                    updated_at=?
                 WHERE instance_id=?
                 """,
-                (runtime_system_prompt, runtime_tools_json, now, instance_id),
+                (
+                    runtime_system_prompt,
+                    runtime_tools_json,
+                    model_profile_value,
+                    model_profile_value,
+                    now,
+                    instance_id,
+                ),
             ),
             lock=self._lock,
             repository_name="AgentInstanceRepository",
@@ -254,24 +296,76 @@ class AgentInstanceRepository(SharedSqliteRepository):
         )
 
     async def update_runtime_snapshot_async(
-        self, instance_id: str, *, runtime_system_prompt: str, runtime_tools_json: str
+        self,
+        instance_id: str,
+        *,
+        runtime_system_prompt: str,
+        runtime_tools_json: str,
+        model_profile: str | None = None,
     ) -> None:
         now = datetime.now(tz=timezone.utc).isoformat()
+        model_profile_value = (
+            model_profile.strip() if model_profile is not None else None
+        )
 
         async def operation() -> None:
             conn = await self._get_async_conn()
             cursor = await conn.execute(
                 """
                 UPDATE agent_instances
-                SET runtime_system_prompt=?, runtime_tools_json=?, updated_at=?
+                SET runtime_system_prompt=?,
+                    runtime_tools_json=?,
+                    model_profile=CASE
+                        WHEN ? IS NULL THEN model_profile
+                        ELSE ?
+                    END,
+                    updated_at=?
                 WHERE instance_id=?
                 """,
-                (runtime_system_prompt, runtime_tools_json, now, instance_id),
+                (
+                    runtime_system_prompt,
+                    runtime_tools_json,
+                    model_profile_value,
+                    model_profile_value,
+                    now,
+                    instance_id,
+                ),
             )
             await cursor.close()
 
         await self._run_async_write(
             operation_name="update_runtime_snapshot_async",
+            operation=lambda _conn: operation(),
+        )
+
+    async def update_model_profile_async(
+        self,
+        instance_id: str,
+        *,
+        model_profile: str,
+    ) -> None:
+        now = datetime.now(tz=timezone.utc).isoformat()
+        model_profile_value = model_profile.strip()
+
+        async def operation() -> None:
+            conn = await self._get_async_conn()
+            cursor = await conn.execute(
+                """
+                UPDATE agent_instances
+                SET model_profile=?,
+                    updated_at=?
+                WHERE instance_id=?
+                """,
+                (
+                    model_profile_value,
+                    now,
+                    instance_id,
+                ),
+            )
+            await cursor.close()
+
+        await self._run_async_write(
+            operation_name="update_model_profile_async",
             operation=lambda _conn: operation(),
         )
 
@@ -774,6 +868,7 @@ class AgentInstanceRepository(SharedSqliteRepository):
             else None,
             runtime_system_prompt=str(row["runtime_system_prompt"] or ""),
             runtime_tools_json=str(row["runtime_tools_json"] or ""),
+            model_profile=str(row["model_profile"] or ""),
             created_at=datetime.fromisoformat(str(row["created_at"])),
             updated_at=datetime.fromisoformat(str(row["updated_at"])),
         )

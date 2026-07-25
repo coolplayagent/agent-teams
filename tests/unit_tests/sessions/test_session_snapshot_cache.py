@@ -1274,6 +1274,62 @@ async def test_session_service_subagent_status_event_marks_session_snapshot_dirt
 
 
 @pytest.mark.asyncio
+async def test_session_service_fallback_event_marks_subagent_snapshot_dirty(
+    tmp_path: Path,
+) -> None:
+    runner = _CountingRunner()
+    db_path = tmp_path / "session-subagent-fallback-cache.db"
+    service = _build_service(db_path, runner=runner)
+    _ = service.create_session(session_id="session-1", workspace_id="default")
+    _seed_root_task(
+        db_path,
+        run_id="subagent_run_1",
+        session_id="session-1",
+        task_id="task-subagent-1",
+    )
+    agent_repo = AgentInstanceRepository(db_path)
+    agent_repo.upsert_instance(
+        run_id="subagent_run_1",
+        trace_id="subagent_run_1",
+        session_id="session-1",
+        instance_id="inst-subagent",
+        role_id="Explorer",
+        workspace_id="default",
+        conversation_id="conv-session-1-explorer",
+        status=InstanceStatus.RUNNING,
+        model_profile="fast",
+    )
+    first = await service.list_session_subagents_async("session-1")
+    assert first[0]["model_profile"] == "fast"
+
+    await agent_repo.update_model_profile_async(
+        "inst-subagent",
+        model_profile="precise",
+    )
+    runner.block_next = True
+    service.mark_run_event_dirty(
+        RunEvent(
+            session_id="session-1",
+            run_id="subagent_run_1",
+            trace_id="subagent_run_1",
+            instance_id="inst-subagent",
+            event_type=RunEventType.LLM_FALLBACK_ACTIVATED,
+        )
+    )
+
+    stale = await service.list_session_subagents_async("session-1")
+
+    assert stale[0]["model_profile"] == "fast"
+    assert await _wait_for_event(runner.started)
+    runner.release.set()
+    fresh = await service.list_session_subagents_async(
+        "session-1",
+        force_refresh=True,
+    )
+    assert fresh[0]["model_profile"] == "precise"
+
+
+@pytest.mark.asyncio
 async def test_session_service_pending_action_event_requires_fresh_session_list(
     tmp_path: Path,
 ) -> None:

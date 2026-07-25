@@ -182,6 +182,7 @@ _SNAPSHOT_DIRTY_EVENT_TYPES = frozenset(
         RunEventType.TODO_UPDATED,
         RunEventType.USER_QUESTION_REQUESTED,
         RunEventType.USER_QUESTION_ANSWERED,
+        RunEventType.LLM_FALLBACK_ACTIVATED,
         RunEventType.SUBAGENT_SESSION_STATUS_CHANGED,
         RunEventType.SUBAGENT_STOPPED,
         RunEventType.SUBAGENT_RESUMED,

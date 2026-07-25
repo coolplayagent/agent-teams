@@ -66,12 +66,14 @@ def test_repository_migrates_lifecycle_columns_for_existing_tables(
     record = repository.get_instance("inst-1")
     assert record.lifecycle == InstanceLifecycle.REUSABLE
     assert record.parent_instance_id is None
+    assert record.model_profile == ""
     with sqlite3.connect(db_path) as conn:
         columns = {
             str(row[1]) for row in conn.execute("PRAGMA table_info(agent_instances)")
         }
     assert "lifecycle" in columns
     assert "parent_instance_id" in columns
+    assert "model_profile" in columns
 
 
 def test_upsert_preserves_existing_lifecycle_when_not_explicit(
@@ -138,6 +140,51 @@ def test_upsert_preserves_existing_lifecycle_when_not_explicit(
     refreshed = repository.get_instance("inst-1")
     assert refreshed.lifecycle == InstanceLifecycle.REUSABLE
     assert refreshed.parent_instance_id == "inst-new-parent"
+
+
+def test_upsert_preserves_existing_model_profile_when_not_explicit(
+    tmp_path: Path,
+) -> None:
+    repository = AgentInstanceRepository(tmp_path / "agent_instances_profile.db")
+    repository.upsert_instance(
+        run_id="run-1",
+        trace_id="run-1",
+        session_id="session-1",
+        instance_id="inst-1",
+        role_id="writer",
+        workspace_id="workspace-1",
+        conversation_id="conversation-1",
+        status=InstanceStatus.IDLE,
+        model_profile="fast",
+    )
+
+    repository.upsert_instance(
+        run_id="run-1",
+        trace_id="run-1",
+        session_id="session-1",
+        instance_id="inst-1",
+        role_id="writer",
+        workspace_id="workspace-1",
+        conversation_id="conversation-1",
+        status=InstanceStatus.RUNNING,
+    )
+
+    assert repository.get_instance("inst-1").model_profile == "fast"
+
+    repository.update_runtime_snapshot(
+        "inst-1",
+        runtime_system_prompt="system",
+        runtime_tools_json='{"local_tools":[]}',
+        model_profile="precise",
+    )
+    assert repository.get_instance("inst-1").model_profile == "precise"
+
+    repository.update_runtime_snapshot(
+        "inst-1",
+        runtime_system_prompt="system",
+        runtime_tools_json='{"local_tools":[]}',
+    )
+    assert repository.get_instance("inst-1").model_profile == "precise"
 
 
 def test_repository_lists_instances_by_session_ids(tmp_path: Path) -> None:
@@ -340,7 +387,16 @@ async def test_async_methods_preserve_existing_instance_fields(
             "inst-1",
             runtime_system_prompt="system",
             runtime_tools_json='{"tools":[]}',
+            model_profile="fast",
         )
+        assert (await repository.get_instance_async("inst-1")).model_profile == "fast"
+        await repository.update_model_profile_async(
+            "inst-1",
+            model_profile="precise",
+        )
+        assert (
+            await repository.get_instance_async("inst-1")
+        ).model_profile == "precise"
         await repository.upsert_instance_async(
             run_id="run-2",
             trace_id="run-2",

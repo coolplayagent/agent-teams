@@ -74,6 +74,7 @@ class AgentRuntimeRecord(BaseModel):
     parent_instance_id: str | None = None
     runtime_system_prompt: str = ""
     runtime_tools_json: str = ""
+    model_profile: str = ""
     created_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))
 

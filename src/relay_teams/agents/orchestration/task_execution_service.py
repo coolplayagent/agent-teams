@@ -125,6 +125,9 @@ class TaskExecutionService(BaseModel):
     workspace_manager: WorkspaceManager
     prompt_builder: RuntimePromptBuilder
     provider_factory: Callable[[RoleDefinition, str | None], object]
+    model_profile_name_resolver: (
+        Callable[[RoleDefinition, str | None], str | None] | None
+    ) = None
     tool_registry: object
     skill_registry: object
     skill_runtime_service: object | None = None
@@ -159,6 +162,7 @@ class TaskExecutionService(BaseModel):
             workspace_manager=getattr(self, "workspace_manager", None),
             prompt_builder=getattr(self, "prompt_builder", None),
             provider_factory=getattr(self, "provider_factory", None),
+            model_profile_name_resolver=self.model_profile_name_resolver,
             tool_registry=getattr(self, "tool_registry", None),
             skill_registry=getattr(self, "skill_registry", None),
             skill_runtime_service=getattr(self, "skill_runtime_service", None),

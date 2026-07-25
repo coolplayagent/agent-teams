@@ -1254,6 +1254,10 @@ function isTerminalRunEvent(evType) {
     );
 }
 
+function shouldRefreshNormalModeSubagentSnapshot(evType) {
+    return evType === 'llm_fallback_activated';
+}
+
 function isSidebarTerminalRunEvent(evType) {
     return (
         evType === 'run_completed'
@@ -1807,7 +1811,10 @@ function openNormalModeSubagentSessionStreamConnection(connection, { afterEventI
             const evType = data.event_type;
             const payload = JSON.parse(data.payload_json || '{}');
             routeEvent(evType, payload, data);
-            if (isTerminalRunEvent(evType)) {
+            if (
+                shouldRefreshNormalModeSubagentSnapshot(evType)
+                || isTerminalRunEvent(evType)
+            ) {
                 scheduleCurrentSessionSubagentDiscovery({ delayMs: 250 });
             }
         } catch (e) {
@@ -1935,6 +1942,9 @@ function openNormalModeSubagentRunStreamConnection(connection, { afterEventId = 
             const evType = data.event_type;
             const payload = JSON.parse(data.payload_json || '{}');
             routeEvent(evType, payload, data);
+            if (shouldRefreshNormalModeSubagentSnapshot(evType)) {
+                scheduleCurrentSessionSubagentDiscovery({ delayMs: 250 });
+            }
             if (isTerminalRunEvent(evType)) {
                 connection.terminal = true;
                 finishNormalModeSubagentConnection(connection);

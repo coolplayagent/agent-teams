@@ -58,6 +58,7 @@ console.log(JSON.stringify({
             "updated_at": "2026-03-13T00:02:00.000Z",
             "runtime_system_prompt": "You are the runtime writer.",
             "runtime_tools_json": '{"local_tools":[],"skill_tools":[],"mcp_tools":[]}',
+            "model_profile": "fast",
             "reflection_summary_preview": "",
             "reflection_updated_at": "",
         }
@@ -92,12 +93,14 @@ console.log(JSON.stringify({
             "instanceId": "writer-1",
             "roleId": "writer",
             "runId": "run-1",
+            "modelProfile": "fast",
         },
         {
             "sessionId": "session-1",
             "instanceId": "writer-2",
             "roleId": "writer",
             "runId": "run-1",
+            "modelProfile": "fast",
         },
     ]
 
@@ -125,6 +128,7 @@ console.log(JSON.stringify({
             "instanceId": "writer-live",
             "roleId": "writer",
             "runId": "run-live",
+            "modelProfile": "",
         }
     ]
 
@@ -264,6 +268,7 @@ console.log(JSON.stringify({
             "updated_at": "2026-03-13T00:04:00Z",
             "runtime_system_prompt": "",
             "runtime_tools_json": "",
+            "model_profile": "",
             "reflection_summary_preview": "",
             "reflection_updated_at": "",
         }
@@ -329,6 +334,7 @@ console.log(JSON.stringify({
             "updated_at": "2026-03-13T00:02:00.000Z",
             "runtime_system_prompt": "",
             "runtime_tools_json": "",
+            "model_profile": "",
             "reflection_summary_preview": "",
             "reflection_updated_at": "",
         }
@@ -411,6 +417,7 @@ console.log(JSON.stringify({
             "updated_at": "2026-03-13T00:02:00Z",
             "runtime_system_prompt": "",
             "runtime_tools_json": "",
+            "model_profile": "",
             "reflection_summary_preview": "",
             "reflection_updated_at": "",
         }
@@ -467,6 +474,7 @@ console.log(JSON.stringify({
             "updated_at": "2026-03-13T00:04:00Z",
             "runtime_system_prompt": "",
             "runtime_tools_json": "",
+            "model_profile": "",
             "reflection_summary_preview": "",
             "reflection_updated_at": "",
         }
@@ -573,6 +581,7 @@ export async function fetchSessionAgents(sessionId = "", options = {}) {
             updated_at: "2026-03-13T00:01:00Z",
             runtime_system_prompt: "You are the runtime writer.",
             runtime_tools_json: '{"local_tools":[],"skill_tools":[],"mcp_tools":[]}',
+            model_profile: "fast",
         },
     ];
 }
@@ -661,6 +670,7 @@ export function rememberOrchestrationSubagentSession(sessionId, record = {}) {
         instanceId: record.instance_id || "",
         roleId: record.role_id || "",
         runId: record.run_id || "",
+        modelProfile: record.model_profile || "",
     });
     return record;
 }

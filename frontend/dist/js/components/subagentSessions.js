@@ -1090,6 +1090,7 @@ function normalizeSubagentSession(record, sessionId) {
         createdAt: String(record.created_at || record.createdAt || '').trim(),
         updatedAt: String(record.updated_at || record.updatedAt || record.created_at || '').trim(),
         conversationId: String(record.conversation_id || record.conversationId || '').trim(),
+        modelProfile: String(record.model_profile || record.modelProfile || '').trim(),
     };
   }
 
@@ -1395,8 +1396,27 @@ function syncSubagentSessionViewChrome(active, wrapper = null) {
         badgeEl.textContent = status;
     }
     if (metaEl) {
-        metaEl.textContent = buildSubagentSessionLabel(active);
+        metaEl.innerHTML = renderSubagentSessionMeta(active);
     }
+}
+
+function renderSubagentSessionMeta(active) {
+    const label = buildSubagentSessionLabel(active);
+    const modelProfile = String(
+        active?.modelProfile || active?.model_profile || '',
+    ).trim();
+    if (!modelProfile) {
+        return `<span class="subagent-session-meta-label">${escapeHtml(label)}</span>`;
+    }
+    const title = t('subagent_session.model_profile_title').replace(
+        '{model}',
+        modelProfile,
+    );
+    const text = t('subagent_session.model_profile').replace('{model}', modelProfile);
+    return [
+        `<span class="subagent-session-meta-label">${escapeHtml(label)}</span>`,
+        `<span class="subagent-session-model-profile" title="${escapeAttribute(title)}">${escapeHtml(text)}</span>`,
+    ].join('');
 }
 
 function emitSubagentSessionsChanged(detail = {}) {
@@ -1491,6 +1511,7 @@ function areSubagentSessionStructureRecordsEqual(left, right) {
           && left.title === right.title
           && left.subagentKind === right.subagentKind
           && left.conversationId === right.conversationId
+          && left.modelProfile === right.modelProfile
     );
 }
 
@@ -1514,6 +1535,7 @@ function areSubagentSessionListRecordsEqual(left, right) {
         && left.createdAt === right.createdAt
         && left.updatedAt === right.updatedAt
         && left.conversationId === right.conversationId
+        && left.modelProfile === right.modelProfile
     );
 }
 
@@ -1537,5 +1559,6 @@ function areSubagentSessionRecordsEqual(left, right) {
         && left.createdAt === right.createdAt
         && left.updatedAt === right.updatedAt
         && left.conversationId === right.conversationId
+        && left.modelProfile === right.modelProfile
     );
 }

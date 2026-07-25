@@ -47,7 +47,10 @@ from relay_teams.mcp.runtime_schema_loader import RuntimeMcpSchemaLoader
 from relay_teams.media import MediaAssetService
 from relay_teams.memory.service import MemoryBankService
 from relay_teams.persistence.shared_state_repo import SharedStateRepository
-from relay_teams.providers.model_profile_names import explicit_model_profile_reference
+from relay_teams.providers.model_profile_names import (
+    explicit_model_profile_reference,
+    resolve_model_profile_reference,
+)
 from relay_teams.reminders import ReminderDecision
 from relay_teams.reminders.service import SystemReminderService
 from relay_teams.memory.event_handler import MemoryEventHandler
@@ -75,6 +78,7 @@ from relay_teams.tools.runtime.approval_ticket_repo import ApprovalTicketReposit
 from relay_teams.workspace import WorkspaceHandle, WorkspaceManager
 
 LOGGER = get_logger(__name__)
+ModelProfileNameResolver = Callable[[RoleDefinition, str | None], str | None]
 
 
 class ExecutionConfig(NamedTuple):
@@ -110,6 +114,7 @@ class ExecutionHarness(BaseModel):
     workspace_manager: WorkspaceManager
     prompt_builder: RuntimePromptBuilder
     provider_factory: Callable[..., object]
+    model_profile_name_resolver: ModelProfileNameResolver | None = None
     tool_registry: object
     skill_registry: object
     skill_runtime_service: object | None = None
@@ -233,7 +238,6 @@ class ExecutionHarness(BaseModel):
         if task.parent_task_id is not None:
             session_mode = "normal"
             run_kind = RunKind.CONVERSATION
-            normal_model_profile = ""
         if normal_model_profile:
             role_for_run = role_for_run.model_copy(
                 update={
@@ -288,6 +292,10 @@ class ExecutionHarness(BaseModel):
             instance_id,
             runtime_system_prompt=runtime_system_prompt,
             runtime_tools_json=prepared.runtime_tools_json,
+            model_profile=self._resolve_runtime_model_profile_name(
+                role=role_for_run,
+                session_id=task.session_id,
+            ),
         )
         return ExecutionConfig(
             runner=runner,
@@ -302,6 +310,35 @@ class ExecutionHarness(BaseModel):
             runtime_tools_json=prepared.runtime_tools_json,
             instance_record=instance_record,
         )
+
+    def _resolve_runtime_model_profile_name(
+        self,
+        *,
+        role: RoleDefinition,
+        session_id: str | None,
+    ) -> str:
+        if role.bound_agent_id:
+            return ""
+        resolver = self.model_profile_name_resolver
+        if resolver is None:
+            return resolve_model_profile_reference(role.model_profile)[0]
+        return self._resolve_runtime_model_profile_name_with_resolver(
+            resolver=resolver,
+            role=role,
+            session_id=session_id,
+        )
+
+    @staticmethod
+    def _resolve_runtime_model_profile_name_with_resolver(
+        *,
+        resolver: ModelProfileNameResolver,
+        role: RoleDefinition,
+        session_id: str | None,
+    ) -> str:
+        resolved_name = resolver(role, session_id)
+        if resolved_name is not None and resolved_name.strip():
+            return resolved_name.strip()
+        return resolve_model_profile_reference(role.model_profile)[0]
 
     async def run_llm_execution(
         self,

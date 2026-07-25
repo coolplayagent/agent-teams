@@ -58,6 +58,7 @@ class _TokenService:
         return MaaSAuthContext(token=self._token)
 
 
+@pytest.mark.timeout(30)
 def test_package_env_import_does_not_load_maas_provider_runtime_boundary() -> None:
     command = [
         sys.executable,

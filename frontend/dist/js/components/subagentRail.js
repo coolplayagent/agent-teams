@@ -125,6 +125,9 @@ export function rememberLiveSubagent(instanceId, roleId) {
         updated_at: nowIso,
         runtime_system_prompt: existingIndex >= 0 ? existingRecord.runtime_system_prompt : '',
         runtime_tools_json: existingIndex >= 0 ? existingRecord.runtime_tools_json : '',
+        model_profile: existingIndex >= 0
+            ? String(existingRecord.model_profile || existingRecord.modelProfile || '')
+            : '',
         reflection_summary_preview: existingIndex >= 0 ? existingRecord.reflection_summary_preview : '',
         reflection_updated_at: existingIndex >= 0 ? existingRecord.reflection_updated_at : '',
     };
@@ -175,6 +178,7 @@ function normalizeSessionAgents(payload) {
             updated_at: String(item.updated_at || item.created_at || ''),
             runtime_system_prompt: String(item.runtime_system_prompt || ''),
             runtime_tools_json: String(item.runtime_tools_json || ''),
+            model_profile: String(item.model_profile || item.modelProfile || ''),
             reflection_summary_preview: String(item.reflection_summary_preview || ''),
             reflection_updated_at: String(item.reflection_updated_at || ''),
         };
@@ -250,6 +254,7 @@ function reconcileSessionAgentsWithTasks(agentsPayload, tasksPayload) {
             updated_at: latestTimestamp(existing?.updated_at || '', task.updated_at || ''),
             runtime_system_prompt: existing?.runtime_system_prompt || '',
             runtime_tools_json: existing?.runtime_tools_json || '',
+            model_profile: existing?.model_profile || existing?.modelProfile || '',
             reflection_summary_preview: existing?.reflection_summary_preview || '',
             reflection_updated_at: existing?.reflection_updated_at || '',
         });

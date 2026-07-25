@@ -151,6 +151,19 @@ export function getRoleDisplayName(roleId, { fallback } = {}) {
     )
     (tmp_path / "mockDom.mjs").write_text(
         """
+function createNode() {
+    return {
+        innerHTML: "",
+        textContent: "",
+        className: "",
+        hidden: false,
+        dataset: {},
+        addEventListener() {
+            return undefined;
+        },
+    };
+}
+
 function createBodyElement() {
     return {
         innerHTML: "",
@@ -160,6 +173,10 @@ function createBodyElement() {
 
 function createSectionElement() {
     const body = createBodyElement();
+    const title = createNode();
+    const badge = createNode();
+    const meta = createNode();
+    const back = createNode();
     return {
         className: "",
         dataset: {},
@@ -171,6 +188,18 @@ function createSectionElement() {
             return this._innerHTML;
         },
         querySelector(selector) {
+            if (selector === ".subagent-session-title") {
+                return title;
+            }
+            if (selector === ".subagent-session-badge") {
+                return badge;
+            }
+            if (selector === ".subagent-session-meta") {
+                return meta;
+            }
+            if (selector === ".subagent-session-back-btn") {
+                return back;
+            }
             if (selector === ".subagent-session-body") {
                 return body;
             }
@@ -248,6 +277,8 @@ const translations = {
     "subagent.task_prompt": "Task prompt",
     "subagent_session.empty": "No messages",
     "subagent_session.load_failed": "Load failed",
+    "subagent_session.model_profile": "{model}",
+    "subagent_session.model_profile_title": "Model profile used for this subagent: {model}",
 };
 
 export function t(key) {
@@ -287,6 +318,7 @@ await openSubagentSession("session-1", {
     runId: "subagent_run_1",
     title: "Explore history",
     status: "running",
+    modelProfile: "fast",
 });
 
 const hiddenWhileOpen = els.inputContainer.style.display || "";
@@ -294,6 +326,10 @@ const hintWhileOpen = els.promptInputHint.textContent;
 const sendDisabledWhileOpen = els.sendBtn.disabled;
 const activeViewWhileOpen = state.activeView;
 const chatContainerClassWhileOpen = els.chatContainer.className;
+const modelMetaWhileOpen = els.chatMessages.children[0]
+    ?.querySelector?.(".subagent-session-meta")
+    ?.innerHTML || "";
+const activeModelProfileWhileOpen = state.activeSubagentSession?.modelProfile || "";
 
 clearActiveSubagentSession();
 
@@ -303,6 +339,8 @@ console.log(JSON.stringify({
     sendDisabledWhileOpen,
     activeViewWhileOpen,
     chatContainerClassWhileOpen,
+    modelMetaWhileOpen,
+    activeModelProfileWhileOpen,
     hiddenAfterClear: els.inputContainer.style.display || "",
     hintAfterClear: els.promptInputHint.textContent,
     sendDisabledAfterClear: els.sendBtn.disabled,
@@ -340,6 +378,9 @@ console.log(JSON.stringify({
     assert payload["sendDisabledWhileOpen"] is True
     assert payload["activeViewWhileOpen"] == "subagent-session"
     assert payload["chatContainerClassWhileOpen"] == "is-subagent-session-active"
+    assert payload["activeModelProfileWhileOpen"] == "fast"
+    assert "subagent-session-model-profile" in payload["modelMetaWhileOpen"]
+    assert "fast" in payload["modelMetaWhileOpen"]
     assert payload["hiddenAfterClear"] == ""
     assert payload["hintAfterClear"] == ""
     assert payload["sendDisabledAfterClear"] is False
@@ -2408,6 +2449,7 @@ console.log(JSON.stringify({
             "createdAt": "",
             "updatedAt": "2026-04-28T11:01:00Z",
             "conversationId": "",
+            "modelProfile": "",
         }
     ]
     assert payload["events"]

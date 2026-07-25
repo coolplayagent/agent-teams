@@ -306,6 +306,7 @@ class _BackgroundTaskAgentRepository(Protocol):
         status: InstanceStatus,
         lifecycle: InstanceLifecycle | None = None,
         parent_instance_id: str | None = None,
+        model_profile: str | None = None,
     ) -> None:
         pass
 
@@ -1791,6 +1792,7 @@ class BackgroundTaskService:
         parent_yolo = False
         parent_shell_safety_policy_enabled = True
         parent_conversation_context = None
+        parent_normal_model_profile = ""
         try:
             parent_intent = self._run_intent_repo.get(parent_run_id)
         except KeyError:
@@ -1802,6 +1804,10 @@ class BackgroundTaskService:
                 parent_intent.shell_safety_policy_enabled
             )
             parent_conversation_context = parent_intent.conversation_context
+            if parent_intent.session_mode == SessionMode.NORMAL:
+                parent_normal_model_profile = str(
+                    parent_intent.normal_model_profile or ""
+                ).strip()
         self._run_intent_repo.upsert(
             run_id=subagent_run_id,
             session_id=session_id,
@@ -1815,9 +1821,31 @@ class BackgroundTaskService:
                 thinking=parent_thinking,
                 target_role_id=subagent_role_id,
                 session_mode=SessionMode.NORMAL,
+                normal_model_profile=parent_normal_model_profile or None,
                 conversation_context=parent_conversation_context,
             ),
         )
+
+    def _parent_normal_model_profile(self, parent_run_id: str) -> str:
+        if self._run_intent_repo is None:
+            return ""
+        try:
+            parent_intent = self._run_intent_repo.get(parent_run_id)
+        except KeyError:
+            return ""
+        if parent_intent.session_mode != SessionMode.NORMAL:
+            return ""
+        return str(parent_intent.normal_model_profile or "").strip()
+
+    def _initial_subagent_model_profile(
+        self,
+        *,
+        parent_run_id: str,
+        subagent_role: RoleDefinition | None,
+    ) -> str:
+        if subagent_role is not None and subagent_role.bound_agent_id:
+            return ""
+        return self._parent_normal_model_profile(parent_run_id)
 
     def _prepare_subagent_launch(
         self,
@@ -1918,6 +1946,10 @@ class BackgroundTaskService:
         task_repo = self._require_task_repo()
         subagent_instance = prepared.subagent_instance
         subagent_task = prepared.subagent_task
+        model_profile = self._initial_subagent_model_profile(
+            parent_run_id=parent_run_id,
+            subagent_role=subagent_role,
+        )
         agent_repo.upsert_instance(
             run_id=prepared.subagent_run_id,
             trace_id=prepared.subagent_run_id,
@@ -1928,6 +1960,7 @@ class BackgroundTaskService:
             conversation_id=subagent_instance.conversation_id,
             status=InstanceStatus.IDLE,
             lifecycle=InstanceLifecycle.EPHEMERAL,
+            model_profile=model_profile or None,
         )
         if not self._subagent_task_exists(task_repo, subagent_task.task_id):
             task_repo.create(subagent_task)

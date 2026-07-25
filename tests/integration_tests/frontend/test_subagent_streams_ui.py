@@ -88,6 +88,38 @@ def test_normal_mode_subagent_discovery_polls_while_parent_run_active() -> None:
     assert "normalModeSubagentStreams.size > 0" in block
 
 
+def test_normal_mode_subagent_fallback_event_refreshes_snapshot() -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    source = (repo_root / "frontend" / "dist" / "js" / "core" / "stream.js").read_text(
+        encoding="utf-8"
+    )
+    session_stream_block = source.split(
+        "function openNormalModeSubagentSessionStreamConnection",
+        1,
+    )[1].split(
+        "\nfunction scheduleSubagentSessionReconnect",
+        1,
+    )[0]
+    run_stream_block = source.split(
+        "function openNormalModeSubagentRunStreamConnection",
+        1,
+    )[1].split(
+        "\nfunction scheduleSubagentReconnect",
+        1,
+    )[0]
+
+    assert "function shouldRefreshNormalModeSubagentSnapshot(evType)" in source
+    assert "evType === 'llm_fallback_activated'" in source
+    assert "shouldRefreshNormalModeSubagentSnapshot(evType)" in session_stream_block
+    assert "scheduleCurrentSessionSubagentDiscovery({ delayMs: 250 });" in (
+        session_stream_block
+    )
+    assert "shouldRefreshNormalModeSubagentSnapshot(evType)" in run_stream_block
+    assert "scheduleCurrentSessionSubagentDiscovery({ delayMs: 250 });" in (
+        run_stream_block
+    )
+
+
 def _write_stream_runtime_inject_mocks(tmp_path: Path) -> None:
     (tmp_path / "mockRuntimeInjectQueue.mjs").write_text(
         """

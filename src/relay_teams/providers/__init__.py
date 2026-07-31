@@ -28,6 +28,10 @@ from relay_teams.providers.model_catalog import (
     ModelCatalogResult,
     ModelCatalogService,
 )
+from relay_teams.providers.codeagent_auth import (
+    build_codeagent_model_catalog_headers,
+    codeagent_auth_base_url_secret_field_name,
+)
 from relay_teams.providers.provider_contracts import EchoProvider, LLMProvider
 from relay_teams.providers.token_usage_repo import (
     AgentTokenSummary,
@@ -67,5 +71,7 @@ __all__ = [
     "SpeechRealtimeConfig",
     "TokenUsageRecord",
     "TokenUsageRepository",
+    "build_codeagent_model_catalog_headers",
+    "codeagent_auth_base_url_secret_field_name",
     "default_model_fallback_config",
 ]

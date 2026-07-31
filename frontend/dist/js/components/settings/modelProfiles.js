@@ -1261,10 +1261,11 @@ async function handleSaveProfile() {
         return;
     }
 
+    const profileBaseUrl = resolveDraftProviderBaseUrl(provider, baseUrl);
     const profile = {
         provider: provider,
         model: model,
-        base_url: isCodeAgentProvider(provider) ? DEFAULT_CODEAGENT_BASE_URL : baseUrl,
+        base_url: profileBaseUrl,
         is_default: isDefault,
         temperature: temperature,
         top_p: topP,
@@ -1555,7 +1556,11 @@ async function handleCodeAgentLogin() {
     draftCodeAgentAuthState.statusMessage = 'Starting SSO login';
     renderDraftCodeAgentAuthState();
     try {
-        const result = await startCodeAgentOAuth({});
+        const profileBaseUrl = resolveDraftProviderBaseUrl(
+            provider,
+            document.getElementById('profile-base-url')?.value || '',
+        );
+        const result = await startCodeAgentOAuth({ base_url: profileBaseUrl });
         draftCodeAgentAuthState.authSessionId = result.auth_session_id;
         draftCodeAgentAuthState.completed = false;
         draftCodeAgentAuthState.statusMessage = 'Waiting for SSO callback';
@@ -1831,10 +1836,11 @@ function buildDraftProbePayload() {
         return null;
     }
 
+    const overrideBaseUrl = resolveDraftProviderBaseUrl(provider, baseUrl);
     const override = {
         provider: provider,
         model: model,
-        base_url: isCodeAgentProvider(provider) ? DEFAULT_CODEAGENT_BASE_URL : baseUrl,
+        base_url: overrideBaseUrl,
         temperature: temperature,
         top_p: topP,
     };
@@ -1950,9 +1956,10 @@ function buildDraftModelDiscoveryPayload() {
         return null;
     }
 
+    const overrideBaseUrl = resolveDraftProviderBaseUrl(provider, baseUrl);
     const override = {
         provider: provider,
-        base_url: isCodeAgentProvider(provider) ? DEFAULT_CODEAGENT_BASE_URL : baseUrl,
+        base_url: overrideBaseUrl,
     };
     if (sslVerify !== null) {
         override.ssl_verify = sslVerify;
@@ -1990,7 +1997,10 @@ function buildDraftModelDiscoveryPayload() {
         override,
         timeout_ms: Math.round(connectTimeoutSeconds * 1000),
     };
-    if (draftProviderMode === PROVIDER_MODES.CUSTOM) {
+    if (
+        draftProviderMode === PROVIDER_MODES.CUSTOM
+        || (isCodeAgentProvider(provider) && isCustomCodeAgentBaseUrl(overrideBaseUrl))
+    ) {
         payload.metadata_policy = 'endpoint_only';
     }
     if (editingProfile) {
@@ -2195,10 +2205,19 @@ function applyProviderDefaultBaseUrl() {
     ).trim();
     const previousDefaultBaseUrl = getProviderDefaultBaseUrl(previousDefaultSourceProvider);
     const providerChanged = provider !== previousProvider;
-    if (isMaaSProvider(provider) || isCodeAgentProvider(provider)) {
+    if (isMaaSProvider(provider)) {
         baseUrlInput.value = getProviderDefaultBaseUrl(provider);
         baseUrlInput.dataset.previousProvider = provider;
         baseUrlInput.dataset.defaultSourceProvider = provider;
+        return;
+    }
+    if (isCodeAgentProvider(provider)) {
+        const currentBaseUrl = String(baseUrlInput.value || '').trim();
+        if (providerChanged || !currentBaseUrl) {
+            baseUrlInput.value = getProviderDefaultBaseUrl(provider);
+        }
+        baseUrlInput.dataset.previousProvider = provider;
+        setDraftBaseUrlDefaultSource(provider, baseUrlInput.value);
         return;
     }
     if (
@@ -2784,7 +2803,7 @@ function handleProviderChoice(provider) {
     } else if (nextMode === PROVIDER_MODES.CODEAGENT) {
         draftCatalogSelection = null;
         draftModelInputExpanded = true;
-        draftBaseUrlExpanded = false;
+        draftBaseUrlExpanded = true;
         setModelCatalogPanelVisible(false);
     } else if (nextMode === PROVIDER_MODES.CUSTOM) {
         draftCatalogSelection = null;
@@ -2921,7 +2940,10 @@ function renderProfileEditorState() {
     setProviderChoiceActive('profile-provider-maas-btn', draftProviderMode === PROVIDER_MODES.MAAS);
     setProviderChoiceActive('profile-provider-codeagent-btn', draftProviderMode === PROVIDER_MODES.CODEAGENT);
     setProviderChoiceActive('profile-provider-custom-btn', customMode);
-    setOptionalElementDisplay('profile-base-url-fields', customMode || marketplaceBaseUrlVisible ? 'block' : 'none');
+    setOptionalElementDisplay(
+        'profile-base-url-fields',
+        codeagentProvider || customMode || marketplaceBaseUrlVisible ? 'block' : 'none',
+    );
     setOptionalElementDisplay('profile-model-group', maasProvider || codeagentProvider || customMode ? 'block' : 'none');
     setModelCatalogPanelVisible(draftProviderMode === PROVIDER_MODES.EXTERNAL);
     renderModelCatalog();
@@ -3025,6 +3047,24 @@ function getProviderDefaultBaseUrl(provider) {
         return DEFAULT_MAAS_BASE_URL;
     }
     return PROVIDER_DEFAULT_BASE_URLS[String(provider || '').trim()] || '';
+}
+
+function resolveDraftProviderBaseUrl(provider, baseUrl) {
+    const normalizedBaseUrl = String(baseUrl || '').trim();
+    if (isCodeAgentProvider(provider)) {
+        return normalizedBaseUrl || DEFAULT_CODEAGENT_BASE_URL;
+    }
+    return normalizedBaseUrl;
+}
+
+function normalizeCodeAgentBaseUrl(baseUrl) {
+    return String(baseUrl || '').trim().replace(/\/+$/, '');
+}
+
+function isCustomCodeAgentBaseUrl(baseUrl) {
+    const normalizedBaseUrl = normalizeCodeAgentBaseUrl(baseUrl);
+    const defaultBaseUrl = normalizeCodeAgentBaseUrl(DEFAULT_CODEAGENT_BASE_URL);
+    return Boolean(normalizedBaseUrl && normalizedBaseUrl !== defaultBaseUrl);
 }
 
 function setDraftBaseUrlDefaultSource(provider, baseUrl) {
@@ -3153,14 +3193,22 @@ function setDraftMaasAuthSource(value) {
 
 function getDraftCodeAgentAuthSource() {
     const input = document.getElementById('profile-codeagent-auth-source');
-    return normalizeAuthSource(input?.value, AUTH_SOURCES.PROFILE);
+    return normalizeCodeAgentAuthSource(input?.value, AUTH_SOURCES.PROFILE);
 }
 
 function setDraftCodeAgentAuthSource(value) {
     const input = document.getElementById('profile-codeagent-auth-source');
     if (input) {
-        input.value = normalizeAuthSource(value, defaultDraftAuthSource());
+        input.value = normalizeCodeAgentAuthSource(value, defaultDraftCodeAgentAuthSource());
     }
+}
+
+function normalizeCodeAgentAuthSource(value, fallback = AUTH_SOURCES.PROFILE) {
+    const normalized = normalizeAuthSource(value, fallback);
+    if (normalized === AUTH_SOURCES.W3 && !canUseDraftCodeAgentW3Auth()) {
+        return AUTH_SOURCES.PROFILE;
+    }
+    return normalized;
 }
 
 function normalizeAuthSource(value, fallback = AUTH_SOURCES.PROFILE) {
@@ -3180,9 +3228,29 @@ function defaultDraftAuthSource() {
     return isW3AuthAvailable() ? AUTH_SOURCES.W3 : AUTH_SOURCES.PROFILE;
 }
 
+function defaultDraftCodeAgentAuthSource() {
+    return canUseDraftCodeAgentW3Auth() ? AUTH_SOURCES.W3 : AUTH_SOURCES.PROFILE;
+}
+
 function isW3AuthAvailable() {
     return Boolean(w3Connector?.username)
         && Boolean(w3Connector?.has_password);
+}
+
+function canUseDraftCodeAgentW3Auth() {
+    return isW3AuthAvailable() && !hasCustomDraftCodeAgentBaseUrl();
+}
+
+function hasCustomDraftCodeAgentBaseUrl() {
+    if (!isCodeAgentProvider(getDraftProvider())) {
+        return false;
+    }
+    const baseUrlInput = document.getElementById('profile-base-url');
+    const resolvedBaseUrl = resolveDraftProviderBaseUrl(
+        'codeagent',
+        baseUrlInput?.value || '',
+    );
+    return isCustomCodeAgentBaseUrl(resolvedBaseUrl);
 }
 
 function getDraftCodeAgentAuthMethod() {
@@ -3200,6 +3268,19 @@ function syncDraftCodeAgentAuthStatusMessage() {
     const authMethod = getDraftCodeAgentAuthMethod();
     draftCodeAgentAuthState.authMethod = authMethod;
     if (draftCodeAgentAuthState.loginInProgress || draftCodeAgentAuthState.verifying) {
+        return;
+    }
+    if (
+        hasDraftCodeAgentEndpointChanged()
+        && hasPersistedCodeAgentCredentials()
+        && !(
+            authMethod === CODEAGENT_AUTH_METHODS.PASSWORD
+            && getDraftCodeAgentAuthSource() === AUTH_SOURCES.W3
+        )
+    ) {
+        draftCodeAgentAuthState.statusMessage = authMethod === CODEAGENT_AUTH_METHODS.PASSWORD
+            ? 'Saved credentials expired. Update username or password'
+            : 'Saved sign-in expired. Sign in with SSO again';
         return;
     }
     if (shouldBlockDraftCodeAgentReauth()) {
@@ -3267,12 +3348,15 @@ function readDraftCodeAgentAuth() {
     const completedSessionId = draftCodeAgentAuthState.completed
         ? draftCodeAgentAuthState.authSessionId || null
         : null;
+    const canUsePersistedTokens = !hasDraftCodeAgentEndpointChanged();
     return {
         auth_method: authMethod,
         auth_source: AUTH_SOURCES.PROFILE,
         oauth_session_id: completedSessionId,
-        has_access_token: draftCodeAgentAuthState.completed || draftCodeAgentAuthState.hasPersistedAccessToken,
-        has_refresh_token: draftCodeAgentAuthState.completed || draftCodeAgentAuthState.hasPersistedRefreshToken,
+        has_access_token: draftCodeAgentAuthState.completed
+            || (canUsePersistedTokens && draftCodeAgentAuthState.hasPersistedAccessToken),
+        has_refresh_token: draftCodeAgentAuthState.completed
+            || (canUsePersistedTokens && draftCodeAgentAuthState.hasPersistedRefreshToken),
     };
 }
 
@@ -3287,7 +3371,11 @@ function hasDraftCodeAgentAuth() {
         const username = document.getElementById('profile-codeagent-username').value.trim();
         return Boolean(username && hasDraftCodeAgentPassword());
     }
-    return draftCodeAgentAuthState.completed || draftCodeAgentAuthState.hasPersistedRefreshToken;
+    return draftCodeAgentAuthState.completed
+        || (
+            draftCodeAgentAuthState.hasPersistedRefreshToken
+            && !hasDraftCodeAgentEndpointChanged()
+        );
 }
 
 function hasPersistedCodeAgentCredentials() {
@@ -3308,13 +3396,37 @@ function shouldBlockDraftCodeAgentReauth() {
         getDraftCodeAgentAuthMethod() === CODEAGENT_AUTH_METHODS.PASSWORD
         && getDraftCodeAgentAuthSource() === AUTH_SOURCES.W3
     ) {
-        return false;
+        return !canUseDraftCodeAgentW3Auth();
     }
     return draftCodeAgentAuthState.reauthRequired && !hasFreshDraftCodeAgentPasswordEntry();
 }
 
 function hasDraftCodeAgentPassword() {
+    if (hasDraftCodeAgentEndpointChanged() && !hasFreshDraftCodeAgentPasswordEntry()) {
+        return false;
+    }
     return Boolean(readDraftCodeAgentPasswordValue()) || draftCodeAgentPasswordState.hasPersistedValue;
+}
+
+function hasDraftCodeAgentEndpointChanged() {
+    if (!editingProfile || !isCodeAgentProvider(getDraftProvider())) {
+        return false;
+    }
+    const profile = profiles[editingProfile];
+    if (!profile || !isCodeAgentProvider(profile.provider)) {
+        return false;
+    }
+    const initialBaseUrl = resolveDraftProviderBaseUrl(
+        'codeagent',
+        profile.base_url || DEFAULT_CODEAGENT_BASE_URL,
+    );
+    const draftBaseUrl = resolveDraftProviderBaseUrl(
+        'codeagent',
+        document.getElementById('profile-base-url')?.value || '',
+    );
+    return normalizeCodeAgentBaseUrl(draftBaseUrl) !== normalizeCodeAgentBaseUrl(
+        initialBaseUrl,
+    );
 }
 
 function requiresDraftCodeAgentPasswordReentry() {
@@ -3371,13 +3483,17 @@ function renderDraftCodeAgentAuthState() {
     if (authMethodInput) {
         authMethodInput.value = authMethod;
     }
+    const authSourceInput = document.getElementById('profile-codeagent-auth-source');
+    if (authSourceInput) {
+        authSourceInput.value = authSource;
+    }
     if (ssoGroup) {
         ssoGroup.style.display = isCodeAgent && authMethod === CODEAGENT_AUTH_METHODS.SSO ? 'block' : 'none';
     }
     if (authSourceGroup) {
         authSourceGroup.style.display = isCodeAgent
             && authMethod === CODEAGENT_AUTH_METHODS.PASSWORD
-            && isW3AuthAvailable()
+            && canUseDraftCodeAgentW3Auth()
             ? 'block'
             : 'none';
     }
@@ -3543,6 +3659,8 @@ function renderDraftProviderFields() {
     if (!isW3AuthAvailable()) {
         setDraftMaasAuthSource(AUTH_SOURCES.PROFILE);
         setDraftCodeAgentAuthSource(AUTH_SOURCES.PROFILE);
+    } else if (codeagentProvider && !canUseDraftCodeAgentW3Auth()) {
+        setDraftCodeAgentAuthSource(AUTH_SOURCES.PROFILE);
     }
     syncDraftModelFieldPlacement(maasProvider, codeagentProvider);
     if (apiKeyGroup) {
@@ -3571,19 +3689,26 @@ function renderDraftProviderFields() {
         renderDraftMaaSPasswordField();
     }
     if (baseUrlInput) {
-        baseUrlInput.disabled = maasProvider || codeagentProvider;
-        if (maasProvider || codeagentProvider) {
+        baseUrlInput.disabled = maasProvider;
+        if (maasProvider) {
             baseUrlInput.value = getProviderDefaultBaseUrl(provider);
             baseUrlInput.title = getProviderDefaultBaseUrl(provider);
         } else {
-            baseUrlInput.title = '';
+            if (codeagentProvider && !String(baseUrlInput.value || '').trim()) {
+                baseUrlInput.value = getProviderDefaultBaseUrl(provider);
+            }
+            baseUrlInput.title = codeagentProvider ? getProviderDefaultBaseUrl(provider) : '';
         }
-        baseUrlInput.placeholder = isAnthropicProvider(provider)
-            ? t('settings.model.custom_base_url_placeholder_anthropic')
-            : t('settings.model.custom_base_url_placeholder');
+        if (codeagentProvider) {
+            baseUrlInput.placeholder = DEFAULT_CODEAGENT_BASE_URL;
+        } else {
+            baseUrlInput.placeholder = isAnthropicProvider(provider)
+                ? t('settings.model.custom_base_url_placeholder_anthropic')
+                : t('settings.model.custom_base_url_placeholder');
+        }
     }
     if (baseUrlGroup) {
-        baseUrlGroup.style.display = codeagentProvider ? 'none' : 'block';
+        baseUrlGroup.style.display = 'block';
     }
     renderDraftCodeAgentAuthState();
 }

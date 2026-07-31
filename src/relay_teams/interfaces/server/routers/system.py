@@ -873,6 +873,8 @@ class ModelProfileRequest(ModelProfileConfigPayload):
 class CodeAgentOAuthStartRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    base_url: str | None = None
+
 
 class CodeAgentOAuthStartResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -909,19 +911,20 @@ async def save_model_profile(
     service: ModelConfigService = Depends(get_model_config_service),
 ) -> dict[str, str]:
     try:
+        if req.provider == ProviderType.MAAS:
+            base_url = DEFAULT_MAAS_BASE_URL
+        elif req.provider == ProviderType.CODEAGENT:
+            base_url = req.base_url or DEFAULT_CODEAGENT_BASE_URL
+        elif req.provider == ProviderType.ANTHROPIC and (
+            req.base_url is None or not req.base_url.strip()
+        ):
+            base_url = DEFAULT_ANTHROPIC_BASE_URL
+        else:
+            base_url = req.base_url or ""
         profile: dict[str, JsonValue] = {
             "model": req.model,
             "provider": req.provider.value,
-            "base_url": (
-                DEFAULT_MAAS_BASE_URL
-                if req.provider == ProviderType.MAAS
-                else DEFAULT_CODEAGENT_BASE_URL
-                if req.provider == ProviderType.CODEAGENT
-                else DEFAULT_ANTHROPIC_BASE_URL
-                if req.provider == ProviderType.ANTHROPIC
-                and (req.base_url is None or not req.base_url.strip())
-                else req.base_url or ""
-            ),
+            "base_url": base_url,
             "temperature": req.temperature,
             "top_p": req.top_p,
             "context_window": req.context_window,
@@ -977,16 +980,21 @@ async def save_model_profile(
 
 @router.post("/configs/model/codeagent/oauth:start")
 def start_codeagent_oauth(
-    _req: CodeAgentOAuthStartRequest,
+    req: CodeAgentOAuthStartRequest,
 ) -> CodeAgentOAuthStartResponse:
+    base_url = (
+        req.base_url.strip()
+        if req.base_url is not None and req.base_url.strip()
+        else DEFAULT_CODEAGENT_BASE_URL
+    )
     session = create_codeagent_oauth_session(
-        base_url=DEFAULT_CODEAGENT_BASE_URL,
+        base_url=base_url,
         client_id=DEFAULT_CODEAGENT_CLIENT_ID,
         scope=DEFAULT_CODEAGENT_SCOPE,
         scope_resource=DEFAULT_CODEAGENT_SCOPE_RESOURCE,
     )
     authorization_url = build_codeagent_authorization_url(
-        base_url=DEFAULT_CODEAGENT_BASE_URL,
+        base_url=base_url,
         client_id=session.client_id,
         scope=session.scope,
         scope_resource=session.scope_resource,

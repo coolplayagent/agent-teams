@@ -135,6 +135,7 @@ from relay_teams.providers.codeagent_auth import (
     CodeAgentOAuthTokenResult,
     clear_codeagent_oauth_session_store,
     consume_codeagent_oauth_tokens,
+    get_codeagent_oauth_session,
     save_codeagent_oauth_tokens_for_session,
 )
 from relay_teams.skills.clawhub_models import (
@@ -4269,7 +4270,7 @@ def test_save_model_profile_accepts_maas_provider() -> None:
     }
 
 
-def test_save_model_profile_sets_default_codeagent_base_url() -> None:
+def test_save_model_profile_preserves_custom_codeagent_base_url() -> None:
     service = _FakeSystemService()
     client = _create_test_client(service)
 
@@ -4279,6 +4280,29 @@ def test_save_model_profile_sets_default_codeagent_base_url() -> None:
             "provider": ProviderType.CODEAGENT.value,
             "model": "codeagent-chat",
             "base_url": "https://custom.example/codeAgentPro",
+            "codeagent_auth": {
+                "has_access_token": True,
+                "has_refresh_token": True,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert service.saved_model_profile is not None
+    _, saved_profile, _ = service.saved_model_profile
+    assert saved_profile["provider"] == ProviderType.CODEAGENT.value
+    assert saved_profile["base_url"] == "https://custom.example/codeAgentPro"
+
+
+def test_save_model_profile_defaults_blank_codeagent_base_url() -> None:
+    service = _FakeSystemService()
+    client = _create_test_client(service)
+
+    response = client.put(
+        "/api/system/configs/model/profiles/codeagent",
+        json={
+            "provider": ProviderType.CODEAGENT.value,
+            "model": "codeagent-chat",
             "codeagent_auth": {
                 "has_access_token": True,
                 "has_refresh_token": True,
@@ -4318,14 +4342,36 @@ def test_codeagent_oauth_start_uses_hardcoded_sso_url() -> None:
     clear_codeagent_oauth_session_store()
 
 
-def test_codeagent_oauth_start_rejects_user_config_values() -> None:
+def test_codeagent_oauth_start_accepts_custom_base_url() -> None:
+    clear_codeagent_oauth_session_store()
     client = _create_test_client(_FakeSystemService())
+    custom_base_url = "https://codeagent.example/codeAgentPro"
 
     response = client.post(
         "/api/system/configs/model/codeagent/oauth:start",
         json={
-            "base_url": "https://codeagent.example/codeAgentPro",
+            "base_url": custom_base_url,
         },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    query = parse_qs(urlparse(payload["authorization_url"]).query)
+    assert query["redirect_uri"][0].startswith(
+        f"{custom_base_url}/codeAgent/oauth/callback?client_code="
+    )
+    session = get_codeagent_oauth_session(payload["auth_session_id"])
+    assert session is not None
+    assert session.base_url == custom_base_url
+    clear_codeagent_oauth_session_store()
+
+
+def test_codeagent_oauth_start_rejects_unknown_fields() -> None:
+    client = _create_test_client(_FakeSystemService())
+
+    response = client.post(
+        "/api/system/configs/model/codeagent/oauth:start",
+        json={"unexpected": "value"},
     )
 
     assert response.status_code == 422

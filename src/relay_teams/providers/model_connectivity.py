@@ -1,9 +1,8 @@
-# -*- coding: utf-8 -*-
 from __future__ import annotations
 
-from collections.abc import Callable
-from datetime import datetime, timezone
 import json
+from collections.abc import Callable
+from datetime import UTC, datetime
 from time import perf_counter
 from typing import Literal, cast, overload
 
@@ -13,45 +12,25 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from relay_teams.logger import get_logger
 from relay_teams.media import MediaModality
 from relay_teams.net.clients import create_async_http_client
+from relay_teams.providers.anthropic_support import (
+    anthropic_api_endpoint,
+    build_anthropic_request_headers,
+)
 from relay_teams.providers.codeagent_auth import (
     CodeAgentOAuthError,
+    build_codeagent_model_catalog_headers,
     build_codeagent_request_headers,
+    get_codeagent_oauth_session,
     get_codeagent_oauth_tokens,
     get_codeagent_token_service,
+)
+from relay_teams.providers.known_model_context_windows import (
+    infer_known_context_window,
 )
 from relay_teams.providers.maas_auth import (
     MaaSAuthContext,
     MaaSLoginError,
     get_maas_token_service,
-)
-from relay_teams.providers.known_model_context_windows import (
-    infer_known_context_window,
-)
-from relay_teams.providers.model_config import (
-    CodeAgentAuthMethod,
-    CodeAgentAuthConfig,
-    DEFAULT_ANTHROPIC_BASE_URL,
-    DEFAULT_CODEAGENT_BASE_URL,
-    DEFAULT_LLM_CONNECT_TIMEOUT_SECONDS,
-    DEFAULT_MAAS_APP_ID,
-    DEFAULT_MAAS_DISCOVERY_APPLICATION,
-    DEFAULT_MAAS_DISCOVERY_AREA,
-    DEFAULT_MAAS_DISCOVERY_IDE,
-    DEFAULT_MAAS_DISCOVERY_PLUGIN_NAME,
-    DEFAULT_MAAS_DISCOVERY_PLUGIN_VERSION,
-    DEFAULT_MAAS_DISCOVERY_URL,
-    ModelAuthSource,
-    ModelCapabilities,
-    MaaSAuthConfig,
-    ModelEndpointConfig,
-    ModelRequestHeader,
-    ProviderType,
-    SamplingConfig,
-    is_masked_model_password,
-)
-from relay_teams.providers.anthropic_support import (
-    anthropic_api_endpoint,
-    build_anthropic_request_headers,
 )
 from relay_teams.providers.model_capabilities import (
     extract_input_modalities_from_payload,
@@ -59,10 +38,32 @@ from relay_teams.providers.model_capabilities import (
     resolve_model_capabilities,
     resolve_model_input_modalities,
 )
+from relay_teams.providers.model_config import (
+    DEFAULT_ANTHROPIC_BASE_URL,
+    DEFAULT_CODEAGENT_BASE_URL,
+    DEFAULT_LLM_CONNECT_TIMEOUT_SECONDS,
+    DEFAULT_MAAS_APP_ID,
+    DEFAULT_MAAS_BASE_URL,
+    DEFAULT_MAAS_DISCOVERY_APPLICATION,
+    DEFAULT_MAAS_DISCOVERY_AREA,
+    DEFAULT_MAAS_DISCOVERY_IDE,
+    DEFAULT_MAAS_DISCOVERY_PLUGIN_NAME,
+    DEFAULT_MAAS_DISCOVERY_PLUGIN_VERSION,
+    DEFAULT_MAAS_DISCOVERY_URL,
+    CodeAgentAuthConfig,
+    CodeAgentAuthMethod,
+    MaaSAuthConfig,
+    ModelAuthSource,
+    ModelCapabilities,
+    ModelEndpointConfig,
+    ModelRequestHeader,
+    ProviderType,
+    SamplingConfig,
+    is_masked_model_password,
+)
 from relay_teams.providers.openai_support import build_model_request_headers
-from relay_teams.sessions.runs.runtime_config import RuntimeConfig
 from relay_teams.providers.w3_auth_source import require_w3_credentials
-
+from relay_teams.sessions.runs.runtime_config import RuntimeConfig
 
 _INVALID_RESPONSE_PAYLOAD = object()
 _EVENT_STREAM_PLAIN_TEXT_SUCCESS = object()
@@ -158,7 +159,7 @@ class ModelDiscoveryEntry(BaseModel):
     input_modalities: tuple[MediaModality, ...] = ()
 
     @model_validator(mode="after")
-    def _sync_capabilities(self) -> "ModelDiscoveryEntry":
+    def _sync_capabilities(self) -> ModelDiscoveryEntry:
         input_capabilities = self.capabilities.input.model_copy(
             update={
                 "image": (
@@ -252,6 +253,11 @@ class ModelConnectivityProbeService:
         request: ModelConnectivityProbeRequest,
     ) -> ModelConnectivityProbeResult:
         resolved_config = self._resolve_endpoint_config(request)
+        self._reject_codeagent_w3_auth_for_custom_base_url(
+            provider=resolved_config.provider,
+            base_url=resolved_config.base_url,
+            codeagent_auth=resolved_config.codeagent_auth,
+        )
         timeout_ms = self._resolve_timeout_ms(request=request, config=resolved_config)
         if resolved_config.provider == ProviderType.ECHO:
             return self._build_echo_result(resolved_config)
@@ -300,7 +306,7 @@ class ModelConnectivityProbeService:
                 provider=resolved_config.provider,
                 base_url=resolved_config.base_url,
                 latency_ms=0,
-                checked_at=datetime.now(timezone.utc),
+                checked_at=datetime.now(UTC),
                 diagnostics=ModelConnectivityDiagnostics(
                     endpoint_reachable=True,
                     auth_valid=True,
@@ -363,7 +369,7 @@ class ModelConnectivityProbeService:
             raise ValueError(
                 f"Model profile '{profile_name}' does not have CodeAgent auth configured."
             )
-        checked_at = datetime.now(timezone.utc)
+        checked_at = datetime.now(UTC)
         return await self._verify_codeagent_auth_config_async(
             config=config,
             checked_at=checked_at,
@@ -476,13 +482,15 @@ class ModelConnectivityProbeService:
                     f"Override config is missing required fields: {joined_fields}."
                 )
             override_model = cast(str, override.model)
-            override_base_url = (
-                DEFAULT_CODEAGENT_BASE_URL
-                if override_provider == ProviderType.CODEAGENT
-                else DEFAULT_ANTHROPIC_BASE_URL
-                if override_provider == ProviderType.ANTHROPIC
-                and override.base_url is None
-                else cast(str, override.base_url)
+            override_base_url = self._resolve_provider_base_url(
+                provider=override_provider,
+                base_url=override.base_url,
+                fallback_base_url=None,
+            )
+            self._reject_codeagent_w3_auth_for_custom_base_url(
+                provider=override_provider,
+                base_url=override_base_url,
+                codeagent_auth=override.codeagent_auth,
             )
             return ModelEndpointConfig(
                 provider=override_provider,
@@ -570,17 +578,20 @@ class ModelConnectivityProbeService:
                 raise ValueError(
                     f"Override config is missing required fields: {joined_fields}."
                 )
+            override_base_url = self._resolve_provider_base_url(
+                provider=override_provider,
+                base_url=override.base_url,
+                fallback_base_url=None,
+            )
+            self._reject_codeagent_w3_auth_for_custom_base_url(
+                provider=override_provider,
+                base_url=override_base_url,
+                codeagent_auth=override.codeagent_auth,
+            )
             return self._validate_model_discovery_config(
                 ModelDiscoveryResolvedConfig(
                     provider=override_provider,
-                    base_url=(
-                        DEFAULT_CODEAGENT_BASE_URL
-                        if override_provider == ProviderType.CODEAGENT
-                        else DEFAULT_ANTHROPIC_BASE_URL
-                        if override_provider == ProviderType.ANTHROPIC
-                        and override.base_url is None
-                        else cast(str, override.base_url)
-                    ),
+                    base_url=override_base_url,
                     api_key=override.api_key,
                     headers=override.headers,
                     maas_auth=self._resolve_maas_auth_source(
@@ -596,16 +607,19 @@ class ModelConnectivityProbeService:
 
         resolved_override = override or ModelConnectivityProbeOverride()
         resolved_provider = resolved_override.provider or base_config.provider
-        resolved_base_url = (
-            DEFAULT_CODEAGENT_BASE_URL
-            if resolved_provider == ProviderType.CODEAGENT
-            else DEFAULT_ANTHROPIC_BASE_URL
-            if (
-                resolved_provider == ProviderType.ANTHROPIC
-                and resolved_override.base_url is None
-                and base_config.provider != ProviderType.ANTHROPIC
-            )
-            else resolved_override.base_url or base_config.base_url
+        resolved_base_url = self._resolve_provider_base_url(
+            provider=resolved_provider,
+            base_url=resolved_override.base_url,
+            fallback_base_url=(
+                base_config.base_url
+                if base_config.provider == resolved_provider
+                else None
+            ),
+        )
+        self._reject_codeagent_w3_auth_for_custom_base_url(
+            provider=resolved_provider,
+            base_url=resolved_base_url,
+            codeagent_auth=resolved_override.codeagent_auth,
         )
         return self._validate_model_discovery_config(
             ModelDiscoveryResolvedConfig(
@@ -617,9 +631,18 @@ class ModelConnectivityProbeService:
                     base_maas_auth=base_config.maas_auth,
                     override_maas_auth=resolved_override.maas_auth,
                 ),
-                codeagent_auth=self._merge_codeagent_auth(
-                    base_codeagent_auth=base_config.codeagent_auth,
-                    override_codeagent_auth=resolved_override.codeagent_auth,
+                codeagent_auth=(
+                    self._merge_codeagent_auth(
+                        base_codeagent_auth=self._base_codeagent_auth_for_merge(
+                            base_config=base_config,
+                            override=resolved_override,
+                            resolved_provider=resolved_provider,
+                            resolved_base_url=resolved_base_url,
+                        ),
+                        override_codeagent_auth=resolved_override.codeagent_auth,
+                    )
+                    if resolved_provider == ProviderType.CODEAGENT
+                    else None
                 ),
                 ssl_verify=(
                     resolved_override.ssl_verify
@@ -634,6 +657,17 @@ class ModelConnectivityProbeService:
     def _validate_model_discovery_config(
         config: ModelDiscoveryResolvedConfig,
     ) -> ModelDiscoveryResolvedConfig:
+        if config.provider == ProviderType.CODEAGENT:
+            ModelConnectivityProbeService._reject_codeagent_w3_auth_for_custom_base_url(
+                provider=config.provider,
+                base_url=config.base_url,
+                codeagent_auth=config.codeagent_auth,
+            )
+            if config.codeagent_auth is None:
+                raise ValueError(
+                    "CodeAgent model discovery requires codeagent_auth configuration."
+                )
+            return config
         if config.provider != ProviderType.MAAS:
             return config
         maas_auth = config.maas_auth
@@ -655,16 +689,19 @@ class ModelConnectivityProbeService:
             return base_config
         resolved_provider = override.provider or base_config.provider
         resolved_model = override.model or base_config.model
-        resolved_base_url = (
-            DEFAULT_CODEAGENT_BASE_URL
-            if resolved_provider == ProviderType.CODEAGENT
-            else DEFAULT_ANTHROPIC_BASE_URL
-            if (
-                resolved_provider == ProviderType.ANTHROPIC
-                and override.base_url is None
-                and base_config.provider != ProviderType.ANTHROPIC
-            )
-            else override.base_url or base_config.base_url
+        resolved_base_url = self._resolve_provider_base_url(
+            provider=resolved_provider,
+            base_url=override.base_url,
+            fallback_base_url=(
+                base_config.base_url
+                if base_config.provider == resolved_provider
+                else None
+            ),
+        )
+        self._reject_codeagent_w3_auth_for_custom_base_url(
+            provider=resolved_provider,
+            base_url=resolved_base_url,
+            codeagent_auth=override.codeagent_auth,
         )
         return ModelEndpointConfig(
             provider=resolved_provider,
@@ -676,9 +713,18 @@ class ModelConnectivityProbeService:
                 base_maas_auth=base_config.maas_auth,
                 override_maas_auth=override.maas_auth,
             ),
-            codeagent_auth=self._merge_codeagent_auth(
-                base_codeagent_auth=base_config.codeagent_auth,
-                override_codeagent_auth=override.codeagent_auth,
+            codeagent_auth=(
+                self._merge_codeagent_auth(
+                    base_codeagent_auth=self._base_codeagent_auth_for_merge(
+                        base_config=base_config,
+                        override=override,
+                        resolved_provider=resolved_provider,
+                        resolved_base_url=resolved_base_url,
+                    ),
+                    override_codeagent_auth=override.codeagent_auth,
+                )
+                if resolved_provider == ProviderType.CODEAGENT
+                else None
             ),
             ssl_verify=(
                 override.ssl_verify
@@ -717,6 +763,50 @@ class ModelConnectivityProbeService:
                 top_k=base_config.sampling.top_k,
             ),
         )
+
+    @staticmethod
+    def _resolve_provider_base_url(
+        *,
+        provider: ProviderType,
+        base_url: str | None,
+        fallback_base_url: str | None,
+    ) -> str:
+        if base_url is not None:
+            return base_url
+        if fallback_base_url is not None:
+            return fallback_base_url
+        if provider == ProviderType.MAAS:
+            return DEFAULT_MAAS_BASE_URL
+        if provider == ProviderType.CODEAGENT:
+            return DEFAULT_CODEAGENT_BASE_URL
+        if provider == ProviderType.ANTHROPIC:
+            return DEFAULT_ANTHROPIC_BASE_URL
+        raise ValueError(f"Model base_url is required for provider '{provider.value}'.")
+
+    @staticmethod
+    def _base_codeagent_auth_for_merge(
+        *,
+        base_config: ModelEndpointConfig,
+        override: ModelConnectivityProbeOverride,
+        resolved_provider: ProviderType,
+        resolved_base_url: str,
+    ) -> CodeAgentAuthConfig | None:
+        if (
+            resolved_provider != ProviderType.CODEAGENT
+            or base_config.provider != ProviderType.CODEAGENT
+        ):
+            return None
+        if (
+            override.base_url is not None
+            and ModelConnectivityProbeService._normalized_base_url_for_auth(
+                resolved_base_url
+            )
+            != ModelConnectivityProbeService._normalized_base_url_for_auth(
+                base_config.base_url
+            )
+        ):
+            return None
+        return base_config.codeagent_auth
 
     def _merge_maas_auth(
         self,
@@ -964,7 +1054,7 @@ class ModelConnectivityProbeService:
             provider=config.provider,
             model=config.model,
             latency_ms=0,
-            checked_at=datetime.now(timezone.utc),
+            checked_at=datetime.now(UTC),
             diagnostics=ModelConnectivityDiagnostics(
                 endpoint_reachable=True,
                 auth_valid=True,
@@ -998,7 +1088,7 @@ class ModelConnectivityProbeService:
             "max_tokens": 1,
         }
         started = perf_counter()
-        checked_at = datetime.now(timezone.utc)
+        checked_at = datetime.now(UTC)
         try:
             token = await get_maas_token_service().get_token(
                 auth_config=config.maas_auth,
@@ -1114,7 +1204,7 @@ class ModelConnectivityProbeService:
             "max_tokens": 1,
         }
         started = perf_counter()
-        checked_at = datetime.now(timezone.utc)
+        checked_at = datetime.now(UTC)
         response = await self._post_probe_request_async(
             config=config,
             endpoint=endpoint,
@@ -1153,7 +1243,7 @@ class ModelConnectivityProbeService:
         if temperature is not None:
             payload["temperature"] = temperature
         started = perf_counter()
-        checked_at = datetime.now(timezone.utc)
+        checked_at = datetime.now(UTC)
         response = await self._post_probe_request_async(
             config=config,
             endpoint=endpoint,
@@ -1190,7 +1280,7 @@ class ModelConnectivityProbeService:
             "max_tokens": 1,
         }
         started = perf_counter()
-        checked_at = datetime.now(timezone.utc)
+        checked_at = datetime.now(UTC)
         token_or_result = await self._get_codeagent_token_for_probe_async(
             config=config,
             checked_at=checked_at,
@@ -1257,7 +1347,7 @@ class ModelConnectivityProbeService:
         if config.maas_auth is None:
             raise ValueError("MAAS model discovery requires maas_auth configuration.")
         started = perf_counter()
-        checked_at = datetime.now(timezone.utc)
+        checked_at = datetime.now(UTC)
         auth_context_or_result = (
             await self._get_maas_model_discovery_auth_context_async(
                 config=config,
@@ -1266,6 +1356,7 @@ class ModelConnectivityProbeService:
                 timeout_ms=timeout_ms,
             )
         )
+
         if isinstance(auth_context_or_result, ModelDiscoveryResult):
             return auth_context_or_result
         auth_context = auth_context_or_result
@@ -1344,7 +1435,7 @@ class ModelConnectivityProbeService:
             extra_headers={"Content-Type": "application/json"},
         )
         started = perf_counter()
-        checked_at = datetime.now(timezone.utc)
+        checked_at = datetime.now(UTC)
         response = await self._get_model_discovery_request_async(
             config=config,
             endpoint=endpoint,
@@ -1382,7 +1473,7 @@ class ModelConnectivityProbeService:
             ),
         )
         started = perf_counter()
-        checked_at = datetime.now(timezone.utc)
+        checked_at = datetime.now(UTC)
         response = await self._get_model_discovery_request_async(
             config=config,
             endpoint=endpoint,
@@ -1414,7 +1505,7 @@ class ModelConnectivityProbeService:
             )
         endpoint = f"{config.base_url.rstrip('/')}/chat/modles?checkUserPermission=TRUE"
         started = perf_counter()
-        checked_at = datetime.now(timezone.utc)
+        checked_at = datetime.now(UTC)
         token_or_result = await self._get_codeagent_token_for_discovery_async(
             config=config,
             checked_at=checked_at,
@@ -1426,7 +1517,7 @@ class ModelConnectivityProbeService:
         response = await self._get_model_discovery_request_async(
             config=config,
             endpoint=endpoint,
-            headers=build_codeagent_request_headers(token=token_or_result),
+            headers=build_codeagent_model_catalog_headers(token=token_or_result),
             checked_at=checked_at,
             started=started,
             timeout_ms=timeout_ms,
@@ -1446,7 +1537,9 @@ class ModelConnectivityProbeService:
             response = await self._get_model_discovery_request_async(
                 config=config,
                 endpoint=endpoint,
-                headers=build_codeagent_request_headers(token=retry_token_or_result),
+                headers=build_codeagent_model_catalog_headers(
+                    token=retry_token_or_result
+                ),
                 checked_at=checked_at,
                 started=started,
                 timeout_ms=timeout_ms,
@@ -1813,7 +1906,8 @@ class ModelConnectivityProbeService:
     ) -> str | ModelConnectivityProbeResult:
         try:
             auth_config = self._resolve_codeagent_auth_for_request(
-                self._require_codeagent_auth_config(config.codeagent_auth)
+                self._require_codeagent_auth_config(config.codeagent_auth),
+                base_url=config.base_url,
             )
             return await get_codeagent_token_service().get_token(
                 base_url=config.base_url,
@@ -1855,7 +1949,8 @@ class ModelConnectivityProbeService:
     ) -> str | CodeAgentAuthVerifyResult:
         try:
             auth_config = self._resolve_codeagent_auth_for_request(
-                self._require_codeagent_auth_config(config.codeagent_auth)
+                self._require_codeagent_auth_config(config.codeagent_auth),
+                base_url=config.base_url,
             )
             return await get_codeagent_token_service().get_token(
                 base_url=config.base_url,
@@ -1898,7 +1993,8 @@ class ModelConnectivityProbeService:
     ) -> str | ModelDiscoveryResult:
         try:
             auth_config = self._resolve_codeagent_auth_for_request(
-                self._require_codeagent_auth_config(config.codeagent_auth)
+                self._require_codeagent_auth_config(config.codeagent_auth),
+                base_url=config.base_url,
             )
             return await get_codeagent_token_service().get_token(
                 base_url=config.base_url,
@@ -1934,6 +2030,8 @@ class ModelConnectivityProbeService:
     def _resolve_codeagent_auth_for_request(
         self,
         auth_config: CodeAgentAuthConfig,
+        *,
+        base_url: str,
     ) -> CodeAgentAuthConfig:
         if auth_config.auth_method == CodeAgentAuthMethod.PASSWORD:
             if auth_config.username is not None and auth_config.password is not None:
@@ -1943,6 +2041,10 @@ class ModelConnectivityProbeService:
                 status_code=None,
             )
         if auth_config.oauth_session_id is not None:
+            self._validate_codeagent_oauth_session_base_url(
+                base_url=base_url,
+                auth_config=auth_config,
+            )
             token_result = get_codeagent_oauth_tokens(auth_config.oauth_session_id)
             if token_result is not None:
                 resolved_auth = CodeAgentAuthConfig(
@@ -1976,6 +2078,27 @@ class ModelConnectivityProbeService:
         )
 
     @staticmethod
+    def _validate_codeagent_oauth_session_base_url(
+        *,
+        base_url: str,
+        auth_config: CodeAgentAuthConfig,
+    ) -> None:
+        oauth_session_id = auth_config.oauth_session_id
+        if oauth_session_id is None:
+            return
+        session = get_codeagent_oauth_session(oauth_session_id)
+        if session is None:
+            return
+        if ModelConnectivityProbeService._normalized_base_url_for_auth(
+            session.base_url
+        ) == ModelConnectivityProbeService._normalized_base_url_for_auth(base_url):
+            return
+        raise CodeAgentOAuthError(
+            "CodeAgent OAuth session must be completed against the request base URL.",
+            status_code=401,
+        )
+
+    @staticmethod
     def _require_codeagent_auth_config(
         auth_config: CodeAgentAuthConfig | None,
     ) -> CodeAgentAuthConfig:
@@ -2002,7 +2125,7 @@ class ModelConnectivityProbeService:
             ) as client:
                 return await client.get(
                     endpoint,
-                    headers=build_codeagent_request_headers(token=token),
+                    headers=build_codeagent_model_catalog_headers(token=token),
                 )
         except httpx.TimeoutException as exc:
             return CodeAgentAuthVerifyResult(
@@ -2577,77 +2700,304 @@ class ModelConnectivityProbeService:
         *,
         metadata_policy: ModelDiscoveryMetadataPolicy = "allow_inference",
     ) -> tuple[ModelDiscoveryEntry, ...] | None:
-        entries_payload: list[object] | None = None
-        if isinstance(payload, list):
-            entries_payload = payload
-        elif isinstance(payload, dict):
-            data = payload.get("data")
-            if isinstance(data, list):
-                entries_payload = data
-            elif isinstance(payload.get("models"), list):
-                entries_payload = cast(list[object], payload.get("models"))
+        entries_payload = self._extract_codeagent_entries_payload(payload)
         if entries_payload is None:
             return None
         model_entries: list[ModelDiscoveryEntry] = []
         seen_model_ids: set[str] = set()
         for entry in entries_payload:
-            model_id: str | None = None
-            metadata: object | None = entry
             if isinstance(entry, str):
-                model_id = entry.strip()
-            elif isinstance(entry, dict):
-                for field_name in ("name", "id", "model"):
-                    value = entry.get(field_name)
-                    if isinstance(value, str) and value.strip():
-                        model_id = value.strip()
-                        break
-            if model_id is None or not model_id or model_id in seen_model_ids:
+                self._append_codeagent_model_entry(
+                    model_id=entry,
+                    metadata=None,
+                    target=model_entries,
+                    seen_model_ids=seen_model_ids,
+                    metadata_policy=metadata_policy,
+                )
                 continue
-            seen_model_ids.add(model_id)
-            metadata_mapping = (
-                cast(dict[str, object], metadata)
-                if isinstance(metadata, dict)
-                else None
+            if not isinstance(entry, dict):
+                continue
+            entry_mapping = self._object_mapping(entry)
+            routed_entries = self._extract_codeagent_routed_model_payloads(
+                entry_mapping
             )
-            context_window = (
-                self._extract_context_window(metadata_mapping)
-                if metadata_mapping is not None
-                else None
-            )
-            if context_window is None and self._metadata_policy_allows_inference(
-                metadata_policy
-            ):
-                context_window = infer_known_context_window(
-                    provider=ProviderType.CODEAGENT,
-                    model=model_id,
-                )
-            model_entries.append(
-                ModelDiscoveryEntry(
-                    model=model_id,
-                    context_window=context_window,
-                    output_limit=(
-                        self._extract_output_limit(metadata_mapping)
-                        if metadata_mapping is not None
-                        else None
-                    ),
-                    capabilities=self._resolve_discovery_capabilities(
-                        provider=ProviderType.CODEAGENT,
-                        base_url="",
-                        model_name=model_id,
-                        metadata=metadata,
+            if routed_entries is not None:
+                for routed_entry in routed_entries:
+                    if isinstance(routed_entry, str):
+                        self._append_codeagent_model_entry(
+                            model_id=routed_entry,
+                            metadata=self._normalize_codeagent_model_metadata(
+                                entry_mapping
+                            ),
+                            target=model_entries,
+                            seen_model_ids=seen_model_ids,
+                            metadata_policy=metadata_policy,
+                        )
+                        continue
+                    if not isinstance(routed_entry, dict):
+                        continue
+                    routed_mapping = self._object_mapping(routed_entry)
+                    self._append_codeagent_model_entry(
+                        model_id=self._extract_codeagent_model_id(
+                            routed_mapping,
+                            field_names=("modelId", "name", "id", "model"),
+                        ),
+                        metadata=self._merge_codeagent_model_metadata(
+                            parent=entry_mapping,
+                            route=routed_mapping,
+                        ),
+                        target=model_entries,
+                        seen_model_ids=seen_model_ids,
                         metadata_policy=metadata_policy,
-                    ),
-                    input_modalities=self._resolve_discovery_input_modalities(
-                        provider=ProviderType.CODEAGENT,
-                        base_url="",
-                        model_name=model_id,
-                        metadata=metadata,
-                        metadata_policy=metadata_policy,
-                    ),
-                )
+                    )
+                continue
+            self._append_codeagent_model_entry(
+                model_id=self._extract_codeagent_model_id(
+                    entry_mapping,
+                    field_names=("modelId", "name", "id", "model"),
+                ),
+                metadata=self._normalize_codeagent_model_metadata(entry_mapping),
+                target=model_entries,
+                seen_model_ids=seen_model_ids,
+                metadata_policy=metadata_policy,
             )
         model_entries.sort(key=lambda item: item.model)
         return tuple(model_entries)
+
+    @staticmethod
+    def _extract_codeagent_entries_payload(
+        payload: dict[str, object] | list[object],
+    ) -> list[object] | None:
+        if isinstance(payload, list):
+            return payload
+        data = payload.get("data")
+        if isinstance(data, list):
+            return data
+        models = payload.get("models")
+        if isinstance(models, list):
+            return models
+        return None
+
+    def _append_codeagent_model_entry(
+        self,
+        *,
+        model_id: str | None,
+        metadata: dict[str, object] | None,
+        target: list[ModelDiscoveryEntry],
+        seen_model_ids: set[str],
+        metadata_policy: ModelDiscoveryMetadataPolicy,
+    ) -> None:
+        if model_id is None:
+            return
+        normalized_model_id = model_id.strip()
+        if not normalized_model_id or normalized_model_id in seen_model_ids:
+            return
+        seen_model_ids.add(normalized_model_id)
+        context_window = (
+            self._extract_context_window(metadata) if metadata is not None else None
+        )
+        if context_window is None and self._metadata_policy_allows_inference(
+            metadata_policy
+        ):
+            context_window = infer_known_context_window(
+                provider=ProviderType.CODEAGENT,
+                model=normalized_model_id,
+            )
+        target.append(
+            ModelDiscoveryEntry(
+                model=normalized_model_id,
+                context_window=context_window,
+                output_limit=(
+                    self._extract_output_limit(metadata)
+                    if metadata is not None
+                    else None
+                ),
+                capabilities=self._resolve_discovery_capabilities(
+                    provider=ProviderType.CODEAGENT,
+                    base_url="",
+                    model_name=normalized_model_id,
+                    metadata=metadata,
+                    metadata_policy=metadata_policy,
+                ),
+                input_modalities=self._resolve_discovery_input_modalities(
+                    provider=ProviderType.CODEAGENT,
+                    base_url="",
+                    model_name=normalized_model_id,
+                    metadata=metadata,
+                    metadata_policy=metadata_policy,
+                ),
+            )
+        )
+
+    @staticmethod
+    def _extract_codeagent_routed_model_payloads(
+        entry: dict[str, object],
+    ) -> list[object] | None:
+        routed_entries = entry.get("routModels")
+        if isinstance(routed_entries, list):
+            return routed_entries
+        return None
+
+    @staticmethod
+    def _object_mapping(entry: dict[object, object]) -> dict[str, object]:
+        return {key: value for key, value in entry.items() if isinstance(key, str)}
+
+    @staticmethod
+    def _extract_codeagent_model_id(
+        entry: dict[str, object],
+        *,
+        field_names: tuple[str, ...],
+    ) -> str | None:
+        for field_name in field_names:
+            value = entry.get(field_name)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return None
+
+    @staticmethod
+    def _merge_codeagent_model_metadata(
+        *,
+        parent: dict[str, object],
+        route: dict[str, object],
+    ) -> dict[str, object]:
+        metadata = ModelConnectivityProbeService._normalize_codeagent_model_metadata(
+            parent
+        )
+        return ModelConnectivityProbeService._merge_codeagent_metadata_mapping(
+            parent=metadata,
+            route=ModelConnectivityProbeService._normalize_codeagent_model_metadata(
+                route
+            ),
+        )
+
+    @staticmethod
+    def _merge_codeagent_metadata_mapping(
+        *,
+        parent: dict[str, object],
+        route: dict[str, object],
+    ) -> dict[str, object]:
+        metadata = dict(parent)
+        for key, route_value in route.items():
+            parent_value = metadata.get(key)
+            if isinstance(parent_value, dict) and isinstance(route_value, dict):
+                metadata[key] = (
+                    ModelConnectivityProbeService._merge_codeagent_metadata_mapping(
+                        parent=ModelConnectivityProbeService._object_mapping(
+                            parent_value
+                        ),
+                        route=ModelConnectivityProbeService._object_mapping(
+                            route_value
+                        ),
+                    )
+                )
+                continue
+            metadata[key] = route_value
+        return metadata
+
+    @staticmethod
+    def _normalize_codeagent_model_metadata(
+        entry: dict[str, object],
+    ) -> dict[str, object]:
+        metadata = dict(entry)
+        for field_name in (
+            "modalities",
+            "capabilities",
+            "metadata",
+            "limits",
+            "limit",
+            "tokenLimit",
+            "tokenLimits",
+            "token_limit",
+            "token_limits",
+        ):
+            value = metadata.get(field_name)
+            parsed_value = ModelConnectivityProbeService._parse_json_payload(value)
+            if parsed_value is not None:
+                metadata[field_name] = parsed_value
+        image_support = ModelConnectivityProbeService._codeagent_metadata_image_support(
+            metadata
+        )
+        if not isinstance(metadata.get("modalities"), dict):
+            if image_support:
+                metadata["modalities"] = {
+                    "input": ["text", "image"],
+                    "output": ["text"],
+                }
+            elif image_support is False:
+                metadata["modalities"] = {
+                    "input": ["text"],
+                    "output": ["text"],
+                }
+        if image_support is False:
+            metadata = (
+                ModelConnectivityProbeService._with_codeagent_image_capability_disabled(
+                    metadata=metadata,
+                )
+            )
+        return metadata
+
+    @staticmethod
+    def _parse_json_payload(value: object) -> object | None:
+        if not isinstance(value, str):
+            return None
+        normalized = value.strip()
+        if not normalized or normalized[0] not in {"{", "["}:
+            return None
+        try:
+            return cast(object, json.loads(normalized))
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _codeagent_metadata_image_support(
+        metadata: dict[str, object],
+    ) -> bool | None:
+        for field_name in (
+            "supports_images",
+            "supportsImages",
+            "supports_vision",
+            "supportsVision",
+            "multimodal",
+            "supports_multimodal",
+            "supportsMultimodal",
+        ):
+            value = metadata.get(field_name)
+            if isinstance(value, bool):
+                return value
+        for field_name in ("type", "modality", "model_type"):
+            value = metadata.get(field_name)
+            if not isinstance(value, str):
+                continue
+            normalized = value.strip().casefold()
+            if any(
+                marker in normalized for marker in ("multimodal", "vision", "image")
+            ):
+                return True
+        return None
+
+    @staticmethod
+    def _with_codeagent_image_capability_disabled(
+        *,
+        metadata: dict[str, object],
+    ) -> dict[str, object]:
+        next_metadata = dict(metadata)
+        raw_capabilities = next_metadata.get("capabilities")
+        capabilities = (
+            ModelConnectivityProbeService._object_mapping(raw_capabilities)
+            if isinstance(raw_capabilities, dict)
+            else {}
+        )
+        raw_input_capabilities = capabilities.get("input")
+        input_capabilities = (
+            ModelConnectivityProbeService._object_mapping(raw_input_capabilities)
+            if isinstance(raw_input_capabilities, dict)
+            else {}
+        )
+        input_capabilities.setdefault("text", True)
+        input_capabilities["image"] = False
+        capabilities["input"] = input_capabilities
+        next_metadata["capabilities"] = capabilities
+        return next_metadata
 
     def _extract_maas_model_entries(
         self,
@@ -2773,15 +3123,42 @@ class ModelConnectivityProbeService:
             return False
         if model_id.isdigit():
             return False
-        if ":" in model_id:
-            return False
-        return True
+        return ":" not in model_id
 
     @staticmethod
     def _metadata_policy_allows_inference(
         metadata_policy: ModelDiscoveryMetadataPolicy,
     ) -> bool:
         return metadata_policy == "allow_inference"
+
+    @staticmethod
+    def _reject_codeagent_w3_auth_for_custom_base_url(
+        *,
+        provider: ProviderType,
+        base_url: str,
+        codeagent_auth: CodeAgentAuthConfig | None,
+    ) -> None:
+        if provider != ProviderType.CODEAGENT or codeagent_auth is None:
+            return
+        if codeagent_auth.auth_source != ModelAuthSource.W3:
+            return
+        if not ModelConnectivityProbeService._is_custom_codeagent_base_url(base_url):
+            return
+        raise ValueError(
+            "CodeAgent W3 auth source is only supported for the default CodeAgent base URL."
+        )
+
+    @staticmethod
+    def _is_custom_codeagent_base_url(base_url: str) -> bool:
+        return ModelConnectivityProbeService._normalized_base_url_for_auth(
+            base_url
+        ) != ModelConnectivityProbeService._normalized_base_url_for_auth(
+            DEFAULT_CODEAGENT_BASE_URL
+        )
+
+    @staticmethod
+    def _normalized_base_url_for_auth(base_url: str) -> str:
+        return base_url.strip().rstrip("/")
 
     def _resolve_discovery_capabilities(
         self,
@@ -2824,6 +3201,8 @@ class ModelConnectivityProbeService:
 
     def _extract_context_window(self, entry: dict[str, object]) -> int | None:
         direct_keys = (
+            "context",
+            "input",
             "context_window",
             "contextWindow",
             "context_length",
@@ -2837,7 +3216,16 @@ class ModelConnectivityProbeService:
             value = entry.get(key)
             if (limit := self._positive_int(value)) is not None:
                 return limit
-        for nested_key in ("limits", "limit", "capabilities", "metadata"):
+        for nested_key in (
+            "limits",
+            "limit",
+            "tokenLimit",
+            "tokenLimits",
+            "token_limit",
+            "token_limits",
+            "capabilities",
+            "metadata",
+        ):
             nested = entry.get(nested_key)
             if not isinstance(nested, dict):
                 continue
@@ -2853,6 +3241,7 @@ class ModelConnectivityProbeService:
     @staticmethod
     def _extract_output_limit(entry: dict[str, object]) -> int | None:
         direct_keys = (
+            "output",
             "output_limit",
             "outputLimit",
             "max_output_tokens",
@@ -2872,7 +3261,16 @@ class ModelConnectivityProbeService:
                 limit := ModelConnectivityProbeService._positive_int(value)
             ) is not None:
                 return limit
-        for nested_key in ("limits", "limit", "capabilities", "metadata"):
+        for nested_key in (
+            "limits",
+            "limit",
+            "tokenLimit",
+            "tokenLimits",
+            "token_limit",
+            "token_limits",
+            "capabilities",
+            "metadata",
+        ):
             nested = entry.get(nested_key)
             if not isinstance(nested, dict):
                 continue
@@ -2893,6 +3291,19 @@ class ModelConnectivityProbeService:
     def _positive_int(value: object) -> int | None:
         if type(value) is int and value > 0:
             return value
+        if not isinstance(value, str):
+            return None
+        normalized = value.strip()
+        if (
+            not normalized
+            or not normalized.isascii()
+            or not normalized.isdecimal()
+            or len(normalized) > 18
+        ):
+            return None
+        parsed = int(normalized)
+        if parsed > 0:
+            return parsed
         return None
 
     def _response_payload(self, response: httpx.Response) -> object:

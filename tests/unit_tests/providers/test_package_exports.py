@@ -9,6 +9,7 @@ from relay_teams.providers import (
     ModelEndpointConfig,
     RunTokenUsage,
     SessionTokenUsage,
+    build_codeagent_model_catalog_headers,
 )
 
 
@@ -20,3 +21,6 @@ def test_providers_package_exports_public_symbols() -> None:
     assert EchoProvider.__name__ == "EchoProvider"
     assert LLMProvider.__name__ == "LLMProvider"
     assert ModelEndpointConfig.__name__ == "ModelEndpointConfig"
+    assert build_codeagent_model_catalog_headers(token="token")["X-Auth-Token"] == (
+        "token"
+    )

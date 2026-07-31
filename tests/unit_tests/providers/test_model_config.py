@@ -7,6 +7,7 @@ import pytest
 from relay_teams.providers.model_config import (
     CodeAgentAuthMethod,
     CodeAgentAuthConfig,
+    DEFAULT_CODEAGENT_BASE_URL,
     MaaSAuthConfig,
     MASKED_MODEL_PASSWORD,
     ModelAuthSource,
@@ -91,7 +92,7 @@ def test_model_endpoint_config_accepts_w3_auth_source_without_profile_password()
     codeagent_config = ModelEndpointConfig(
         provider=ProviderType.CODEAGENT,
         model="codeagent-chat",
-        base_url="https://codeagent.example/codeAgentPro",
+        base_url=DEFAULT_CODEAGENT_BASE_URL,
         codeagent_auth=CodeAgentAuthConfig(
             auth_method=CodeAgentAuthMethod.PASSWORD,
             auth_source=ModelAuthSource.W3,
@@ -102,6 +103,22 @@ def test_model_endpoint_config_accepts_w3_auth_source_without_profile_password()
     assert maas_config.maas_auth.auth_source == ModelAuthSource.W3
     assert codeagent_config.codeagent_auth is not None
     assert codeagent_config.codeagent_auth.auth_source == ModelAuthSource.W3
+
+
+def test_model_endpoint_config_rejects_codeagent_w3_auth_for_custom_base_url() -> None:
+    with pytest.raises(
+        ValueError,
+        match="CodeAgent W3 auth source is only supported for the default CodeAgent base URL.",
+    ):
+        ModelEndpointConfig(
+            provider=ProviderType.CODEAGENT,
+            model="codeagent-chat",
+            base_url="https://custom-codeagent.example/codeAgentPro",
+            codeagent_auth=CodeAgentAuthConfig(
+                auth_method=CodeAgentAuthMethod.PASSWORD,
+                auth_source=ModelAuthSource.W3,
+            ),
+        )
 
 
 def test_speech_realtime_config_normalizes_blank_optional_fields() -> None:

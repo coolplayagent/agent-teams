@@ -14,6 +14,7 @@ from relay_teams.providers.codeagent_auth import (
     CodeAgentOAuthTokenResult,
     clear_codeagent_oauth_session_store,
     codeagent_access_token_secret_field_name,
+    codeagent_auth_base_url_secret_field_name,
     codeagent_password_secret_field_name,
     codeagent_refresh_token_secret_field_name,
     create_codeagent_oauth_session,
@@ -1457,7 +1458,7 @@ def test_save_model_config_preflights_passwords_before_consuming_oauth_session(
 ) -> None:
     clear_codeagent_oauth_session_store()
     session = create_codeagent_oauth_session(
-        base_url="https://codeagent.example/codeAgentPro",
+        base_url=DEFAULT_CODEAGENT_BASE_URL,
         client_id="codeagent-client",
         scope="SCOPE",
         scope_resource="devuc",
@@ -1585,7 +1586,12 @@ def test_save_model_profile_stores_codeagent_tokens_from_oauth_session(
 
     assert codeagent_auth["has_access_token"] is True
     assert codeagent_auth["has_refresh_token"] is True
-    assert model_payload["codeagent-profile"]["base_url"] == DEFAULT_CODEAGENT_BASE_URL
+    assert profiles["codeagent-profile"]["base_url"] == (
+        "https://codeagent.example/codeAgentPro"
+    )
+    assert model_payload["codeagent-profile"]["base_url"] == (
+        "https://codeagent.example/codeAgentPro"
+    )
     assert model_payload["codeagent-profile"]["codeagent_auth"] == {
         "auth_method": "sso",
         "auth_source": "profile",
@@ -1606,6 +1612,233 @@ def test_save_model_profile_stores_codeagent_tokens_from_oauth_session(
         "storage": "file",
         "value": "codeagent-refresh-token",
     } in secrets_payload["entries"]
+    assert {
+        "namespace": "model_profile",
+        "owner_id": "codeagent-profile",
+        "field_name": codeagent_auth_base_url_secret_field_name(),
+        "storage": "file",
+        "value": "https://codeagent.example/codeAgentPro",
+    } in secrets_payload["entries"]
+    clear_codeagent_oauth_session_store()
+
+
+def test_save_model_config_preserves_custom_codeagent_base_url(
+    tmp_path: Path,
+) -> None:
+    clear_codeagent_oauth_session_store()
+    custom_base_url = "https://custom-codeagent.example/codeAgentPro"
+    session = create_codeagent_oauth_session(
+        base_url=custom_base_url,
+        client_id="codeagent-client",
+        scope="SCOPE",
+        scope_resource="devuc",
+    )
+    save_codeagent_oauth_tokens(
+        state=session.state,
+        token_result=CodeAgentOAuthTokenResult(
+            access_token="codeagent-access-token",
+            refresh_token="codeagent-refresh-token",
+            expires_at=datetime.now(UTC) + timedelta(hours=1),
+        ),
+    )
+    manager = ModelConfigManager(
+        config_dir=tmp_path,
+        secret_store=_FileOnlySecretStore(),
+    )
+
+    manager.save_model_config(
+        {
+            "codeagent-profile": {
+                "provider": "codeagent",
+                "model": "codeagent-chat",
+                "base_url": custom_base_url,
+                "codeagent_auth": {
+                    "oauth_session_id": session.auth_session_id,
+                },
+            }
+        }
+    )
+
+    profiles = manager.get_model_profiles()
+    model_payload = json.loads((tmp_path / "model.json").read_text(encoding="utf-8"))
+
+    assert profiles["codeagent-profile"]["base_url"] == custom_base_url
+    assert model_payload["codeagent-profile"]["base_url"] == custom_base_url
+    clear_codeagent_oauth_session_store()
+
+
+def test_save_model_profile_rejects_oauth_session_for_different_base_url(
+    tmp_path: Path,
+) -> None:
+    clear_codeagent_oauth_session_store()
+    session = create_codeagent_oauth_session(
+        base_url="https://codeagent.example/codeAgentPro",
+        client_id="codeagent-client",
+        scope="SCOPE",
+        scope_resource="devuc",
+    )
+    save_codeagent_oauth_tokens(
+        state=session.state,
+        token_result=CodeAgentOAuthTokenResult(
+            access_token="codeagent-access-token",
+            refresh_token="codeagent-refresh-token",
+            expires_at=datetime.now(UTC) + timedelta(hours=1),
+        ),
+    )
+    manager = ModelConfigManager(
+        config_dir=tmp_path,
+        secret_store=_FileOnlySecretStore(),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="CodeAgent OAuth session must be completed against the profile base URL.",
+    ):
+        manager.save_model_profile(
+            "codeagent-profile",
+            {
+                "provider": "codeagent",
+                "model": "codeagent-chat",
+                "base_url": "https://custom-codeagent.example/codeAgentPro",
+                "codeagent_auth": {
+                    "oauth_session_id": session.auth_session_id,
+                },
+            },
+        )
+
+    assert get_codeagent_oauth_tokens(session.auth_session_id) is not None
+    assert not (tmp_path / "model.json").exists()
+    clear_codeagent_oauth_session_store()
+
+
+def test_save_model_profile_defaults_missing_codeagent_base_url(
+    tmp_path: Path,
+) -> None:
+    manager = ModelConfigManager(
+        config_dir=tmp_path,
+        secret_store=_FileOnlySecretStore(),
+    )
+
+    manager.save_model_profile(
+        "codeagent-profile",
+        {
+            "provider": "codeagent",
+            "model": "codeagent-chat",
+            "codeagent_auth": {
+                "auth_method": "password",
+                "username": "relay-user",
+                "password": "relay-password",
+            },
+        },
+    )
+
+    profiles = manager.get_model_profiles()
+    model_payload = json.loads((tmp_path / "model.json").read_text(encoding="utf-8"))
+
+    assert profiles["codeagent-profile"]["base_url"] == DEFAULT_CODEAGENT_BASE_URL
+    assert model_payload["codeagent-profile"]["base_url"] == DEFAULT_CODEAGENT_BASE_URL
+
+
+def test_save_model_profile_rejects_omitted_codeagent_auth_after_base_url_change(
+    tmp_path: Path,
+) -> None:
+    clear_codeagent_oauth_session_store()
+    session = create_codeagent_oauth_session(
+        base_url=DEFAULT_CODEAGENT_BASE_URL,
+        client_id="codeagent-client",
+        scope="SCOPE",
+        scope_resource="devuc",
+    )
+    save_codeagent_oauth_tokens(
+        state=session.state,
+        token_result=CodeAgentOAuthTokenResult(
+            access_token="codeagent-access-token",
+            refresh_token="codeagent-refresh-token",
+            expires_at=datetime.now(UTC) + timedelta(hours=1),
+        ),
+    )
+    manager = ModelConfigManager(
+        config_dir=tmp_path,
+        secret_store=_FileOnlySecretStore(),
+    )
+    manager.save_model_profile(
+        "codeagent-profile",
+        {
+            "provider": "codeagent",
+            "model": "codeagent-chat",
+            "base_url": DEFAULT_CODEAGENT_BASE_URL,
+            "codeagent_auth": {
+                "oauth_session_id": session.auth_session_id,
+            },
+        },
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="CodeAgent auth must be re-entered after changing the base URL.",
+    ):
+        manager.save_model_profile(
+            "codeagent-profile",
+            {
+                "provider": "codeagent",
+                "model": "codeagent-chat",
+                "base_url": "https://custom-codeagent.example/codeAgentPro",
+            },
+        )
+    clear_codeagent_oauth_session_store()
+
+
+def test_save_model_profile_rejects_saved_codeagent_tokens_after_base_url_change(
+    tmp_path: Path,
+) -> None:
+    clear_codeagent_oauth_session_store()
+    session = create_codeagent_oauth_session(
+        base_url=DEFAULT_CODEAGENT_BASE_URL,
+        client_id="codeagent-client",
+        scope="SCOPE",
+        scope_resource="devuc",
+    )
+    save_codeagent_oauth_tokens(
+        state=session.state,
+        token_result=CodeAgentOAuthTokenResult(
+            access_token="codeagent-access-token",
+            refresh_token="codeagent-refresh-token",
+            expires_at=datetime.now(UTC) + timedelta(hours=1),
+        ),
+    )
+    manager = ModelConfigManager(
+        config_dir=tmp_path,
+        secret_store=_FileOnlySecretStore(),
+    )
+    manager.save_model_profile(
+        "codeagent-profile",
+        {
+            "provider": "codeagent",
+            "model": "codeagent-chat",
+            "base_url": DEFAULT_CODEAGENT_BASE_URL,
+            "codeagent_auth": {
+                "oauth_session_id": session.auth_session_id,
+            },
+        },
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="CodeAgent auth requires completing SSO login after changing the base URL.",
+    ):
+        manager.save_model_profile(
+            "codeagent-profile",
+            {
+                "provider": "codeagent",
+                "model": "codeagent-chat",
+                "base_url": "https://custom-codeagent.example/codeAgentPro",
+                "codeagent_auth": {
+                    "auth_method": "sso",
+                    "has_access_token": True,
+                    "has_refresh_token": True,
+                },
+            },
+        )
     clear_codeagent_oauth_session_store()
 
 
@@ -2446,6 +2679,15 @@ def test_save_model_profile_stores_codeagent_password_in_secret_store(
         )
         == "relay-password"
     )
+    assert (
+        secret_store.get_secret(
+            tmp_path,
+            namespace="model_profile",
+            owner_id="codeagent-password",
+            field_name=codeagent_auth_base_url_secret_field_name(),
+        )
+        == DEFAULT_CODEAGENT_BASE_URL
+    )
     _assert_model_profile_file_secret_encrypted(
         tmp_path,
         owner_id="codeagent-password",
@@ -2506,6 +2748,110 @@ def test_save_model_profile_preserves_existing_codeagent_password_when_masked(
             field_name=codeagent_password_secret_field_name(),
         )
         == "relay-password"
+    )
+
+
+def test_save_model_profile_rejects_masked_codeagent_password_after_base_url_change(
+    tmp_path: Path,
+) -> None:
+    manager = ModelConfigManager(
+        config_dir=tmp_path,
+        secret_store=_FileOnlySecretStore(),
+    )
+    manager.save_model_profile(
+        "codeagent-password",
+        {
+            "provider": "codeagent",
+            "model": "codeagent-chat",
+            "base_url": DEFAULT_CODEAGENT_BASE_URL,
+            "codeagent_auth": {
+                "auth_method": "password",
+                "username": "relay-user",
+                "password": "relay-password",
+            },
+        },
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="CodeAgent auth password must be re-entered after changing the base URL.",
+    ):
+        manager.save_model_profile(
+            "codeagent-password",
+            {
+                "provider": "codeagent",
+                "model": "codeagent-chat",
+                "base_url": "https://custom-codeagent.example/codeAgentPro",
+                "codeagent_auth": {
+                    "auth_method": "password",
+                    "username": "relay-user",
+                    "password": MASKED_MODEL_PASSWORD,
+                },
+            },
+        )
+
+
+def test_save_model_profile_rejects_unbound_custom_codeagent_password_secret(
+    tmp_path: Path,
+) -> None:
+    secret_store = _FileOnlySecretStore()
+    manager = ModelConfigManager(
+        config_dir=tmp_path,
+        secret_store=secret_store,
+    )
+    custom_base_url = "https://custom-codeagent.example/codeAgentPro"
+    (tmp_path / "model.json").write_text(
+        json.dumps(
+            {
+                "codeagent-password": {
+                    "provider": "codeagent",
+                    "model": "codeagent-chat",
+                    "base_url": custom_base_url,
+                    "codeagent_auth": {
+                        "auth_method": "password",
+                        "auth_source": "profile",
+                        "username": "relay-user",
+                        "has_password": True,
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    secret_store.set_secret(
+        tmp_path,
+        namespace="model_profile",
+        owner_id="codeagent-password",
+        field_name=codeagent_password_secret_field_name(),
+        value="relay-password",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="CodeAgent auth password requires a value the first time it is configured.",
+    ):
+        manager.save_model_profile(
+            "codeagent-password",
+            {
+                "provider": "codeagent",
+                "model": "codeagent-chat",
+                "base_url": custom_base_url,
+                "codeagent_auth": {
+                    "auth_method": "password",
+                    "auth_source": "profile",
+                    "username": "relay-user",
+                    "has_password": True,
+                },
+            },
+        )
+    assert (
+        secret_store.get_secret(
+            tmp_path,
+            namespace="model_profile",
+            owner_id="codeagent-password",
+            field_name=codeagent_auth_base_url_secret_field_name(),
+        )
+        is None
     )
 
 
@@ -2642,6 +2988,33 @@ def test_save_codeagent_password_profile_can_use_w3_auth_source(
         )
         is None
     )
+
+
+def test_save_codeagent_w3_profile_rejects_custom_base_url(
+    tmp_path: Path,
+) -> None:
+    secret_store = _FileOnlySecretStore()
+    _save_w3_credentials(tmp_path, secret_store)
+    manager = ModelConfigManager(config_dir=tmp_path, secret_store=secret_store)
+
+    with pytest.raises(
+        ValueError,
+        match="CodeAgent W3 auth source is only supported for the default CodeAgent base URL.",
+    ):
+        manager.save_model_profile(
+            "codeagent-w3",
+            {
+                "provider": "codeagent",
+                "model": "codeagent-chat",
+                "base_url": "https://custom-codeagent.example/codeAgentPro",
+                "codeagent_auth": {
+                    "auth_method": "password",
+                    "auth_source": "w3",
+                },
+            },
+        )
+
+    assert not (tmp_path / "model.json").exists()
 
 
 def test_save_codeagent_sso_profile_rejects_w3_auth_source(
@@ -2964,6 +3337,15 @@ def test_save_model_profile_migrates_inline_codeagent_password_into_secret_store
             field_name=codeagent_password_secret_field_name(),
         )
         == "inline-password"
+    )
+    assert (
+        secret_store.get_secret(
+            tmp_path,
+            namespace="model_profile",
+            owner_id="codeagent-profile",
+            field_name=codeagent_auth_base_url_secret_field_name(),
+        )
+        == DEFAULT_CODEAGENT_BASE_URL
     )
     _assert_model_profile_file_secret_encrypted(
         tmp_path,

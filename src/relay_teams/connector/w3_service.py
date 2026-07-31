@@ -609,6 +609,8 @@ class W3ConnectorService:
                 )
                 migrated = migrated or auth_migrated
             elif provider == ProviderType.CODEAGENT.value:
+                if self._codeagent_profile_uses_custom_base_url(profile):
+                    continue
                 auth_migrated = self._migrate_raw_w3_profile_auth_source(
                     raw_profiles=raw_profiles,
                     profile_name=name,
@@ -628,6 +630,22 @@ class W3ConnectorService:
         if raw_profiles is not None and migrated:
             self._save_raw_model_profiles(raw_profiles)
         return migrated
+
+    @staticmethod
+    def _codeagent_profile_uses_custom_base_url(
+        profile: dict[str, JsonValue],
+    ) -> bool:
+        return W3ConnectorService._normalized_codeagent_base_url(
+            profile.get("base_url")
+        ) != W3ConnectorService._normalized_codeagent_base_url(
+            DEFAULT_CODEAGENT_BASE_URL
+        )
+
+    @staticmethod
+    def _normalized_codeagent_base_url(value: JsonValue | None) -> str:
+        if isinstance(value, str) and value.strip():
+            return value.strip().rstrip("/")
+        return DEFAULT_CODEAGENT_BASE_URL
 
     @staticmethod
     def _migrate_raw_w3_profile_auth_source(

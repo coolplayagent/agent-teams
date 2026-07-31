@@ -1,9 +1,8 @@
-# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import cast
+from typing import Self, cast
 
 import httpx
 import pytest
@@ -18,22 +17,23 @@ from relay_teams.providers.codeagent_auth import (
 )
 from relay_teams.providers.maas_auth import MaaSAuthContext, MaaSLoginError
 from relay_teams.providers.model_config import (
-    CodeAgentAuthMethod,
-    CodeAgentAuthConfig,
     DEFAULT_CODEAGENT_BASE_URL,
     MASKED_MODEL_PASSWORD,
+    CodeAgentAuthConfig,
+    CodeAgentAuthMethod,
     MaaSAuthConfig,
+    ModelAuthSource,
     ModelEndpointConfig,
     ModelRequestHeader,
     ProviderType,
     SamplingConfig,
 )
 from relay_teams.providers.model_connectivity import (
-    ModelDiscoveryRequest,
-    ModelDiscoveryResolvedConfig,
     ModelConnectivityProbeOverride,
     ModelConnectivityProbeRequest,
     ModelConnectivityProbeService,
+    ModelDiscoveryRequest,
+    ModelDiscoveryResolvedConfig,
 )
 from relay_teams.sessions.runs.runtime_config import RuntimeConfig, RuntimePaths
 
@@ -50,7 +50,7 @@ class _FakeHttpClient:
         self._error = error
         self._captured = captured if captured is not None else {}
 
-    async def __aenter__(self) -> _FakeHttpClient:
+    async def __aenter__(self) -> Self:
         return self
 
     async def __aexit__(self, *_args: object) -> None:
@@ -95,7 +95,7 @@ class _QueuedHttpClient:
         self._responses = responses
         self._captured = captured if captured is not None else {}
 
-    async def __aenter__(self) -> _QueuedHttpClient:
+    async def __aenter__(self) -> Self:
         return self
 
     async def __aexit__(self, *_args: object) -> None:
@@ -765,8 +765,9 @@ async def test_probe_supports_codeagent_provider_with_oauth_session(
     monkeypatch,
 ) -> None:
     clear_codeagent_oauth_session_store()
+    base_url = "https://custom-codeagent.example/codeAgentPro"
     session = create_codeagent_oauth_session(
-        base_url="https://codeagent.example/codeAgentPro",
+        base_url=base_url,
         client_id="codeagent-client",
         scope="SCOPE",
         scope_resource="devuc",
@@ -802,6 +803,7 @@ async def test_probe_supports_codeagent_provider_with_oauth_session(
             override=ModelConnectivityProbeOverride(
                 provider=ProviderType.CODEAGENT,
                 model="codeagent-chat",
+                base_url=base_url,
                 codeagent_auth=CodeAgentAuthConfig(
                     client_id="codeagent-client",
                     scope="SCOPE",
@@ -813,10 +815,13 @@ async def test_probe_supports_codeagent_provider_with_oauth_session(
     )
 
     assert result.ok is True
-    assert captured["url"] == f"{DEFAULT_CODEAGENT_BASE_URL}/chat/completions"
+    assert (
+        captured["url"]
+        == "https://custom-codeagent.example/codeAgentPro/chat/completions"
+    )
     headers = cast(dict[str, str], captured["headers"])
     assert headers["X-Auth-Token"] == "session-access-token"
-    assert headers["app-id"] == "CodeAgent2.0"
+    assert headers["app-id"] == "com.huawei.devmind.codebot.apibot"
     assert headers["User-Agent"] == "AgentKernel/1.0"
     assert headers["gray"] == "false"
     assert headers["oc-heartbeat"] == "1"
@@ -827,8 +832,62 @@ async def test_probe_supports_codeagent_provider_with_oauth_session(
     payload = cast(dict[str, object], captured["json"])
     assert payload["stream"] is True
     token_calls = cast(list[dict[str, object]], captured["codeagent_token_calls"])
+    assert token_calls[0]["base_url"] == (
+        "https://custom-codeagent.example/codeAgentPro"
+    )
     assert token_calls[0]["access_token"] == "session-access-token"
     assert token_calls[0]["refresh_token"] == "session-refresh-token"
+    clear_codeagent_oauth_session_store()
+
+
+@pytest.mark.asyncio
+async def test_probe_rejects_codeagent_oauth_session_for_different_base_url(
+    monkeypatch,
+) -> None:
+    clear_codeagent_oauth_session_store()
+    session = create_codeagent_oauth_session(
+        base_url="https://codeagent.example/codeAgentPro",
+        client_id="codeagent-client",
+        scope="SCOPE",
+        scope_resource="devuc",
+    )
+    save_codeagent_oauth_tokens(
+        state=session.state,
+        token_result=CodeAgentOAuthTokenResult(
+            access_token="session-access-token",
+            refresh_token="session-refresh-token",
+            expires_at=datetime.now(UTC) + timedelta(hours=1),
+        ),
+    )
+    service = ModelConnectivityProbeService(get_runtime=_runtime_config)
+
+    def fail_get_codeagent_token_service() -> _FakeCodeAgentTokenService:
+        raise AssertionError("CodeAgent token service should not be used.")
+
+    monkeypatch.setattr(
+        "relay_teams.providers.model_connectivity.get_codeagent_token_service",
+        fail_get_codeagent_token_service,
+    )
+
+    result = await service.probe_async(
+        ModelConnectivityProbeRequest(
+            override=ModelConnectivityProbeOverride(
+                provider=ProviderType.CODEAGENT,
+                model="codeagent-chat",
+                base_url="https://custom-codeagent.example/codeAgentPro",
+                codeagent_auth=CodeAgentAuthConfig(
+                    oauth_session_id=session.auth_session_id,
+                ),
+            )
+        )
+    )
+
+    assert result.ok is False
+    assert result.error_code == "auth_invalid"
+    assert result.diagnostics.auth_valid is False
+    assert result.error_message == (
+        "CodeAgent OAuth session must be completed against the request base URL."
+    )
     clear_codeagent_oauth_session_store()
 
 
@@ -1035,7 +1094,7 @@ async def test_probe_prefers_fresh_codeagent_oauth_session_over_saved_refresh_to
 ) -> None:
     clear_codeagent_oauth_session_store()
     session = create_codeagent_oauth_session(
-        base_url="https://codeagent.example/codeAgentPro",
+        base_url=DEFAULT_CODEAGENT_BASE_URL,
         client_id="codeagent-client",
         scope="SCOPE",
         scope_resource="devuc",
@@ -1093,6 +1152,84 @@ async def test_probe_prefers_fresh_codeagent_oauth_session_over_saved_refresh_to
     assert token_calls[0]["access_token"] == "fresh-session-access-token"
     assert token_calls[0]["refresh_token"] == "fresh-session-refresh-token"
     clear_codeagent_oauth_session_store()
+
+
+@pytest.mark.asyncio
+async def test_probe_codeagent_base_url_override_does_not_reuse_saved_auth() -> None:
+    service = ModelConnectivityProbeService(
+        get_runtime=lambda: _runtime_config(
+            provider=ProviderType.CODEAGENT,
+            model="codeagent-chat",
+            base_url=DEFAULT_CODEAGENT_BASE_URL,
+            api_key=None,
+            codeagent_auth=CodeAgentAuthConfig(
+                access_token="saved-access-token",
+                refresh_token="saved-refresh-token",
+            ),
+        )
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="CodeAgent model endpoint config requires codeagent_auth",
+    ):
+        await service.probe_async(
+            ModelConnectivityProbeRequest(
+                profile_name="default",
+                override=ModelConnectivityProbeOverride(
+                    base_url="https://custom-codeagent.example/codeAgentPro"
+                ),
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_probe_codeagent_trailing_slash_override_reuses_saved_auth(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+    service = ModelConnectivityProbeService(
+        get_runtime=lambda: _runtime_config(
+            provider=ProviderType.CODEAGENT,
+            model="codeagent-chat",
+            base_url=DEFAULT_CODEAGENT_BASE_URL,
+            api_key=None,
+            codeagent_auth=CodeAgentAuthConfig(
+                access_token="saved-access-token",
+                refresh_token="saved-refresh-token",
+            ),
+        )
+    )
+
+    monkeypatch.setattr(
+        "relay_teams.providers.model_connectivity.get_codeagent_token_service",
+        lambda: _FakeCodeAgentTokenService(["saved-access-token"], captured),
+    )
+    monkeypatch.setattr(
+        "relay_teams.providers.model_connectivity.create_async_http_client",
+        lambda **kwargs: (
+            captured.update(kwargs)
+            or _FakeHttpClient(
+                captured=captured,
+                response=httpx.Response(200, json={"usage": {"total_tokens": 3}}),
+            )
+        ),
+    )
+
+    result = await service.probe_async(
+        ModelConnectivityProbeRequest(
+            profile_name="default",
+            override=ModelConnectivityProbeOverride(
+                base_url=f"{DEFAULT_CODEAGENT_BASE_URL}/"
+            ),
+        )
+    )
+
+    assert result.ok is True
+    token_calls = cast(list[dict[str, object]], captured["codeagent_token_calls"])
+    assert token_calls[0]["access_token"] == "saved-access-token"
+    assert token_calls[0]["refresh_token"] == "saved-refresh-token"
+    assert captured["url"] == f"{DEFAULT_CODEAGENT_BASE_URL}/chat/completions"
 
 
 @pytest.mark.asyncio
@@ -1589,8 +1726,9 @@ async def test_discover_models_supports_codeagent_provider_with_oauth_session(
     monkeypatch,
 ) -> None:
     clear_codeagent_oauth_session_store()
+    base_url = "https://custom-codeagent.example/codeAgentPro"
     session = create_codeagent_oauth_session(
-        base_url="https://codeagent.example/codeAgentPro",
+        base_url=base_url,
         client_id="codeagent-client",
         scope="SCOPE",
         scope_resource="devuc",
@@ -1629,6 +1767,7 @@ async def test_discover_models_supports_codeagent_provider_with_oauth_session(
             override=ModelConnectivityProbeOverride(
                 provider=ProviderType.CODEAGENT,
                 model="codeagent-chat",
+                base_url=base_url,
                 codeagent_auth=CodeAgentAuthConfig(
                     client_id="codeagent-client",
                     scope="SCOPE",
@@ -1643,17 +1782,21 @@ async def test_discover_models_supports_codeagent_provider_with_oauth_session(
     assert result.models == ("codeagent-chat", "codeagent-coder")
     assert (
         captured["url"]
-        == f"{DEFAULT_CODEAGENT_BASE_URL}/chat/modles?checkUserPermission=TRUE"
+        == "https://custom-codeagent.example/codeAgentPro/chat/modles?checkUserPermission=TRUE"
     )
     headers = cast(dict[str, str], captured["headers"])
     assert headers["X-Auth-Token"] == "session-access-token"
-    assert headers["app-id"] == "CodeAgent2.0"
-    assert headers["User-Agent"] == "AgentKernel/1.0"
-    assert headers["gray"] == "false"
-    assert headers["oc-heartbeat"] == "1"
-    assert headers["X-snap-traceid"]
-    assert headers["X-session-id"].startswith("ses_")
+    assert headers["app-id"] == "com.huawei.devmind.codebot.apibot"
+    assert headers["User-Agent"] == "RelayAgent/1.0"
+    assert headers["gray"] == "true"
+    assert headers["plugin-version"] == "cli-1.2605.02-IN.1."
+    assert "oc-heartbeat" not in headers
+    assert "X-snap-traceid" not in headers
+    assert "X-session-id" not in headers
     token_calls = cast(list[dict[str, object]], captured["codeagent_token_calls"])
+    assert token_calls[0]["base_url"] == (
+        "https://custom-codeagent.example/codeAgentPro"
+    )
     assert token_calls[0]["access_token"] == "session-access-token"
     assert token_calls[0]["refresh_token"] == "session-refresh-token"
     clear_codeagent_oauth_session_store()
@@ -1706,6 +1849,82 @@ async def test_discover_models_requires_profile_maas_username_and_password() -> 
                     maas_auth=MaaSAuthConfig(),
                 )
             )
+        )
+
+
+@pytest.mark.asyncio
+async def test_discover_codeagent_base_url_override_does_not_reuse_saved_auth() -> None:
+    service = ModelConnectivityProbeService(
+        get_runtime=lambda: _runtime_config(
+            provider=ProviderType.CODEAGENT,
+            model="codeagent-chat",
+            base_url=DEFAULT_CODEAGENT_BASE_URL,
+            api_key=None,
+            codeagent_auth=CodeAgentAuthConfig(
+                access_token="saved-access-token",
+                refresh_token="saved-refresh-token",
+            ),
+        )
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="CodeAgent model discovery requires codeagent_auth",
+    ):
+        await service.discover_models_async(
+            ModelDiscoveryRequest(
+                profile_name="default",
+                override=ModelConnectivityProbeOverride(
+                    base_url="https://custom-codeagent.example/codeAgentPro"
+                ),
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_probe_codeagent_rejects_w3_auth_for_custom_base_url() -> None:
+    service = ModelConnectivityProbeService(get_runtime=_runtime_config)
+
+    with pytest.raises(
+        ValueError,
+        match="CodeAgent W3 auth source is only supported for the default CodeAgent base URL.",
+    ):
+        await service.probe_async(
+            ModelConnectivityProbeRequest(
+                override=ModelConnectivityProbeOverride(
+                    provider=ProviderType.CODEAGENT,
+                    model="codeagent-chat",
+                    base_url="https://custom-codeagent.example/codeAgentPro",
+                    codeagent_auth=CodeAgentAuthConfig(
+                        auth_method=CodeAgentAuthMethod.PASSWORD,
+                        auth_source=ModelAuthSource.W3,
+                    ),
+                )
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_discover_codeagent_rejects_w3_auth_for_custom_profile_base_url() -> None:
+    service = ModelConnectivityProbeService(
+        get_runtime=lambda: _runtime_config(
+            provider=ProviderType.CODEAGENT,
+            model="codeagent-chat",
+            base_url="https://custom-codeagent.example/codeAgentPro",
+            api_key=None,
+            codeagent_auth=CodeAgentAuthConfig(
+                auth_method=CodeAgentAuthMethod.PASSWORD,
+                auth_source=ModelAuthSource.W3,
+            ),
+        )
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="CodeAgent W3 auth source is only supported for the default CodeAgent base URL.",
+    ):
+        await service.discover_models_async(
+            ModelDiscoveryRequest(profile_name="default")
         )
 
 
@@ -2037,8 +2256,10 @@ async def test_verify_codeagent_auth_returns_valid_when_saved_token_request_succ
     )
     headers = cast(dict[str, str], requests[0]["headers"])
     assert headers["X-Auth-Token"] == "saved-access-token"
-    assert headers["app-id"] == "CodeAgent2.0"
-    assert headers["User-Agent"] == "AgentKernel/1.0"
+    assert headers["app-id"] == "com.huawei.devmind.codebot.apibot"
+    assert headers["User-Agent"] == "RelayAgent/1.0"
+    assert headers["gray"] == "true"
+    assert headers["plugin-version"] == "cli-1.2605.02-IN.1."
 
 
 @pytest.mark.asyncio
@@ -2679,7 +2900,8 @@ def test_resolve_codeagent_auth_for_request_preserves_secret_owner_metadata() ->
         ).with_secret_owner(
             config_dir=Path("D:/tmp/.agent_teams"),
             owner_id="codeagent-profile",
-        )
+        ),
+        base_url="https://codeagent.example/codeAgentPro",
     )
 
     assert resolved.access_token == "fresh-session-access-token"
@@ -2699,8 +2921,38 @@ def test_resolve_codeagent_auth_for_request_rejects_consumed_session_without_ref
         match="CodeAgent OAuth session is missing, expired, or already consumed.",
     ):
         service._resolve_codeagent_auth_for_request(
-            CodeAgentAuthConfig(oauth_session_id="missing-session")
+            CodeAgentAuthConfig(oauth_session_id="missing-session"),
+            base_url=DEFAULT_CODEAGENT_BASE_URL,
         )
+
+
+def test_resolve_codeagent_auth_for_request_rejects_session_base_url_mismatch() -> None:
+    clear_codeagent_oauth_session_store()
+    session = create_codeagent_oauth_session(
+        base_url="https://codeagent.example/codeAgentPro",
+        client_id="codeagent-client",
+        scope="SCOPE",
+        scope_resource="devuc",
+    )
+    save_codeagent_oauth_tokens(
+        state=session.state,
+        token_result=CodeAgentOAuthTokenResult(
+            access_token="fresh-session-access-token",
+            refresh_token="fresh-session-refresh-token",
+            expires_at=datetime.now(UTC) + timedelta(hours=1),
+        ),
+    )
+    service = ModelConnectivityProbeService(get_runtime=_runtime_config)
+
+    with pytest.raises(
+        CodeAgentOAuthError,
+        match="CodeAgent OAuth session must be completed against the request base URL.",
+    ):
+        service._resolve_codeagent_auth_for_request(
+            CodeAgentAuthConfig(oauth_session_id=session.auth_session_id),
+            base_url="https://custom-codeagent.example/codeAgentPro",
+        )
+    clear_codeagent_oauth_session_store()
 
 
 def test_resolve_codeagent_auth_for_request_rejects_missing_refresh_token_without_session() -> (
@@ -2712,14 +2964,20 @@ def test_resolve_codeagent_auth_for_request_rejects_missing_refresh_token_withou
         CodeAgentOAuthError,
         match="CodeAgent refresh token is not configured.",
     ):
-        service._resolve_codeagent_auth_for_request(CodeAgentAuthConfig())
+        service._resolve_codeagent_auth_for_request(
+            CodeAgentAuthConfig(),
+            base_url=DEFAULT_CODEAGENT_BASE_URL,
+        )
 
 
 def test_resolve_codeagent_auth_for_request_returns_existing_refresh_token() -> None:
     service = ModelConnectivityProbeService(get_runtime=_runtime_config)
     auth_config = CodeAgentAuthConfig(refresh_token="refresh-token")
 
-    resolved = service._resolve_codeagent_auth_for_request(auth_config)
+    resolved = service._resolve_codeagent_auth_for_request(
+        auth_config,
+        base_url=DEFAULT_CODEAGENT_BASE_URL,
+    )
 
     assert resolved == auth_config
 
@@ -2735,7 +2993,10 @@ def test_resolve_codeagent_auth_for_request_returns_password_auth_config() -> No
         owner_id="codeagent-profile",
     )
 
-    resolved = service._resolve_codeagent_auth_for_request(auth_config)
+    resolved = service._resolve_codeagent_auth_for_request(
+        auth_config,
+        base_url=DEFAULT_CODEAGENT_BASE_URL,
+    )
 
     assert resolved == auth_config
 
@@ -2751,7 +3012,8 @@ def test_resolve_codeagent_auth_for_request_rejects_incomplete_password_auth() -
             CodeAgentAuthConfig(
                 auth_method=CodeAgentAuthMethod.PASSWORD,
                 username="relay-user",
-            )
+            ),
+            base_url=DEFAULT_CODEAGENT_BASE_URL,
         )
 
 
@@ -3017,6 +3279,202 @@ def test_extract_codeagent_model_entries_reads_models_field() -> None:
     )
 
 
+def test_extract_codeagent_model_entries_expands_relayagent_routed_models() -> None:
+    service = ModelConnectivityProbeService(get_runtime=_runtime_config)
+
+    entries = service._extract_codeagent_model_entries(
+        {
+            "data": [
+                {
+                    "modelId": "parent-model",
+                    "name": "Parent Model",
+                    "context": "128000",
+                    "output": 8192,
+                    "modalities": '{"input":["text","image"],"output":["text"]}',
+                    "routModels": [
+                        {
+                            "modelId": "route-standard",
+                            "name": "Route Standard",
+                        },
+                        {
+                            "modelId": "route-large",
+                            "context": 262144,
+                            "output": "16384",
+                            "model_type": "multimodal",
+                        },
+                    ],
+                },
+                {
+                    "modelId": "plain-model",
+                    "name": "ignored-name",
+                    "input": 64000,
+                    "output": 4096,
+                },
+                {"name": "fallback-name"},
+                {"modelId": "plain-model", "name": "duplicate"},
+            ]
+        },
+        metadata_policy="endpoint_only",
+    )
+
+    assert entries is not None
+    entries_by_model = {entry.model: entry for entry in entries}
+    assert tuple(entry.model for entry in entries) == (
+        "fallback-name",
+        "plain-model",
+        "route-large",
+        "route-standard",
+    )
+    assert "parent-model" not in entries_by_model
+    assert entries_by_model["plain-model"].context_window == 64000
+    assert entries_by_model["plain-model"].output_limit == 4096
+    assert entries_by_model["route-standard"].context_window == 128000
+    assert entries_by_model["route-standard"].output_limit == 8192
+    assert entries_by_model["route-standard"].input_modalities == (MediaModality.IMAGE,)
+    assert entries_by_model["route-standard"].capabilities.input.image is True
+    assert entries_by_model["route-large"].context_window == 262144
+    assert entries_by_model["route-large"].output_limit == 16384
+    assert entries_by_model["route-large"].input_modalities == (MediaModality.IMAGE,)
+
+
+def test_extract_codeagent_model_entries_treats_empty_routed_models_as_container() -> (
+    None
+):
+    service = ModelConnectivityProbeService(get_runtime=_runtime_config)
+
+    entries = service._extract_codeagent_model_entries(
+        {
+            "data": [
+                {
+                    "modelId": "empty-family",
+                    "routModels": [],
+                },
+                {
+                    "modelId": "plain-model",
+                },
+            ]
+        },
+        metadata_policy="endpoint_only",
+    )
+
+    assert entries is not None
+    assert tuple(entry.model for entry in entries) == ("plain-model",)
+
+
+def test_extract_codeagent_model_entries_deep_merges_routed_model_metadata() -> None:
+    service = ModelConnectivityProbeService(get_runtime=_runtime_config)
+
+    entries = service._extract_codeagent_model_entries(
+        {
+            "data": [
+                {
+                    "modelId": "parent-model",
+                    "tokenLimit": {"input": 128000, "output": 8192},
+                    "capabilities": {
+                        "input": {
+                            "text": True,
+                            "image": False,
+                        },
+                        "output": {
+                            "text": True,
+                        },
+                    },
+                    "modalities": {
+                        "input": ["text"],
+                        "output": ["text"],
+                    },
+                    "routModels": [
+                        {
+                            "modelId": "route-large",
+                            "tokenLimit": {"output": 16384},
+                            "capabilities": {
+                                "input": {
+                                    "image": True,
+                                }
+                            },
+                            "modalities": {
+                                "input": ["text", "image"],
+                            },
+                        },
+                    ],
+                }
+            ]
+        },
+        metadata_policy="endpoint_only",
+    )
+
+    assert entries is not None
+    assert len(entries) == 1
+    route_entry = entries[0]
+    assert route_entry.model == "route-large"
+    assert route_entry.context_window == 128000
+    assert route_entry.output_limit == 16384
+    assert route_entry.capabilities.input.text is True
+    assert route_entry.capabilities.input.image is True
+    assert route_entry.capabilities.output.text is True
+    assert route_entry.input_modalities == (MediaModality.IMAGE,)
+
+
+def test_extract_codeagent_model_entries_honors_routed_image_false_override() -> None:
+    service = ModelConnectivityProbeService(get_runtime=_runtime_config)
+
+    entries = service._extract_codeagent_model_entries(
+        {
+            "data": [
+                {
+                    "modelId": "parent-model",
+                    "supportsImages": True,
+                    "capabilities": {
+                        "input": {
+                            "text": True,
+                            "image": True,
+                        },
+                    },
+                    "routModels": [
+                        {
+                            "modelId": "route-text",
+                            "supportsImages": False,
+                        },
+                    ],
+                }
+            ]
+        },
+        metadata_policy="endpoint_only",
+    )
+
+    assert entries is not None
+    assert len(entries) == 1
+    route_entry = entries[0]
+    assert route_entry.model == "route-text"
+    assert route_entry.capabilities.input.text is True
+    assert route_entry.capabilities.input.image is False
+    assert route_entry.input_modalities == ()
+
+
+def test_extract_codeagent_model_entries_reads_json_token_limits() -> None:
+    service = ModelConnectivityProbeService(get_runtime=_runtime_config)
+
+    entries = service._extract_codeagent_model_entries(
+        {
+            "models": [
+                {
+                    "modelId": "json-model",
+                    "tokenLimit": '{"input":"131072","output":8192}',
+                    "modalities": '{"input":["text","image"],"output":["text"]}',
+                }
+            ]
+        },
+        metadata_policy="endpoint_only",
+    )
+
+    assert entries is not None
+    assert len(entries) == 1
+    assert entries[0].model == "json-model"
+    assert entries[0].context_window == 131072
+    assert entries[0].output_limit == 8192
+    assert entries[0].input_modalities == (MediaModality.IMAGE,)
+
+
 def test_extract_codeagent_model_entries_skips_blank_model_ids() -> None:
     service = ModelConnectivityProbeService(get_runtime=_runtime_config)
 
@@ -3032,6 +3490,14 @@ def test_extract_codeagent_model_entries_skips_blank_model_ids() -> None:
 
     assert entries is not None
     assert tuple(entry.model for entry in entries) == ("codeagent-chat",)
+
+
+def test_positive_int_rejects_non_ascii_and_oversized_digit_strings() -> None:
+    non_ascii_digit = "16" + chr(0x00B2)
+
+    assert ModelConnectivityProbeService._positive_int("16384") == 16384
+    assert ModelConnectivityProbeService._positive_int(non_ascii_digit) is None
+    assert ModelConnectivityProbeService._positive_int("9" * 5000) is None
 
 
 @pytest.mark.asyncio

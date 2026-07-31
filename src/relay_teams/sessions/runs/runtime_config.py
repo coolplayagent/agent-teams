@@ -20,6 +20,7 @@ from relay_teams.paths import (
 )
 from relay_teams.providers.codeagent_auth import (
     codeagent_access_token_secret_field_name,
+    codeagent_auth_base_url_secret_field_name,
     codeagent_password_secret_field_name,
     codeagent_refresh_token_secret_field_name,
 )
@@ -28,6 +29,7 @@ from relay_teams.providers.model_config import (
     CodeAgentAuthMethod,
     CodeAgentAuthConfig,
     DEFAULT_ANTHROPIC_BASE_URL,
+    DEFAULT_CODEAGENT_BASE_URL,
     DEFAULT_LLM_CONNECT_TIMEOUT_SECONDS,
     DEFAULT_MAAS_BASE_URL,
     LlmRetryConfig,
@@ -62,6 +64,9 @@ _MODEL_PROFILE_CODEAGENT_ACCESS_TOKEN_FIELD = codeagent_access_token_secret_fiel
 _MODEL_PROFILE_CODEAGENT_PASSWORD_FIELD = codeagent_password_secret_field_name()
 _MODEL_PROFILE_CODEAGENT_REFRESH_TOKEN_FIELD = (
     codeagent_refresh_token_secret_field_name()
+)
+_MODEL_PROFILE_CODEAGENT_AUTH_BASE_URL_FIELD = (
+    codeagent_auth_base_url_secret_field_name()
 )
 LOGGER = get_logger(__name__)
 
@@ -251,6 +256,11 @@ def load_llm_profile_state(
             codeagent_auth = _resolve_profile_codeagent_auth(
                 config_dir=config_dir,
                 profile_name=name,
+                base_url=base_url,
+                auth_base_url=_resolve_profile_codeagent_auth_base_url(
+                    config_dir=config_dir,
+                    profile_name=name,
+                ),
                 raw_value=cfg.get("codeagent_auth"),
                 env_values=env_values,
             )
@@ -630,6 +640,8 @@ def _resolve_profile_codeagent_auth(
     *,
     config_dir: Path,
     profile_name: str,
+    base_url: object,
+    auth_base_url: object,
     raw_value: object,
     env_values: Mapping[str, str],
 ) -> CodeAgentAuthConfig | None:
@@ -659,6 +671,10 @@ def _resolve_profile_codeagent_auth(
     password = payload.get("password")
     if resolved_auth_method == CodeAgentAuthMethod.PASSWORD:
         if auth_source == ModelAuthSource.W3:
+            if _is_custom_codeagent_base_url(base_url):
+                raise ValueError(
+                    f"Invalid profile '{profile_name}': CodeAgent W3 auth source is only supported for the default CodeAgent base URL."
+                )
             credentials = require_w3_credentials(config_dir)
             return CodeAgentAuthConfig(
                 auth_method=CodeAgentAuthMethod.PASSWORD,
@@ -681,6 +697,11 @@ def _resolve_profile_codeagent_auth(
                 field_name=_MODEL_PROFILE_CODEAGENT_PASSWORD_FIELD,
             )
             if secret_value is not None:
+                _validate_codeagent_profile_secret_base_url(
+                    profile_name=profile_name,
+                    base_url=base_url,
+                    auth_base_url=auth_base_url,
+                )
                 normalized_payload["password"] = _resolve_required_config_value(
                     secret_value,
                     env_values,
@@ -697,6 +718,8 @@ def _resolve_profile_codeagent_auth(
     access_token = _resolve_profile_codeagent_token(
         config_dir=config_dir,
         profile_name=profile_name,
+        base_url=base_url,
+        auth_base_url=auth_base_url,
         raw_value=payload.get("access_token"),
         env_values=env_values,
         field_name="codeagent_auth.access_token",
@@ -705,6 +728,8 @@ def _resolve_profile_codeagent_auth(
     refresh_token = _resolve_profile_codeagent_token(
         config_dir=config_dir,
         profile_name=profile_name,
+        base_url=base_url,
+        auth_base_url=auth_base_url,
         raw_value=payload.get("refresh_token"),
         env_values=env_values,
         field_name="codeagent_auth.refresh_token",
@@ -728,6 +753,8 @@ def _resolve_profile_codeagent_token(
     *,
     config_dir: Path,
     profile_name: str,
+    base_url: object,
+    auth_base_url: object,
     raw_value: object,
     env_values: Mapping[str, str],
     field_name: str,
@@ -740,11 +767,50 @@ def _resolve_profile_codeagent_token(
             profile_name=profile_name,
             field_name=field_name,
         )
-    return get_secret_store().get_secret(
+    secret_value = get_secret_store().get_secret(
         config_dir,
         namespace=_MODEL_PROFILE_SECRET_NAMESPACE,
         owner_id=profile_name,
         field_name=secret_field_name,
+    )
+    if secret_value is None:
+        return None
+    _validate_codeagent_profile_secret_base_url(
+        profile_name=profile_name,
+        base_url=base_url,
+        auth_base_url=auth_base_url,
+    )
+    return secret_value
+
+
+def _resolve_profile_codeagent_auth_base_url(
+    *,
+    config_dir: Path,
+    profile_name: str,
+) -> str | None:
+    return get_secret_store().get_secret(
+        config_dir,
+        namespace=_MODEL_PROFILE_SECRET_NAMESPACE,
+        owner_id=profile_name,
+        field_name=_MODEL_PROFILE_CODEAGENT_AUTH_BASE_URL_FIELD,
+    )
+
+
+def _validate_codeagent_profile_secret_base_url(
+    *,
+    profile_name: str,
+    base_url: object,
+    auth_base_url: object,
+) -> None:
+    if isinstance(auth_base_url, str) and auth_base_url.strip():
+        if _normalized_codeagent_base_url(
+            auth_base_url
+        ) == _normalized_codeagent_base_url_for_value(base_url):
+            return
+    elif not _is_custom_codeagent_base_url(base_url):
+        return
+    raise ValueError(
+        f"Invalid profile '{profile_name}': CodeAgent profile-local auth secrets must be saved for the configured base URL."
     )
 
 
@@ -774,6 +840,22 @@ def _normalize_auth_source(value: object) -> ModelAuthSource:
     if isinstance(value, str) and value.strip() == ModelAuthSource.W3.value:
         return ModelAuthSource.W3
     return ModelAuthSource.PROFILE
+
+
+def _is_custom_codeagent_base_url(base_url: object) -> bool:
+    return _normalized_codeagent_base_url_for_value(
+        base_url
+    ) != _normalized_codeagent_base_url(DEFAULT_CODEAGENT_BASE_URL)
+
+
+def _normalized_codeagent_base_url_for_value(base_url: object) -> str:
+    if isinstance(base_url, str) and base_url.strip():
+        return _normalized_codeagent_base_url(base_url)
+    return _normalized_codeagent_base_url(DEFAULT_CODEAGENT_BASE_URL)
+
+
+def _normalized_codeagent_base_url(base_url: str) -> str:
+    return base_url.strip().rstrip("/")
 
 
 def _resolve_path(config_dir: Path, raw_path: str) -> Path:

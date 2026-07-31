@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import json
@@ -8,10 +7,10 @@ import pytest
 
 from relay_teams.providers.codeagent_auth import (
     codeagent_access_token_secret_field_name,
+    codeagent_auth_base_url_secret_field_name,
     codeagent_password_secret_field_name,
     codeagent_refresh_token_secret_field_name,
 )
-from relay_teams.providers.model_header_utils import model_header_secret_field_name
 from relay_teams.providers.maas_auth import maas_password_secret_field_name
 from relay_teams.providers.model_config import (
     DEFAULT_ANTHROPIC_BASE_URL,
@@ -19,8 +18,9 @@ from relay_teams.providers.model_config import (
     DEFAULT_LLM_CONNECT_TIMEOUT_SECONDS,
     DEFAULT_MAAS_BASE_URL,
 )
+from relay_teams.providers.model_header_utils import model_header_secret_field_name
 from relay_teams.secrets import get_secret_store
-import relay_teams.sessions.runs.runtime_config as runtime_config
+from relay_teams.sessions.runs import runtime_config
 
 
 def test_load_runtime_config_uses_project_config_dir_by_default(
@@ -294,6 +294,51 @@ def test_load_runtime_config_skips_w3_profile_when_connector_secret_is_missing(
             }
         ),
         encoding="utf-8",
+    )
+
+    resolved = runtime_config.load_runtime_config(config_dir=config_dir)
+
+    assert set(resolved.llm_profiles) == {"fallback"}
+    assert resolved.default_model_profile == "fallback"
+    assert resolved.model_status.loaded is True
+
+
+def test_load_runtime_config_skips_custom_codeagent_w3_profile_before_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    def fail_require_w3_credentials(config_dir: Path) -> None:
+        _ = config_dir
+        raise AssertionError("W3 credentials should not be resolved")
+
+    config_dir = tmp_path / ".agent-teams"
+    config_dir.mkdir(parents=True)
+    (config_dir / "model.json").write_text(
+        json.dumps(
+            {
+                "codeagent-w3": {
+                    "provider": "codeagent",
+                    "model": "codeagent-chat",
+                    "base_url": "https://custom-codeagent.example/codeAgentPro",
+                    "codeagent_auth": {
+                        "auth_method": "password",
+                        "auth_source": "w3",
+                    },
+                    "is_default": True,
+                },
+                "fallback": {
+                    "model": "fallback-model",
+                    "base_url": "https://fallback.example/v1",
+                    "api_key": "fallback-key",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        runtime_config,
+        "require_w3_credentials",
+        fail_require_w3_credentials,
     )
 
     resolved = runtime_config.load_runtime_config(config_dir=config_dir)
@@ -646,11 +691,20 @@ def test_load_llm_configs_resolves_codeagent_tokens_from_secret_store(
         field_name=codeagent_refresh_token_secret_field_name(),
         value="codeagent-refresh-token",
     )
+    get_secret_store().set_secret(
+        tmp_path,
+        namespace="model_profile",
+        owner_id="codeagent-profile",
+        field_name=codeagent_auth_base_url_secret_field_name(),
+        value="https://codeagent.example/codeAgentPro",
+    )
 
     profiles = runtime_config.load_llm_configs(tmp_path, {})
 
     assert profiles["codeagent-profile"].provider.value == "codeagent"
-    assert profiles["codeagent-profile"].base_url == DEFAULT_CODEAGENT_BASE_URL
+    assert profiles["codeagent-profile"].base_url == (
+        "https://codeagent.example/codeAgentPro"
+    )
     assert profiles["codeagent-profile"].api_key is None
     assert profiles["codeagent-profile"].codeagent_auth is not None
     assert (
@@ -837,6 +891,13 @@ def test_load_llm_configs_accepts_codeagent_password_auth(
         field_name=codeagent_password_secret_field_name(),
         value="relay-password",
     )
+    get_secret_store().set_secret(
+        tmp_path,
+        namespace="model_profile",
+        owner_id="codeagent-profile",
+        field_name=codeagent_auth_base_url_secret_field_name(),
+        value="https://codeagent.example/codeAgentPro",
+    )
 
     profiles = runtime_config.load_llm_configs(tmp_path, {})
 
@@ -844,6 +905,91 @@ def test_load_llm_configs_accepts_codeagent_password_auth(
     assert profiles["codeagent-profile"].codeagent_auth.auth_method.value == "password"
     assert profiles["codeagent-profile"].codeagent_auth.username == "relay-user"
     assert profiles["codeagent-profile"].codeagent_auth.password == "relay-password"
+
+
+def test_load_llm_configs_rejects_custom_codeagent_password_secret_without_binding(
+    tmp_path: Path,
+) -> None:
+    model_file = tmp_path / "model.json"
+    model_file.write_text(
+        json.dumps(
+            {
+                "codeagent-profile": {
+                    "provider": "codeagent",
+                    "model": "codeagent-chat",
+                    "base_url": "https://custom-codeagent.example/codeAgentPro",
+                    "codeagent_auth": {
+                        "auth_method": "password",
+                        "username": "relay-user",
+                        "has_password": True,
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    get_secret_store().set_secret(
+        tmp_path,
+        namespace="model_profile",
+        owner_id="codeagent-profile",
+        field_name=codeagent_password_secret_field_name(),
+        value="relay-password",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="CodeAgent profile-local auth secrets must be saved for the configured base URL.",
+    ):
+        runtime_config.load_llm_configs(tmp_path, {})
+
+
+def test_load_llm_configs_rejects_custom_codeagent_token_secret_binding_mismatch(
+    tmp_path: Path,
+) -> None:
+    model_file = tmp_path / "model.json"
+    model_file.write_text(
+        json.dumps(
+            {
+                "codeagent-profile": {
+                    "provider": "codeagent",
+                    "model": "codeagent-chat",
+                    "base_url": "https://custom-codeagent.example/codeAgentPro",
+                    "codeagent_auth": {
+                        "has_access_token": True,
+                        "has_refresh_token": True,
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    get_secret_store().set_secret(
+        tmp_path,
+        namespace="model_profile",
+        owner_id="codeagent-profile",
+        field_name=codeagent_access_token_secret_field_name(),
+        value="codeagent-access-token",
+    )
+    get_secret_store().set_secret(
+        tmp_path,
+        namespace="model_profile",
+        owner_id="codeagent-profile",
+        field_name=codeagent_refresh_token_secret_field_name(),
+        value="codeagent-refresh-token",
+    )
+    get_secret_store().set_secret(
+        tmp_path,
+        namespace="model_profile",
+        owner_id="codeagent-profile",
+        field_name=codeagent_auth_base_url_secret_field_name(),
+        value=DEFAULT_CODEAGENT_BASE_URL,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="CodeAgent profile-local auth secrets must be saved for the configured base URL.",
+    ):
+        runtime_config.load_llm_configs(tmp_path, {})
 
 
 def test_load_llm_configs_resolves_codeagent_password_env_placeholder(
@@ -907,6 +1053,13 @@ def test_load_llm_configs_resolves_secret_backed_codeagent_password_env_placehol
         owner_id="codeagent-profile",
         field_name=codeagent_password_secret_field_name(),
         value="${CODEAGENT_PASSWORD}",
+    )
+    get_secret_store().set_secret(
+        tmp_path,
+        namespace="model_profile",
+        owner_id="codeagent-profile",
+        field_name=codeagent_auth_base_url_secret_field_name(),
+        value="https://codeagent.example/codeAgentPro",
     )
 
     profiles = runtime_config.load_llm_configs(

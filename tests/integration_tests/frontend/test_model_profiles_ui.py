@@ -3054,8 +3054,8 @@ console.log(JSON.stringify({
         codeagent_state["baseUrlValue"]
         == "https://codeagentcli.rnd.huawei.com/codeAgentPro"
     )
-    assert codeagent_state["baseUrlDisabled"] is True
-    assert codeagent_state["baseUrlGroupDisplay"] == "none"
+    assert codeagent_state["baseUrlDisabled"] is False
+    assert codeagent_state["baseUrlGroupDisplay"] == "block"
     assert codeagent_state["apiKeyDisplay"] == "none"
     assert codeagent_state["codeagentDisplay"] == "flex"
     assert codeagent_state["summary"] == "CodeAgent Model · No model"
@@ -4183,6 +4183,74 @@ export async function deleteModelProfile(name) {
     assert payload["windowOpenNavigations"] == ["https://example.test/codeagent-sso"]
 
 
+def test_codeagent_sso_start_sends_custom_base_url(
+    tmp_path: Path,
+) -> None:
+    payload = _run_model_profiles_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import { bindModelProfileHandlers } from "./modelProfiles.mjs";
+
+const notifications = [];
+const elements = createElements();
+installGlobals(elements, notifications);
+bindModelProfileHandlers();
+
+document.getElementById("add-profile-btn").onclick();
+document.getElementById("profile-provider").value = "codeagent";
+document.getElementById("profile-provider").onchange();
+document.getElementById("profile-base-url").value = "https://custom-codeagent.example/codeAgentPro";
+document.getElementById("profile-base-url").oninput();
+
+await document.getElementById("profile-codeagent-login-status").onclick();
+
+console.log(JSON.stringify({
+    startPayload: globalThis.__codeAgentOAuthStartPayload,
+    sessionChecks: globalThis.__codeAgentOAuthSessionChecks,
+    windowOpenNavigations: globalThis.__windowOpenNavigations,
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchModelProfiles() {
+    return {};
+}
+
+export async function fetchModelFallbackConfig() {
+    return { policies: [] };
+}
+
+export async function startCodeAgentOAuth(payload) {
+    globalThis.__codeAgentOAuthStartPayload = payload;
+    return {
+        auth_session_id: "auth-session-1",
+        authorization_url: "https://example.test/codeagent-sso",
+    };
+}
+
+export async function fetchCodeAgentOAuthSession(authSessionId) {
+    globalThis.__codeAgentOAuthSessionChecks = globalThis.__codeAgentOAuthSessionChecks || [];
+    globalThis.__codeAgentOAuthSessionChecks.push(authSessionId);
+    return {
+        completed: true,
+        codeagent_auth: {
+            auth_method: "sso",
+            auth_source: "profile",
+            has_access_token: true,
+            has_refresh_token: true,
+            oauth_session_id: authSessionId,
+        },
+    };
+}
+""".strip(),
+    )
+
+    assert payload["startPayload"] == {
+        "base_url": "https://custom-codeagent.example/codeAgentPro"
+    }
+    assert payload["sessionChecks"] == ["auth-session-1"]
+    assert payload["windowOpenNavigations"] == ["https://example.test/codeagent-sso"]
+
+
 def test_codeagent_sso_allows_retry_when_popup_is_unavailable(
     tmp_path: Path,
 ) -> None:
@@ -5124,6 +5192,190 @@ export async function reloadModelConfig() {
     }
 
 
+def test_codeagent_custom_base_url_switches_w3_auth_source_to_profile(
+    tmp_path: Path,
+) -> None:
+    payload = _run_model_profiles_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import { bindModelProfileHandlers, loadModelProfilesPanel } from "./modelProfiles.mjs";
+
+const notifications = [];
+const elements = createElements();
+installGlobals(elements, notifications);
+bindModelProfileHandlers();
+
+await loadModelProfilesPanel();
+document.getElementById("profiles-list").querySelectorAll(".edit-profile-btn").find(btn => btn.dataset.name === "codeagent-profile").onclick();
+await Promise.resolve();
+await Promise.resolve();
+
+document.getElementById("profile-codeagent-auth-method").value = "password";
+document.getElementById("profile-codeagent-auth-method").onchange();
+document.getElementById("profile-codeagent-auth-source").value = "w3";
+document.getElementById("profile-codeagent-auth-source").onchange();
+document.getElementById("profile-base-url").value = "https://custom-codeagent.example/codeAgentPro";
+document.getElementById("profile-base-url").oninput();
+document.getElementById("profile-codeagent-password").onfocus();
+document.getElementById("profile-codeagent-password").value = "fresh-codeagent-password";
+document.getElementById("profile-codeagent-password").oninput();
+
+await document.getElementById("test-profile-btn").onclick();
+await document.getElementById("fetch-profile-models-btn").onclick();
+await document.getElementById("save-profile-btn").onclick();
+
+console.log(JSON.stringify({
+    authSourceValue: document.getElementById("profile-codeagent-auth-source").value,
+    authSourceGroupDisplay: document.getElementById("profile-codeagent-auth-source-group").style.display,
+    probePayload: globalThis.__probePayload || null,
+    discoverPayload: globalThis.__discoverPayload || null,
+    savedProfile: globalThis.__savedProfile || null,
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchModelProfiles() {
+    return {
+        "codeagent-profile": {
+            provider: "codeagent",
+            model: "codeagent-chat",
+            base_url: "https://codeagentcli.rnd.huawei.com/codeAgentPro",
+            codeagent_auth: {
+                auth_method: "password",
+                username: "saved-user",
+                has_password: true,
+            },
+            is_default: false,
+            temperature: 0.7,
+            top_p: 1.0,
+            connect_timeout_seconds: 15,
+        },
+    };
+}
+
+export async function fetchModelFallbackConfig() {
+    return { policies: [] };
+}
+
+export async function fetchW3Connector() {
+    return { status: "error", username: "w3-user", has_password: true };
+}
+
+export async function probeModelConnection(payload) {
+    globalThis.__probePayload = payload;
+    return { ok: true, latency_ms: 42, token_usage: { total_tokens: 9 } };
+}
+
+export async function discoverModelCatalog(payload) {
+    globalThis.__discoverPayload = payload;
+    return { ok: true, latency_ms: 37, models: ["codeagent-chat"] };
+}
+
+export async function saveModelProfile(name, profile) {
+    globalThis.__savedProfile = { name, profile };
+}
+
+export async function reloadModelConfig() {
+    globalThis.__reloadCalled = true;
+}
+""".strip(),
+    )
+
+    probe_payload = cast(dict[str, JsonValue], payload["probePayload"])
+    discover_payload = cast(dict[str, JsonValue], payload["discoverPayload"])
+    saved_profile = cast(dict[str, JsonValue], payload["savedProfile"])
+    probe_override = cast(dict[str, JsonValue], probe_payload["override"])
+    discover_override = cast(dict[str, JsonValue], discover_payload["override"])
+    saved_body = cast(dict[str, JsonValue], saved_profile["profile"])
+    expected_auth = {
+        "auth_method": "password",
+        "auth_source": "profile",
+        "username": "saved-user",
+        "password": "fresh-codeagent-password",
+    }
+
+    assert payload["authSourceValue"] == "profile"
+    assert payload["authSourceGroupDisplay"] == "none"
+    assert cast(dict[str, JsonValue], probe_override["codeagent_auth"]) == expected_auth
+    assert (
+        cast(dict[str, JsonValue], discover_override["codeagent_auth"]) == expected_auth
+    )
+    assert cast(dict[str, JsonValue], saved_body["codeagent_auth"]) == expected_auth
+
+
+def test_codeagent_base_url_trailing_slash_edit_keeps_saved_password(
+    tmp_path: Path,
+) -> None:
+    payload = _run_model_profiles_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import { bindModelProfileHandlers, loadModelProfilesPanel } from "./modelProfiles.mjs";
+
+const notifications = [];
+const elements = createElements();
+installGlobals(elements, notifications);
+bindModelProfileHandlers();
+
+await loadModelProfilesPanel();
+document.getElementById("profiles-list").querySelectorAll(".edit-profile-btn").find(btn => btn.dataset.name === "codeagent-profile").onclick();
+document.getElementById("profile-base-url").value = "https://codeagentcli.rnd.huawei.com/codeAgentPro/";
+document.getElementById("profile-base-url").oninput();
+
+await document.getElementById("save-profile-btn").onclick();
+
+console.log(JSON.stringify({
+    notifications,
+    savedProfile: globalThis.__savedProfile || null,
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchModelProfiles() {
+    return {
+        "codeagent-profile": {
+            provider: "codeagent",
+            model: "codeagent-chat",
+            base_url: "https://codeagentcli.rnd.huawei.com/codeAgentPro",
+            codeagent_auth: {
+                auth_method: "password",
+                auth_source: "profile",
+                username: "saved-user",
+                has_password: true,
+            },
+            is_default: false,
+            temperature: 0.7,
+            top_p: 1.0,
+            connect_timeout_seconds: 15,
+        },
+    };
+}
+
+export async function fetchModelFallbackConfig() {
+    return { policies: [] };
+}
+
+export async function saveModelProfile(name, profile) {
+    globalThis.__savedProfile = { name, profile };
+}
+
+export async function reloadModelConfig() {
+    globalThis.__reloadCalled = true;
+}
+""".strip(),
+    )
+
+    saved_profile = cast(dict[str, JsonValue], payload["savedProfile"])
+    saved_body = cast(dict[str, JsonValue], saved_profile["profile"])
+
+    assert saved_profile["name"] == "codeagent-profile"
+    assert saved_body["base_url"] == (
+        "https://codeagentcli.rnd.huawei.com/codeAgentPro/"
+    )
+    assert cast(dict[str, JsonValue], saved_body["codeagent_auth"]) == {
+        "auth_method": "password",
+        "auth_source": "profile",
+        "username": "saved-user",
+    }
+
+
 def test_codeagent_password_auth_discovery_uses_username_and_password(
     tmp_path: Path,
 ) -> None:
@@ -5184,6 +5436,61 @@ export async function discoverModelCatalog(payload) {
         "password": "relay-password",
     }
     assert payload["authStatus"] == "Credentials ready"
+
+
+def test_custom_codeagent_discovery_uses_endpoint_only_metadata_policy(
+    tmp_path: Path,
+) -> None:
+    payload = _run_model_profiles_script(
+        tmp_path=tmp_path,
+        runner_source="""
+import { bindModelProfileHandlers } from "./modelProfiles.mjs";
+
+const notifications = [];
+const elements = createElements();
+installGlobals(elements, notifications);
+bindModelProfileHandlers();
+
+document.getElementById("add-profile-btn").onclick();
+document.getElementById("profile-provider").value = "codeagent";
+document.getElementById("profile-provider").onchange();
+document.getElementById("profile-base-url").value = "https://custom-codeagent.example/codeAgentPro";
+document.getElementById("profile-base-url").oninput();
+document.getElementById("profile-codeagent-auth-method").value = "password";
+document.getElementById("profile-codeagent-auth-method").onchange();
+document.getElementById("profile-codeagent-username").value = "relay-user";
+document.getElementById("profile-codeagent-username").oninput();
+document.getElementById("profile-codeagent-password").onfocus();
+document.getElementById("profile-codeagent-password").value = "relay-password";
+document.getElementById("profile-codeagent-password").oninput();
+
+await document.getElementById("fetch-profile-models-btn").onclick();
+
+console.log(JSON.stringify({
+    discoverPayload: globalThis.__discoverPayload,
+}));
+""".strip(),
+        mock_api_source="""
+export async function fetchModelProfiles() {
+    return {};
+}
+
+export async function fetchModelFallbackConfig() {
+    return { policies: [] };
+}
+
+export async function discoverModelCatalog(payload) {
+    globalThis.__discoverPayload = payload;
+    return { ok: true, latency_ms: 37, models: ["gpt-4o"] };
+}
+""".strip(),
+    )
+
+    discover_payload = cast(dict[str, JsonValue], payload["discoverPayload"])
+    override = cast(dict[str, JsonValue], discover_payload["override"])
+
+    assert discover_payload["metadata_policy"] == "endpoint_only"
+    assert override["base_url"] == "https://custom-codeagent.example/codeAgentPro"
 
 
 def test_editing_saved_codeagent_password_profile_requires_new_password_after_username_change(

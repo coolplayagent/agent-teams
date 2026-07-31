@@ -984,6 +984,86 @@ async def test_sync_models_with_saved_credentials_migrates_w3_imported_profiles(
     assert model_service.reloads == 3
 
 
+@pytest.mark.asyncio
+async def test_sync_models_with_saved_credentials_skips_custom_codeagent_w3_migration(
+    tmp_path: Path,
+) -> None:
+    secret_store = _FileSecretStore()
+    custom_base_url = "https://custom-codeagent.example/codeAgentPro"
+    profiles: dict[str, dict[str, JsonValue]] = {
+        "w3-codeagent-custom": {
+            "catalog_provider_id": "w3",
+            "provider": ProviderType.CODEAGENT.value,
+            "model": "claude-code",
+            "base_url": custom_base_url,
+            "codeagent_auth": {
+                "auth_method": "password",
+                "auth_source": "profile",
+                "username": "profile-codeagent-user",
+                "has_password": True,
+            },
+        },
+    }
+    model_service = _ModelConfigService(
+        config_dir=tmp_path,
+        secret_store=secret_store,
+        profiles=profiles,
+    )
+    service = W3ConnectorService(
+        config_dir=tmp_path,
+        model_config_service=model_service,
+        secret_store=secret_store,
+        token_service=_TokenService(token="x-auth-token"),
+    )
+    await service.save_credentials(
+        W3ConnectorSaveRequest(username="old-user", password="old-password")
+    )
+    await service.save_credentials(
+        W3ConnectorSaveRequest(username="new-user", password="new-password")
+    )
+    (tmp_path / "model.json").write_text(
+        """
+        {
+          "w3-codeagent-custom": {
+            "provider": "codeagent",
+            "model": "claude-code",
+            "base_url": "https://custom-codeagent.example/codeAgentPro",
+            "codeagent_auth": {
+              "auth_method": "password",
+              "auth_source": "profile",
+              "username": "profile-codeagent-user",
+              "has_password": true
+            }
+          }
+        }
+        """,
+        encoding="utf-8",
+    )
+    secret_store.set_secret(
+        tmp_path,
+        namespace="model_profile",
+        owner_id="w3-codeagent-custom",
+        field_name=codeagent_password_secret_field_name(),
+        value="profile-codeagent-password",
+    )
+
+    response = await service.sync_models_with_saved_credentials()
+
+    assert response.ok is True
+    saved_profiles = (tmp_path / "model.json").read_text(encoding="utf-8")
+    assert '"auth_source": "profile"' in saved_profiles
+    assert custom_base_url in saved_profiles
+    assert (
+        secret_store.get_secret(
+            tmp_path,
+            namespace="model_profile",
+            owner_id="w3-codeagent-custom",
+            field_name=codeagent_password_secret_field_name(),
+        )
+        == "profile-codeagent-password"
+    )
+
+
 def _discovery_result(
     *,
     provider: ProviderType,

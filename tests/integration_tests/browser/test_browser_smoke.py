@@ -18,6 +18,7 @@ from relay_teams.env.web_config_models import (
 )
 from relay_teams.gateway.acp_stdio import AcpGatewayServer, _AcpRequestContext
 from relay_teams.interfaces.cli.gateway_cli import _build_acp_stdio_runtime
+from relay_teams.providers.model_config import DEFAULT_CODEAGENT_BASE_URL
 from pydantic import JsonValue
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Locator, Page, Request, Response
@@ -641,6 +642,33 @@ def test_browser_model_profile_custom_provider_keeps_manual_base_url(
         integration_env.fake_llm_v1_base_url,
         timeout=_WAIT_TIMEOUT_MS,
     )
+
+
+def test_browser_codeagent_profile_allows_custom_base_url(
+    browser_page: Page,
+    integration_env: IntegrationEnvironment,
+) -> None:
+    page = browser_page
+    _open_app(page, integration_env)
+
+    page.locator("#settings-btn").click()
+    expect(page.locator("#settings-modal")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+    page.locator('.settings-tab[data-tab="model"]').click()
+    expect(page.locator("#model-panel")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+
+    page.locator("#add-profile-btn").click()
+    expect(page.locator("#profile-editor")).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+    page.locator("#profile-provider-codeagent-btn").click()
+
+    base_url = page.locator("#profile-base-url")
+    expect(base_url).to_be_visible(timeout=_WAIT_TIMEOUT_MS)
+    expect(base_url).to_be_enabled(timeout=_WAIT_TIMEOUT_MS)
+    expect(base_url).to_have_value(DEFAULT_CODEAGENT_BASE_URL, timeout=_WAIT_TIMEOUT_MS)
+
+    custom_base_url = "https://custom-codeagent.example/codeAgentPro"
+    base_url.fill(custom_base_url)
+
+    expect(base_url).to_have_value(custom_base_url, timeout=_WAIT_TIMEOUT_MS)
 
 
 def test_browser_settings_modal_stays_open_on_outside_click(

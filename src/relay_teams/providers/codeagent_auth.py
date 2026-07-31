@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import asyncio
@@ -22,26 +21,29 @@ from relay_teams.providers.maas_auth import (
     get_maas_token_service,
 )
 from relay_teams.providers.model_config import (
-    CodeAgentAuthMethod,
-    CodeAgentAuthConfig,
     DEFAULT_CODEAGENT_SSO_BASE_URL,
+    CodeAgentAuthConfig,
+    CodeAgentAuthMethod,
 )
 from relay_teams.secrets import get_secret_store
 
 __all__ = [
     "CODEAGENT_ACCESS_TOKEN_SECRET_FIELD",
+    "CODEAGENT_AUTH_BASE_URL_SECRET_FIELD",
     "CODEAGENT_PASSWORD_SECRET_FIELD",
     "CODEAGENT_REFRESH_TOKEN_SECRET_FIELD",
     "CodeAgentOAuthError",
     "CodeAgentOAuthSession",
     "CodeAgentOAuthTokenResult",
     "CodeAgentTokenService",
-    "build_codeagent_request_headers",
     "build_codeagent_authorization_url",
+    "build_codeagent_model_catalog_headers",
     "build_codeagent_openai_client",
+    "build_codeagent_request_headers",
     "clear_codeagent_oauth_session_store",
     "clear_codeagent_token_service_cache",
     "codeagent_access_token_secret_field_name",
+    "codeagent_auth_base_url_secret_field_name",
     "codeagent_password_secret_field_name",
     "codeagent_refresh_token_secret_field_name",
     "consume_codeagent_oauth_tokens",
@@ -56,12 +58,17 @@ __all__ = [
 ]
 
 CODEAGENT_ACCESS_TOKEN_SECRET_FIELD = "codeagent_access_token"
+CODEAGENT_AUTH_BASE_URL_SECRET_FIELD = "codeagent_auth_base_url"
 CODEAGENT_PASSWORD_SECRET_FIELD = "codeagent_password"
 CODEAGENT_REFRESH_TOKEN_SECRET_FIELD = "codeagent_refresh_token"
 _CODEAGENT_TOKEN_TTL = timedelta(hours=1)
 _CODEAGENT_REFRESH_SKEW = timedelta(minutes=5)
 _CODEAGENT_OAUTH_SESSION_TTL = timedelta(minutes=30)
 _MODEL_PROFILE_SECRET_NAMESPACE = "model_profile"
+_CODEAGENT_APP_ID = "com.huawei.devmind.codebot.apibot"
+_CODEAGENT_RUNTIME_USER_AGENT = "AgentKernel/1.0"
+_CODEAGENT_CATALOG_USER_AGENT = "RelayAgent/1.0"
+_CODEAGENT_PLUGIN_VERSION = "cli-1.2605.02-IN.1."
 
 
 class CodeAgentOAuthTokenResult(BaseModel):
@@ -184,6 +191,7 @@ class CodeAgentTokenService:
                 )
                 self._store_token_result(
                     cache_key=cache_key,
+                    base_url=base_url,
                     auth_config=auth_config,
                     token_result=result,
                 )
@@ -205,6 +213,7 @@ class CodeAgentTokenService:
             )
             self._store_token_result(
                 cache_key=cache_key,
+                base_url=base_url,
                 auth_config=auth_config,
                 token_result=result,
             )
@@ -238,7 +247,7 @@ class CodeAgentTokenService:
         )
 
     # noinspection PyMethodMayBeStatic
-    async def poll_token(  # noqa: PLR6301
+    async def poll_token(
         self,
         *,
         session: CodeAgentOAuthSession,
@@ -340,6 +349,7 @@ class CodeAgentTokenService:
         self,
         *,
         cache_key: str,
+        base_url: str,
         auth_config: CodeAgentAuthConfig,
         token_result: CodeAgentOAuthTokenResult,
     ) -> None:
@@ -349,6 +359,7 @@ class CodeAgentTokenService:
         oauth_session_id = auth_config.oauth_session_id
         if oauth_session_id is None:
             _persist_codeagent_profile_tokens(
+                base_url=base_url,
                 auth_config=auth_config,
                 token_result=token_result,
             )
@@ -356,6 +367,7 @@ class CodeAgentTokenService:
         session = get_codeagent_oauth_session(oauth_session_id)
         if session is None:
             _persist_codeagent_profile_tokens(
+                base_url=base_url,
                 auth_config=auth_config,
                 token_result=token_result,
             )
@@ -365,6 +377,7 @@ class CodeAgentTokenService:
             token_result=token_result,
         )
         _persist_codeagent_profile_tokens(
+            base_url=base_url,
             auth_config=auth_config,
             token_result=token_result,
         )
@@ -599,6 +612,10 @@ def codeagent_access_token_secret_field_name() -> str:
     return CODEAGENT_ACCESS_TOKEN_SECRET_FIELD
 
 
+def codeagent_auth_base_url_secret_field_name() -> str:
+    return CODEAGENT_AUTH_BASE_URL_SECRET_FIELD
+
+
 def codeagent_password_secret_field_name() -> str:
     return CODEAGENT_PASSWORD_SECRET_FIELD
 
@@ -739,7 +756,7 @@ def _refresh_token_payload(auth_config: CodeAgentAuthConfig) -> dict[str, str]:
 def _generate_client_code() -> str:
     try:
         return uuid4().hex
-    except Exception:
+    except (OSError, RuntimeError):
         return token_hex(16)
 
 
@@ -772,8 +789,8 @@ def build_codeagent_request_headers(
 ) -> dict[str, str]:
     headers = {
         "X-Auth-Token": token,
-        "app-id": "CodeAgent2.0",
-        "User-Agent": "AgentKernel/1.0",
+        "app-id": _CODEAGENT_APP_ID,
+        "User-Agent": _CODEAGENT_RUNTIME_USER_AGENT,
         "gray": "false",
         "oc-heartbeat": "1",
         "X-snap-traceid": str(uuid4()),
@@ -784,6 +801,16 @@ def build_codeagent_request_headers(
     if accept is not None:
         headers["Accept"] = accept
     return headers
+
+
+def build_codeagent_model_catalog_headers(*, token: str) -> dict[str, str]:
+    return {
+        "X-Auth-Token": token,
+        "app-id": _CODEAGENT_APP_ID,
+        "User-Agent": _CODEAGENT_CATALOG_USER_AGENT,
+        "gray": "true",
+        "plugin-version": _CODEAGENT_PLUGIN_VERSION,
+    }
 
 
 def _build_token_result(
@@ -896,6 +923,7 @@ def _strip_reserved_headers(headers: dict[str, str]) -> dict[str, str]:
             "oc-heartbeat",
             "x-snap-traceid",
             "x-session-id",
+            "plugin-version",
         }
     }
 
@@ -983,6 +1011,7 @@ def _is_pending_poll_payload(payload: object) -> bool:
 
 def _persist_codeagent_profile_tokens(
     *,
+    base_url: str,
     auth_config: CodeAgentAuthConfig,
     token_result: CodeAgentOAuthTokenResult,
 ) -> None:
@@ -1002,6 +1031,16 @@ def _persist_codeagent_profile_tokens(
         field_name=CODEAGENT_REFRESH_TOKEN_SECRET_FIELD,
         value=token_result.refresh_token,
     )
+    _set_model_profile_secret(
+        config_dir=config_dir,
+        owner_id=owner_id,
+        field_name=CODEAGENT_AUTH_BASE_URL_SECRET_FIELD,
+        value=_normalized_profile_secret_base_url(base_url),
+    )
+
+
+def _normalized_profile_secret_base_url(base_url: str) -> str:
+    return base_url.strip().rstrip("/")
 
 
 def _set_model_profile_secret(

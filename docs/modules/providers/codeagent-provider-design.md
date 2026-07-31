@@ -3,7 +3,9 @@
 ## Overview
 
 CodeAgent is a first-class model provider with `provider = "codeagent"`.
-Its inference endpoint, OAuth client parameters, and password-login endpoint are fixed by the backend.
+Its OAuth client parameters and password-login endpoint are fixed by the backend.
+Its inference endpoint defaults to the built-in CodeAgent URL, but profiles may
+store a custom CodeAgent-compatible `base_url`.
 The user does not configure a separate CodeAgent login URL.
 
 CodeAgent profile auth always lives under `codeagent_auth`.
@@ -12,9 +14,9 @@ There are two supported auth modes:
 - `sso`: CodeAgent OAuth / refresh-token flow
 - `password`: username/password login that reuses the MaaS secure-login endpoint and payload contract
 
-## Fixed Endpoints And OAuth Constants
+## Endpoint And OAuth Constants
 
-The backend enforces these constants:
+The backend enforces these OAuth/login constants and default endpoint:
 
 | Name | Value |
 | --- | --- |
@@ -24,7 +26,9 @@ The backend enforces these constants:
 | `DEFAULT_CODEAGENT_SCOPE` | `1000:1002` |
 | `DEFAULT_CODEAGENT_SCOPE_RESOURCE` | `devuc` |
 
-`ModelEndpointConfig` always rewrites CodeAgent `base_url` to `DEFAULT_CODEAGENT_BASE_URL`.
+CodeAgent profiles use `DEFAULT_CODEAGENT_BASE_URL` when `base_url` is omitted
+or blank. A configured CodeAgent profile `base_url` is otherwise preserved
+through save, reload, probe, discovery, and runtime execution.
 `CodeAgentAuthConfig` also enforces the fixed OAuth client values even if callers submit different ones.
 
 For password auth, the backend reuses the MaaS secure-login endpoint and request/response shape:
@@ -45,6 +49,12 @@ The returned token is then used as the CodeAgent `X-Auth-Token`.
 
 The frontend starts OAuth, opens the returned authorization URL, and polls for completion.
 Completed OAuth sessions yield CodeAgent `access_token` and `refresh_token`.
+The start request accepts optional `base_url`; the frontend sends the current
+draft effective CodeAgent endpoint, falling back to the built-in default when
+the field is blank.
+Saving an OAuth session into a profile requires the session `base_url` to match
+the profile's effective CodeAgent `base_url`, so default-endpoint tokens are
+not stored for custom CodeAgent-compatible endpoints.
 
 At runtime:
 
@@ -61,6 +71,9 @@ At runtime:
 
 The login exchange does not use OAuth sessions or refresh tokens.
 Instead, the CodeAgent token service logs in with the MaaS-compatible secure-login API and caches the returned token for a short TTL.
+Password mode may use the shared W3 connector as its credential source only
+when the effective CodeAgent `base_url` is `DEFAULT_CODEAGENT_BASE_URL`; custom
+CodeAgent-compatible endpoints must use profile-local credentials or SSO.
 
 At runtime:
 
@@ -107,6 +120,7 @@ Persistence rules:
 
 - SSO `access_token` and `refresh_token` are stored in the unified secret store.
 - Password-mode `password` is stored in the unified secret store.
+- Profile-local CodeAgent secrets are stored with a normalized endpoint binding.
 - Password-mode `username` stays in the profile JSON.
 - Editing a saved password profile with an empty password field preserves the stored password secret.
 - Switching from SSO to password removes saved SSO tokens.
@@ -121,10 +135,19 @@ Runtime profile loading resolves `codeagent_auth` differently by mode:
 
 This keeps `codeagent_auth` as the single CodeAgent auth contract.
 CodeAgent does not reuse top-level `maas_auth`.
+Runtime rejects keyring-backed profile-local CodeAgent secrets when their saved
+endpoint binding is missing for a custom endpoint or differs from the profile's
+effective `base_url`.
 
 ## Model Discovery And Chat Requests
 
 CodeAgent model discovery and chat requests use the same provider auth resolver as save-time verification and runtime execution.
+When a draft request changes `base_url` from a saved CodeAgent profile, saved
+profile credentials are not reused; the draft must include complete auth for
+the target endpoint.
+W3 credential references are rejected when the effective CodeAgent endpoint is
+not the built-in default, because W3 credentials are shared connector secrets
+and are not bound to custom CodeAgent-compatible endpoints.
 Token polling, refresh, password login, request auth, model discovery, chat
 probe, and auth verification are async-only backend paths. CodeAgent provider
 code must use the shared async HTTP client and `httpx.Auth.async_auth_flow`;
@@ -132,33 +155,31 @@ there is no separate sync token or sync auth-flow implementation.
 
 ### Model Discovery
 
-- `GET {DEFAULT_CODEAGENT_BASE_URL}/chat/modles?checkUserPermission=TRUE`
+- `GET {base_url}/chat/modles?checkUserPermission=TRUE`
 
 Required request headers:
 
 | Header | Value |
 | --- | --- |
 | `X-Auth-Token` | resolved CodeAgent token |
-| `app-id` | `CodeAgent2.0` |
-| `User-Agent` | `AgentKernel/1.0` |
-| `gray` | `false` |
-| `oc-heartbeat` | `1` |
-| `X-snap-traceid` | generated UUID |
-| `X-session-id` | generated `ses_...` id |
+| `app-id` | `com.huawei.devmind.codebot.apibot` |
+| `User-Agent` | `RelayAgent/1.0` |
+| `gray` | `true` |
+| `plugin-version` | `cli-1.2605.02-IN.1.` |
 
 The discovery parser accepts a bare JSON list or objects with `data` / `models`.
 Model ids are normalized from `name`, `id`, or `model` and deduplicated.
 
 ### Chat
 
-- `POST {DEFAULT_CODEAGENT_BASE_URL}/chat/completions`
+- `POST {base_url}/chat/completions`
 
 Required request headers:
 
 | Header | Value |
 | --- | --- |
 | `X-Auth-Token` | resolved CodeAgent token |
-| `app-id` | `CodeAgent2.0` |
+| `app-id` | `com.huawei.devmind.codebot.apibot` |
 | `Content-Type` | `application/json` |
 | `Accept` | `text/event-stream` |
 | `User-Agent` | `AgentKernel/1.0` |
@@ -207,5 +228,10 @@ This endpoint distinguishes “saved credentials exist” from “the credential
 - CodeAgent profiles always require `codeagent_auth`.
 - `sso` mode requires a saved refresh path or OAuth session id.
 - `password` mode requires `username` and `password` for new drafts.
-- The backend always forces the default CodeAgent inference base URL.
+- The backend defaults to the default CodeAgent inference base URL, but
+  custom CodeAgent-compatible `base_url` values are preserved.
+- `auth_source = "w3"` is allowed only with the default CodeAgent inference
+  base URL.
+- Runtime-loaded CodeAgent W3 profiles with custom endpoints are skipped before
+  shared W3 credentials are resolved.
 - Password login is a CodeAgent-only auth mode even though it reuses the MaaS login endpoint.
